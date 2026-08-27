@@ -226,7 +226,7 @@ const DarObsoleteForm = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

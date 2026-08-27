@@ -332,7 +332,7 @@ const DarNewForm = () => {
   const availableApprovers = useStore.getState().approveUsers.filter(u => (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser.department)) && u.id !== currentUser.id && u.id !== formData.manualReviewerId);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto min-h-0">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center shadow-xs">
