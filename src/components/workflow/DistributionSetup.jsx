@@ -102,6 +102,16 @@ const DistributionSetup = ({
   // Active department selected in split-view sidebar
   const [activeDeptId, setActiveDeptId] = useState(normOwnerDept || 'PD');
 
+  // Keep activeDeptId synchronized with availableDeptsList when scope or filters change
+  useEffect(() => {
+    if (availableDeptsList.length > 0) {
+      const exists = availableDeptsList.some(d => normalizeDepartmentId(d.id) === normalizeDepartmentId(activeDeptId));
+      if (!exists) {
+        setActiveDeptId(availableDeptsList[0].id);
+      }
+    }
+  }, [availableDeptsList, activeDeptId]);
+
   // --- FORM SPECIFIC STATE (Tier 1 Department Level & Global) ---
   const [formMode, setFormMode] = useState(() => {
     if (isAllDeptsDisabled) return 'TARGETED';
@@ -781,11 +791,11 @@ const DistributionSetup = ({
           </div>
         </div>
 
-        {/* ฝั่งขวา: รายการสถานีของแผนกที่เลือก (8 Cols) */}
+        {/* ฝั่งขวา: รายการสถานีของแผนกที่เลือก (8 Cols) - Render only active department */}
         <div className="lg:col-span-8 border border-[#E2E8F0] rounded-xl bg-white p-3.5 space-y-3">
-          {availableDeptsList.map((dept) => {
+          {activeDeptObj && (() => {
+            const dept = activeDeptObj;
             const normDept = normalizeDepartmentId(dept.id);
-            const isCurrentActive = normDept === activeNormDept;
             const isOwner = normDept === normOwnerDept;
             const standardStations = getDepartmentStations(normDept, distributionLocations);
             const customForDept = customLocations.filter(c => c.departmentId === normDept);
@@ -795,7 +805,7 @@ const DistributionSetup = ({
             const isAllDeptSelected = nonMasterStations.length > 0 && nonMasterStations.every(s => selectedLocationMap.has(`${normDept}::${getStationKey(s)}`));
 
             return (
-              <div key={dept.id} className={isCurrentActive ? 'space-y-3' : 'hidden'}>
+              <div key={dept.id} className="space-y-3">
                 <div className="flex items-center justify-between text-xs font-bold text-[#334155] pb-2 border-b border-[#F1F5F9]">
                   <div className="flex items-center gap-2">
                     <span>{dept.name}</span>
@@ -971,7 +981,7 @@ const DistributionSetup = ({
                 </div>
               </div>
             );
-          })}
+          })()}
         </div>
 
       </div>
