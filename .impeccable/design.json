@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-10T03:56:00Z",
+  "title": "Design System: QMS Portal",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Trust Indigo", "canonical": "#0056b3", "tonalRamp": ["#eff6ff", "#dbeafe", "#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af"] },
+      "indigo-action": { "role": "primary", "displayName": "Active Indigo", "canonical": "#4f46e5", "tonalRamp": ["#eef2ff", "#e0e7ff", "#c7d2fe", "#a5b4fc", "#818cf8", "#6366f1", "#4f46e5", "#4338ca", "#3730a3"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Major page titles and heroic metrics." }
+    },
+    "shadows": [
+      { "name": "ambient", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Default state for interactive cards." },
+      { "name": "lifted", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1)", "purpose": "Hover state to signify interactivity." }
+    ],
+    "motion": [
+      { "name": "fluid", "value": "cubic-bezier(0.32, 0.72, 0, 1)", "purpose": "Fluid transitions for tactile UI." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "btn-primary",
+      "description": "Tactile and confident primary action button.",
+      "html": "<button class=\"ds-btn-primary\">GET STARTED</button>",
+      "css": ".ds-btn-primary { background: #4f46e5; color: #fff; padding: 12px 24px; font-family: Inter, sans-serif; font-weight: 500; border: none; border-radius: 12px; transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1), background 0.3s; cursor: pointer; } .ds-btn-primary:hover { background: #4338ca; transform: scale(1.02); } .ds-btn-primary:active { transform: scale(0.95); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Fluid Interface",
+    "overview": "This system emphasizes fluid, seamless transitions and a modern, tactile feel that breathes life into enterprise data. Interactions should feel native, smooth, and highly responsive, turning mundane QMS tasks into a satisfying experience. We explicitly reject the dense, clunky, and static legacy enterprise UI patterns.",
+    "keyCharacteristics": ["Highly interactive and tactile.", "Deep, soft shadows for spatial separation.", "Rounded, friendly contours (xl and 2xl radii)."],
+    "rules": [],
+    "dos": ["Do use large, readable typography (Inter) to ensure legibility for all employee age groups.", "Do apply smooth, fluid transitions (duration-300 ease-out) to state changes.", "Do maintain high contrast between text and its background."],
+    "donts": ["Don't build dense, clunky, or overly complex navigation structures (no legacy enterprise UI).", "Don't use sharp, rigid corners (rounded-none) for primary containers or buttons.", "Don't pack information too tightly; let the layout breathe."]
+  }
+}
