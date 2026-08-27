@@ -3,6 +3,7 @@ import { Globe, Lock, Building2, ShieldAlert, Check, Users, Award, ShieldCheck }
 import { motion, AnimatePresence } from 'framer-motion';
 import { ACCESS_SCOPES } from '../../utils/accessControl';
 import AuthorizedUsersSelector from './AuthorizedUsersSelector';
+import AuthorizedDepartmentSelector from './AuthorizedDepartmentSelector';
 
 /**
  * DocumentAccessControlSelector component
@@ -76,6 +77,15 @@ const DocumentAccessControlSelector = ({
     onChange({
       ...value,
       authorized_depts: nextDepts
+    });
+  };
+
+  const handleBatchDeptsSelect = (newDeptsArray) => {
+    // Safety guarantee: Ensure currentOwnerDept is always included
+    const set = new Set([currentOwnerDept, ...(newDeptsArray || [])]);
+    onChange({
+      ...value,
+      authorized_depts: Array.from(set)
     });
   };
 
@@ -179,76 +189,15 @@ const DocumentAccessControlSelector = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden border border-[#CBD5E1] bg-[#F8FAFC] rounded-xl p-4 space-y-3"
+            className="overflow-hidden"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-              <div>
-                <label className="text-xs font-bold text-[#1E293B] flex items-center gap-2">
-                  <Building2 size={15} className="text-[#0D99FF]" /> เลือกแผนกที่อนุญาตให้เข้าถึงเอกสารนี้ (Authorized Departments)
-                </label>
-                <p className="text-[11px] text-[#64748B] mt-0.5 flex items-center gap-1.5">
-                  <Lock size={11} className="text-slate-400 shrink-0" />
-                  <span>แผนกเจ้าของเอกสาร (<strong className="text-slate-700 font-bold">{currentOwnerDept}</strong>) จะได้รับสิทธิ์เข้าถึงโดยอัตโนมัติและล็อกถาวร</span>
-                </p>
-              </div>
-              <span className="text-xs text-[#64748B] font-mono font-bold shrink-0">
-                เลือกแล้ว: {authorizedDepts.length} แผนก
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-              {(masterDepartments || []).map((dept) => {
-                const deptId = typeof dept === 'string' ? dept : dept.id;
-                const isOwner = deptId === currentOwnerDept;
-                const isChecked = isOwner || authorizedDepts.includes(deptId);
-
-                return (
-                  <label
-                    key={deptId}
-                    className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs select-none transition-all ${
-                      isOwner
-                        ? 'bg-[#F1F5F9] border-[#CBD5E1] text-[#475569] cursor-not-allowed opacity-95 shadow-none pointer-events-none'
-                        : isChecked
-                          ? 'bg-[#E5F4FF] border-[#0D99FF] text-[#007BE5] font-bold shadow-2xs cursor-pointer hover:bg-[#D9EFFF]'
-                          : 'bg-white border-[#CBD5E1] text-[#334155] hover:bg-slate-50 cursor-pointer'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={isChecked}
-                      disabled={isOwner}
-                      onChange={() => toggleDept(deptId)}
-                    />
-                    {isOwner ? (
-                      <span className="w-3.5 h-3.5 rounded flex items-center justify-center bg-slate-400 text-white shrink-0">
-                        <Lock size={9} strokeWidth={2.5} />
-                      </span>
-                    ) : (
-                      <span
-                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
-                          isChecked ? 'bg-[#0D99FF] border-[#0D99FF] text-white' : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {isChecked && <Check size={10} strokeWidth={3} />}
-                      </span>
-                    )}
-                    <div className="flex items-center justify-between gap-1 min-w-0 flex-1">
-                      <span className="truncate font-medium">{deptId}</span>
-                      {isOwner && (
-                        <span
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono inline-flex items-center gap-0.5 shrink-0"
-                          title="แผนกเจ้าของเอกสารมีสิทธิ์เข้าถึงถาวร"
-                        >
-                          <Lock size={8} />
-                          <span>เจ้าของ (ล็อก)</span>
-                        </span>
-                      )}
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
+            <AuthorizedDepartmentSelector
+              ownerDept={currentOwnerDept}
+              selectedDepts={authorizedDepts}
+              onToggleDept={toggleDept}
+              onBatchSelect={handleBatchDeptsSelect}
+              masterDepartments={masterDepartments}
+            />
           </motion.div>
         )}
 
