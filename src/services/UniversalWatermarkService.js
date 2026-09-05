@@ -1104,4 +1104,28 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
   };
 };
 
+/**
+ * Get Watermark overlay configuration based on document lifecycle status
+ * @param {string} status - e.g. 'SUPERSEDED', 'OBSOLETE', 'EFFECTIVE'
+ * @returns {{ text?: string, color?: string, visible: boolean }}
+ */
+export const getWatermarkConfig = (status) => {
+  const norm = (status || '').toUpperCase();
+  switch (norm) {
+    case 'SUPERSEDED':
+    case 'SUPERSEDED_ARCHIVED':
+      return { text: 'SUPERSEDED / ฉบับตกรุ่น', color: 'rgba(234, 88, 12, 0.28)', visible: true };
+    case 'OBSOLETE':
+    case 'OBSOLETE_ARCHIVED':
+      return { text: 'OBSOLETE / ยกเลิกการใช้งาน', color: 'rgba(220, 38, 38, 0.35)', visible: true };
+    default:
+      if (norm.startsWith('OBSOLETE')) {
+        return { text: 'OBSOLETE / ยกเลิกการใช้งาน', color: 'rgba(220, 38, 38, 0.35)', visible: true };
+      }
+      return { visible: false };
+  }
+};
+
+UniversalWatermarkService.getWatermarkConfig = getWatermarkConfig;
+
 export default UniversalWatermarkService;

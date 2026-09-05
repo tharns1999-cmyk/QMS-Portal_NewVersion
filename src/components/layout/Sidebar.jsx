@@ -10,7 +10,6 @@ import {
   Library, 
   Copy, 
   Globe, 
-  Database, 
   History, 
   Bell, 
   Calendar, 
@@ -38,33 +37,60 @@ const Sidebar = () => {
   const isPortal = path === '/portal' || path === '/';
   const isDcc = !isPortal;
 
-  const isRequester = (requestUsers || []).some(u => u.id === currentUser?.id);
-  const isReviewerOrApprover = (reviewUsers || []).some(u => u.id === currentUser?.id) || (approveUsers || []).some(u => u.id === currentUser?.id);
+  const isRequester = Boolean(
+    currentUser?.status !== 'INACTIVE' && (
+      currentUser?.canCreateDar !== false ||
+      currentUser?.permissions?.includes('DAR_CREATE') ||
+      currentUser?.isWorkflowUser ||
+      (requestUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId)
+    )
+  );
+
+  const isReviewerOrApprover = Boolean(
+    currentUser?.canAccessTasks !== false && (
+      currentUser?.canAccessTasks ||
+      currentUser?.permissions?.includes('TASK_ACCESS') ||
+      currentUser?.isWorkflowUser ||
+      Number(currentUser?.approval_level || currentUser?.level || 0) >= 1 ||
+      (reviewUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId) ||
+      (approveUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId)
+    )
+  );
+
   const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'DCC_STAFF');
   const isDccAdmin = Boolean(currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.isDcc);
   const isAdmin = isDccAdmin;
-  const isMasterListAccess = (currentUser?.level >= 5 && !isAdmin);
 
   // Task Counts Calculations
-  const userDepts = currentUser?.depts || (currentUser?.department ? [currentUser.department] : []);
+  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
   const userTasks = (tasks || []).filter(t => {
+    if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) return false;
+    if (isAdmin || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
+
+    const isReceiptTask = 
+      t.type === 'RECEIPT' || 
+      t.taskType === 'RECEIPT' || 
+      t.category === 'RECEIPT' ||
+      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      t.type === 'CONFIRM_RECEIPT' || 
+      t.task_type === 'CONFIRM_RECEIPT' ||
+      t.id?.includes('doc-') ||
+      t.id?.includes('task-receipt-') ||
+      t.title?.includes('ตรวจรับเล่ม') ||
+      t.title?.includes('ตรวจรับเอกสาร');
+
+    if (isReceiptTask) {
+      const taskDept = t.target_department || t.department || t.targetDept || t.destinationDept || t.assignedToDept || t.holder_dept || '';
+      return userDepts.includes(taskDept);
+    }
+
     const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const isHardcopyReceipt = (t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.type === 'CONFIRM_RECEIPT' || t.task_type === 'CONFIRM_RECEIPT');
-
-    if (isHardcopyReceipt) {
-      if (taskAssigneeId) {
-        return taskAssigneeId === currentUser?.id || (t.assigneeName && t.assigneeName === currentUser?.name);
-      }
-      return t.assignedToDept && userDepts.includes(t.assignedToDept);
-    }
-
+    const taskDept = t.target_department || t.currentHandlerDepartment || t.assignedToDept || '';
     const isMyTask = (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) || 
-      (t.currentHandlerDepartment && userDepts.includes(t.currentHandlerDepartment) && Number(t.currentHandlerLevel) === Number(currentUser?.level)) ||
-      (!taskAssigneeId && t.assignedToDept && userDepts.includes(t.assignedToDept));
+      (taskDept && userDepts.includes(taskDept) && Number(t.required_approval_level || t.currentHandlerLevel || 1) <= Number(currentUser?.approval_level || currentUser?.level || 1)) ||
+      (!taskAssigneeId && taskDept && userDepts.includes(taskDept));
     
-    if (isAdmin) {
-      return (t.type || '').startsWith('DCC_') || t.assignedToRole === 'DCC_ADMIN' || isMyTask;
-    }
     return isMyTask;
   });
   const myTaskCount = userTasks.length;
@@ -179,9 +205,6 @@ const Sidebar = () => {
               </>
             )}
             
-            {isMasterListAccess && (
-              <NavItem to="/dcc/master-list" icon={Database} label="ทะเบียนเอกสารหลัก" />
-            )}
             <NavItem to="/dcc/library" icon={Library} label="คลังเอกสารแม่บท" />
             
             {isDccUser && (

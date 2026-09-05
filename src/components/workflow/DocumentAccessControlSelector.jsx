@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
-import { Globe, Lock, Building2, ShieldAlert, Check, Users, Award, ShieldCheck } from 'lucide-react';
+import { Globe, Lock, Building2, ShieldAlert, Check, Users, Award, ShieldCheck, Shield, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ACCESS_SCOPES } from '../../utils/accessControl';
 import AuthorizedUsersSelector from './AuthorizedUsersSelector';
+import useStore from '../../store/useStore';
+import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 
 /**
  * DocumentAccessControlSelector component
@@ -13,13 +15,15 @@ import AuthorizedUsersSelector from './AuthorizedUsersSelector';
  * @param {string} props.ownerDept - The document owner's department
  * @param {Array} props.masterDepartments - List of available departments
  * @param {Array} props.masterUsers - List of available users
+ * @param {Array} props.workflowParticipants - Optional explicit list of workflow participants
  */
 const DocumentAccessControlSelector = ({
   value = { scope: 'GENERAL', authorized_depts: [], authorized_users: [], min_access_level: 4 },
   onChange,
   ownerDept = 'QA',
   masterDepartments = [],
-  masterUsers = []
+  masterUsers = [],
+  workflowParticipants = []
 }) => {
   const currentScope = value?.scope || ACCESS_SCOPES.GENERAL;
   const currentOwnerDept = ownerDept || 'QA';
@@ -37,6 +41,65 @@ const DocumentAccessControlSelector = ({
 
   const authorizedUsers = value?.authorized_users || [];
   const minAccessLevel = value?.min_access_level ?? 4;
+
+  // Auto-resolve workflow participants (Requester, Reviewer, Approver) if not provided explicitly
+  const resolvedWorkflowParticipants = useMemo(() => {
+    if (workflowParticipants && workflowParticipants.length > 0) {
+      return workflowParticipants;
+    }
+    try {
+      const storeState = typeof window !== 'undefined' ? useStore?.getState?.() : null;
+      if (storeState) {
+        const list = [];
+        const currentU = storeState.currentUser;
+        if (currentU) {
+          list.push({
+            id: currentU.id,
+            empId: currentU.empId,
+            name: currentU.name,
+            department: currentU.department || currentU.dept || currentOwnerDept,
+            role: 'REQUESTER',
+            roleTitle: 'ผู้จัดทำ (Requester)'
+          });
+          const allMasters = masterUsers && masterUsers.length > 0 ? masterUsers : (storeState.masterUsers || []);
+          const allReviewers = storeState.reviewUsers || allMasters;
+          const allApprovers = storeState.approveUsers || allMasters;
+          const revObj = resolveReviewer(currentU.id, currentOwnerDept, allMasters, allReviewers);
+          if (revObj && revObj.id !== currentU.id) {
+            const revU = allMasters.find(u => u.id === revObj.id);
+            if (revU) {
+              list.push({
+                id: revU.id,
+                empId: revU.empId,
+                name: revU.name,
+                department: revU.primary_department || revU.department || revObj.dept,
+                role: 'REVIEWER',
+                roleTitle: 'ผู้ทบทวน (Reviewer)'
+              });
+            }
+          }
+          const appObj = resolveApprover(currentU.id, revObj?.id, currentOwnerDept, allMasters, allApprovers);
+          if (appObj && appObj.id !== currentU.id && appObj.id !== revObj?.id) {
+            const appU = allMasters.find(u => u.id === appObj.id);
+            if (appU) {
+              list.push({
+                id: appU.id,
+                empId: appU.empId,
+                name: appU.name,
+                department: appU.primary_department || appU.department || appObj.dept,
+                role: 'APPROVER',
+                roleTitle: 'ผู้อนุมัติ (Approver)'
+              });
+            }
+          }
+        }
+        return list;
+      }
+    } catch {
+      // Gracefully handle any lookup exceptions
+    }
+    return [];
+  }, [workflowParticipants, masterUsers, currentOwnerDept]);
 
   const handleScopeChange = (newScope) => {
     let nextDepts = value?.authorized_depts || [];
@@ -121,22 +184,32 @@ const DocumentAccessControlSelector = ({
   ];
 
   return (
-    <div className="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-2xs space-y-3.5">
+    <div className="bg-white/95 border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5 transition-all">
       {/* Top Header Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#F1F5F9] pb-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="text-[#0D99FF]" size={16} />
-          <h3 className="font-bold text-sm text-[#1E293B] uppercase tracking-wider">
-            ระดับการเข้าถึงและความลับของเอกสาร (Document Confidentiality & Access Scope)
-          </h3>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100/80 flex items-center justify-center shrink-0 shadow-2xs">
+            <ShieldCheck size={20} strokeWidth={2.2} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+              ระดับการเข้าถึงและความลับของเอกสาร (Document Confidentiality & Access Scope)
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              กำหนดขอบเขตและนโยบายความปลอดภัยการเปิดดูเอกสารดิจิทัลตามมาตรฐาน ISO 9001
+            </p>
+          </div>
         </div>
-        <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] self-start sm:self-auto">
-          Scope: {currentScope}
-        </span>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+            Scope: {currentScope}
+          </span>
+        </div>
       </div>
 
-      {/* Compact Horizontal 4-Card Segmented Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+      {/* Section 1: Modern Bento Grid Radio Cards (4 Columns) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         {scopeCards.map((card) => {
           const isSelected = currentScope === card.id;
           const Icon = card.icon;
@@ -146,23 +219,31 @@ const DocumentAccessControlSelector = ({
               key={card.id}
               type="button"
               onClick={() => handleScopeChange(card.id)}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer select-none flex items-start gap-2.5 outline-none ${
+              className={`relative p-4 rounded-2xl border text-left transition-all duration-200 cursor-pointer select-none flex flex-col justify-between min-h-[120px] outline-none group hover:scale-[1.01] ${
                 isSelected
-                  ? 'bg-[#F0F7FF] border-2 border-[#0D99FF] shadow-xs'
-                  : 'bg-white border-[#E2E8F0] hover:bg-[#F8FAFC] hover:border-[#CBD5E1]'
+                  ? 'ring-2 ring-indigo-500 bg-indigo-50/40 border-transparent shadow-sm'
+                  : 'bg-white border-slate-200/80 hover:bg-slate-50/70 hover:border-slate-300 shadow-2xs'
               }`}
             >
-              <div className={`p-1.5 rounded-lg shrink-0 ${isSelected ? 'bg-[#0D99FF] text-white' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
-                <Icon size={15} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <span className={`text-sm font-bold truncate ${isSelected ? 'text-[#0D99FF]' : 'text-[#1E293B]'}`}>
-                    {card.label}
-                  </span>
-                  {isSelected && <Check className="text-[#0D99FF] shrink-0" size={14} strokeWidth={3} />}
+              <div className="flex items-start justify-between w-full mb-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+                  isSelected 
+                    ? 'bg-indigo-600 text-white shadow-xs shadow-indigo-300' 
+                    : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/80 group-hover:text-slate-700'
+                }`}>
+                  <Icon size={18} strokeWidth={2.2} />
                 </div>
-                <p className="text-[11px] text-[#64748B] mt-0.5 leading-snug line-clamp-2">
+                {isSelected && (
+                  <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                    <Check size={12} strokeWidth={3} />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1 min-w-0">
+                <div className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-950' : 'text-slate-800 group-hover:text-slate-950'}`}>
+                  {card.label}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
                   {card.desc}
                 </p>
               </div>
@@ -173,44 +254,69 @@ const DocumentAccessControlSelector = ({
 
       {/* Sub-config Panels */}
       <AnimatePresence mode="wait">
+        {/* Section 2: Authorized Departments (TARGETED) */}
         {currentScope === ACCESS_SCOPES.TARGETED && (
           <motion.div
             key="targeted-panel"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden border border-[#CBD5E1] bg-[#F8FAFC] rounded-xl p-4 space-y-3"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="overflow-hidden border border-slate-200/90 bg-slate-50/60 rounded-2xl p-5 space-y-4 shadow-2xs"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <label className="text-xs font-bold text-[#1E293B] flex items-center gap-2">
-                  <Building2 size={15} className="text-[#0D99FF]" /> เลือกแผนกที่อนุญาตให้เข้าถึงเอกสารนี้ (Authorized Departments)
+                <label className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                  <Building2 size={16} className="text-indigo-600" />
+                  <span>เลือกแผนกที่อนุญาตให้เข้าถึงเอกสารนี้ (Authorized Departments)</span>
                 </label>
-                <p className="text-[11px] text-[#64748B] mt-0.5 flex items-center gap-1.5">
-                  <Lock size={11} className="text-slate-400 shrink-0" />
-                  <span>แผนกเจ้าของเอกสาร (<strong className="text-slate-700 font-bold">{currentOwnerDept}</strong>) จะได้รับสิทธิ์เข้าถึงโดยอัตโนมัติและล็อกถาวร</span>
+                <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                  <Lock size={12} className="text-slate-400 shrink-0" />
+                  <span>แผนกเจ้าของเอกสาร (<strong className="text-slate-800 font-bold">{currentOwnerDept}</strong>) จะได้รับสิทธิ์เข้าถึงโดยอัตโนมัติและล็อกถาวร</span>
                 </p>
               </div>
-              <span className="text-xs text-[#64748B] font-mono font-bold shrink-0">
+              <span className="text-xs font-mono font-bold px-3 py-1 rounded-full bg-white text-indigo-700 border border-indigo-100 shadow-2xs shrink-0 self-start sm:self-auto">
                 เลือกแล้ว: {authorizedDepts.length} แผนก
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            {/* Interactive Department Chips / Pills */}
+            <div className="flex flex-wrap gap-2.5">
               {(masterDepartments || []).map((dept) => {
                 const deptId = typeof dept === 'string' ? dept : dept.id;
                 const isOwner = deptId === currentOwnerDept;
                 const isChecked = isOwner || authorizedDepts.includes(deptId);
 
+                if (isOwner) {
+                  return (
+                    <label
+                      key={deptId}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white border border-zinc-900 shadow-xs cursor-not-allowed select-none opacity-95 transition-all"
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={true}
+                        disabled={true}
+                        readOnly
+                      />
+                      <Lock size={12} className="text-amber-400 shrink-0" />
+                      <span className="font-mono text-xs tracking-wider">{deptId}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-zinc-800 text-amber-300 font-mono inline-flex items-center gap-1 border border-zinc-700 shadow-2xs">
+                        <span>Owner</span>
+                        <span>•</span>
+                        <span>เจ้าของ (ล็อก)</span>
+                      </span>
+                    </label>
+                  );
+                }
+
                 return (
                   <label
                     key={deptId}
-                    className={`flex items-center gap-2 p-2.5 rounded-lg border text-xs select-none transition-all ${
-                      isOwner
-                        ? 'bg-[#F1F5F9] border-[#CBD5E1] text-[#475569] cursor-not-allowed opacity-95 shadow-none pointer-events-none'
-                        : isChecked
-                          ? 'bg-[#E5F4FF] border-[#0D99FF] text-[#007BE5] font-bold shadow-2xs cursor-pointer hover:bg-[#D9EFFF]'
-                          : 'bg-white border-[#CBD5E1] text-[#334155] hover:bg-slate-50 cursor-pointer'
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs select-none cursor-pointer transition-all duration-150 active:scale-95 ${
+                      isChecked
+                        ? 'bg-indigo-600 text-white font-bold border border-indigo-600 shadow-md shadow-indigo-200 hover:bg-indigo-700'
+                        : 'bg-white border border-slate-200 text-slate-700 font-medium hover:bg-slate-100 hover:border-slate-300 shadow-2xs'
                     }`}
                   >
                     <input
@@ -220,31 +326,12 @@ const DocumentAccessControlSelector = ({
                       disabled={isOwner}
                       onChange={() => toggleDept(deptId)}
                     />
-                    {isOwner ? (
-                      <span className="w-3.5 h-3.5 rounded flex items-center justify-center bg-slate-400 text-white shrink-0">
-                        <Lock size={9} strokeWidth={2.5} />
-                      </span>
+                    {isChecked ? (
+                      <Check size={13} strokeWidth={3} className="text-white shrink-0" />
                     ) : (
-                      <span
-                        className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
-                          isChecked ? 'bg-[#0D99FF] border-[#0D99FF] text-white' : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {isChecked && <Check size={10} strokeWidth={3} />}
-                      </span>
+                      <span className="w-3.5 h-3.5 rounded-full border border-slate-300 bg-slate-50 shrink-0" />
                     )}
-                    <div className="flex items-center justify-between gap-1 min-w-0 flex-1">
-                      <span className="truncate font-medium">{deptId}</span>
-                      {isOwner && (
-                        <span
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-mono inline-flex items-center gap-0.5 shrink-0"
-                          title="แผนกเจ้าของเอกสารมีสิทธิ์เข้าถึงถาวร"
-                        >
-                          <Lock size={8} />
-                          <span>เจ้าของ (ล็อก)</span>
-                        </span>
-                      )}
-                    </div>
+                    <span className="font-mono font-semibold">{deptId}</span>
                   </label>
                 );
               })}
@@ -252,53 +339,82 @@ const DocumentAccessControlSelector = ({
           </motion.div>
         )}
 
+        {/* Restricted Sub-panel (Modern 2-Column Split View) */}
         {currentScope === ACCESS_SCOPES.RESTRICTED && (
           <motion.div
             key="restricted-panel"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden border border-rose-200 bg-rose-50/20 rounded-xl p-4 space-y-4"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="overflow-hidden border border-slate-200/90 bg-slate-50/60 rounded-3xl p-5 shadow-2xs"
           >
-            {/* Top Row: Min Access Level Policy */}
-            <div className="bg-white border border-rose-200 rounded-xl p-3.5 shadow-2xs space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#1E293B] flex items-center gap-2">
-                    <Award size={15} className="text-rose-600" /> ระดับตำแหน่งขั้นต่ำที่อนุญาต (Minimum Position Level)
-                  </label>
-                  <p className="text-[11px] text-[#64748B] mt-0.5">
-                    พนักงานที่มีตำแหน่งตั้งแต่ระดับนี้ขึ้นไปจะสามารถเข้าถึงและค้นหาเอกสารลับนี้ได้โดยอัตโนมัติ
-                  </p>
-                </div>
-                <div className="w-full sm:w-72 shrink-0">
-                  <select
-                    value={minAccessLevel}
-                    onChange={(e) => handleMinLevelChange(e.target.value)}
-                    className="w-full h-9 px-3 select-primary bg-[#F9F9F9] text-xs font-semibold text-[#1E293B] border-rose-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/20"
-                  >
-                    <option value={1}>Level 1: พนักงานทั่วไปขึ้นไป (All Staff)</option>
-                    <option value={3}>Level 3: Senior Staff ขึ้นไป</option>
-                    <option value={4}>Level 4: หัวหน้างาน / Supervisor ขึ้นไป</option>
-                    <option value={5}>Level 5: ผู้ช่วยผู้จัดการ / Asst. Manager ขึ้นไป</option>
-                    <option value={6}>Level 6: ผู้จัดการฝ่าย / Department Manager ขึ้นไป</option>
-                    <option value={7}>Level 7: ผู้บริหารระดับสูง / Directors & Executives</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+            {/* Dynamic Access Mode: If Level 1 is selected, show Min Level Card & Info Banner; hide member picker */}
+            {minAccessLevel === 1 ? (
+              <div className="space-y-4">
+                {/* Minimum Position Level Card */}
+                <div className="border border-slate-200/80 bg-white rounded-2xl p-4 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 border border-amber-200/70 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                        <Shield size={18} strokeWidth={2.2} />
+                      </div>
+                      <div>
+                        <label htmlFor="min-access-level-select" className="text-xs font-bold text-slate-900 flex items-center gap-1.5 cursor-pointer">
+                          <span>ระดับตำแหน่งขั้นต่ำที่อนุญาต (Minimum Position Level)</span>
+                        </label>
+                        <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                          พนักงานที่มีตำแหน่งตั้งแต่ระดับนี้ขึ้นไปจะเข้าถึงเอกสารลับนี้ได้โดยอัตโนมัติ
+                        </p>
+                      </div>
+                    </div>
 
-            {/* Bottom Section: Enterprise Searchable Multi-Select User Picker */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#1E293B] flex items-center gap-2">
-                <Users size={15} className="text-rose-600" /> ระบุบุคคลที่ได้รับอนุญาตเพิ่มเติมเฉพาะบุคคล (Authorized Users)
-              </label>
+                    <div className="w-full sm:w-72 shrink-0">
+                      <select
+                        id="min-access-level-select"
+                        aria-label="ระดับสิทธิ์ขั้นต่ำ"
+                        value={minAccessLevel}
+                        onChange={(e) => handleMinLevelChange(e.target.value)}
+                        className="w-full h-10 px-3.5 bg-slate-50/70 hover:bg-white text-xs font-bold text-slate-800 border border-slate-200 rounded-xl shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                      >
+                        <option value={4}>Level 4: หัวหน้างานขึ้นไป (Supervisor L4+)</option>
+                        <option value={1}>Level 1: ทุกคนในองค์กร (All Staff)</option>
+                        <option value={3}>Level 3: เจ้าหน้าที่อาวุโสขึ้นไป (Senior Staff L3+)</option>
+                        <option value={5}>Level 5: ผู้ช่วยผู้จัดการขึ้นไป (Asst. Manager L5+)</option>
+                        <option value={6}>Level 6: ผู้จัดการฝ่ายขึ้นไป (Dept. Manager L6+)</option>
+                        <option value={7}>Level 7: ผู้บริหารระดับสูง (Directors & Executives)</option>
+                        <option value={99}>🔒 เฉพาะบุคคลที่กำหนดเท่านั้น (Custom Whitelist Only)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Banner */}
+                <motion.div
+                  initial={{ opacity: 0, y: 3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-start gap-3 shadow-2xs"
+                >
+                  <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <h5 className="text-xs font-bold text-amber-900">
+                      พนักงานทุกคนเข้าถึงได้ตามระดับตำแหน่ง ไม่จำเป็นต้องระบุบุคคลเพิ่มเติม
+                    </h5>
+                    <p className="text-[11px] text-amber-700 leading-relaxed">
+                      เนื่องจากเลือกระดับตำแหน่งขั้นต่ำเป็น Level 1 (All Staff) บุคลากรทุกคนในองค์กรจึงได้รับสิทธิ์เข้าถึงเอกสารนี้โดยอัตโนมัติ การกำหนดรายชื่อเฉพาะบุคคลจึงถูกปิดไว้ชั่วคราว
+                    </p>
+                  </div>
+                </motion.div>
+              </div>
+            ) : (
               <AuthorizedUsersSelector
                 selectedUserIds={authorizedUsers}
                 onChange={handleAuthorizedUsersChange}
                 users={masterUsers}
+                minLevel={minAccessLevel}
+                onMinLevelChange={handleMinLevelChange}
+                workflowParticipants={resolvedWorkflowParticipants}
               />
-            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

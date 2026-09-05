@@ -4,7 +4,6 @@ import useStore from '../../store/useStore';
 import { 
   Search, 
   BookOpen, 
-  Layers, 
   Share2, 
   Globe, 
   FilterX, 
@@ -40,7 +39,6 @@ import { useTablePagination } from '../../hooks/useTablePagination';
 const TAB_GENERAL = 'GENERAL';
 const TAB_MY_DEPT = 'MY_DEPT';
 const TAB_DISTRIBUTED = 'DISTRIBUTED';
-const TAB_GLOBAL = 'GLOBAL';
 
 const Library = () => {
   const navigate = useNavigate();
@@ -65,9 +63,8 @@ const Library = () => {
     currentUser?.role === 'DCC_ADMIN' || 
     currentUser?.role === 'DCC_STAFF'
   );
-  const isGlobalView = isDccUser || (currentUser?.level && currentUser.level >= 5);
 
-  const [activeTab, setActiveTab] = useState(isDccUser ? TAB_GLOBAL : TAB_GENERAL);
+  const [activeTab, setActiveTab] = useState(TAB_GENERAL);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -163,7 +160,10 @@ const Library = () => {
     if (!selectedTab || selectedTab === 'ALL' || selectedTab === '') return true;
     
     if (selectedTab === 'EFFECTIVE') {
-      return (st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED') && !doc?.is_obsolete && !doc?.is_superseded;
+      const isSuperseded = st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(doc?.is_superseded);
+      const isObsolete = st === 'OBSOLETE' || st === 'OBSOLETE_ARCHIVED' || st === 'ARCHIVED_OBSOLETE' || st === 'OBSOLETE_PENDING_RECALL' || st.startsWith('OBSOLETE') || Boolean(doc?.is_obsolete);
+      if (isSuperseded || isObsolete) return false;
+      return st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED';
     }
     if (selectedTab === 'SUPERSEDED') {
       return st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(doc?.is_superseded);
@@ -204,9 +204,6 @@ const Library = () => {
         const distList = (doc.distributed_depts || []).map((d) => String(d).toUpperCase());
         return isDcc || distList.includes(userDept) || isDistributedToUser(doc);
       }
-      if (activeScopeTab === TAB_GLOBAL || activeScopeTab === 'global') {
-        return true;
-      }
       return true;
     });
   }, [documents, activeTab, userDept, isDcc]);
@@ -217,7 +214,6 @@ const Library = () => {
   const generalDocsCount = accessibleDocs.filter(d => (d.access_control?.scope || d.access_scope || 'GENERAL') === 'GENERAL').length;
   const myDeptDocsCount = accessibleDocs.filter(d => isOwnerDept(d)).length;
   const distributedDocsCount = accessibleDocs.filter(d => isDistributedToUser(d)).length;
-  const globalDocsCount = accessibleDocs.length;
   const tabFilteredDocs = baseDocs;
 
   const filteredDocs = useMemo(() => {
@@ -970,25 +966,6 @@ const Library = () => {
             {distributedDocsCount}
           </span>
         </button>
-
-        {/* Tab 4: เอกสารทั้งหมด (DCC & Executives View) */}
-        {isGlobalView && (
-          <button
-            type="button"
-            onClick={() => setActiveTab(TAB_GLOBAL)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === TAB_GLOBAL || activeTab === 'global'
-                ? 'bg-white text-[#0D99FF] border border-[#B8E1FF] shadow-2xs'
-                : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
-            }`}
-          >
-            <Layers size={16} strokeWidth={activeTab === TAB_GLOBAL || activeTab === 'global' ? 2 : 1.75} />
-            <span>เอกสารทั้งหมด (Global View)</span>
-            <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
-              {globalDocsCount}
-            </span>
-          </button>
-        )}
       </div>
 
       {/* Control Toolbar: 2-Row Clean Enterprise Layout */}

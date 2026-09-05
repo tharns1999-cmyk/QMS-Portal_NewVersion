@@ -156,12 +156,12 @@ const ControlledCopyRegister = () => {
     const pendingIssue = allCopies.filter(c => c.status === 'PENDING_ISSUE' || c.status === 'PENDING_RECEIPT').length;
     const dispatched = allCopies.filter(c => c.status === 'DISPATCHED_PENDING_RECEIPT').length;
     
-    // Recall count: Copies with PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
+    // Recall count: Copies with PENDING_RECALL, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
     const recallCopies = allCopies.filter(c => {
-      if (c.status === 'PENDING_RECALL' || c.status === 'DAMAGED_PENDING_REPLACEMENT') return true;
+      if (c.status === 'PENDING_RECALL' || c.status === 'OBSOLETE_PENDING_RECALL' || c.status === 'DAMAGED_PENDING_REPLACEMENT') return true;
       const doc = documents.find(d => String(d.id) === String(c.doc_id || c.docId));
-      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
-      return isDocSupersededOrObsolete && (c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE');
+      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
+      return isDocSupersededOrObsolete && (c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED');
     });
 
     const active = allCopies.filter(c => c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE').length;
@@ -300,16 +300,16 @@ const ControlledCopyRegister = () => {
     allCopies.forEach(copy => {
       const doc = documents.find(d => String(d.id) === String(copy.doc_id || copy.docId))
         || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id));
-      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
-      const isNeedingRecall = copy.status === 'PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_REPLACEMENT' || (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE'));
+      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
+      const isNeedingRecall = copy.status === 'PENDING_RECALL' || copy.status === 'OBSOLETE_PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_REPLACEMENT' || (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE' || copy.status === 'RECEIVED'));
 
       if (isNeedingRecall) {
         const docId = String(copy.doc_id || copy.docId || copy.doc_code || copy.docTitle);
         if (!groups[docId]) {
           // Find associated recall task if exists
           const recallTask = (tasks || []).find(t => 
-            (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST') &&
-            (String(t.doc_id) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && t.title?.includes(doc.title)))
+            (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.type === 'RECALL_HARDCOPY' || t.taskType === 'RECALL' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST') &&
+            (String(t.doc_id) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)))
           );
 
           groups[docId] = {

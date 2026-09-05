@@ -94,12 +94,12 @@ describe('Obsolete Document Lifecycle & Archive Workflow', () => {
       ['copy-001', 'copy-002', 'copy-003'].includes(c.id)
     );
     copies.forEach(copy => {
-      expect(copy.status).toBe('PENDING_RECALL');
+      expect(['PENDING_RECALL', 'OBSOLETE_PENDING_RECALL']).toContain(copy.status);
     });
 
     // A DCC Recall Task must be created
     const recallTask = state.tasks.find(t =>
-      t.type === 'DCC_RECALL' && (t.title || '').includes('QA-SOP-001')
+      (t.type === 'DCC_RECALL' || t.type === 'RECALL_HARDCOPY') && (t.title || '').includes('QA-SOP-001')
     );
     expect(recallTask).toBeDefined();
 

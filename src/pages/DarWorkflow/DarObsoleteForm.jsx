@@ -38,44 +38,48 @@ const DarObsoleteForm = () => {
   const [lockedSourceError, setLockedSourceError] = useState(null);
 
   // Filter only EFFECTIVE documents for the current user's department
-  const userDept = currentUser.department || currentUser.dept;
+  const userDept = currentUser?.department || currentUser?.dept || 'PD';
   const effectiveDocs = useMemo(() => {
-    return documents.filter(d => d.status === 'EFFECTIVE' && d.department === userDept);
+    return (documents || []).filter(d => d && d.status === 'EFFECTIVE' && d.department === userDept);
   }, [documents, userDept]);
 
   // Active Controlled Copy distribution breakdown for the selected document
-  const activeCopyGroups = useMemo(() => {
-    const selectedDoc = documents.find(d => d.id === formData.docId);
+  const activeCopiesList = useMemo(() => {
+    const selectedDoc = (documents || []).find(d => d && d.id === formData.docId);
     if (!selectedDoc) return [];
     const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
       ? controlledCopyInstances
       : (documentControlledCopies || []);
-    const active = allCopies.filter(c => {
+    return allCopies.filter(c => {
       const docMatch =
         String(c.doc_id || c.docId) === String(selectedDoc.id) ||
         c.doc_code === selectedDoc.title ||
-        c.docTitle === selectedDoc.title;
-      return docMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE');
+        c.docTitle === selectedDoc.title ||
+        c.document_code === selectedDoc.title;
+      return docMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT');
     });
+  }, [formData.docId, documents, controlledCopyInstances, documentControlledCopies]);
+
+  const activeCopyGroups = useMemo(() => {
     // Group by dept
     const groups = {};
-    active.forEach(c => {
+    activeCopiesList.forEach(c => {
       const dept = c.holder_dept || c.department || '?';
       if (!groups[dept]) groups[dept] = [];
       groups[dept].push(c);
     });
     return Object.entries(groups).map(([dept, copies]) => ({ dept, copies }));
-  }, [formData.docId, documents, controlledCopyInstances, documentControlledCopies]);
+  }, [activeCopiesList]);
 
   // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
   useEffect(() => {
     if (formData.docId) {
-      const isStillValid = effectiveDocs.some(d => d.id === formData.docId);
+      const isStillValid = (effectiveDocs || []).some(d => d && d.id === formData.docId);
       if (!isStillValid && !lockedSource && !targetDraftId) {
         setFormData(prev => ({ ...prev, docId: '' }));
       }
     }
-  }, [currentUser.id, currentUser.department, currentUser.dept, formData.docId, effectiveDocs, lockedSource, targetDraftId]);
+  }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs, lockedSource, targetDraftId]);
 
   // Handle Prefill from Periodic Review
   useEffect(() => {
@@ -468,21 +472,70 @@ const DarObsoleteForm = () => {
                     แผนการจัดการและเรียกคืนสำเนาเดิม (Recall Plan)
                   </label>
 
-                  {totalControlledCopies > 0 || Boolean(formData.recallPlan) ? (
-                    <div className="space-y-2.5">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-[#D97706] bg-[#FFFBEB] p-2.5 rounded-lg border border-[#FDE68A]">
-                        <AlertTriangle className="shrink-0 text-[#D97706]" size={15} />
-                        <span>ระบบจะสร้าง Task เรียกคืนสำเนา {totalControlledCopies} ชุดนี้ให้ DCC อัตโนมัติ</span>
+                  {selectedDoc && (totalControlledCopies > 0 || activeCopiesList.length > 0 || Boolean(formData.recallPlan)) ? (
+                    <div className="space-y-3">
+                      {/* สรุปจำนวนสำเนาที่กระจายอยู่ทั้งหมด */}
+                      <div className="flex items-center justify-between bg-white border border-rose-200 px-3 py-2 rounded-lg text-xs">
+                        <span className="font-semibold text-[#1E293B]">
+                          พบสำเนาควบคุมถือครองอยู่ <strong className="text-rose-600 font-mono font-bold text-sm">{activeCopiesList.length > 0 ? activeCopiesList.length : totalControlledCopies}</strong> เล่ม
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          {activeCopyGroups.length > 0 ? `${activeCopyGroups.length} แผนก` : 'ประจำสถานี'}
+                        </span>
                       </div>
-                      <p className="text-[11px] text-[#64748B] leading-relaxed">
-                        เมื่อคำขอนี้ได้รับการอนุมัติ DCC จะต้องดำเนินการเก็บเล่มจริงจากทุกสถานีกลับมาเพื่อประทับตรา <strong>OBSOLETE</strong> หรือทำลายทิ้งตามระเบียบ
-                      </p>
+
+                      {/* แสดง Badge รายการสำเนา พร้อมระบุจุดติดตั้ง */}
+                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {activeCopiesList.length > 0 ? (
+                          activeCopiesList.map((copy, idx) => {
+                            const copyNo = copy.copy_no || copy.copyNo || copy.ccNumber || String(idx + 1).padStart(2, '0');
+                            const dept = copy.holder_dept || copy.department || selectedDoc.department || 'PD';
+                            const loc = copy.location || copy.locationName || copy.station_name || 'จุดใช้งาน';
+                            return (
+                              <div 
+                                key={copy.id || idx} 
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-rose-200/80 rounded-lg text-xs shadow-2xs"
+                              >
+                                <span className="font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded text-[11px]">
+                                  Copy {copyNo} ({dept})
+                                </span>
+                                <span className="text-slate-600 text-[11px] flex items-center gap-1">
+                                  <MapPin size={11} className="text-slate-400 shrink-0" />
+                                  <span className="truncate max-w-[130px]" title={loc}>{loc}</span>
+                                </span>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          Array.from({ length: totalControlledCopies }).map((_, idx) => (
+                            <div 
+                              key={idx} 
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-rose-200/80 rounded-lg text-xs shadow-2xs"
+                            >
+                              <span className="font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded text-[11px]">
+                                Copy {String(idx + 1).padStart(2, '0')} ({selectedDoc.department || 'PD'})
+                              </span>
+                              <span className="text-slate-600 text-[11px] flex items-center gap-1">
+                                <MapPin size={11} className="text-slate-400 shrink-0" />
+                                <span>จุดคุมงานประจำแผนก</span>
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* ข้อความกำกับเมื่อได้รับการอนุมัติ */}
+                      <div className="flex items-center gap-2 text-xs font-semibold text-[#92400E] bg-[#FFFBEB] p-2.5 rounded-lg border border-[#FDE68A]">
+                        <AlertTriangle className="shrink-0 text-[#D97706]" size={15} />
+                        <span>ระบบจะสร้าง Task เรียกคืนสำเนา {activeCopiesList.length > 0 ? activeCopiesList.length : totalControlledCopies} ชุดนี้ให้ DCC อัตโนมัติ (เมื่อได้รับการอนุมัติ ระบบจะส่ง Task เรียกคืนสำเนาทั้งหมดไปยัง DCC โดยอัตโนมัติ)</span>
+                      </div>
+
                       <div>
                         <textarea 
-                          rows={3}
+                          rows={2}
                           value={formData.recallPlan}
                           onChange={(e) => setFormData(prev => ({...prev, recallPlan: e.target.value}))}
-                          className={`w-full min-h-[80px] p-3 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-200 transition-all leading-relaxed resize-none ${errors.recallPlan ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                          className={`w-full min-h-[65px] p-2.5 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-200 transition-all leading-relaxed resize-none ${errors.recallPlan ? 'border-rose-400 bg-rose-50/50' : ''}`}
                           placeholder="ระบุวิธีการสื่อสารและระยะเวลาที่จะเรียกคืนเอกสารกลับมาทำลาย..."
                         />
                         {errors.recallPlan && <p className="text-rose-500 text-xs mt-1">{errors.recallPlan}</p>}
@@ -536,7 +589,7 @@ const DarObsoleteForm = () => {
                         value={formData.ackUserId} 
                         onChange={(id) => setFormData(prev => ({...prev, ackUserId: id}))} 
                         error={errors.ackUserId} 
-                        users={masterUsers.filter(u => u.id !== currentUser.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
+                        users={(masterUsers || []).filter(u => u && u.id !== currentUser?.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
                       />
                       {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
                     </div>
@@ -579,8 +632,8 @@ const DarObsoleteForm = () => {
       {(() => {
         const resolvedRevId = formData.manualReviewerId
           ? formData.manualReviewerId
-          : (resolveReviewer(currentUser.id, currentUser.department, masterUsers, reviewUsers || masterUsers)?.id);
-        const resolvedReviewerObj = (masterUsers || []).find(u => u.id === resolvedRevId);
+          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (
           <ActionConfirmModal
@@ -597,7 +650,7 @@ const DarObsoleteForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser.name} ({currentUser.department})
+                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },

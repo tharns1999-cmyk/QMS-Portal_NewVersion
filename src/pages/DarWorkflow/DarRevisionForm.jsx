@@ -9,7 +9,7 @@ import RelatedStandardsSelector from '../../components/workflow/RelatedStandards
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
-import { resolveReviewer } from '../../utils/workflowResolver';
+import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { calculateCopyAllocations } from '../../services/MasterDataService';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
@@ -21,7 +21,7 @@ const DarRevisionForm = () => {
   const location = useLocation();
   const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
   const prefillDocId = location.state?.prefillDocId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, documents, dars, darRequests, documentTypes, simulatedDate } = useStore();
+  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate } = useStore();
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
   
   const initialFormState = {
@@ -87,7 +87,7 @@ const DarRevisionForm = () => {
         }
       }
     }
-  }, [targetDraftId, dars, darRequests, currentUser.department, location.state]);
+  }, [targetDraftId, dars, darRequests, currentUser?.department, location.state]);
 
   // Handle Prefill from Periodic Review
   useEffect(() => {
@@ -108,20 +108,20 @@ const DarRevisionForm = () => {
   }, []);
 
   // Filter only EFFECTIVE documents for the current user's department
-  const userDept = currentUser.department || currentUser.dept;
+  const userDept = currentUser?.department || currentUser?.dept || 'PD';
   const effectiveDocs = useMemo(() => {
-    return documents.filter(d => d.status === 'EFFECTIVE' && d.department === userDept);
+    return (documents || []).filter(d => d && d.status === 'EFFECTIVE' && d.department === userDept);
   }, [documents, userDept]);
 
   // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
   useEffect(() => {
     if (formData.docId) {
-      const isStillValid = effectiveDocs.some(d => d.id === formData.docId);
+      const isStillValid = (effectiveDocs || []).some(d => d && d.id === formData.docId);
       if (!isStillValid) {
         setFormData(prev => ({ ...prev, docId: '', title: '' }));
       }
     }
-  }, [currentUser.id, currentUser.department, currentUser.dept, formData.docId, effectiveDocs]);
+  }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs]);
 
   const filteredDocs = effectiveDocs.filter(d => {
     const matchesType = docTypeFilter ? d.title.startsWith(docTypeFilter) : true;
@@ -168,6 +168,54 @@ const DarRevisionForm = () => {
       otherStandardDetail: ''
     }));
   };
+
+  // Auto-calculated Workflow Participants for Auto-Whitelisting
+  const workflowParticipants = useMemo(() => {
+    const list = [];
+    if (currentUser) {
+      list.push({
+        id: currentUser.id,
+        empId: currentUser.empId,
+        name: currentUser.name,
+        department: currentUser.department || currentUser.dept || 'QMS',
+        role: 'REQUESTER',
+        roleTitle: 'ผู้จัดทำ (Requester)'
+      });
+    }
+    const resolvedRevId = formData.manualReviewerId
+      ? formData.manualReviewerId
+      : (resolveReviewer(currentUser?.id, currentUser?.department, masterUsers, reviewUsers || masterUsers)?.id);
+    if (resolvedRevId && resolvedRevId !== currentUser?.id) {
+      const revUser = (masterUsers || []).find(u => u.id === resolvedRevId);
+      if (revUser) {
+        list.push({
+          id: revUser.id,
+          empId: revUser.empId,
+          name: revUser.name,
+          department: revUser.primary_department || revUser.department || revUser.dept,
+          role: 'REVIEWER',
+          roleTitle: 'ผู้ทบทวน (Reviewer)'
+        });
+      }
+    }
+    const resolvedAppId = formData.manualApproverId
+      ? formData.manualApproverId
+      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department, masterUsers, approveUsers || masterUsers)?.id);
+    if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
+      const appUser = (masterUsers || []).find(u => u.id === resolvedAppId);
+      if (appUser) {
+        list.push({
+          id: appUser.id,
+          empId: appUser.empId,
+          name: appUser.name,
+          department: appUser.primary_department || appUser.department || appUser.dept,
+          role: 'APPROVER',
+          roleTitle: 'ผู้อนุมัติ (Approver)'
+        });
+      }
+    }
+    return list;
+  }, [currentUser, formData.manualReviewerId, formData.manualApproverId, masterUsers, reviewUsers, approveUsers]);
   
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -669,7 +717,7 @@ const DarRevisionForm = () => {
                         value={formData.ackUserId} 
                         onChange={(id) => setFormData(prev => ({...prev, ackUserId: id}))} 
                         error={errors.ackUserId} 
-                        users={masterUsers.filter(u => u.id !== currentUser.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
+                        users={(masterUsers || []).filter(u => u && u.id !== currentUser?.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
                       />
                       {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
                     </div>
@@ -687,15 +735,16 @@ const DarRevisionForm = () => {
         <DocumentAccessControlSelector
           value={formData.access_control}
           onChange={(access_control) => setFormData(prev => ({ ...prev, access_control }))}
-          ownerDept={selectedDoc?.department || currentUser.department}
-          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments}
-          masterUsers={masterUsers}
+          ownerDept={selectedDoc?.department || currentUser?.department || 'PD'}
+          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
+          masterUsers={masterUsers || []}
+          workflowParticipants={workflowParticipants || []}
         />
 
         {/* Distribution Setup */}
         <DistributionSetup 
-          ownerDept={currentUser.department}
-          distributions={formData.distributions}
+          ownerDept={currentUser?.department || 'PD'}
+          distributions={formData.distributions || []}
           oldDistributions={selectedDoc?.distributions || []}
           onChange={(distributions) => setFormData(prev => ({ ...prev, distributions }))}
           documentType={selectedDoc?.title ? selectedDoc.title.split('-')[0] : 'WI'}
@@ -732,8 +781,8 @@ const DarRevisionForm = () => {
       {(() => {
         const resolvedRevId = formData.manualReviewerId
           ? formData.manualReviewerId
-          : (resolveReviewer(currentUser.id, currentUser.department, masterUsers, reviewUsers || masterUsers)?.id);
-        const resolvedReviewerObj = (masterUsers || []).find(u => u.id === resolvedRevId);
+          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (
           <ActionConfirmModal
@@ -749,7 +798,7 @@ const DarRevisionForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser.name} ({currentUser.department})
+                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },

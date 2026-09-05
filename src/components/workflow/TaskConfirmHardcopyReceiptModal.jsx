@@ -6,8 +6,8 @@ import toast from 'react-hot-toast';
 
 const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
   const { currentUser, confirmHardcopyReceipt, documentControlledCopies, controlledCopyInstances } = useStore();
-  const [pin, setPin] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [hasAcknowledgedTerms, setHasAcknowledgedTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen || !task) return null;
@@ -22,9 +22,9 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
   const location = task.location || copy?.location || copy?.locationName || '-';
   const dept = task.target_department || task.targetDepartment || task.assignedToDept || copy?.holder_dept || copy?.department || currentUser.department;
 
-  const isDccUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
-  const userDepts = currentUser?.depts || (currentUser?.department ? [currentUser.department] : []);
-  const isAuthorized = isDccUser || !dept || userDepts.includes(dept);
+  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr || currentUser?.id === 'u5';
+  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
+  const isAuthorized = isWildcardUser || !dept || userDepts.includes(dept);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -32,11 +32,21 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
       toast.error(`คุณไม่มีสิทธิ์ตรวจรับเอกสารของแผนก ${dept}`);
       return;
     }
+    if (!hasAcknowledgedTerms) {
+      toast.error('กรุณากดยืนยันข้อความรับรองการตรวจรับเอกสาร');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       confirmHardcopyReceipt(copyId, task.id, {
-        name: currentUser.name,
-        pin: pin || 'CONFIRMED',
+        document_id: docCode,
+        copy_id: copyId,
+        receiver_user_id: currentUser?.id || currentUser?.empId || 'UNKNOWN_USER',
+        actor_name: currentUser?.name || 'Department Custodian',
+        actor_primary_department: currentUser?.primary_department || currentUser?.department || 'UNKNOWN_DEPT',
+        task_department: dept,
+        timestamp: new Date().toISOString(),
         remarks: remarks || 'Confirmed receipt and physical placement at point of use'
       });
       toast.success(`ตรวจรับเอกสาร ${docCode} (Copy ${copyNo}) สำเร็จ`);
@@ -59,7 +69,7 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
           transition={{ type: "spring", stiffness: 320, damping: 30 }}
           className="bg-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-stone-200/50 w-full max-w-lg overflow-hidden flex flex-col z-10 my-auto"
         >
-          {/* Header: Claude Aesthetic (White/Flat) */}
+          {/* Header */}
           <div className="bg-white px-8 pt-8 pb-4 border-b border-stone-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-[#f9f8f6] text-[#4a724b] border border-stone-200 flex items-center justify-center shrink-0">
@@ -67,16 +77,16 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
               </div>
               <div>
                 <h3 className="text-[#2d2d2d] font-bold text-xl sm:text-2xl tracking-tight leading-tight">
-                  ตรวจรับเอกสารควบคุมฉบับพิมพ์
+                  ตรวจรับเอกสารควบคุมฉบับจริง
                 </h3>
                 <p className="text-stone-500 text-sm sm:text-base font-medium mt-1">
-                  Department Hardcopy Receipt Confirmation
+                  Department-Pooled Physical Receipt Confirmation
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none"
+              className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none cursor-pointer"
               title="ปิดหน้าต่าง"
             >
               <X size={24} />
@@ -120,7 +130,7 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
                 <div>
                   <p className="font-bold">ไม่มีสิทธิ์ตรวจรับเอกสารของแผนกอื่น</p>
                   <p className="text-xs text-rose-600 mt-0.5">
-                    เอกสารนี้จัดส่งสำหรับแผนก <strong>{dept}</strong> เท่านั้น (แผนกปัจจุบันของคุณ: {currentUser?.department || '-'})
+                    เอกสารนี้จัดส่งสำหรับแผนก <strong>{dept}</strong> เท่านั้น (แผนกที่คุณสังกัด: {userDepts.join(', ') || currentUser?.department || '-'})
                   </p>
                 </div>
               </div>
@@ -128,40 +138,50 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
               <div className="p-4 bg-white border border-stone-200 rounded-xl flex items-start gap-3 text-sm text-stone-600 shadow-sm leading-relaxed">
                 <AlertTriangle size={20} className="text-[#b87c33] shrink-0 mt-0.5" />
                 <span>
-                  เมื่อกดยืนยัน ระบบจะปรับปรุงสถานะสำเนาเป็น <strong>ISSUED_ACTIVE</strong> และบันทึกประวัติการตรวจรับเข้าสู่ DCS Audit Trail ทันที
+                  เมื่อกดยืนยัน ระบบจะปรับปรุงสถานะสำเนาเป็น <strong>ISSUED_ACTIVE</strong> และปิดงานนี้ออกจากคิวของสมาชิกในแผนกทันที
                 </span>
               </div>
             )}
 
-            {/* Input PIN / Notes */}
-            <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <label className="block text-sm font-bold text-[#2d2d2d] flex items-center gap-2">
-                  <KeyRound size={16} className="text-stone-400" /> PIN ยืนยันตัวตน (ถ้ามี):
-                </label>
-                <input
-                  type="password"
-                  disabled={!isAuthorized}
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="กรอกรหัส PIN หรือเว้นว่างเพื่อใช้ชื่อบัญชีผู้ใช้"
-                  className="w-full px-4 py-3 text-sm bg-white border border-stone-200 rounded-xl focus:border-[#da7756] focus:ring-4 focus:ring-[#da7756]/10 outline-none transition-all font-medium text-[#2d2d2d] placeholder:text-stone-400 shadow-sm disabled:bg-stone-100 disabled:text-stone-400"
-                />
+            {/* Active User Session & Remarks */}
+            <div className="space-y-4 pt-1">
+              <div className="p-3.5 bg-white border border-stone-200 rounded-xl flex items-center justify-between text-xs text-stone-700 shadow-2xs">
+                <div>
+                  <span className="text-stone-400">ผู้ตรวจรับ:</span>{' '}
+                  <strong className="text-stone-900 font-bold">{currentUser?.name}</strong>{' '}
+                  <span className="text-stone-400">({currentUser?.department || dept})</span>
+                </div>
+                <div className="flex items-center gap-1 text-emerald-600 font-semibold">
+                  <CheckCircle2 size={14} /> Active Session
+                </div>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-[#2d2d2d]">
-                  บันทึกเพิ่มเติม / หมายเหตุการตรวจรับ:
+                  บันทึกสภาพเอกสารและจุดติดตั้ง (Optional Remarks):
                 </label>
                 <textarea
                   disabled={!isAuthorized}
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="เช่น ตรวจสอบตราประทับควบคุมและใส่แฟ้มประจำจุดใช้งานเรียบร้อยแล้ว"
+                  placeholder="เช่น ตรวจสอบตราประทับสีแดงเรียบร้อย เอกสารครบถ้วนสมบูรณ์ นำเข้าแฟ้มประจำจุดใช้งานเรียบร้อยแล้ว"
                   rows={2}
                   className="w-full px-4 py-3 text-sm bg-white border border-stone-200 rounded-xl focus:border-[#da7756] focus:ring-4 focus:ring-[#da7756]/10 outline-none transition-all resize-none font-medium text-[#2d2d2d] placeholder:text-stone-400 leading-relaxed shadow-sm disabled:bg-stone-100 disabled:text-stone-400"
                 />
               </div>
+
+              <label className="flex items-start gap-3 p-3 bg-white border border-stone-200 rounded-xl cursor-pointer select-none hover:bg-stone-50 transition-colors shadow-2xs">
+                <input
+                  type="checkbox"
+                  disabled={!isAuthorized}
+                  checked={hasAcknowledgedTerms}
+                  onChange={(e) => setHasAcknowledgedTerms(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-[#da7756] focus:ring-[#da7756] border-stone-300 disabled:opacity-50 cursor-pointer"
+                />
+                <span className="text-xs text-stone-700 leading-relaxed font-medium">
+                  ข้าพเจ้าขอยืนยันว่าได้รับเอกสารฉบับพิมพ์จริงที่มีตราประทับควบคุม และติดตั้ง ณ จุดใช้งาน ({location}) เรียบร้อยแล้ว
+                </span>
+              </label>
             </div>
 
             {/* Actions */}
@@ -170,14 +190,14 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="bg-white hover:bg-stone-50 text-stone-600 font-bold text-base px-6 py-3 rounded-xl border border-stone-200 transition-colors focus:ring-4 focus:ring-stone-200 outline-none"
+                className="bg-white hover:bg-stone-50 text-stone-600 font-bold text-base px-6 py-3 rounded-xl border border-stone-200 transition-colors focus:ring-4 focus:ring-stone-200 outline-none cursor-pointer"
               >
                 ยกเลิก (Cancel)
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !isAuthorized}
-                className="bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-base px-6 py-3 rounded-xl shadow-none transition-all flex items-center gap-2 disabled:opacity-50 focus:ring-4 focus:ring-[#da7756]/20 outline-none"
+                disabled={isSubmitting || !isAuthorized || !hasAcknowledgedTerms}
+                className="bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-base px-6 py-3 rounded-xl shadow-none transition-all flex items-center gap-2 disabled:opacity-50 focus:ring-4 focus:ring-[#da7756]/20 outline-none cursor-pointer"
               >
                 <CheckCircle2 size={20} />
                 {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการตรวจรับเอกสาร'}

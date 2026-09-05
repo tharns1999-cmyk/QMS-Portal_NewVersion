@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
@@ -23,7 +23,7 @@ import RelatedStandardsSelector from '../../components/workflow/RelatedStandards
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
-import { resolveReviewer } from '../../utils/workflowResolver';
+import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { 
   calculateCopyAllocations, 
   formatDocumentRunningNumber, 
@@ -39,7 +39,7 @@ const DarNewForm = () => {
   const location = useLocation();
 
   const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, dars, darRequests, documents, masterUsers, reviewUsers, documentTypes, simulatedDate } = useStore();
+  const { currentUser, addDar, saveDarDraft, deleteDar, dars, darRequests, documents, masterUsers, reviewUsers, approveUsers, documentTypes, simulatedDate } = useStore();
   
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
 
@@ -80,7 +80,7 @@ const DarNewForm = () => {
         setFormData(hydrated);
       }
     }
-  }, [targetDraftId, dars, darRequests, currentUser.department, location.state]);
+  }, [targetDraftId, dars, darRequests, currentUser?.department, location.state]);
 
   const prevScopeRef = React.useRef(formData.access_control?.scope || 'GENERAL');
 
@@ -183,6 +183,54 @@ const DarNewForm = () => {
     formData.docType, 
     currentUser?.department
   ]);
+
+  // Auto-calculated Workflow Participants for Auto-Whitelisting
+  const workflowParticipants = useMemo(() => {
+    const list = [];
+    if (currentUser) {
+      list.push({
+        id: currentUser.id,
+        empId: currentUser.empId,
+        name: currentUser.name,
+        department: currentUser.department || currentUser.dept || 'QMS',
+        role: 'REQUESTER',
+        roleTitle: 'ผู้จัดทำ (Requester)'
+      });
+    }
+    const resolvedRevId = formData.manualReviewerId
+      ? formData.manualReviewerId
+      : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+    if (resolvedRevId && resolvedRevId !== currentUser?.id) {
+      const revUser = (masterUsers || []).find(u => u && u.id === resolvedRevId);
+      if (revUser) {
+        list.push({
+          id: revUser.id,
+          empId: revUser.empId,
+          name: revUser.name,
+          department: revUser.primary_department || revUser.department || revUser.dept,
+          role: 'REVIEWER',
+          roleTitle: 'ผู้ทบทวน (Reviewer)'
+        });
+      }
+    }
+    const resolvedAppId = formData.manualApproverId
+      ? formData.manualApproverId
+      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department || 'PD', masterUsers || [], approveUsers || masterUsers || [])?.id);
+    if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
+      const appUser = (masterUsers || []).find(u => u && u.id === resolvedAppId);
+      if (appUser) {
+        list.push({
+          id: appUser.id,
+          empId: appUser.empId,
+          name: appUser.name,
+          department: appUser.primary_department || appUser.department || appUser.dept,
+          role: 'APPROVER',
+          roleTitle: 'ผู้อนุมัติ (Approver)'
+        });
+      }
+    }
+    return list;
+  }, [currentUser, formData.manualReviewerId, formData.manualApproverId, masterUsers, reviewUsers, approveUsers]);
 
   const getPreviewCode = () => {
     if (!formData.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
@@ -328,8 +376,8 @@ const DarNewForm = () => {
   };
 
   // Get available candidates for Dev Test UI
-  const availableReviewers = useStore.getState().reviewUsers.filter(u => (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser.department)) && u.id !== currentUser.id);
-  const availableApprovers = useStore.getState().approveUsers.filter(u => (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser.department)) && u.id !== currentUser.id && u.id !== formData.manualReviewerId);
+  const availableReviewers = (useStore.getState().reviewUsers || masterUsers || []).filter(u => u && (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser?.department)) && u.id !== currentUser?.id);
+  const availableApprovers = (useStore.getState().approveUsers || masterUsers || []).filter(u => u && (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser?.department)) && u.id !== currentUser?.id && u.id !== formData.manualReviewerId);
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
@@ -612,7 +660,7 @@ const DarNewForm = () => {
                         value={formData.ackUserId} 
                         onChange={(id) => setFormData({...formData, ackUserId: id})} 
                         error={errors.ackUserId} 
-                        users={masterUsers.filter(u => u.id !== currentUser.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
+                        users={(masterUsers || []).filter(u => u && u.id !== currentUser?.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
                       />
                       {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
                     </div>
@@ -630,9 +678,10 @@ const DarNewForm = () => {
         <DocumentAccessControlSelector
           value={formData.access_control}
           onChange={(access_control) => setFormData({ ...formData, access_control })}
-          ownerDept={currentUser.department}
-          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments}
-          masterUsers={masterUsers}
+          ownerDept={currentUser?.department || 'PD'}
+          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
+          masterUsers={masterUsers || []}
+          workflowParticipants={workflowParticipants || []}
         />
 
         {/* Section: การแจกจ่ายเอกสาร */}
@@ -640,11 +689,11 @@ const DarNewForm = () => {
           <FormDistributionSetup
             accessScope={formData.access_control?.scope || formData.accessScope}
             accessControl={formData.access_control}
-            ownerDept={currentUser.department}
+            ownerDept={currentUser?.department || 'PD'}
             distributionMode={formData.formDistributionMode || 'SPECIFIC_DEPTS'}
             selectedDepts={formData.distributedDepartments || []}
             authorizedDepts={formData.access_control?.authorized_depts || []}
-            allDepartments={useStore.getState().masterDepartments || useStore.getState().departments}
+            allDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
             onChangeMode={(mode) => {
               setFormData(prev => ({ ...prev, formDistributionMode: mode }));
             }}
@@ -658,8 +707,8 @@ const DarNewForm = () => {
           />
         ) : (
           <DistributionSetup 
-            ownerDept={currentUser.department}
-            distributions={formData.distributions}
+            ownerDept={currentUser?.department || 'PD'}
+            distributions={formData.distributions || []}
             onChange={(distributions) => setFormData({ ...formData, distributions })}
             documentType={formData.docType}
             accessControl={formData.access_control}
@@ -738,8 +787,8 @@ const DarNewForm = () => {
         const selectedDocTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
         const resolvedRevId = formData.manualReviewerId
           ? formData.manualReviewerId
-          : (resolveReviewer(currentUser.id, currentUser.department, masterUsers, reviewUsers || masterUsers)?.id);
-        const resolvedReviewerObj = (masterUsers || []).find(u => u.id === resolvedRevId);
+          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (
           <ActionConfirmModal
@@ -755,7 +804,7 @@ const DarNewForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser.name} ({currentUser.department})
+                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },
@@ -853,14 +902,14 @@ const DarNewForm = () => {
               {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
                 value: (() => {
-                  const allocs = calculateCopyAllocations(currentUser.department, formData.distributions || []);
+                  const allocs = calculateCopyAllocations(currentUser?.department || 'PD', formData.distributions || []);
                   return (
                     <div className="space-y-1.5 pt-0.5">
                       <div className="flex flex-wrap gap-1.5">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
-                          Copy 01 (Master): {allocs.masterCopy.station_name}
+                          Copy 01 (Master): {allocs?.masterCopy?.station_name || allocs?.masterCopy?.locationName || 'PD Head Office'}
                         </span>
-                        {(allocs.distributedCopies || []).map((d, idx) => (
+                        {(allocs?.distributedCopies || []).map((d, idx) => (
                           <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-[#E5F4FF] text-[#007BE5] border border-indigo-100">
                             {d.copyLabel || `Copy ${d.copyNo}`}: {d.station_name || d.locationName || d.name || d.location}
                           </span>
