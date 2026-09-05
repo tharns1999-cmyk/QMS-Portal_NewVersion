@@ -17,7 +17,8 @@ import {
   Bell, 
   ShieldCheck, 
   Send,
-  Calendar
+  Calendar,
+  Building2
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
@@ -112,7 +113,7 @@ const getTaskIconConfig = (task) => {
       badgeClass: 'bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]'
     };
   }
-  if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') {
+  if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || normType === 'RECALL_HARDCOPY' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') {
     return {
       icon: <AlertTriangle size={18} strokeWidth={2} />,
       bg: 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] group-hover:bg-[#FFEDD5] group-hover:border-[#FDBA74]',
@@ -140,6 +141,7 @@ const TaskInbox = () => {
   const navigate = useNavigate();
   const { currentUser, tasks, dars, externalDocuments, mockDateOffset, checkSLA } = useStore();
   const [activeTab, setActiveTab] = useState('ALL');
+  const [deptFilter, setDeptFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
@@ -149,8 +151,11 @@ const TaskInbox = () => {
     if (checkSLA) checkSLA();
   }, [mockDateOffset, checkSLA]);
 
-  const isDccAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
-  const userDepts = currentUser?.depts || (currentUser?.department ? [currentUser.department] : []);
+  // 🛡️ Wildcard access: DCC_ADMIN or QMR bypasses departmental restrictions
+  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr || currentUser?.id === 'u5';
+  const isDccAdmin = isWildcardUser;
+  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
+  const userApprovalLevel = Number(currentUser?.approval_level || currentUser?.level || 1);
 
   const userTasks = (tasks || []).filter(t => {
     // 🛡️ Reactive Completion Filter: Immediately drop tasks that are completed/resolved
@@ -158,52 +163,97 @@ const TaskInbox = () => {
       return false;
     }
 
+    // 🛡️ Wildcard Bypass: DCC Admin & QMR see all pooled and workflow tasks across all departments
+    if (isWildcardUser) {
+      return true;
+    }
+
+    // 📦 Department-Pooled Receipt Task (แยก Logic สำหรับงานตรวจรับเล่ม ไม่ดักด้วย assigneeId เพื่อให้ทุกคนในแผนกเห็นและรับแทนกันได้)
+    const isReceiptTask = 
+      t.type === 'RECEIPT' || 
+      t.taskType === 'RECEIPT' || 
+      t.category === 'RECEIPT' ||
+      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+      t.type === 'CONFIRM_RECEIPT' ||
+      t.task_type === 'CONFIRM_RECEIPT' ||
+      t.id?.includes('doc-') ||
+      t.id?.includes('task-receipt-') ||
+      t.title?.includes('ตรวจรับเล่ม') ||
+      t.title?.includes('ตรวจรับเอกสาร');
+
+    if (isReceiptTask) {
+      // ตรวจสอบว่า target_department ของงาน ตรงกับแผนกใดแผนกหนึ่งที่ User สังกัดหรือไม่
+      const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+      return userDepts.includes(taskDept) || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDcc;
+    }
+
     const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const isHardcopyReceipt = (t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.type === 'CONFIRM_RECEIPT' || t.task_type === 'CONFIRM_RECEIPT');
+    const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
 
-    if (isHardcopyReceipt) {
-      if (isDccAdmin) {
-        return true;
-      }
-      const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.assignee_dept;
-      const isTargetDeptMatch = taskDept && userDepts.includes(taskDept);
-
-      // 🛡️ Strict Departmental Isolation: If the task is targeted to another department, NEVER show it!
-      if (taskDept && !isTargetDeptMatch) {
-        return false;
-      }
-
-      if (taskAssigneeId) {
-        return taskAssigneeId === currentUser?.id || (t.assigneeName && t.assigneeName === currentUser?.name);
-      }
-      return !!isTargetDeptMatch;
+    // Direct Assignment to this individual
+    if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
+      return true;
     }
 
-    const isMyTask = (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) ||
-      (t.currentHandlerDepartment && userDepts.includes(t.currentHandlerDepartment) && Number(t.currentHandlerLevel) === Number(currentUser?.level)) ||
-      (!taskAssigneeId && t.assignedToDept && userDepts.includes(t.assignedToDept));
+    // Role-based / Pooled Approval: Must belong to affiliated department and level must meet requirement
+    const requiredLevel = Number(t.required_approval_level || t.requiredLevel || t.currentHandlerLevel || t.min_level || 1);
+    const isDeptMatch = taskDept && userDepts.includes(taskDept);
+    const isLevelMatch = userApprovalLevel >= requiredLevel;
+    const isApprovalOrReview = (t.type === 'REVIEW' || t.type === 'APPROVE' || t.type === 'APPROVAL' || t.taskType === 'REVIEW' || t.taskType === 'APPROVE');
 
-    if (isDccAdmin) {
-      return (t.type || '').startsWith('DCC_') || t.assignedToRole === 'DCC_ADMIN' || isMyTask;
+    if (isApprovalOrReview) {
+      return isDeptMatch && isLevelMatch;
     }
-    return isMyTask;
+
+    // Department-pooled generic tasks (unassigned)
+    if (!taskAssigneeId && isDeptMatch) {
+      return true;
+    }
+
+    return false;
   });
 
+  const availableDepts = useMemo(() => {
+    if (isWildcardUser) {
+      const deptsFromTasks = (tasks || []).map(t => t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept).filter(Boolean);
+      const combined = Array.from(new Set([...userDepts, ...deptsFromTasks]));
+      return combined.filter(Boolean);
+    }
+    return userDepts;
+  }, [isWildcardUser, tasks, userDepts]);
+
   const normalizeTaskCategory = (task) => {
-    const rawType = (task.type || task.taskType || '').toUpperCase();
+    const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
     if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW') return 'REVIEW';
     if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL') return 'APPROVE';
     if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
     if (rawType === 'REVISE') return 'REVISE';
-    if (rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || rawType === 'CONFIRM_RECEIPT') return 'RECEIPT';
+    if (
+      rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      rawType === 'CONFIRM_RECEIPT' ||
+      rawType === 'RECEIPT' ||
+      task.category === 'RECEIPT' ||
+      task.id?.includes('doc-') ||
+      task.id?.includes('task-receipt-') ||
+      task.title?.includes('ตรวจรับเล่ม') ||
+      task.title?.includes('ตรวจรับเอกสาร')
+    ) return 'RECEIPT';
     if (rawType === 'DCC_DISTRIBUTE' || rawType === 'DCC_ISSUE') return 'DCC_DISTRIBUTE';
-    if (rawType === 'DCC_RECALL' || rawType === 'DCC_RECALL_WITH_CHECKLIST' || rawType === 'RECALL' || rawType === 'OBSOLETE_RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') return 'DCC_RECALL';
+    if (rawType === 'DCC_RECALL' || rawType === 'DCC_RECALL_WITH_CHECKLIST' || rawType === 'RECALL' || rawType === 'RECALL_HARDCOPY' || rawType === 'OBSOLETE_RECALL' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') return 'DCC_RECALL';
     if (rawType.startsWith('DCC_')) return 'DCC_ACTION';
     return rawType;
   };
 
   const getFilteredTasks = () => {
     let filtered = userTasks;
+    if (deptFilter !== 'ALL') {
+      filtered = filtered.filter(t => {
+        const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+        return tDept === deptFilter;
+      });
+    }
     if (activeTab !== 'ALL') {
       filtered = filtered.filter(t => {
         const cat = normalizeTaskCategory(t);
@@ -222,7 +272,7 @@ const TaskInbox = () => {
     return filtered;
   };
 
-  const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, activeTab, searchTerm]);
+  const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, deptFilter, activeTab, searchTerm]);
   const pagination = useTablePagination(filteredTasks, 10);
 
   const getRiskBadge = (task) => {
@@ -296,7 +346,17 @@ const TaskInbox = () => {
       setSelectedExtTask(task);
       return;
     }
-    if (normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT') {
+    const isReceipt = 
+      normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+      normType === 'CONFIRM_RECEIPT' ||
+      normType === 'RECEIPT' ||
+      task.category === 'RECEIPT' ||
+      task.id?.includes('task-receipt-') ||
+      task.title?.includes('ตรวจรับเล่ม') ||
+      task.title?.includes('ตรวจรับเอกสาร');
+
+    if (isReceipt) {
       navigate(`/tasks/confirm-receipt/${task.id}`);
       return;
     }
@@ -309,7 +369,7 @@ const TaskInbox = () => {
     else if (normType === 'ACK' || normType === 'ACKNOWLEDGE') navigate(`/tasks/ack/${task.id}`);
     else if (normType === 'REVISE') navigate(`/tasks/revise/${task.darId || task.referenceId || task.id}`);
     else if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') navigate(`/controlled-copy?tab=PENDING_ISSUE`);
-    else if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') navigate(`/controlled-copy?tab=RECALL_CHECKLIST`);
+    else if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || normType === 'RECALL_HARDCOPY' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') navigate(`/controlled-copy?tab=RECALL_CHECKLIST`);
     else if (normType.startsWith('DCC_')) navigate(`/controlled-copy`);
   };
 
@@ -376,6 +436,52 @@ const TaskInbox = () => {
             )}
           </div>
         </div>
+
+        {/* 🏢 Department Filter Pill Bar */}
+        {availableDepts.length > 0 && (
+          <div className="px-4 py-2.5 bg-slate-50 border-b border-[#E5E5E5] flex items-center gap-2 overflow-x-auto custom-scrollbar text-xs">
+            <span className="text-slate-500 font-bold shrink-0 flex items-center gap-1.5 mr-1">
+              <Building2 size={14} className="text-indigo-600" /> แผนก:
+            </span>
+            <button
+              onClick={() => setDeptFilter('ALL')}
+              className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                deptFilter === 'ALL'
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              🏢 งานทั้งหมดทุกแผนก ({userTasks.length})
+            </button>
+            {availableDepts.map(dept => {
+              const deptCount = userTasks.filter(t => {
+                const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+                return tDept === dept;
+              }).length;
+              const isPrimary = (currentUser?.primary_department || currentUser?.department) === dept;
+              const isSelected = deptFilter === dept;
+              return (
+                <button
+                  key={dept}
+                  onClick={() => setDeptFilter(dept)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                    isSelected
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>เฉพาะงาน {dept}</span>
+                  {isPrimary && <span className="text-amber-400 text-xs" title="แผนกหลัก">⭐</span>}
+                  <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}>
+                    {deptCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Task List */}
         <div className="divide-y divide-[#E5E5E5] overflow-y-auto max-h-[580px] scrollbar-thin">

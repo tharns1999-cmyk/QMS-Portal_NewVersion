@@ -6,13 +6,16 @@ import {
   Layers, 
   MapPin, 
   Check, 
+  CheckCircle2,
   Plus, 
   Trash2, 
   Send, 
   Sparkles,
-  Info
+  FileText,
+  Building2,
+  ArrowRight
 } from 'lucide-react';
-import useStore from '../../store/useStore';
+import useStore, { getActivePhysicalCopies } from '../../store/useStore';
 import { 
   DEPARTMENT_METADATA, 
   STANDARD_STATIONS, 
@@ -56,44 +59,39 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
       : (documentControlledCopies || []);
   }, [controlledCopyInstances, documentControlledCopies]);
 
-  // Existing deployed copies of this document
-  const existingCopies = useMemo(() => {
-    if (!doc) return [];
-    return allCopies.filter(c => 
-      String(c.doc_id || c.docId) === String(doc.id) ||
-      (c.doc_code && c.doc_code === doc.title) ||
-      (c.docTitle && c.docTitle === doc.title)
-    ).sort((a, b) => {
-      const numA = parseInt(a.copy_no || a.ccNumber?.replace(/\D/g, '') || '0', 10);
-      const numB = parseInt(b.copy_no || b.ccNumber?.replace(/\D/g, '') || '0', 10);
-      return numA - numB;
-    });
+  // Existing deployed copies of this document (deduplicated & filtered to genuine active physical copies)
+  const activeCopies = useMemo(() => {
+    return getActivePhysicalCopies(allCopies, doc);
   }, [allCopies, doc]);
 
-  // Calculate highest existing copy number
+  // Backward-compatibility alias
+  const existingCopies = activeCopies;
+
+  // Calculate highest existing copy number from active physical copies
   const maxExistingCopyNo = useMemo(() => {
-    let max = 0;
-    existingCopies.forEach(c => {
-      const raw = c.copy_no || c.ccNumber?.replace(/\D/g, '');
+    const copyNums = activeCopies.map(c => {
+      const raw = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? c.ccNumber.replace(/\D/g, '') : null);
       const parsed = parseInt(raw, 10);
-      if (!isNaN(parsed) && parsed > max) {
-        max = parsed;
-      }
+      return isNaN(parsed) ? 0 : parsed;
     });
-    return max;
-  }, [existingCopies]);
+    return copyNums.length > 0 ? Math.max(...copyNums, 0) : 0;
+  }, [activeCopies]);
 
   // Set of locations already holding a copy
   const existingLocationKeys = useMemo(() => {
     const set = new Set();
-    existingCopies.forEach(c => {
+    activeCopies.forEach(c => {
       const loc = c.location || c.locationName || '';
       const dept = c.holder_dept || c.department || '';
-      if (loc) set.add(`${dept}::${loc}`.toLowerCase());
+      if (loc) {
+        set.add(`${dept}::${loc}`.toLowerCase());
+        set.add(loc.toLowerCase());
+      }
       if (c.locationId) set.add(c.locationId.toLowerCase());
+      if (c.station_id) set.add(c.station_id.toLowerCase());
     });
     return set;
-  }, [existingCopies]);
+  }, [activeCopies]);
 
   // Available standard stations for the selected department (excluding already deployed)
   const availableStations = useMemo(() => {
@@ -105,7 +103,10 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
 
     return stations.map(station => {
       const key = `${selectedDept}::${station.name}`.toLowerCase();
-      const isAlreadyDeployed = existingLocationKeys.has(key) || existingLocationKeys.has(station.id.toLowerCase());
+      const isAlreadyDeployed = 
+        existingLocationKeys.has(key) || 
+        existingLocationKeys.has(station.id.toLowerCase()) ||
+        existingLocationKeys.has(station.name.toLowerCase());
       const isSelectedInDraft = selectedLocations.some(l => l.locationId === station.id || (l.locationName === station.name && l.departmentId === selectedDept));
 
       return {
@@ -135,16 +136,22 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
   const handleToggleStation = (station) => {
     if (station.isAlreadyDeployed) return;
 
-    const exists = selectedLocations.find(l => l.locationId === station.id && l.departmentId === selectedDept);
+    const targetDept = station.departmentId || selectedDept;
+    const exists = selectedLocations.find(l => (l.locationId === station.id || l.location_id === station.id) && (l.departmentId === targetDept || l.target_department === targetDept));
     if (exists) {
-      setSelectedLocations(prev => prev.filter(l => !(l.locationId === station.id && l.departmentId === selectedDept)));
+      setSelectedLocations(prev => prev.filter(l => !( (l.locationId === station.id || l.location_id === station.id) && (l.departmentId === targetDept || l.target_department === targetDept) )));
     } else {
       setSelectedLocations(prev => [
         ...prev,
         {
-          departmentId: selectedDept,
+          departmentId: targetDept,
+          department: targetDept,
+          target_department: targetDept,
+          targetDepartment: targetDept,
           locationId: station.id,
+          location_id: station.id,
           locationName: station.name,
+          location_name: station.name,
           isCustom: false
         }
       ]);
@@ -158,12 +165,12 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
     if (!trimmed) return;
 
     const key = `${selectedDept}::${trimmed}`.toLowerCase();
-    if (existingLocationKeys.has(key)) {
+    if (existingLocationKeys.has(key) || existingLocationKeys.has(trimmed.toLowerCase())) {
       toast.error(`จุดใช้งาน "${trimmed}" มีเอกสารนี้ติดตั้งอยู่แล้ว`);
       return;
     }
 
-    if (selectedLocations.some(l => l.locationName.toLowerCase() === trimmed.toLowerCase() && l.departmentId === selectedDept)) {
+    if (selectedLocations.some(l => l.locationName.toLowerCase() === trimmed.toLowerCase() && (l.departmentId === selectedDept || l.target_department === selectedDept))) {
       toast.error('จุดใช้งานนี้อยู่ในรายการที่เลือกแล้ว');
       return;
     }
@@ -172,8 +179,13 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
       ...prev,
       {
         departmentId: selectedDept,
+        department: selectedDept,
+        target_department: selectedDept,
+        targetDepartment: selectedDept,
         locationId: `CUSTOM-${Date.now()}`,
+        location_id: `CUSTOM-${Date.now()}`,
         locationName: trimmed,
+        location_name: trimmed,
         isCustom: true
       }
     ]);
@@ -210,109 +222,157 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/20 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-md overflow-y-auto">
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="bg-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-stone-200 w-full max-w-3xl my-8 overflow-hidden flex flex-col max-h-[90vh]"
+          initial={{ scale: 0.96, opacity: 0, y: 8 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.96, opacity: 0, y: 8 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="bg-white rounded-3xl border border-slate-100 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.15)] w-full max-w-3xl lg:max-w-4xl my-6 overflow-hidden flex flex-col max-h-[90vh]"
         >
           {/* Header */}
-          <div className="px-8 pt-8 pb-5 bg-white border-b border-stone-100 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-[#f9f8f6] text-[#da7756] border border-stone-200 flex items-center justify-center shrink-0">
-                <PlusCircle size={24} />
+          <div className="px-6 sm:px-8 pt-7 pb-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
+                <PlusCircle size={22} strokeWidth={2.2} />
               </div>
               <div>
-                <h3 className="font-bold text-xl sm:text-2xl text-[#2d2d2d] tracking-tight">
+                <h3 className="font-bold text-xl text-slate-900 tracking-tight flex items-center gap-2">
                   ขอสำเนาควบคุมเพิ่มเติม
                 </h3>
-                <p className="text-sm text-stone-500 mt-1">
-                  ขอเพิ่มสำเนาสำหรับเอกสารที่บังคับใช้แล้ว โดยไม่ต้องเปิด DAR แก้ไข Revision
+                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                  จ่ายสำเนาควบคุมฉบับจริงเพิ่มเฉพาะจุด โดยไม่ต้องเปิด DAR ปรับแก้ Revision
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="p-2 text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none"
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors focus:ring-2 focus:ring-indigo-500/20 outline-none"
               title="ปิดหน้าต่าง"
             >
-              <X size={24} />
+              <X size={20} />
             </button>
           </div>
 
           {/* Scrollable Body */}
-          <div className="p-8 overflow-y-auto space-y-8 flex-1 text-sm bg-[#f9f8f6]">
-            {/* Document Header Card */}
-            <div className="p-5 bg-white border border-stone-200 rounded-xl flex flex-wrap items-center justify-between gap-4 shadow-sm min-w-0">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-3 mb-1.5">
-                  <span className="font-mono font-bold text-base text-[#da7756] bg-[#f9f8f6] px-3 py-1 rounded-lg border border-stone-200">{doc.title}</span>
-                  <span className="px-2 py-1 rounded bg-stone-100 text-stone-600 font-bold font-mono text-xs border border-stone-200">
+          <div className="p-6 sm:p-8 overflow-y-auto space-y-7 flex-1 text-sm bg-white">
+            {/* 2.1 Doc Info Bento Card */}
+            <div className="p-4 sm:p-5 bg-slate-50/70 border border-slate-200/80 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-2xs">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2.5 mb-2">
+                  <span className="font-mono font-bold text-base sm:text-lg text-indigo-600 bg-white px-3.5 py-1 rounded-xl border border-indigo-100 shadow-2xs tracking-tight">
+                    {doc.title}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-slate-200/80 text-slate-700 font-bold font-mono text-xs">
                     Rev.{doc.rev}
                   </span>
-                  <span className="px-3 py-1 rounded-full bg-[#f9f8f6] text-[#4a724b] font-bold text-xs border border-stone-200">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     {doc.status}
                   </span>
                 </div>
-                <div className="text-sm font-bold text-[#2d2d2d] break-all break-words min-w-0 [overflow-wrap:anywhere]">{doc.name}</div>
+                <div className="text-sm sm:text-base font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
+                  {doc.name}
+                </div>
               </div>
 
-              <div className="text-right shrink-0">
-                <div className="text-xs text-stone-400 font-bold uppercase tracking-widest mb-1">แผนกเจ้าของเอกสาร</div>
-                <div className="text-base font-bold text-[#2d2d2d] font-mono">{doc.department}</div>
+              <div className="flex items-center gap-2.5 bg-white px-3.5 py-2 rounded-xl border border-slate-200/70 shadow-2xs shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs font-mono">
+                  {doc.department?.slice(0, 2) || 'PD'}
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">แผนกเจ้าของเอกสาร</div>
+                  <div className="text-xs font-bold text-slate-800 font-mono">{doc.department}</div>
+                </div>
               </div>
             </div>
 
-            {/* Section A: สรุปประวัติการแจกจ่ายเดิม */}
-            <div className="space-y-4">
+            {/* 2.2 Current Active Copies (สำเนาที่ใช้งานอยู่เดิม) */}
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-[#2d2d2d] flex items-center gap-2">
-                  <Layers size={18} className="text-[#b87c33]" /> A. ประวัติการแจกจ่ายเดิม ({existingCopies.length} เล่ม)
+                <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Layers size={16} className="text-indigo-600" />
+                  สำเนาควบคุมที่ถือครองปัจจุบัน ({activeCopies.length} เล่ม)
                 </label>
-                <span className="text-xs text-stone-500 font-mono bg-white px-2 py-1 rounded border border-stone-200">
+                <span className="text-xs text-slate-600 font-mono bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs font-semibold">
                   Current Max: Copy {String(maxExistingCopyNo).padStart(2, '0')}
                 </span>
               </div>
 
-              <div className="bg-white border border-stone-200 rounded-xl p-4 max-h-48 overflow-y-auto w-full max-w-full shadow-sm">
-                {existingCopies.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {existingCopies.map(copy => (
-                      <div 
-                        key={copy.id}
-                        className="p-3 bg-[#f9f8f6] border border-stone-200 rounded-xl flex items-center justify-between text-sm min-w-0"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="px-2 py-1 bg-white font-mono font-bold text-[#da7756] rounded-md text-xs shrink-0 border border-stone-200">
-                            Copy {copy.copy_no || copy.ccNumber}
+              <div className="bg-slate-50/50 border border-slate-200/70 rounded-2xl p-3.5 max-h-48 overflow-y-auto">
+                {activeCopies.length > 0 ? (
+                  <div className="flex flex-wrap gap-2.5">
+                    {activeCopies.map((copy) => {
+                      const rawNum = copy.copy_number ?? copy.copyNumber ?? copy.copy_no ?? copy.copyNo ?? (copy.ccNumber ? copy.ccNumber.replace(/\D/g, '') : '01');
+                      const parsed = parseInt(rawNum, 10);
+                      const copyNoFormatted = isNaN(parsed) ? String(rawNum) : String(parsed).padStart(2, '0');
+                      const locName = copy.location || copy.locationName || '-';
+                      const deptCode = copy.holder_dept || copy.department || copy.departmentId || '-';
+
+                      const status = (copy.status || '').toUpperCase();
+                      const isActive = status === 'ISSUED_ACTIVE' || status === 'ACTIVE';
+                      const isPending = status === 'PENDING_ISSUE' || status === 'DISPATCHED_PENDING_RECEIPT' || status === 'PENDING_RECEIPT';
+
+                      return (
+                        <div 
+                          key={copy.id || `${deptCode}-${copyNoFormatted}`}
+                          className="group px-3.5 py-2 bg-white border border-slate-200/80 hover:border-slate-300 rounded-xl flex items-center gap-2.5 text-xs sm:text-sm shadow-2xs transition-all"
+                        >
+                          <span className="px-2 py-0.5 bg-zinc-900 text-white font-mono font-bold text-xs rounded-md shadow-2xs shrink-0">
+                            Copy {copyNoFormatted}
                           </span>
-                          <span className="text-[#2d2d2d] break-all break-words min-w-0 [overflow-wrap:anywhere] font-bold" title={copy.location || copy.locationName}>
-                            {copy.location || copy.locationName}
+
+                          <span className="font-semibold text-slate-800 truncate max-w-[200px]" title={locName}>
+                            {locName}
                           </span>
+
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            รหัสแผนก: <span className="font-semibold text-slate-700 font-mono">{deptCode}</span>
+                          </span>
+
+                          <div className="shrink-0 flex items-center ml-1">
+                            {isActive ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Active
+                              </span>
+                            ) : isPending ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                รอยืนยันรับ (Pending)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                {copy.status || 'Active'}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-xs text-stone-500 font-medium shrink-0 ml-2">
-                          {copy.holder_dept || copy.department}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div className="text-sm text-stone-400 text-center py-4">
-                    ยังไม่มีข้อมูลประวัติสำเนาที่แจกจ่าย
+                  <div className="text-xs text-slate-400 text-center py-4">
+                    ยังไม่มีข้อมูลสำเนาควบคุมที่ถือครองในปัจจุบัน
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Section B: ตัวเลือกจุดแจกจ่ายใหม่ (Hierarchical Location Selector) */}
-            <div className="space-y-4 pt-2">
-              <label className="text-sm font-bold text-[#2d2d2d] flex items-center gap-2">
-                <MapPin size={18} className="text-[#4a724b]" /> B. เลือกจุดแจกจ่ายใหม่ (กรองจุดที่เคยได้รับแล้วออก)
-              </label>
+            {/* 2.3 New Location Selection (เลือกจุดแจกจ่ายใหม่) */}
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <MapPin size={16} className="text-emerald-600" />
+                  เลือกจุดแจกจ่ายใหม่
+                </label>
+                <span className="text-xs text-slate-400">
+                  คลิกที่การ์ดเพื่อเลือกหรือยกเลิก
+                </span>
+              </div>
 
-              {/* Department Tabs */}
-              <div className="flex flex-wrap gap-2">
+              {/* Department Segmented Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
                 {deptList.map(deptItem => {
                   const isSelected = normalizeDepartmentId(selectedDept) === normalizeDepartmentId(deptItem.id);
                   return (
@@ -320,10 +380,10 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                       key={deptItem.id}
                       type="button"
                       onClick={() => setSelectedDept(deptItem.id)}
-                      className={`px-4 py-2 text-sm font-bold rounded-xl transition-all outline-none focus:ring-4 focus:ring-[#da7756]/20 ${
+                      className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap outline-none ${
                         isSelected
-                          ? 'bg-[#da7756] text-white shadow-none'
-                          : 'bg-white border border-stone-200 hover:bg-stone-50 text-stone-600'
+                          ? 'bg-indigo-600 text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-slate-100 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       {deptItem.name} ({deptItem.id})
@@ -332,21 +392,21 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                 })}
               </div>
 
-              {/* Standard Stations Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto p-4 border border-stone-200 rounded-xl bg-white shadow-sm">
+              {/* Location Interactive Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1 border border-slate-200/70 rounded-2xl bg-slate-50/40">
                 {availableStations.map(station => {
                   if (station.isAlreadyDeployed) {
                     return (
                       <div
                         key={station.id}
-                        className="p-3 bg-stone-50 border border-stone-200 text-stone-400 rounded-xl flex items-center justify-between text-sm cursor-not-allowed opacity-60"
+                        className="p-3 bg-slate-100/70 border border-slate-200/60 text-slate-400 rounded-xl flex items-center justify-between text-xs cursor-not-allowed opacity-60"
                         title="จุดนี้มีเอกสารควบคุมติดตั้งอยู่แล้ว"
                       >
-                        <div className="flex items-center gap-3 truncate">
-                          <Check size={16} className="text-[#4a724b] shrink-0" />
-                          <span className="truncate">{station.name}</span>
+                        <div className="flex items-center gap-2 truncate">
+                          <CheckCircle2 size={14} className="text-slate-400 shrink-0" />
+                          <span className="truncate font-medium">{station.name}</span>
                         </div>
-                        <span className="text-xs bg-stone-200 px-2.5 py-1 rounded-md text-stone-600 font-bold shrink-0">
+                        <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded-md text-slate-600 font-bold shrink-0">
                           ติดตั้งแล้ว
                         </span>
                       </div>
@@ -358,121 +418,126 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                     <div
                       key={station.id}
                       onClick={() => handleToggleStation(station)}
-                      className={`p-3 rounded-xl border flex items-center justify-between text-sm cursor-pointer transition-all ${
+                      className={`p-3 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition-all ${
                         isSelected
-                          ? 'bg-[#f9f8f6] border-[#da7756] text-[#2d2d2d] shadow-sm ring-2 ring-[#da7756]'
-                          : 'bg-white border-stone-200 hover:border-stone-300 text-stone-700'
+                          ? 'bg-indigo-50/70 border-indigo-500 ring-2 ring-indigo-500/20 text-indigo-950 font-semibold shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs text-slate-700 font-medium'
                       }`}
                     >
-                      <div className="flex items-center gap-3 truncate">
-                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
-                          isSelected ? 'bg-[#da7756] text-white' : 'border border-stone-300'
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected ? 'bg-indigo-600 text-white' : 'border border-slate-300'
                         }`}>
-                          {isSelected && <Check size={14} strokeWidth={3} />}
+                          {isSelected && <Check size={11} strokeWidth={3} />}
                         </div>
-                        <span className={`truncate ${isSelected ? 'font-bold' : 'font-medium'}`}>{station.name}</span>
+                        <span className="truncate">{station.name}</span>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Custom Location Input */}
-              <div className="flex gap-3 pt-2">
+              {/* Minimal Custom Location Input Bar */}
+              <div className="flex gap-2 pt-1">
                 <input
                   type="text"
                   value={customLocationName}
                   onChange={(e) => setCustomLocationName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddCustomLocation(e); }}}
                   placeholder={`ระบุจุดติดตั้งพิเศษเฉพาะกิจสำหรับแผนก ${selectedDept}...`}
-                  className="flex-1 bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-[#2d2d2d] placeholder:text-stone-400 focus:border-[#da7756] focus:ring-4 focus:ring-[#da7756]/10 transition-all outline-none font-medium shadow-sm"
+                  className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all outline-none shadow-2xs font-medium"
                 />
                 <button
                   type="button"
                   onClick={handleAddCustomLocation}
                   disabled={!customLocationName.trim()}
-                  className="px-5 py-3 bg-white hover:bg-stone-50 text-[#2d2d2d] font-bold rounded-xl text-sm border border-stone-200 disabled:opacity-40 transition-colors flex items-center gap-2 shrink-0 shadow-sm focus:ring-4 focus:ring-stone-200 outline-none"
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Plus size={16} /> เพิ่มจุดพิเศษ
+                  <Plus size={15} /> เพิ่มจุดพิเศษ
                 </button>
               </div>
             </div>
 
-            {/* Section C: Live Sequential Numbering Preview */}
-            <div className="space-y-4 pt-2">
+            {/* 2.4 Real-time Sequential Preview */}
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-bold text-[#2d2d2d] flex items-center gap-2">
-                  <Sparkles size={18} className="text-[#da7756]" /> C. รายการสำเนาใหม่ที่จะได้รับ (Sequential Numbering Preview)
+                <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Sparkles size={16} className="text-amber-500" />
+                  รายการสำเนาใหม่ที่จะได้รับ (Sequential Numbering Preview)
                 </label>
-                <span className="text-sm font-bold text-[#da7756] bg-[#f9f8f6] px-3 py-1 rounded-full border border-stone-200">
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
                   +{selectedLocations.length} เล่ม
                 </span>
               </div>
 
               {numberingPreview.length > 0 ? (
-                <div className="space-y-3 bg-white border border-stone-200 rounded-xl p-4 w-full max-w-full shadow-sm">
+                <div className="space-y-2.5 bg-slate-50/50 border border-slate-200/80 rounded-2xl p-3.5">
                   {numberingPreview.map((loc, idx) => (
                     <div 
                       key={idx}
-                      className="p-3 bg-[#f9f8f6] border border-stone-200 rounded-xl flex items-center justify-between text-sm shadow-sm min-w-0"
+                      className="p-3 bg-white border border-indigo-100 rounded-xl flex items-center justify-between text-xs sm:text-sm shadow-2xs min-w-0"
                     >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <span className="px-3 py-1 bg-[#da7756] text-white font-mono font-bold rounded-lg text-sm shrink-0">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="px-2.5 py-1 bg-indigo-600 text-white font-mono font-bold rounded-lg text-xs shrink-0 shadow-xs">
                           Copy {loc.previewCopyNo}
                         </span>
+                        <ArrowRight size={14} className="text-slate-300 shrink-0" />
                         <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <span className="font-bold text-[#2d2d2d] break-all break-words min-w-0 [overflow-wrap:anywhere] text-sm sm:text-base">{loc.locationName}</span>
-                          <span className="text-sm text-stone-500 font-mono shrink-0">({loc.departmentId})</span>
+                          <span className="font-semibold text-slate-800 truncate">{loc.locationName}</span>
+                          <span className="text-xs text-slate-400 font-mono shrink-0">({loc.departmentId})</span>
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => handleRemoveSelectedLocation(idx)}
-                        className="p-2 text-stone-400 hover:text-[#a94442] hover:bg-[#f5e6e6] rounded-xl transition-colors ml-3 shrink-0 focus:ring-2 focus:ring-[#a94442]/20 outline-none"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-2 shrink-0"
                         title="ลบจุดนี้"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="p-6 border-2 border-dashed border-stone-200 rounded-xl text-center text-sm text-stone-400 bg-white">
-                  ยังไม่ได้เลือกจุดใช้งานใหม่ (กรุณาคลิกเลือกจุดใช้งานจาก Section B ด้านบน)
+                <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-xs sm:text-sm text-slate-400 bg-slate-50/30">
+                  ยังไม่ได้เลือกจุดใช้งานใหม่ (กรุณาคลิกเลือกจุดใช้งานจากด้านบน)
                 </div>
               )}
             </div>
 
-            {/* Section D: ข้อมูลประกอบคำขอ (Reason - Mandatory) */}
-            <div className="space-y-3 pt-2">
-              <label className="block text-sm font-bold text-[#2d2d2d]">
-                D. เหตุผลและความจำเป็นในการขอสำเนาเพิ่มเติม <span className="text-[#a94442]">*</span>:
+            {/* 2.5 Reason Input (เหตุผลและความจำเป็น) */}
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <FileText size={16} className="text-slate-500" />
+                เหตุผลและความจำเป็นในการขอสำเนาเพิ่มเติม <span className="text-rose-500">*</span>
               </label>
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 required
                 placeholder="ระบุเหตุผลความจำเป็น เช่น ขยายไลน์การผลิต Line 3, เพิ่มเครื่องจักรใหม่ Metal Detector 3, หรือปรับผังโรงงาน..."
-                rows={3}
-                className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-[#2d2d2d] placeholder:text-stone-400 focus:border-[#da7756] focus:ring-4 focus:ring-[#da7756]/10 transition-all outline-none resize-none font-medium break-all break-words min-w-0 [overflow-wrap:anywhere] shadow-sm"
+                rows={2}
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all outline-none resize-none font-medium shadow-2xs"
               />
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="px-8 py-5 bg-white border-t border-stone-100 flex items-center justify-between shrink-0">
-            <div className="text-sm text-stone-500 flex items-center gap-2">
-              <Info size={16} className="text-stone-400" />
-              <span>ระบบจะสร้าง Task ส่งไปยัง DCC เพื่อพิมพ์และส่งมอบทันที</span>
+          {/* Sticky Floating Footer */}
+          <div className="px-6 sm:px-8 py-4 bg-white/95 backdrop-blur-sm border-t border-slate-100 flex items-center justify-between shrink-0">
+            <div className="text-xs sm:text-sm text-slate-500 flex items-center gap-2">
+              <Sparkles size={16} className="text-indigo-500 shrink-0" />
+              <span>
+                กำลังร้องขอสำเนาควบคุมเพิ่ม <strong className="text-indigo-600 font-bold">{selectedLocations.length}</strong> เล่ม
+              </span>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="bg-white hover:bg-stone-50 text-stone-600 font-bold text-sm px-6 py-3 rounded-xl border border-stone-200 transition-colors focus:ring-4 focus:ring-stone-200 outline-none"
+                className="bg-transparent hover:bg-slate-100 text-slate-600 font-semibold text-xs sm:text-sm px-5 py-2.5 rounded-xl transition-colors outline-none"
               >
                 ยกเลิก
               </button>
@@ -480,7 +545,7 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting || selectedLocations.length === 0 || !reason.trim()}
-                className="bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-sm px-6 py-3 rounded-xl shadow-none transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus:ring-4 focus:ring-[#da7756]/20 outline-none"
+                className="bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold text-xs sm:text-sm px-6 py-2.5 rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed outline-none"
               >
                 {isSubmitting ? (
                   <>
@@ -489,7 +554,7 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                   </>
                 ) : (
                   <>
-                    <Send size={18} />
+                    <Send size={16} />
                     ยืนยันขอสำเนาเพิ่มเติม ({selectedLocations.length} เล่ม)
                   </>
                 )}

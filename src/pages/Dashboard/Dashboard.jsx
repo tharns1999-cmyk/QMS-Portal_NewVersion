@@ -33,23 +33,37 @@ const Dashboard = () => {
 
   // 1. Calculate Stats (Split into Group 1 and Group 2)
   const isMyTask = (t) => {
-    if (isAdmin) return true;
-    const userDepts = currentUser?.depts || (currentUser?.department ? [currentUser.department] : []);
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const isHardcopyReceipt = (t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.type === 'CONFIRM_RECEIPT' || t.task_type === 'CONFIRM_RECEIPT');
+    if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) return false;
+    if (isAdmin || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
 
-    if (isHardcopyReceipt) {
-      if (taskAssigneeId) {
-        return taskAssigneeId === currentUser?.id || (t.assigneeName && t.assigneeName === currentUser?.name);
-      }
-      return t.assignedToDept && userDepts.includes(t.assignedToDept);
+    const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
+    
+    const isReceiptTask = 
+      t.type === 'RECEIPT' || 
+      t.taskType === 'RECEIPT' || 
+      t.category === 'RECEIPT' ||
+      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      t.type === 'CONFIRM_RECEIPT' || 
+      t.task_type === 'CONFIRM_RECEIPT' ||
+      t.id?.includes('doc-') ||
+      t.id?.includes('task-receipt-') ||
+      t.title?.includes('ตรวจรับเล่ม') ||
+      t.title?.includes('ตรวจรับเอกสาร');
+
+    if (isReceiptTask) {
+      const taskDept = t.target_department || t.department || t.targetDept || t.destinationDept || t.assignedToDept || t.holder_dept || '';
+      return userDepts.includes(taskDept);
     }
 
-    const isDeptMatched = t.currentHandlerDepartment && userDepts.includes(t.currentHandlerDepartment);
-    const isLevelMatched = Number(t.currentHandlerLevel) === Number(currentUser?.level);
+    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
+    const taskDept = t.target_department || t.currentHandlerDepartment || t.assignedToDept || '';
+    const isDeptMatched = taskDept && userDepts.includes(taskDept);
+    const isLevelMatched = Number(t.required_approval_level || t.currentHandlerLevel || 1) <= Number(currentUser?.approval_level || currentUser?.level || 1);
+    
     return (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) || 
       (isDeptMatched && isLevelMatched) || 
-      (!taskAssigneeId && t.assignedToDept && userDepts.includes(t.assignedToDept));
+      (!taskAssigneeId && isDeptMatched);
   };
 
   const myTasks = (tasks || []).filter(t => isMyTask(t));
@@ -350,11 +364,11 @@ const Dashboard = () => {
             {isAdmin ? (
               <>
                 <button
-                  onClick={() => navigate('/master-list')}
+                  onClick={() => navigate('/dcc/library')}
                   className="btn-primary"
                 >
                   <Library className="w-4 h-4" />
-                  <span>ทะเบียนเอกสารแม่บท</span>
+                  <span>คลังเอกสารแม่บท</span>
                 </button>
                 <button
                   onClick={simulateNextDay}

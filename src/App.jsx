@@ -33,7 +33,6 @@ const ActionLog = lazy(() => import('./pages/Admin/ActionLog'));
 const MasterDataHub = lazy(() => import('./pages/Admin/MasterDataHub'));
 const ControlledCopyRegister = lazy(() => import('./pages/ControlledCopy/ControlledCopyRegister'));
 const ExternalDocsList = lazy(() => import('./pages/ExternalDocs/ExternalDocsList'));
-const MasterList = lazy(() => import('./pages/MasterList/MasterList'));
 
 // DCC Tasks
 const TaskInbox = lazy(() => import('./pages/Tasks/TaskInbox'));
@@ -124,7 +123,11 @@ function App() {
 
             <Route path="controlled-copy" element={<ProtectedRoute requireDcc deniedToastMessage="คุณไม่มีสิทธิ์เข้าถึงศูนย์ควบคุมงาน DCC">{withSuspense(ControlledCopyRegister)}</ProtectedRoute>} />
             <Route path="external-docs" element={withSuspense(ExternalDocsList)} />
-            <Route path="master-list" element={withSuspense(MasterList)} />
+            {/* Master List Registry Deprecation Fallback Redirects -> Document Library */}
+            <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
+            <Route path="registry" element={<Navigate to="/dcc/library" replace />} />
+            <Route path="master-register" element={<Navigate to="/dcc/library" replace />} />
+            <Route path="document-register" element={<Navigate to="/dcc/library" replace />} />
             
             <Route path="periodic-reviews" element={withSuspense(PeriodicReviewDashboard)} />
             <Route path="periodic-reviews/:reviewId" element={withSuspense(PeriodicReviewDetail)} />
@@ -161,7 +164,11 @@ function App() {
 
           <Route path="controlled-copy" element={<Navigate to="/dcc/controlled-copy" replace />} />
           <Route path="external-docs" element={<Navigate to="/dcc/external-docs" replace />} />
-          <Route path="master-list" element={<Navigate to="/dcc/master-list" replace />} />
+          {/* Master List Registry Deprecation Fallbacks -> Document Library */}
+          <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
+          <Route path="registry" element={<Navigate to="/dcc/library" replace />} />
+          <Route path="master-register" element={<Navigate to="/dcc/library" replace />} />
+          <Route path="document-register" element={<Navigate to="/dcc/library" replace />} />
           
           <Route path="periodic-reviews" element={<Navigate to="/dcc/periodic-reviews" replace />} />
           <Route path="periodic-reviews/:reviewId" element={<AliasRedirect to="/dcc/periodic-reviews/:reviewId" />} />

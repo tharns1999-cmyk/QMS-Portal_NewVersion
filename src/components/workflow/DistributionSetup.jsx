@@ -102,16 +102,6 @@ const DistributionSetup = ({
   // Active department selected in split-view sidebar
   const [activeDeptId, setActiveDeptId] = useState(normOwnerDept || 'PD');
 
-  // Keep activeDeptId synchronized with availableDeptsList when scope or filters change
-  useEffect(() => {
-    if (availableDeptsList.length > 0) {
-      const exists = availableDeptsList.some(d => normalizeDepartmentId(d.id) === normalizeDepartmentId(activeDeptId));
-      if (!exists) {
-        setActiveDeptId(availableDeptsList[0].id);
-      }
-    }
-  }, [availableDeptsList, activeDeptId]);
-
   // --- FORM SPECIFIC STATE (Tier 1 Department Level & Global) ---
   const [formMode, setFormMode] = useState(() => {
     if (isAllDeptsDisabled) return 'TARGETED';
@@ -259,6 +249,14 @@ const DistributionSetup = ({
       copyNo: '00',
       isForm: true
     }]);
+  };
+
+  const handleToggleAllFormDepts = () => {
+    if (selectedFormDepts.length === availableDeptsList.length) {
+      handleClearAllFormDepts();
+    } else {
+      handleSelectAllFormDepts();
+    }
   };
 
   // --- NON-FORM STATE (Standard Controlled Copies with Tier-2 Stations) ---
@@ -509,63 +507,67 @@ const DistributionSetup = ({
   // ==========================================
   if (isForm) {
     return (
-      <div className="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-2xs space-y-4 w-full">
+      <div className="bg-white/95 border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-sm space-y-5 w-full transition-all">
         {/* Form Header Banner */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#F1F5F9]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#F0F7FF] text-[#0D99FF]">
-              <FileSpreadsheet size={18} />
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100/80 flex items-center justify-center shrink-0 shadow-2xs">
+              <FileSpreadsheet size={20} strokeWidth={2.2} />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-[#1E293B]">
+              <h4 className="text-sm font-bold text-slate-900 tracking-tight">
                 ระบบแจกจ่ายแบบฟอร์มบันทึกข้อมูล (Digital Form Distribution)
               </h4>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-xs text-slate-500 mt-0.5">
                 แบบฟอร์มเปล่าดิจิทัลสำหรับดาวน์โหลดไปพิมพ์ใช้งาน (Bypass เล่มกระดาษสำเนาควบคุมและคิวพิมพ์ DCC)
               </p>
             </div>
           </div>
 
-          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9] flex items-center gap-1.5">
-            <CheckCircle2 size={13} />
+          <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center gap-1.5 shadow-2xs">
+            <CheckCircle2 size={14} className="text-emerald-600" />
             <span>พร้อมใช้งานใน Library ทันทีเมื่ออนุมัติ</span>
           </span>
         </div>
 
         {/* Form Distribution Modes */}
-        <div className="space-y-2">
-          <label className="block text-xs font-bold text-[#334155]">
-            รูปแบบการเข้าถึงและดาวน์โหลดแบบฟอร์ม <span className="text-[#EF4444]">*</span>
+        <div className="space-y-3">
+          <label className="block text-xs font-bold text-slate-800">
+            รูปแบบการเข้าถึงและดาวน์โหลดแบบฟอร์ม <span className="text-rose-500">*</span>
           </label>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {/* Option 1: All Departments */}
             <div
               data-testid="form-dist-all-depts"
               onClick={() => {
                 if (!isAllDeptsDisabled) handleFormModeChange('GLOBAL');
               }}
-              className={`p-3.5 rounded-xl border transition-all select-none flex items-start gap-3 ${
+              className={`p-4 rounded-2xl border transition-all duration-200 select-none flex items-start gap-3.5 outline-none hover:scale-[1.01] ${
                 isAllDeptsDisabled
-                  ? 'bg-[#F8FAFC] border-[#E2E8F0] opacity-45 cursor-not-allowed'
+                  ? 'bg-slate-50 border-slate-200 opacity-45 cursor-not-allowed'
                   : formMode === 'GLOBAL'
-                  ? 'bg-[#F0F7FF] border-[#0D99FF] ring-1 ring-[#0D99FF]/20 cursor-pointer shadow-2xs'
-                  : 'bg-white border-[#CBD5E1] hover:bg-[#F8FAFC] cursor-pointer'
+                  ? 'bg-indigo-50/40 border-indigo-200 ring-2 ring-indigo-500 cursor-pointer shadow-sm'
+                  : 'bg-white border-slate-200/80 hover:bg-slate-50/70 hover:border-slate-300 cursor-pointer shadow-2xs'
               }`}
             >
-              <div className={`p-2 rounded-lg shrink-0 ${formMode === 'GLOBAL' && !isAllDeptsDisabled ? 'bg-[#0D99FF] text-white' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
-                <Globe size={16} />
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                formMode === 'GLOBAL' && !isAllDeptsDisabled ? 'bg-indigo-600 text-white shadow-xs shadow-indigo-300' : 'bg-slate-100 text-slate-500'
+              }`}>
+                <Globe size={18} strokeWidth={2.2} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#1E293B]">
-                    ทุกแผนก <span className="font-medium text-[#64748B] text-[11px]">(All Departments)</span>
+                  <span className="text-xs font-bold text-slate-900">
+                    ทุกแผนก <span className="font-medium text-slate-500 text-[11px]">(All Departments)</span>
                   </span>
                   {formMode === 'GLOBAL' && !isAllDeptsDisabled && (
-                    <Check className="text-[#0D99FF]" size={15} strokeWidth={3} />
+                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                      <Check size={12} strokeWidth={3} />
+                    </div>
                   )}
                 </div>
-                <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                   {isTargeted
                     ? '⛔ ปิดใช้งาน: ระดับความลับถูกจำกัดเฉพาะบางแผนก (Targeted)'
                     : isDeptOnly
@@ -581,25 +583,29 @@ const DistributionSetup = ({
             <div
               data-testid="form-dist-specific-depts"
               onClick={() => handleFormModeChange('TARGETED')}
-              className={`p-3.5 rounded-xl border transition-all select-none flex items-start gap-3 ${
+              className={`p-4 rounded-2xl border transition-all duration-200 select-none flex items-start gap-3.5 outline-none hover:scale-[1.01] ${
                 formMode === 'TARGETED' || isAllDeptsDisabled
-                  ? 'bg-[#F0F7FF] border-[#0D99FF] ring-1 ring-[#0D99FF]/20 cursor-pointer shadow-2xs'
-                  : 'bg-white border-[#CBD5E1] hover:bg-[#F8FAFC] cursor-pointer'
+                  ? 'bg-indigo-50/40 border-indigo-200 ring-2 ring-indigo-500 cursor-pointer shadow-sm'
+                  : 'bg-white border-slate-200/80 hover:bg-slate-50/70 hover:border-slate-300 cursor-pointer shadow-2xs'
               }`}
             >
-              <div className={`p-2 rounded-lg shrink-0 ${formMode === 'TARGETED' || isAllDeptsDisabled ? 'bg-[#0D99FF] text-white' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
-                <Building2 size={16} />
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                formMode === 'TARGETED' || isAllDeptsDisabled ? 'bg-indigo-600 text-white shadow-xs shadow-indigo-300' : 'bg-slate-100 text-slate-500'
+              }`}>
+                <Building2 size={18} strokeWidth={2.2} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#1E293B]">
+                  <span className="text-xs font-bold text-slate-900">
                     {isDeptOnly ? `เฉพาะแผนก ${ownerDept || 'PD'} เท่านั้น (Owner Dept)` : 'เลือกเฉพาะแผนกที่เกี่ยวข้อง'}
                   </span>
                   {(formMode === 'TARGETED' || isAllDeptsDisabled) && (
-                    <Check className="text-[#0D99FF]" size={15} strokeWidth={3} />
+                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                      <Check size={12} strokeWidth={3} />
+                    </div>
                   )}
                 </div>
-                <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                   {isTargeted
                     ? 'กำหนดแผนกผู้ใช้งานจากรายชื่อที่ได้รับอนุญาตด้านบน'
                     : isDeptOnly
@@ -613,63 +619,49 @@ const DistributionSetup = ({
           </div>
         </div>
 
-        {/* Department Selection Grid (Visible when TARGETED mode and not DEPT_ONLY) */}
-        {formMode === 'TARGETED' && !isDeptOnly && (
-          <motion.div 
-            initial={{ opacity: 0, y: 8 }}
+        {/* Selected Form Departments Pill Chips */}
+        {formMode === 'TARGETED' && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-2.5"
+            className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#334155] flex items-center gap-1.5">
-                <Building2 size={14} className="text-[#0D99FF]" />
-                {isTargeted ? 'แผนกที่ได้รับอนุญาตให้ใช้ฟอร์ม (จากขอบเขต Targeted):' : `เลือกแผนกที่ได้รับสิทธิ์ใช้งานแบบฟอร์ม (${selectedFormDepts.length}/${availableDeptsList.length} แผนก):`}
+              <span className="text-xs font-bold text-slate-800">
+                เลือกแผนกที่ได้รับสิทธิ์ใช้งานแบบฟอร์ม ({selectedFormDepts.length}/{availableDeptsList.length})
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSelectAllFormDepts}
-                  className="text-xs font-semibold text-[#0D99FF] hover:bg-[#E5F4FF] px-2.5 py-0.5 rounded-lg transition-colors"
-                >
-                  เลือกทั้งหมด
-                </button>
-                <span className="text-[#CBD5E1]">|</span>
-                <button
-                  type="button"
-                  onClick={handleClearAllFormDepts}
-                  className="text-xs font-semibold text-[#64748B] hover:bg-[#E2E8F0] px-2.5 py-0.5 rounded-lg transition-colors"
-                >
-                  ล้างการเลือก
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleToggleAllFormDepts}
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-bold cursor-pointer transition-colors"
+              >
+                {selectedFormDepts.length === availableDeptsList.length ? 'ล้างค่า' : 'เลือกทั้งหมด'}
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {availableDeptsList.map(dept => {
-                const isSelected = selectedFormDepts.includes(normalizeDepartmentId(dept.id));
-                const isOwner = normalizeDepartmentId(dept.id) === normOwnerDept;
-
+            <div className="flex flex-wrap gap-2.5">
+              {availableDeptsList.map((dept) => {
+                const isSelected = selectedFormDepts.includes(dept.id);
                 return (
                   <label
                     key={dept.id}
-                    onClick={() => {
-                      if (!isOwner) handleToggleFormDept(dept.id);
-                    }}
-                    className={`p-2 rounded-lg border text-xs flex items-center gap-2 transition-all ${
-                      isOwner
-                        ? 'bg-[#E2E8F0] border-[#CBD5E1] text-[#475569] cursor-not-allowed font-semibold'
-                        : isSelected
-                        ? 'bg-[#E5F4FF] border-[#0D99FF] text-[#0D99FF] font-semibold cursor-pointer'
-                        : 'bg-white border-[#CBD5E1] text-[#334155] hover:bg-[#F1F5F9] cursor-pointer'
+                    className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs select-none cursor-pointer transition-all duration-150 active:scale-95 ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white font-bold border border-indigo-600 shadow-sm shadow-indigo-200'
+                        : 'bg-white border border-slate-200 text-slate-700 font-medium hover:bg-slate-100 shadow-2xs'
                     }`}
                   >
                     <input
                       type="checkbox"
+                      className="sr-only"
                       checked={isSelected}
-                      disabled={isOwner}
-                      onChange={() => {}}
-                      className="w-3.5 h-3.5 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
+                      onChange={() => handleToggleFormDept(dept.id)}
                     />
+                    {isSelected ? (
+                      <Check size={13} strokeWidth={3} className="text-white shrink-0" />
+                    ) : (
+                      <span className="w-3.5 h-3.5 rounded-full border border-slate-300 bg-slate-50 shrink-0" />
+                    )}
                     <span className="truncate">{dept.name}</span>
                   </label>
                 );
@@ -679,31 +671,31 @@ const DistributionSetup = ({
         )}
 
         {/* Helper Guidance Banner */}
-        <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-start gap-2.5 text-xs text-[#64748B]">
-          <Info className="text-[#0D99FF] shrink-0 mt-0.5" size={15} />
+        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-start gap-3 text-xs text-slate-600 shadow-2xs">
+          <Info className="text-indigo-600 shrink-0 mt-0.5" size={16} />
           <div className="leading-relaxed">
             {isTargeted ? (
               <span>
-                💡 <strong>ต้องการแจกจ่ายแบบฟอร์มให้ทุกแผนกในองค์กรหรือไม่?</strong> หากต้องการ กรุณาเลือกระดับความลับด้านบนเป็น <span className="text-[#0D99FF] font-semibold">'ทั่วไป (General)'</span>
+                💡 <strong>ต้องการแจกจ่ายแบบฟอร์มให้ทุกแผนกในองค์กรหรือไม่?</strong> หากต้องการ กรุณาเลือกระดับความลับด้านบนเป็น <span className="text-indigo-600 font-semibold">'ทั่วไป (General)'</span>
               </span>
             ) : isDeptOnly ? (
               <span>
-                💡 <strong>ต้องการให้แผนกอื่นดาวน์โหลดแบบฟอร์มนี้ไปใช้งานด้วยหรือไม่?</strong> หากต้องการ กรุณาเลือกระดับความลับด้านบนเป็น <span className="text-[#0D99FF] font-semibold">'ทั่วไป (General)'</span> หรือ <span className="text-[#0D99FF] font-semibold">'เฉพาะบางแผนก (Targeted)'</span>
+                💡 <strong>ต้องการให้แผนกอื่นดาวน์โหลดแบบฟอร์มนี้ไปใช้งานด้วยหรือไม่?</strong> หากต้องการ กรุณาเลือกระดับความลับด้านบนเป็น <span className="text-indigo-600 font-semibold">'ทั่วไป (General)'</span> หรือ <span className="text-indigo-600 font-semibold">'เฉพาะบางแผนก (Targeted)'</span>
               </span>
             ) : (
               <span>
-                ขอบเขตการแจกจ่ายปัจจุบัน: <strong className="text-[#1E293B]">{formMode === 'GLOBAL' ? 'ทุกแผนกในองค์กร' : `ระบุ ${selectedFormDepts.length} แผนก`}</strong> (Bypass การตรวจรับ PIN และคิวพิมพ์ DCC)
+                ขอบเขตการแจกจ่ายปัจจุบัน: <strong className="text-slate-900">{formMode === 'GLOBAL' ? 'ทุกแผนกในองค์กร' : `ระบุ ${selectedFormDepts.length} แผนก`}</strong> (Bypass การตรวจรับ PIN และคิวพิมพ์ DCC)
               </span>
             )}
           </div>
         </div>
 
         {showConfirmButton && (
-          <div className="flex justify-end pt-3 border-t border-[#F1F5F9]">
+          <div className="flex justify-end pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onConfirm}
-              className="px-5 py-2 rounded-xl bg-[#0D99FF] hover:bg-[#007BE5] text-white font-semibold text-xs transition-colors shadow-2xs"
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-sm shadow-indigo-200 cursor-pointer"
             >
               Confirm & Distribute Form
             </button>
@@ -721,44 +713,52 @@ const DistributionSetup = ({
   const isOwnerActive = activeNormDept === normOwnerDept;
 
   return (
-    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 space-y-4 w-full h-auto">
+    <div className="bg-slate-50/50 border border-slate-200/80 rounded-3xl p-5 sm:p-6 space-y-5 w-full h-auto shadow-sm transition-all">
       
-      {/* 1. Header Summary */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#E2E8F0]">
-        <div className="flex items-center gap-2">
-          <Crown className="text-[#D97706]" size={16} />
-          <span className="text-xs font-bold text-[#1E293B]">
+      {/* 1. Header Bar (Modern Metric Strip) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
+        {/* Left: Master Location Badge */}
+        <div className="flex items-center gap-2.5 bg-zinc-900 text-zinc-100 border border-zinc-800 rounded-2xl px-4 py-2.5 shadow-sm self-start sm:self-auto">
+          <div className="w-6 h-6 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
+            <Crown size={14} />
+          </div>
+          <span className="text-xs font-bold text-white tracking-tight">
             {normOwnerDept} — {ownerMasterStation.name}
           </span>
-          <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]">
+          <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30">
             Master Copy 01 ล็อกถาวร
           </span>
         </div>
-        <div className="text-xs text-[#64748B] font-mono">
-          จัดสรรแล้ว: <strong className="text-[#0D99FF]">{copyCalculation.totalCopies}</strong> ชุด | 
-          Master: <strong>1</strong> | Controlled: <strong>{copyCalculation.distributedCopies.length}</strong>
+
+        {/* Right: Modern Metric Counter Strip */}
+        <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-2xl px-4 py-2 text-xs font-mono text-slate-600 shadow-2xs self-start sm:self-auto">
+          <span>จัดสรรแล้ว: <strong className="text-indigo-600 font-bold">{copyCalculation.totalCopies}</strong> ชุด</span>
+          <span className="text-slate-300">•</span>
+          <span>Master: <strong className="text-slate-900 font-bold">1</strong></span>
+          <span className="text-slate-300">•</span>
+          <span>Controlled: <strong className="text-indigo-600 font-bold">{copyCalculation.distributedCopies.length}</strong></span>
         </div>
       </div>
 
-      {/* 2. แผง 2 คอลัมน์เลือกสถานี: ใช้ grid ธรรมดา ไม่ใส่ min-h หรือ fixed height */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start w-full">
+      {/* 2. Split-View Canvas (Dual-Pane) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start w-full">
         
-        {/* ฝั่งซ้าย: รายชื่อแผนก (4 Cols) */}
-        <div className="lg:col-span-4 border border-[#E2E8F0] rounded-xl bg-white divide-y divide-[#F1F5F9] overflow-hidden">
-          <div className="p-2.5 px-3 border-b border-[#E2E8F0] bg-[#F1F5F9] flex items-center justify-between shrink-0">
-            <span className="text-xs font-bold text-[#334155]">
+        {/* Left Sidebar: Department Target List (4 Cols) */}
+        <div className="lg:col-span-4 border border-slate-200/80 rounded-2xl bg-white divide-y divide-slate-100 overflow-hidden shadow-xs">
+          <div className="p-3.5 px-4 bg-slate-50/70 flex items-center justify-between shrink-0">
+            <span className="text-xs font-bold text-slate-800">
               แผนกในระบบ ({availableDeptsList.length})
             </span>
             <button
               type="button"
               onClick={handleGlobalAllToggle}
-              className="text-[#0D99FF] hover:underline text-[11px] font-semibold cursor-pointer"
+              className="text-indigo-600 hover:text-indigo-700 text-[11px] font-bold cursor-pointer transition-colors"
             >
               {isAllGlobalSelected ? 'ล้างทุกแผนก' : 'เลือกทุกแผนก'}
             </button>
           </div>
 
-          <div className="divide-y divide-[#F1F5F9]">
+          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
             {availableDeptsList.map((dept) => {
               const normDept = normalizeDepartmentId(dept.id);
               const isSelected = activeNormDept === normDept;
@@ -770,18 +770,20 @@ const DistributionSetup = ({
                   key={dept.id}
                   type="button"
                   onClick={() => setActiveDeptId(dept.id)}
-                  className={`w-full p-2.5 px-3 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                  className={`w-full p-3 px-4 text-left text-xs flex items-center justify-between transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-[#F0F7FF] text-[#0D99FF] font-bold border-l-4 border-l-[#0D99FF]'
-                      : 'hover:bg-[#F8FAFC] text-[#334155]'
+                      ? 'bg-indigo-50/70 text-indigo-950 font-bold border-l-4 border-l-indigo-600'
+                      : 'hover:bg-slate-50/80 text-slate-700'
                   }`}
                 >
                   <div className="min-w-0 pr-2">
-                    <span className="truncate block font-medium">{dept.name}</span>
-                    {isOwner && <span className="text-[10px] font-bold text-[#0D99FF] block">Owner Dept</span>}
+                    <span className="truncate block font-semibold">{dept.name}</span>
+                    {isOwner && <span className="text-[10px] font-bold text-indigo-600 block mt-0.5">Owner Dept</span>}
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono shrink-0 font-bold ${
-                    deptCount > 0 ? 'bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF]' : 'bg-[#F1F5F9] text-[#64748B]'
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono shrink-0 font-bold transition-colors ${
+                    deptCount > 0 
+                      ? 'bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs' 
+                      : 'bg-slate-100 text-slate-500'
                   }`}>
                     {deptCount} จุด
                   </span>
@@ -791,11 +793,11 @@ const DistributionSetup = ({
           </div>
         </div>
 
-        {/* ฝั่งขวา: รายการสถานีของแผนกที่เลือก (8 Cols) - Render only active department */}
-        <div className="lg:col-span-8 border border-[#E2E8F0] rounded-xl bg-white p-3.5 space-y-3">
-          {activeDeptObj && (() => {
-            const dept = activeDeptObj;
+        {/* Right Workspace: Point-of-Use Interactive Grid (8 Cols) */}
+        <div className="lg:col-span-8 border border-slate-200/80 rounded-2xl bg-white p-4 sm:p-5 space-y-4 shadow-xs">
+          {availableDeptsList.map((dept) => {
             const normDept = normalizeDepartmentId(dept.id);
+            const isCurrentActive = normDept === activeNormDept;
             const isOwner = normDept === normOwnerDept;
             const standardStations = getDepartmentStations(normDept, distributionLocations);
             const customForDept = customLocations.filter(c => c.departmentId === normDept);
@@ -805,31 +807,33 @@ const DistributionSetup = ({
             const isAllDeptSelected = nonMasterStations.length > 0 && nonMasterStations.every(s => selectedLocationMap.has(`${normDept}::${getStationKey(s)}`));
 
             return (
-              <div key={dept.id} className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-[#334155] pb-2 border-b border-[#F1F5F9]">
+              <div key={dept.id} className={isCurrentActive ? 'space-y-4' : 'hidden'}>
+                {/* Department Header & Controls */}
+                <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <span>{dept.name}</span>
+                    <span className="text-sm font-bold text-slate-900">{dept.name}</span>
                     {isOwner && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#E5F4FF] text-[#0D99FF] font-mono border border-[#B8E1FF]">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono border border-indigo-200 shadow-2xs">
                         [ OWNER ]
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 text-xs">
-                    <span className="text-[#64748B] font-normal text-[11px]">
-                      เลือกแล้ว <strong className="text-[#1E293B] font-bold">{deptAllocatedCount}</strong> / {allDeptStations.length} จุด
+                    <span className="text-slate-500 font-normal text-[11px]">
+                      เลือกแล้ว <strong className="text-slate-900 font-bold">{deptAllocatedCount}</strong> / {allDeptStations.length} จุด
                     </span>
                     <button
                       type="button"
                       onClick={() => handleSelectAllInDept(normDept)}
-                      className="text-[#0D99FF] hover:underline text-[11px] font-semibold cursor-pointer"
+                      className="text-indigo-600 hover:text-indigo-700 text-[11px] font-bold cursor-pointer transition-colors"
                     >
                       {isAllDeptSelected ? 'ล้างค่า' : 'เลือกทั้งหมด'}
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Interactive Location Action Cards (2 Columns) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {allDeptStations.map((station) => {
                     const stationKey = getStationKey(station);
                     const isMaster = isOwner && isMasterStation({ ...station, departmentId: normDept }, normOwnerDept);
@@ -840,24 +844,29 @@ const DistributionSetup = ({
                       return (
                         <div
                           key={stationKey}
-                          className="flex items-center justify-between p-2.5 rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] text-[#475569] cursor-not-allowed opacity-90 text-xs select-none"
+                          className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-white shadow-xs cursor-not-allowed select-none text-xs"
                         >
-                          <div className="flex items-center gap-2 min-w-0 pr-1">
+                          <div className="flex items-center gap-2.5 min-w-0 pr-1">
                             <input
                               type="checkbox"
                               checked={true}
                               disabled={true}
                               readOnly
                               tabIndex={-1}
-                              className="w-3.5 h-3.5 rounded border-[#CBD5E1] text-[#0D99FF] cursor-not-allowed shrink-0 pointer-events-none opacity-70"
+                              className="w-4 h-4 rounded border-zinc-700 text-amber-400 bg-zinc-800 cursor-not-allowed shrink-0 pointer-events-none opacity-80"
                             />
-                            <span className="truncate font-semibold text-[#1E293B] text-xs">{station.name || station.station_name}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin size={13} className="text-amber-400 shrink-0" />
+                              <span className="truncate font-bold text-white text-xs">
+                                {station.name || station.station_name}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <span className="bg-white text-[#475569] border border-[#CBD5E1] text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg shadow-2xs">
                               Master
                             </span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#1E293B] text-white shrink-0">
+                            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-black bg-amber-400 text-zinc-950 shrink-0 shadow-xs">
                               Copy 01
                             </span>
                           </div>
@@ -878,19 +887,24 @@ const DistributionSetup = ({
                               handleToggleStation(normDept, station);
                             }
                           }}
-                          className="flex items-center justify-between p-2.5 rounded-lg border border-[#0D99FF] bg-[#F0F7FF] text-[#0D99FF] font-semibold shadow-2xs cursor-pointer text-xs select-none transition-all ring-1 ring-[#0D99FF]/20"
+                          className="flex items-center justify-between p-3.5 rounded-2xl border-2 border-indigo-600 bg-indigo-50/40 text-indigo-950 font-semibold shadow-xs cursor-pointer text-xs select-none transition-all duration-150 ring-1 ring-indigo-500/20 hover:scale-[1.01]"
                         >
-                          <div className="flex items-center gap-2 min-w-0 pr-1">
+                          <div className="flex items-center gap-2.5 min-w-0 pr-1">
                             <input
                               type="checkbox"
                               checked={true}
                               readOnly
                               tabIndex={-1}
-                              className="w-3.5 h-3.5 rounded border-[#CBD5E1] text-[#0D99FF] focus:ring-[#0D99FF] pointer-events-none shrink-0"
+                              className="w-4 h-4 rounded border-indigo-600 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0"
                             />
-                            <span className="truncate font-semibold text-xs">{station.name || station.station_name}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin size={13} className="text-indigo-600 shrink-0" />
+                              <span className="truncate font-bold text-xs text-indigo-950">
+                                {station.name || station.station_name}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             {station.isCustom && (
                               <button
                                 type="button"
@@ -901,7 +915,7 @@ const DistributionSetup = ({
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#0D99FF] text-white shrink-0 shadow-2xs">
+                            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-indigo-600 text-white shrink-0 shadow-xs">
                               Copy {copyLabel}
                             </span>
                           </div>
@@ -921,21 +935,24 @@ const DistributionSetup = ({
                             handleToggleStation(normDept, station);
                           }
                         }}
-                        className="flex items-center justify-between p-2.5 rounded-lg border border-[#CBD5E1] bg-white text-[#1E293B] hover:bg-[#F8FAFC] hover:border-[#0D99FF] cursor-pointer text-xs select-none transition-all group"
+                        className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200/90 bg-white text-slate-800 hover:bg-slate-50/80 hover:border-indigo-300 cursor-pointer text-xs select-none transition-all duration-150 group shadow-2xs hover:scale-[1.01]"
                       >
-                        <div className="flex items-center gap-2 min-w-0 pr-1">
+                        <div className="flex items-center gap-2.5 min-w-0 pr-1">
                           <input
                             type="checkbox"
                             checked={false}
                             readOnly
                             tabIndex={-1}
-                            className="w-3.5 h-3.5 rounded border-[#CBD5E1] text-[#0D99FF] focus:ring-[#0D99FF] pointer-events-none shrink-0 group-hover:border-[#0D99FF]"
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0 group-hover:border-indigo-500"
                           />
-                          <span className="font-semibold text-xs text-[#334155] group-hover:text-[#1E293B] truncate transition-colors">
-                            {station.name || station.station_name}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <MapPin size={13} className="text-slate-400 group-hover:text-indigo-600 transition-colors shrink-0" />
+                            <span className="font-semibold text-xs text-slate-700 group-hover:text-slate-900 truncate transition-colors">
+                              {station.name || station.station_name}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {station.isCustom && (
                             <button
                               type="button"
@@ -946,7 +963,7 @@ const DistributionSetup = ({
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <span className="text-[11px] text-[#0D99FF] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[11px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
                             + เลือก
                           </span>
                         </div>
@@ -955,8 +972,8 @@ const DistributionSetup = ({
                   })}
                 </div>
 
-                {/* แถบเพิ่มจุดติดตั้งด่วน */}
-                <div className="pt-2 flex items-center gap-2">
+                {/* Seamless Quick Add Input Bar */}
+                <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
                   <input
                     type="text"
                     placeholder={`เพิ่มจุดติดตั้งพิเศษใน ${dept.shortName || normDept}...`}
@@ -968,20 +985,20 @@ const DistributionSetup = ({
                         handleAddCustomLocation(normDept);
                       }
                     }}
-                    className="flex-1 h-9 px-3 text-xs bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:bg-white focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15"
+                    className="flex-1 h-10 px-4 text-xs bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => handleAddCustomLocation(normDept)}
-                    className="h-9 px-3.5 rounded-lg bg-[#1E293B] hover:bg-[#334155] text-white text-xs font-bold shrink-0 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                    className="h-10 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                     <span>เพิ่มจุด</span>
                   </button>
                 </div>
               </div>
             );
-          })()}
+          })}
         </div>
 
       </div>

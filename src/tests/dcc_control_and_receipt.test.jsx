@@ -258,7 +258,7 @@ describe('DCC Control Portal & E-Signature Hardcopy Receipt Tests', () => {
       setTestUser(pdUser);
     });
 
-    it('renders document metadata, Copy No, Location, and 6-digit PIN input fields', () => {
+    it('renders document metadata, Copy No, Location, and Active Session badge without PIN or 21 CFR 11', () => {
       renderWithRouter(
         <Routes>
           <Route path="/tasks/confirm-receipt/:id" element={<TaskConfirmHardcopyReceipt />} />
@@ -267,13 +267,21 @@ describe('DCC Control Portal & E-Signature Hardcopy Receipt Tests', () => {
       );
 
       expect(screen.getByText(/ตรวจรับเอกสารควบคุมฉบับจริง/i)).toBeInTheDocument();
-      expect(screen.getAllByText(/21 CFR Part 11/i).length).toBeGreaterThan(0);
+      // 21 CFR Part 11 must be removed
+      expect(screen.queryByText(/21 CFR Part 11/i)).not.toBeInTheDocument();
+      // Verified with Active User Session
+      expect(screen.getByText(/Department-Pooled Task/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Active User Session/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Line 2 Packaging Station/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Copy 02/i).length).toBeGreaterThan(0);
       expect(screen.getByText(/สมชาย สายผลิต \(PD User\)/i)).toBeInTheDocument();
+
+      // No password inputs for PIN
+      const passwordInputs = screen.queryAllByDisplayValue('').filter(el => el.type === 'password');
+      expect(passwordInputs).toHaveLength(0);
     });
 
-    it('completes 6-digit PIN input, terms checkbox, and confirms receipt eliminating the task', async () => {
+    it('acknowledges terms, enters remarks, and confirms receipt eliminating the task and recording audit trail', async () => {
       const user = userEvent.setup();
 
       renderWithRouter(
@@ -284,21 +292,16 @@ describe('DCC Control Portal & E-Signature Hardcopy Receipt Tests', () => {
         { route: '/tasks/confirm-receipt/task-receipt-cc-dispatched-1' }
       );
 
-      // Find all password inputs for PIN
-      const pinInputs = screen.getAllByDisplayValue('').filter(el => el.type === 'password');
-      expect(pinInputs).toHaveLength(6);
-
-      // Enter 6 digit PIN: 123456
-      for (let i = 0; i < 6; i++) {
-        await user.type(pinInputs[i], String(i + 1));
-      }
-
       // Check acknowledgment terms
       const checkbox = screen.getByRole('checkbox');
       await user.click(checkbox);
 
-      // Click Confirm Receipt
-      const submitBtn = screen.getByRole('button', { name: /ยืนยันรับเอกสารฉบับจริง/i });
+      // Enter remarks
+      const remarksInput = screen.getByPlaceholderText(/ตรวจสอบตราประทับ/i);
+      await user.type(remarksInput, 'ได้รับเล่มจริงพร้อมตรวจสอบตราประทับครบถ้วน');
+
+      // Click Confirm Receipt (without needing any PIN)
+      const submitBtn = screen.getByRole('button', { name: /ยืนยันตรวจรับเอกสาร/i });
       expect(submitBtn).not.toBeDisabled();
       await user.click(submitBtn);
 
@@ -309,8 +312,18 @@ describe('DCC Control Portal & E-Signature Hardcopy Receipt Tests', () => {
       expect(confirmedCopy.receipt_confirmed_at).toBeDefined();
       expect(confirmedCopy.receipt_confirmed_by).toBe('สมชาย สายผลิต (PD User)');
 
-      // Verify Task Hard Delete
+      // Verify Task Dismissal
       expect(state.tasks.find(t => t.id === 'task-receipt-cc-dispatched-1')).toBeUndefined();
+
+      // Verify Audit Trail Entry in Store
+      const auditLogs = state.physicalCopyAuditLogs || [];
+      const log = auditLogs.find(l => l.copy_identifier === 'Copy 02' || l.copy_identifier?.includes('02'));
+      expect(log).toBeDefined();
+      expect(log.action).toBe('PHYSICAL_COPY_RECEIVED');
+      expect(log.actor_user_id).toBe('u1');
+      expect(log.actor_name).toBe('สมชาย สายผลิต (PD User)');
+      expect(log.target_department).toBe('PD');
+      expect(log.remarks).toBe('ได้รับเล่มจริงพร้อมตรวจสอบตราประทับครบถ้วน');
     });
   });
 });

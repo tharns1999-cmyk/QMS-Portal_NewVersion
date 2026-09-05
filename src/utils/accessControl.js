@@ -61,24 +61,82 @@ export const hasDocumentAccess = (doc, user) => {
   if (!doc) return false;
   if (!user) return false;
 
-  // 1. Super/DCC Admin Bypass
+  // Helper to match user ID or Employee ID safely
+  const userMatchesId = (targetId) => {
+    if (!targetId) return false;
+    const targetStr = String(targetId).trim().toLowerCase();
+    const userIdStr = user.id ? String(user.id).trim().toLowerCase() : '';
+    const userEmpIdStr = user.empId ? String(user.empId).trim().toLowerCase() : '';
+    return targetStr === userIdStr || (userEmpIdStr && targetStr === userEmpIdStr);
+  };
+
+  // 1. Super/DCC Admin Bypass (Always has full access)
   if (
     user.role === 'DCC_ADMIN' ||
     user.role === 'SUPER_ADMIN' ||
     user.isDcc ||
-    user.isSuperAdmin
+    user.isSuperAdmin ||
+    (user.permissions && (user.permissions.includes('DCC_ADMIN') || user.permissions.includes('ADMIN')))
   ) {
     return true;
   }
 
-  // 2. Document Owner / Author / Requester Bypass
-  const isCreatorOrOwner =
-    doc.requesterId === user.id ||
-    doc.ownerId === user.id ||
-    doc.created_by === user.id ||
-    doc.author_id === user.id;
+  // 2. Auto-Whitelisting for Workflow Participants (Immune to Restricted Scope settings):
+  // 2.1 Requester / Document Creator / Owner / Author
+  const requesterIds = [
+    doc.created_by,
+    doc.createdBy,
+    doc.requester_id,
+    doc.requesterId,
+    doc.ownerId,
+    doc.owner_id,
+    doc.author_id,
+    doc.authorId,
+    doc.requester?.id,
+    doc.requester?.empId
+  ].filter(Boolean);
 
-  if (isCreatorOrOwner) {
+  if (requesterIds.some(userMatchesId)) {
+    return true;
+  }
+
+  // 2.2 Reviewer(s) in Workflow (Individual or Steps)
+  const reviewerIds = [];
+  if (doc.reviewerId) reviewerIds.push(doc.reviewerId);
+  if (doc.reviewer_id) reviewerIds.push(doc.reviewer_id);
+  if (doc.reviewer?.id) reviewerIds.push(doc.reviewer.id);
+  if (doc.reviewer?.empId) reviewerIds.push(doc.reviewer.empId);
+  if (Array.isArray(doc.reviewers)) {
+    doc.reviewers.forEach(r => reviewerIds.push(typeof r === 'object' ? r?.id || r?.userId || r?.empId : r));
+  }
+  if (Array.isArray(doc.workflow?.review_steps)) {
+    doc.workflow.review_steps.forEach(s => reviewerIds.push(typeof s === 'object' ? s?.id || s?.userId || s?.assigneeId || s?.empId : s));
+  }
+  if (Array.isArray(doc.workflow?.reviewers)) {
+    doc.workflow.reviewers.forEach(r => reviewerIds.push(typeof r === 'object' ? r?.id || r?.userId || r?.empId : r));
+  }
+
+  if (reviewerIds.filter(Boolean).some(userMatchesId)) {
+    return true;
+  }
+
+  // 2.3 Approver(s) in Workflow (Individual or Steps)
+  const approverIds = [];
+  if (doc.approverId) approverIds.push(doc.approverId);
+  if (doc.approver_id) approverIds.push(doc.approver_id);
+  if (doc.approver?.id) approverIds.push(doc.approver.id);
+  if (doc.approver?.empId) approverIds.push(doc.approver.empId);
+  if (Array.isArray(doc.approvers)) {
+    doc.approvers.forEach(a => approverIds.push(typeof a === 'object' ? a?.id || a?.userId || a?.empId : a));
+  }
+  if (Array.isArray(doc.workflow?.approve_steps)) {
+    doc.workflow.approve_steps.forEach(s => approverIds.push(typeof s === 'object' ? s?.id || s?.userId || s?.assigneeId || s?.empId : s));
+  }
+  if (Array.isArray(doc.workflow?.approvers)) {
+    doc.workflow.approvers.forEach(a => approverIds.push(typeof a === 'object' ? a?.id || a?.userId || a?.empId : a));
+  }
+
+  if (approverIds.filter(Boolean).some(userMatchesId)) {
     return true;
   }
 
@@ -174,4 +232,9 @@ export const canManageControlledCopy = (copy, user) => {
         (d === 'QA/QC' && copyDept === 'QA'))
   );
 };
+
+/**
+ * Alias for hasDocumentAccess to support canUserAccessDocument naming convention
+ */
+export const canUserAccessDocument = hasDocumentAccess;
 

@@ -16,24 +16,26 @@ export const resolveReviewer = (requesterId, department, masterUsers, reviewUser
   // Rule 1 & 2: Pull from review_master_data_user, same department, level > requester
   // Note: reviewUsers only has {id, name, dept}, so we must cross-reference masterUsers for `level`.
   let candidates = reviewUsers.filter(u => {
-    const hasDeptAccess = !u.depts || u.depts.length === 0 || u.depts.includes(department);
+    const userDepts = u.affiliated_departments || u.depts;
+    const hasDeptAccess = !userDepts || userDepts.length === 0 || userDepts.includes(department);
     if (!hasDeptAccess) return false;
     if (u.id === requesterId) return false; // SoD
     const m = masterUsers.find(mu => mu.id === u.id);
     if (!m) return false;
     if (m.isDcc || m.role === 'DCC_ADMIN') return false; // Explicitly exclude DCC
-    return (m.level || 0) > reqLevel;
+    const candidateLevel = m.approval_level || m.level || 0;
+    return candidateLevel > reqLevel;
   });
   
   if (candidates.length > 0) {
     // Sort ascending to find the Nearest Higher
     candidates.sort((a, b) => {
-       const lA = masterUsers.find(mu => mu.id === a.id)?.level || 0;
-       const lB = masterUsers.find(mu => mu.id === b.id)?.level || 0;
+       const lA = masterUsers.find(mu => mu.id === a.id)?.approval_level || masterUsers.find(mu => mu.id === a.id)?.level || 0;
+       const lB = masterUsers.find(mu => mu.id === b.id)?.approval_level || masterUsers.find(mu => mu.id === b.id)?.level || 0;
        return lA - lB;
     });
     const selected = candidates[0];
-    const sLevel = masterUsers.find(mu => mu.id === selected.id)?.level || 0;
+    const sLevel = masterUsers.find(mu => mu.id === selected.id)?.approval_level || masterUsers.find(mu => mu.id === selected.id)?.level || 0;
     console.log(`[Routing] Found Nearest Higher Reviewer: ${selected.id} (${selected.name}) - Level ${sLevel} (Requester Level was ${reqLevel})`);
     return { id: selected.id, level: sLevel, dept: department };
   }
@@ -50,18 +52,20 @@ export const resolveApprover = (requesterId, reviewerId, department, masterUsers
   console.log(`[Routing] Resolving Approver for Reviewer: ${reviewerId} (Requester: ${requesterId}) in Dept: ${department}`);
   
   const reviewer = masterUsers.find(u => u.id === reviewerId);
-  const revLevel = reviewer ? (reviewer.level || 0) : 0;
+  const revLevel = reviewer ? (reviewer.approval_level || reviewer.level || 0) : 0;
 
   // Rule 1 & 3: Pull from approve_master_data_user, level > reviewer, enforce SoD
   let candidates = approveUsers.filter(u => {
-    const hasDeptAccess = !u.depts || u.depts.length === 0 || u.depts.includes(department);
+    const userDepts = u.affiliated_departments || u.depts;
+    const hasDeptAccess = !userDepts || userDepts.length === 0 || userDepts.includes(department);
     if (!hasDeptAccess) return false;
     if (u.id === requesterId) return false; // SoD
     if (u.id === reviewerId) return false; // SoD
     const m = masterUsers.find(mu => mu.id === u.id);
     if (!m) return false;
     if (m.isDcc || m.role === 'DCC_ADMIN') return false; // Explicitly exclude DCC
-    return (m.level || 0) > revLevel;
+    const candidateLevel = m.approval_level || m.level || 0;
+    return candidateLevel > revLevel;
   });
   
   if (candidates.length > 0) {

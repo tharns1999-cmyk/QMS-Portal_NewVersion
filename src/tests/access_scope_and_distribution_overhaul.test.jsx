@@ -73,9 +73,9 @@ describe('Enterprise UX/UI Overhaul: High-Density Access Scope & Distribution Ma
       );
 
       // Owner Dept PD is locked and read-only
-      expect(screen.getByText(/เจ้าของ/i)).toBeInTheDocument();
-      const qaCard = screen.getByTestId('dept-card-QA');
-      fireEvent.click(qaCard);
+      expect(screen.getByText(/เจ้าของ \(ล็อก\)/i)).toBeInTheDocument();
+      const qaLabel = screen.getByText('QA');
+      fireEvent.click(qaLabel.closest('label'));
       expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({
         authorized_depts: expect.arrayContaining(['PD', 'QA'])
       }));
