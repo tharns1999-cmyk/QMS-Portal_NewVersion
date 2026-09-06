@@ -431,25 +431,26 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
   const safeDars = dars || [];
 
   const hasPendingDist = safeInstances.some(i => 
-    i.status === 'PENDING_RECEIPT' || 
-    i.status === 'DISPATCHED_PENDING_RECEIPT' || 
     i.status === 'PENDING_ISSUE' || 
-    i.status === 'PENDING_PRINT'
+    i.status === 'PENDING_PRINT' ||
+    i.status === 'PENDING_DISPATCH'
   );
 
   return (tasks || []).filter(t => {
-    // 1. Immediately drop tasks already completed/resolved
+    // 1. Immediately drop tasks already completed/resolved (except active DISPATCHED_TRACKING for DCC)
     if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) {
+      if (t.delivery_status === 'DISPATCHED_TRACKING') return true;
       return false;
     }
 
     // 2. Distribution Tasks (DCC_DISTRIBUTE, DCC_ISSUE)
     if (t.type === 'DCC_DISTRIBUTE' || t.type === 'DCC_ISSUE' || t.taskType === 'DCC_DISTRIBUTE') {
+      if (t.delivery_status === 'DISPATCHED_TRACKING') return true;
       const doc = safeDocs.find(d => d.darId === t.darId || d.id === t.docId || d.title === t.doc_code);
       if (doc) {
         return safeInstances.some(i => 
           (String(i.doc_id || i.docId) === String(doc.id) || i.doc_code === doc.title || i.docTitle === doc.title) && 
-          (i.status === 'PENDING_RECEIPT' || i.status === 'PENDING_ISSUE' || i.status === 'PENDING_PRINT' || i.status === 'DISPATCHED_PENDING_RECEIPT')
+          (i.status === 'PENDING_ISSUE' || i.status === 'PENDING_PRINT' || i.status === 'PENDING_DISPATCH')
         );
       }
       return hasPendingDist;
