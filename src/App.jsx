@@ -1,5 +1,5 @@
 import React, { useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import useStore from './store/useStore';
 import Layout from './components/layout/Layout';
@@ -70,19 +70,23 @@ const withSuspense = (Component) => (
 
 const AliasRedirect = ({ to }) => {
   const params = useParams();
+  const location = useLocation();
   let resolvedPath = to;
   Object.keys(params).forEach(key => {
     resolvedPath = resolvedPath.replace(`:${key}`, params[key]);
   });
-  return <Navigate to={resolvedPath} replace />;
+  const search = location.search || '';
+  return <Navigate to={`${resolvedPath}${search}`} replace state={location.state} />;
 };
 
 function App() {
   const initializePeriodicReviews = useStore(state => state.initializePeriodicReviews);
+  const checkScheduledEffectiveDocs = useStore(state => state.checkScheduledEffectiveDocs);
 
   useEffect(() => {
     initializePeriodicReviews();
-  }, [initializePeriodicReviews]);
+    checkScheduledEffectiveDocs?.();
+  }, [initializePeriodicReviews, checkScheduledEffectiveDocs]);
 
   return (
     <BrowserRouter>

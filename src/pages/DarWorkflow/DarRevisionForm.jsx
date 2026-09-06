@@ -399,8 +399,13 @@ const DarRevisionForm = () => {
               </div>
             </div>
 
-            <div className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 shrink-0">
-              ขอแก้ไข (REVISION)
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                [ ฉบับร่าง (รอออกเลข DAR หลังส่งคำร้อง) ]
+              </span>
+              <div className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                ขอแก้ไข (REVISION)
+              </div>
             </div>
           </div>
 

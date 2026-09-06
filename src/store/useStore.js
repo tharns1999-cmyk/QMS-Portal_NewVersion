@@ -20,8 +20,10 @@ import {
 } from '../services/MasterDataService';
 import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
 import { hasDocumentAccess, canUserAccessDocument } from '../utils/accessControl';
+import { calculateTaskDueDate } from '../utils/slaCalculator';
+import { generateInternalDarNumber } from '../utils/darNumberGenerator';
 
-export { canUserAccessDocument, hasDocumentAccess };
+export { canUserAccessDocument, hasDocumentAccess, calculateTaskDueDate, generateInternalDarNumber };
 
 // 1. Master Data Users (Roles: DCC_ADMIN, DEPT_ADMIN, GENERAL_USER)
 export const MASTER_DATA_USER = [
@@ -1683,8 +1685,14 @@ const useStore = create(persist((set, get) => ({
 
       const today = new Date();
       today.setDate(today.getDate() + state.mockDateOffset);
-      const dueDateStr = new Date(today.getTime() + 3*24*60*60*1000).toISOString().split('T')[0];
-      const cancelDateStr = new Date(today.getTime() + 4*24*60*60*1000).toISOString().split('T')[0];
+      const todayStr = today.toISOString().split('T')[0];
+
+      const reviewSla = calculateTaskDueDate({
+        submissionDate: newDar.date || todayStr,
+        effectiveDate: newDar.effectiveDate,
+        stepSlaDays: state.slaSettings?.reviewSlaDays || 3,
+        mockDateOffset: state.mockDateOffset
+      });
 
       let newTasks = [...state.tasks];
       let newNotifications = [...state.notifications];
@@ -1712,7 +1720,14 @@ const useStore = create(persist((set, get) => ({
             assigneeId: reviewerObj.id,
             currentHandlerDepartment: reviewerObj.dept,
             currentHandlerLevel: reviewerObj.level,
-            dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+            dueDate: reviewSla.dueDate,
+            cancelDate: reviewSla.cancelDate,
+            isUrgent: reviewSla.isUrgent,
+            isFastTrack: reviewSla.isFastTrack,
+            priority: reviewSla.isUrgent ? 'URGENT' : 'NORMAL',
+            slaType: reviewSla.slaType,
+            effectiveDate: reviewSla.effectiveDate,
+            status: 'NORMAL'
           });
           newNotifications.push({ id: Date.now() + Math.random(), userId: reviewerObj.id, title: 'งานใหม่รอการตรวจสอบ', message: `DAR "${newDar.title}" รอการตรวจสอบจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
         } else {
@@ -1753,26 +1768,29 @@ const useStore = create(persist((set, get) => ({
   }),
 
   addDar: (dar) => set((state) => {
-    // Generate new ID DARXX-MM-YY
-    const date = new Date();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yy = String(date.getFullYear()).slice(-2);
-    // Find highest running number for this month
-    const prefix = `DAR`;
-    const suffix = `-${mm}-${yy}`;
+    // Generate new ID DAR-YYYY-XXX upon non-draft submission
+    let newDarId = dar.id;
+    let allocatedDarNumber = dar.darNumber || null;
 
-    const existingDarsThisMonth = state.dars.filter(d => d.id.endsWith(suffix));
-    let nextRun = 1;
-    if (existingDarsThisMonth.length > 0) {
-      const runNums = existingDarsThisMonth.map(d => parseInt(d.id.replace(prefix, '').split('-')[0]));
-      nextRun = Math.max(...runNums) + 1;
+    if (!dar.isDraft && dar.status !== 'DRAFT') {
+      const targetYear = new Date().getFullYear();
+      allocatedDarNumber = dar.darNumber || generateInternalDarNumber(state.dars, targetYear);
+      newDarId = allocatedDarNumber;
+    } else if (!newDarId) {
+      newDarId = `draft_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     }
-    const newDarId = `${prefix}${String(nextRun).padStart(2, '0')}${suffix}`;
 
     // Ensure distributions array is present
     const distributions = dar.distributions || [];
 
-    const newDar = { ...dar, id: newDarId, distributions };
+    const newDar = { 
+      ...dar, 
+      id: newDarId, 
+      darNumber: allocatedDarNumber,
+      darNo: allocatedDarNumber,
+      dar_no: allocatedDarNumber,
+      distributions 
+    };
 
     if (newDar.type === 'NEW' || newDar.type === 'NEW_DOCUMENT') {
       const selectedTypeObj = (state.documentTypes || []).find(t => (t.code || t.id) === newDar.docType);
@@ -1802,8 +1820,14 @@ const useStore = create(persist((set, get) => ({
 
     const today = new Date();
     today.setDate(today.getDate() + state.mockDateOffset);
-    const dueDateStr = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const cancelDateStr = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+
+    const reviewSla = calculateTaskDueDate({
+      submissionDate: newDar.date || todayStr,
+      effectiveDate: newDar.effectiveDate,
+      stepSlaDays: state.slaSettings?.reviewSlaDays || 3,
+      mockDateOffset: state.mockDateOffset
+    });
 
     let newTasks = [...state.tasks];
     let newNotifications = [...state.notifications];
@@ -1821,8 +1845,13 @@ const useStore = create(persist((set, get) => ({
           assigneeId: reviewerObj.id,
           currentHandlerDepartment: reviewerObj.dept,
           currentHandlerLevel: reviewerObj.level,
-          dueDate: dueDateStr,
-          cancelDate: cancelDateStr,
+          dueDate: reviewSla.dueDate,
+          cancelDate: reviewSla.cancelDate,
+          isUrgent: reviewSla.isUrgent,
+          isFastTrack: reviewSla.isFastTrack,
+          priority: reviewSla.isUrgent ? 'URGENT' : 'NORMAL',
+          slaType: reviewSla.slaType,
+          effectiveDate: reviewSla.effectiveDate,
           status: 'NORMAL'
         });
         newNotifications.push({ id: Date.now() + Math.random(), userId: reviewerObj.id, title: 'งานใหม่รอการตรวจสอบ', message: `DAR "${newDar.title}" รอการตรวจสอบจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
@@ -1837,20 +1866,37 @@ const useStore = create(persist((set, get) => ({
           if (u) approverObj = { id: u.id, level: u.level, dept: newDar.department };
         }
 
+        const approverSla = calculateTaskDueDate({
+          submissionDate: newDar.date || todayStr,
+          effectiveDate: newDar.effectiveDate,
+          stepSlaDays: state.slaSettings?.approvalSlaDays || 3,
+          mockDateOffset: state.mockDateOffset
+        });
+
         if (approverObj) {
           newTasks.push({
             id: `t-${Date.now()}`, referenceType: 'INTERNAL_DAR', referenceId: newDar.id, darId: newDar.id, title: newDar.title, type: 'Approve', assigneeId: approverObj.id,
             currentHandlerDepartment: approverObj.dept, currentHandlerLevel: approverObj.level,
-            dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+            dueDate: approverSla.dueDate, cancelDate: approverSla.cancelDate,
+            isUrgent: approverSla.isUrgent, isFastTrack: approverSla.isFastTrack, priority: approverSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: approverSla.slaType, effectiveDate: approverSla.effectiveDate,
+            status: 'NORMAL'
           });
           newNotifications.push({ id: Date.now() + Math.random(), userId: approverObj.id, title: 'งานใหม่รอการอนุมัติ', message: `DAR "${newDar.title}" รอการอนุมัติจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
         } else {
           realStatus = dar.ackRequirement === 'REQUIRED' ? 'WAITING_ACKNOWLEDGEMENT' : 'APPROVED_WAITING_EFFECTIVE';
           if (realStatus === 'WAITING_ACKNOWLEDGEMENT' && dar.ackUserIds?.length > 0) {
+            const ackSla = calculateTaskDueDate({
+              submissionDate: newDar.date || todayStr,
+              effectiveDate: newDar.effectiveDate,
+              stepSlaDays: 3,
+              mockDateOffset: state.mockDateOffset
+            });
             dar.ackUserIds.forEach(uid => {
               newTasks.push({
                 id: `t-${Date.now()}-${uid}`, referenceType: 'INTERNAL_DAR', referenceId: newDar.id, darId: newDar.id, title: newDar.title, type: 'Ack', assigneeId: uid,
-                dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+                dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
+                isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
+                status: 'NORMAL'
               });
               newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `DAR "${newDar.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
             });
@@ -1869,13 +1915,17 @@ const useStore = create(persist((set, get) => ({
       }],
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'DAR_SUBMIT',
+        actionType: dar.isDraft ? 'DRAFT_SAVED' : 'DAR_SUBMITTED',
         actor: state.currentUser.name,
-        details: `Submitted DAR ${newDar.id}`,
+        details: `Submitted DAR ${newDar.darNumber || newDar.id}`,
         timestamp: new Date().toISOString()
       }, ...(state.actionLog || [])]
     };
   }),
+
+  submitDar: (dar) => {
+    return get().addDar({ ...dar, isDraft: false });
+  },
 
   // Universal DAR Draft Save & Upsert Action
   saveDarDraft: (draftData) => set((state) => {
@@ -1898,6 +1948,9 @@ const useStore = create(persist((set, get) => ({
         ...existing,
         ...draftData,
         id: existing.id,
+        darNumber: null,
+        darNo: null,
+        dar_no: null,
         status: 'DRAFT',
         isDraft: true,
         updated_at: new Date().toISOString(),
@@ -1906,26 +1959,17 @@ const useStore = create(persist((set, get) => ({
       updatedDars = [...list];
       updatedDars[existingIndex] = updatedDraft;
     } else {
-      // Insert new draft with auto-generated ID if not provided
+      // Insert new draft with temporary auto-generated draft ID if not provided
       if (!savedId) {
-        const date = new Date();
-        const mm = String(date.getMonth() + 1).padStart(2, '0');
-        const yy = String(date.getFullYear()).slice(-2);
-        const prefix = `DAR`;
-        const suffix = `-${mm}-${yy}`;
-        const existingThisMonth = list.filter(d => d.id?.endsWith(suffix));
-        let nextRun = 1;
-        if (existingThisMonth.length > 0) {
-          const runNums = existingThisMonth.map(d => parseInt(String(d.id).replace(prefix, '').split('-')[0]) || 0);
-          nextRun = Math.max(...runNums) + 1;
-        }
-        savedId = `${prefix}${String(nextRun).padStart(2, '0')}${suffix}`;
+        savedId = `draft_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       }
 
       const newDraft = {
         ...draftData,
         id: savedId,
-        dar_no: draftData.dar_no || draftData.darNo || savedId,
+        darNumber: null,
+        darNo: null,
+        dar_no: null,
         status: 'DRAFT',
         isDraft: true,
         requesterId: draftData.requesterId || draftData.requester_id || state.currentUser?.id,
@@ -1964,12 +2008,17 @@ const useStore = create(persist((set, get) => ({
 
   processWorkflow: (taskId, action, comment) => {
     let newlyCompletedDar = null;
+    let targetTask = null;
+    let targetDar = null;
     set((state) => {
     const task = state.tasks.find(t => t.id === taskId);
     if (!task) return state;
 
     const dar = state.dars.find(d => d.id === task.darId);
     if (!dar) return state;
+
+    targetTask = task;
+    targetDar = dar;
 
     const newTasks = state.tasks.filter(t => t.id !== taskId);
     let newStatus = dar.status;
@@ -1995,21 +2044,37 @@ const useStore = create(persist((set, get) => ({
         }
 
         if (approverObj) {
+          const approverSla = calculateTaskDueDate({
+            submissionDate: today,
+            effectiveDate: dar.effectiveDate,
+            stepSlaDays: state.slaSettings?.approvalSlaDays || 3,
+            mockDateOffset: state.mockDateOffset
+          });
           const newTaskId = `t-${Date.now()}`;
           newTasks.push({
             id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Approve', assigneeId: approverObj.id,
             currentHandlerDepartment: approverObj.dept, currentHandlerLevel: approverObj.level,
-            dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+            dueDate: approverSla.dueDate, cancelDate: approverSla.cancelDate,
+            isUrgent: approverSla.isUrgent, isFastTrack: approverSla.isFastTrack, priority: approverSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: approverSla.slaType, effectiveDate: approverSla.effectiveDate,
+            status: 'NORMAL'
           });
           newNotifications.push({ id: Date.now() + Math.random(), userId: approverObj.id, title: 'งานใหม่รอการอนุมัติ', message: `DAR "${dar.title}" รอการอนุมัติจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
         } else {
           newStatus = dar.ackRequirement === 'REQUIRED' ? 'WAITING_ACKNOWLEDGEMENT' : 'APPROVED_WAITING_EFFECTIVE';
           if (newStatus === 'WAITING_ACKNOWLEDGEMENT' && dar.ackUserIds?.length > 0) {
+            const ackSla = calculateTaskDueDate({
+              submissionDate: today,
+              effectiveDate: dar.effectiveDate,
+              stepSlaDays: 3,
+              mockDateOffset: state.mockDateOffset
+            });
             dar.ackUserIds.forEach(uid => {
               const newTaskId = `t-${Date.now()}-${uid}`;
               newTasks.push({
                 id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Ack', assigneeId: uid,
-                dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+                dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
+                isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
+                status: 'NORMAL'
               });
               newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `DAR "${dar.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
             });
@@ -2017,10 +2082,18 @@ const useStore = create(persist((set, get) => ({
         }
       } else if (action === 'RETURN') {
         newStatus = 'RETURNED_FOR_REVISION';
+        const reviseSla = calculateTaskDueDate({
+          submissionDate: today,
+          effectiveDate: dar.effectiveDate,
+          stepSlaDays: state.slaSettings?.darCreationSlaDays || 3,
+          mockDateOffset: state.mockDateOffset
+        });
         const newTaskId = `t-${Date.now()}`;
         newTasks.push({
           id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Revise', assigneeId: dar.requesterId,
-          dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+          dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
+          isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
+          status: 'NORMAL'
         });
         newNotifications.push({ id: Date.now() + Math.random(), userId: dar.requesterId, title: 'DAR ถูกส่งกลับแก้ไข', message: `DAR "${dar.title}" ถูกส่งกลับให้คุณแก้ไข`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
       }
@@ -2036,21 +2109,37 @@ const useStore = create(persist((set, get) => ({
         }
 
         if (newStatus === 'WAITING_ACKNOWLEDGEMENT' && dar.ackUserIds?.length > 0) {
+          const ackSla = calculateTaskDueDate({
+            submissionDate: today,
+            effectiveDate: dar.effectiveDate,
+            stepSlaDays: 3,
+            mockDateOffset: state.mockDateOffset
+          });
           dar.ackUserIds.forEach(uid => {
             const newTaskId = `t-${Date.now()}-${uid}`;
             newTasks.push({
               id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Ack', assigneeId: uid,
-              dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+              dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
+              isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
+              status: 'NORMAL'
             });
             newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `DAR "${dar.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
           });
         }
       } else if (action === 'RETURN') {
         newStatus = 'RETURNED_FOR_REVISION';
+        const reviseSla = calculateTaskDueDate({
+          submissionDate: today,
+          effectiveDate: dar.effectiveDate,
+          stepSlaDays: state.slaSettings?.darCreationSlaDays || 3,
+          mockDateOffset: state.mockDateOffset
+        });
         const newTaskId = `t-${Date.now()}`;
         newTasks.push({
           id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Revise', assigneeId: dar.requesterId,
-          dueDate: dueDateStr, cancelDate: cancelDateStr, status: 'NORMAL'
+          dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
+          isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
+          status: 'NORMAL'
         });
         newNotifications.push({ id: Date.now() + Math.random(), userId: dar.requesterId, title: 'DAR ถูกส่งกลับแก้ไข', message: `DAR "${dar.title}" ถูกส่งกลับให้คุณแก้ไข`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
       } else if (action === 'REJECT') {
@@ -2113,14 +2202,17 @@ const useStore = create(persist((set, get) => ({
     return newState;
     });
 
-    if (newlyCompletedDar) {
+    const targetDarToPublish = ((targetTask?.type === 'Approve' || targetTask?.type === 'APPROVE') && action === 'APPROVE') ? targetDar : newlyCompletedDar;
+    if (targetDarToPublish) {
       const store = get();
-      store.syncRevisionEffective(newlyCompletedDar);
-      store.syncObsoleteCompleted(newlyCompletedDar);
-      if (newlyCompletedDar.type === 'REVISION') {
-        store.publishDarRevision(newlyCompletedDar.id);
-      } else if (newlyCompletedDar.type === 'OBSOLETE') {
-        store.publishObsoleteDar(newlyCompletedDar.id);
+      if (store.syncRevisionEffective) store.syncRevisionEffective(targetDarToPublish);
+      if (store.syncObsoleteCompleted) store.syncObsoleteCompleted(targetDarToPublish);
+      if (store.publishApprovedDar) {
+        store.publishApprovedDar(targetDarToPublish.id);
+      } else if (targetDarToPublish.type === 'REVISION') {
+        store.publishDarRevision(targetDarToPublish.id);
+      } else if (targetDarToPublish.type === 'OBSOLETE') {
+        store.publishObsoleteDar(targetDarToPublish.id);
       }
     }
   },
@@ -2138,6 +2230,14 @@ const useStore = create(persist((set, get) => ({
     if (assignedReviewerId) {
       const today = new Date();
       today.setDate(today.getDate() + state.mockDateOffset);
+      const todayStr = today.toISOString().split('T')[0];
+      const taskSla = calculateTaskDueDate({
+        submissionDate: today,
+        effectiveDate: updatedData.effectiveDate || dar.effectiveDate,
+        stepSlaDays: state.slaSettings?.reviewSlaDays || 3,
+        mockDateOffset: state.mockDateOffset
+      });
+
       newTasks.push({
         id: `t-${Date.now()}`,
         referenceType: 'INTERNAL_DAR', referenceId: dar.id,
@@ -2145,8 +2245,13 @@ const useStore = create(persist((set, get) => ({
         title: updatedData.title || dar.title,
         type: 'Review',
         assigneeId: assignedReviewerId,
-        dueDate: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        cancelDate: new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        dueDate: taskSla.dueDate,
+        cancelDate: taskSla.cancelDate,
+        isUrgent: taskSla.isUrgent,
+        isFastTrack: taskSla.isFastTrack,
+        priority: taskSla.isUrgent ? 'URGENT' : 'NORMAL',
+        slaType: taskSla.slaType,
+        effectiveDate: taskSla.effectiveDate,
         status: 'NORMAL'
       });
       newNotifications.push({ id: Date.now() + Math.random(), userId: assignedReviewerId, title: 'งานใหม่รอการตรวจสอบ', message: `DAR "${updatedData.title || dar.title}" ถูกส่งมาใหม่ รอการตรวจสอบจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
@@ -2296,7 +2401,9 @@ const useStore = create(persist((set, get) => ({
   checkSLA: () => {
     let newlyCompletedDars = [];
     set((state) => {
-    const todayStr = state.simulatedDate;
+    const today = new Date();
+    today.setDate(today.getDate() + (state.mockDateOffset || 0));
+    const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
     const activeStatuses = ['DRAFT', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'RETURNED_FOR_REVISION', 'WAITING_ACKNOWLEDGEMENT'];
     const activeExtStatuses = ['PENDING_EXT_REVIEW', 'PENDING_EXT_APPROVAL', 'RETURNED_FOR_REVISION'];
     
@@ -2395,6 +2502,12 @@ const useStore = create(persist((set, get) => ({
             const allTargets = allocations.allAllocations || [];
 
             if (allTargets.length > 0) {
+              const distSla = calculateTaskDueDate({
+                submissionDate: today,
+                effectiveDate: dar.effectiveDate || newDoc.effectiveDate,
+                stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
+                mockDateOffset: state.mockDateOffset
+              });
               newTasks.push({
                 id: `task-dist-${Date.now()}-${Math.random()}`,
                 title: `แจกจ่ายเอกสาร Controlled Copy (NEW)`,
@@ -2402,8 +2515,13 @@ const useStore = create(persist((set, get) => ({
                 type: 'DCC_DISTRIBUTE',
                 status: 'PENDING',
                 assigneeId: 'U001',
-                dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                priority: 'HIGH',
+                dueDate: distSla.dueDate,
+                cancelDate: distSla.cancelDate,
+                isUrgent: distSla.isUrgent,
+                isFastTrack: distSla.isFastTrack,
+                priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
+                slaType: distSla.slaType,
+                effectiveDate: distSla.effectiveDate,
                 darId: dar.id
               });
 
@@ -2602,6 +2720,12 @@ const useStore = create(persist((set, get) => ({
                 }
 
                 if (allTargets.length > 0) {
+                  const distSla = calculateTaskDueDate({
+                    submissionDate: today,
+                    effectiveDate: dar.effectiveDate || newDoc.effectiveDate,
+                    stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
+                    mockDateOffset: state.mockDateOffset
+                  });
                   newTasks.push({
                     id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                     title: `แจกจ่ายเอกสาร Controlled Copy (Rev.${newDoc.rev})`,
@@ -2610,8 +2734,13 @@ const useStore = create(persist((set, get) => ({
                     status: 'PENDING',
                     assigneeId: 'U001',
                     assignedToRole: 'DCC_ADMIN',
-                    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    priority: 'HIGH',
+                    dueDate: distSla.dueDate,
+                    cancelDate: distSla.cancelDate,
+                    isUrgent: distSla.isUrgent,
+                    isFastTrack: distSla.isFastTrack,
+                    priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
+                    slaType: distSla.slaType,
+                    effectiveDate: distSla.effectiveDate,
                     darId: dar.id
                   });
 
@@ -2810,6 +2939,7 @@ const useStore = create(persist((set, get) => ({
         store.syncObsoleteCompleted(dar);
       });
     }
+    get().checkScheduledEffectiveDocs?.();
   },
 
   addComment: (darId, commentStr, user) => set((state) => {
@@ -3598,8 +3728,302 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
+  // ─── NEW: Auto-Publish Master Document upon Final Approval ───────────────
+  publishNewDocumentDar: (darId) => set((state) => {
+    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+    if (!dar) return state;
+
+    const today = new Date();
+    today.setDate(today.getDate() + (state.mockDateOffset || 0));
+    const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
+    const isEffectiveTodayOrPast = !dar.effectiveDate || dar.effectiveDate <= todayStr;
+    const docStatus = isEffectiveTodayOrPast ? 'EFFECTIVE' : 'SCHEDULED_EFFECTIVE';
+
+    const targetCode = dar.docIdInput || dar.document_code || dar.doc_code || dar.docCode || dar.code || dar.title;
+    const docName = dar.title || dar.name || targetCode;
+
+    // Check if document already exists
+    const existingIndex = state.documents.findIndex(d => 
+      (dar.id && String(d.darId) === String(dar.id)) || 
+      (targetCode && (d.document_code === targetCode || d.code === targetCode || d.title === targetCode))
+    );
+
+    let updatedDocs = [...state.documents];
+    let createdDoc;
+
+    if (existingIndex >= 0) {
+      createdDoc = {
+        ...updatedDocs[existingIndex],
+        status: docStatus,
+        effectiveDate: dar.effectiveDate || todayStr,
+        effective_date: dar.effectiveDate || todayStr,
+        published_at: isEffectiveTodayOrPast ? (updatedDocs[existingIndex].published_at || new Date().toISOString()) : null,
+        access_control: dar.access_control || updatedDocs[existingIndex].access_control || { scope: 'GENERAL' },
+        distributions: dar.distributions && dar.distributions.length > 0 ? dar.distributions : updatedDocs[existingIndex].distributions
+      };
+      updatedDocs[existingIndex] = createdDoc;
+    } else {
+      createdDoc = {
+        id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        darId: dar.id,
+        darNumber: dar.darNumber || dar.id,
+        document_code: targetCode,
+        code: targetCode,
+        title: targetCode,
+        name: docName,
+        docName: docName,
+        status: docStatus,
+        rev: dar.rev || dar.revision || '00',
+        revision: dar.rev || dar.revision || '00',
+        docType: dar.docType || (targetCode ? targetCode.split('-')[0] : 'SOP'),
+        department: dar.department || 'PD',
+        ownerId: dar.requesterId || dar.requester_id,
+        requesterId: dar.requesterId,
+        effectiveDate: dar.effectiveDate || todayStr,
+        effective_date: dar.effectiveDate || todayStr,
+        published_at: isEffectiveTodayOrPast ? new Date().toISOString() : null,
+        distributions: dar.distributions || [],
+        access_control: dar.access_control || { scope: 'GENERAL' },
+        file: dar.file || null,
+        relatedStandards: dar.relatedStandards || []
+      };
+      updatedDocs.push(createdDoc);
+    }
+
+    // Controlled Copies & DCC Distribution (Non-blocking for digital publishing)
+    let newCreatedCopies = [];
+    let newAuditLogs = [...(state.controlledCopyAuditTrail || [])];
+    let newTasks = [...state.tasks];
+
+    if (!targetCode.startsWith('FM')) {
+      const allocations = calculateCopyAllocations(createdDoc.department, createdDoc.distributions || []);
+      const allTargets = allocations.allAllocations || [];
+
+      if (allTargets.length > 0) {
+        allTargets.forEach((dist, idx) => {
+          const deptName = dist.departmentId || dist.dept || dist.dept_code || createdDoc.department;
+          const locName = dist.station_name || dist.locationName || dist.name || dist.location || (dist.isMaster ? `${deptName} Head Office (จุดคุมงานหลัก Master)` : `${deptName} Station ${idx + 1}`);
+          const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
+          const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
+          const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+
+          const newInst = {
+            id: `inst-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+            doc_id: createdDoc.id,
+            docId: createdDoc.id,
+            doc_code: createdDoc.title,
+            docTitle: createdDoc.title,
+            docName: createdDoc.name,
+            doc_version: createdDoc.rev,
+            rev: createdDoc.rev,
+            copy_no: copyNo,
+            copyNo: copyNo,
+            ccNumber: nextCcNum,
+            issue_no: '01',
+            issueNumber: 'I01',
+            holder_dept: deptName,
+            department: deptName,
+            departmentId: deptName,
+            dept_code: deptName,
+            holder_name: `${deptName} (${locName})`,
+            location: locName,
+            locationName: locName,
+            locationId: locId,
+            station_id: locId,
+            station_name: locName,
+            is_master: !!dist.isMaster || !!dist.is_master,
+            isMaster: !!dist.isMaster || !!dist.is_master,
+            status: 'PENDING_ISSUE',
+            is_replacement: false,
+            dispatched_at: null,
+            dispatched_by: null,
+            dateIssued: todayStr,
+            receipt_confirmed_at: null,
+            receipt_confirmed_by: null,
+            receipt_remarks: null,
+            recall_task_id: null
+          };
+          newCreatedCopies.push(newInst);
+
+          newAuditLogs.unshift({
+            id: `audit-${Date.now()}-${idx}`,
+            timestamp: new Date().toISOString(),
+            user: 'System (Lifecycle Engine)',
+            action: 'AUTO_GENERATE',
+            docTitle: newInst.docTitle,
+            docRev: newInst.rev,
+            ccNumber: newInst.ccNumber,
+            oldStatus: '-',
+            newStatus: newInst.status,
+            remarks: `Auto-generated CC for ${deptName} (${locName}) upon document effective`
+          });
+        });
+
+        const hasExistingDistTask = newTasks.some(t => t.darId === dar.id && t.type === 'DCC_DISTRIBUTE');
+        if (!hasExistingDistTask) {
+          const distSla = calculateTaskDueDate({
+            submissionDate: new Date(),
+            effectiveDate: dar.effectiveDate || createdDoc.effectiveDate,
+            stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
+            mockDateOffset: state.mockDateOffset
+          });
+          newTasks.push({
+            id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            title: `แจกจ่ายเอกสาร Controlled Copy (NEW)`,
+            description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${createdDoc.title} จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
+            type: 'DCC_DISTRIBUTE',
+            status: 'PENDING',
+            assigneeId: 'U001',
+            assignedToRole: 'DCC_ADMIN',
+            dueDate: distSla.dueDate,
+            cancelDate: distSla.cancelDate,
+            isUrgent: distSla.isUrgent,
+            isFastTrack: distSla.isFastTrack,
+            priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
+            slaType: distSla.slaType,
+            effectiveDate: distSla.effectiveDate,
+            darId: dar.id
+          });
+        }
+      }
+    }
+
+    const updatedDars = state.dars.map(d => {
+      if (d.id === dar.id) {
+        return {
+          ...d,
+          status: isEffectiveTodayOrPast ? (d.ackRequirement === 'REQUIRED' && d.ackUserIds?.length > 0 ? 'WAITING_ACKNOWLEDGEMENT' : 'COMPLETED') : 'APPROVED_WAITING_EFFECTIVE'
+        };
+      }
+      return d;
+    });
+
+    const currentCopies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
+    const finalCopies = [...currentCopies, ...newCreatedCopies];
+
+    const actionLogEntry = {
+      id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      actionType: 'DOCUMENT_PUBLISHED',
+      actor: 'System (Lifecycle Engine)',
+      details: `เอกสารใหม่ ${createdDoc.title} เผยแพร่สถานะ ${createdDoc.status} เรียบร้อยแล้ว`,
+      timestamp: new Date().toISOString()
+    };
+
+    return {
+      documents: updatedDocs,
+      dars: updatedDars,
+      controlledCopyInstances: finalCopies,
+      documentControlledCopies: finalCopies,
+      tasks: cleanupDccTasks(newTasks, finalCopies, updatedDocs),
+      controlledCopyAuditTrail: newAuditLogs,
+      actionLog: [actionLogEntry, ...(state.actionLog || [])]
+    };
+  }),
+
+  publishApprovedDar: (darId) => {
+    const state = get();
+    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+    if (!dar) return;
+
+    if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') {
+      get().publishNewDocumentDar(dar.id);
+    } else if (dar.type === 'REVISION' || dar.type === 'REVISE') {
+      get().publishDarRevision(dar.id);
+    } else if (dar.type === 'OBSOLETE') {
+      get().publishObsoleteDar(dar.id);
+    }
+  },
+
+  approveDar: (darId, comment = 'Approved') => {
+    const state = get();
+    const task = (state.tasks || []).find(t => 
+      (t.darId === darId || t.referenceId === darId) && 
+      (t.type === 'Approve' || t.type === 'APPROVE')
+    );
+    if (task) {
+      get().processWorkflow(task.id, 'APPROVE', comment);
+    } else {
+      const dar = (state.dars || []).find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+      if (dar) {
+        get().publishApprovedDar(dar.id);
+      }
+    }
+  },
+
+  checkScheduledEffectiveDocs: () => set((state) => {
+    const today = new Date();
+    today.setDate(today.getDate() + (state.mockDateOffset || 0));
+    const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
+
+    const scheduledDocs = (state.documents || []).filter(d => 
+      d.status === 'SCHEDULED_EFFECTIVE' && (d.effective_date || d.effectiveDate) && todayStr >= (d.effective_date || d.effectiveDate)
+    );
+
+    if (scheduledDocs.length === 0) return state;
+
+    let updatedDocs = [...state.documents];
+    let updatedDars = [...state.dars];
+    let newTasks = [...state.tasks];
+    let newControlledCopies = [...(state.controlledCopyInstances || state.documentControlledCopies || [])];
+    let newAuditTrail = [...(state.controlledCopyAuditTrail || [])];
+    let newActionLog = [...(state.actionLog || [])];
+
+    scheduledDocs.forEach(doc => {
+      const targetCode = doc.document_code || doc.code || doc.title;
+
+      updatedDocs = updatedDocs.map(d => {
+        if (d.id === doc.id) {
+          return {
+            ...d,
+            status: 'EFFECTIVE',
+            published_at: d.published_at || new Date().toISOString()
+          };
+        }
+        const isSameCode = targetCode && (d.document_code === targetCode || d.code === targetCode || d.title === targetCode);
+        if (isSameCode && d.status === 'EFFECTIVE') {
+          return {
+            ...d,
+            status: 'SUPERSEDED',
+            is_superseded: true
+          };
+        }
+        return d;
+      });
+
+      if (doc.darId) {
+        updatedDars = updatedDars.map(dar => {
+          if ((dar.id === doc.darId || dar.dar_no === doc.darId || dar.darNumber === doc.darId) && 
+              (dar.status === 'APPROVED_WAITING_EFFECTIVE' || dar.status === 'WAITING_EFFECTIVE')) {
+            return { ...dar, status: 'COMPLETED' };
+          }
+          return dar;
+        });
+      }
+
+      newActionLog.unshift({
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'SCHEDULED_DOCUMENT_ACTIVATED',
+        actor: 'System (Lifecycle Engine)',
+        details: `เอกสาร ${doc.title} ที่ถึงกำหนดวันบังคับใช้ (${doc.effective_date || doc.effectiveDate}) ได้เปลี่ยนสถานะเป็น EFFECTIVE อัตโนมัติ`,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    return {
+      documents: updatedDocs,
+      dars: updatedDars,
+      tasks: cleanupDccTasks(newTasks, newControlledCopies, updatedDocs),
+      controlledCopyInstances: newControlledCopies,
+      documentControlledCopies: newControlledCopies,
+      controlledCopyAuditTrail: newAuditTrail,
+      actionLog: newActionLog
+    };
+  }),
+
   publishDarRevision: (darId) => set((state) => {
-    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId);
+    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
     if (!dar) return state;
 
     const targetDocId = dar.docIdRef || dar.docId || dar.doc_id;
@@ -3625,11 +4049,16 @@ const useStore = create(persist((set, get) => ({
     const currentRevNum = parseInt(oldRev, 10) || 0;
     const newRevNum = currentRevNum + 1;
     const newRevStr = dar.revision || dar.rev || (newRevNum < 10 ? `0${newRevNum}` : `${newRevNum}`);
-    const todayStr = state.simulatedDate || new Date().toISOString().split('T')[0];
+    
+    const today = new Date();
+    today.setDate(today.getDate() + (state.mockDateOffset || 0));
+    const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
+    const isEffectiveTodayOrPast = !dar.effectiveDate || dar.effectiveDate <= todayStr;
+    const docStatus = isEffectiveTodayOrPast ? 'EFFECTIVE' : 'SCHEDULED_EFFECTIVE';
 
-    // 1. Single Effective Invariant: Update ALL previous revisions of this code to SUPERSEDED
+    // 1. Single Effective Invariant: If effective today or past, update ALL previous revisions of this code to SUPERSEDED
     let updatedDocs = state.documents.map(doc => {
-      if (isDocMatchCode(doc)) {
+      if (isEffectiveTodayOrPast && isDocMatchCode(doc) && doc.status === 'EFFECTIVE') {
         return {
           ...doc,
           status: 'SUPERSEDED',
@@ -3643,16 +4072,19 @@ const useStore = create(persist((set, get) => ({
     const newDoc = {
       id: newDocId,
       darId: dar.id,
+      darNumber: dar.darNumber || dar.id,
       document_code: targetCode || oldDoc?.document_code || oldDoc?.title,
       code: targetCode || oldDoc?.code || oldDoc?.title,
       title: oldDoc ? oldDoc.title : targetCode,
       name: dar.title || oldDoc?.name || 'Procedure Document',
-      status: 'EFFECTIVE',
+      status: docStatus,
       rev: newRevStr,
       revision: newRevStr,
       department: dar.department || oldDoc?.department || 'PD',
       controlledCopy: oldDoc?.controlledCopy || 0,
       effectiveDate: dar.effectiveDate || todayStr,
+      effective_date: dar.effectiveDate || todayStr,
+      published_at: isEffectiveTodayOrPast ? new Date().toISOString() : null,
       distributions: dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || []),
       access_control: dar.access_control || oldDoc?.access_control || { scope: 'GENERAL' }
     };
@@ -3772,6 +4204,12 @@ const useStore = create(persist((set, get) => ({
 
     // Distribution Task
     if (allTargets.length > 0) {
+      const distSla = calculateTaskDueDate({
+        submissionDate: new Date(),
+        effectiveDate: dar.effectiveDate || newDoc.effectiveDate,
+        stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
+        mockDateOffset: state.mockDateOffset
+      });
       newTasks.push({
         id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         title: `แจกจ่ายเอกสาร Controlled Copy (Rev.${newDoc.rev})`,
@@ -3780,8 +4218,13 @@ const useStore = create(persist((set, get) => ({
         status: 'PENDING',
         assigneeId: 'U001',
         assignedToRole: 'DCC_ADMIN',
-        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        priority: 'HIGH',
+        dueDate: distSla.dueDate,
+        cancelDate: distSla.cancelDate,
+        isUrgent: distSla.isUrgent,
+        isFastTrack: distSla.isFastTrack,
+        priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
+        slaType: distSla.slaType,
+        effectiveDate: distSla.effectiveDate,
         darId: dar.id
       });
     }

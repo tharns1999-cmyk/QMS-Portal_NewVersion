@@ -24,6 +24,7 @@ const DarList = () => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
+      dar.darNumber?.toLowerCase().includes(term) ||
       dar.id?.toLowerCase().includes(term) ||
       dar.title?.toLowerCase().includes(term) ||
       dar.type?.toLowerCase().includes(term) ||
@@ -242,7 +243,9 @@ const DarList = () => {
                     {renderActionButtons(dar)}
                   </td>
                   <td className="px-3.5 py-3 whitespace-nowrap font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px]">
-                    <span className="hover:underline">{dar.id}</span>
+                    <span className="hover:underline">
+                      {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ฉบับร่าง (Draft)' : dar.id)}
+                    </span>
                   </td>
                   <td className="px-3.5 py-3 font-medium text-slate-800 break-all break-words min-w-0 [overflow-wrap:anywhere] text-sm sm:text-[15px] leading-relaxed" title={dar.title}>
                     {dar.title}

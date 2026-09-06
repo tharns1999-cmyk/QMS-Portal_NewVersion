@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
-import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Sparkles } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Sparkles, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
@@ -126,7 +126,9 @@ const TaskApprove = () => {
             <div className="flex justify-between items-start">
                <div>
                   <h3 className="text-xs text-slate-400 uppercase tracking-wider font-bold">คำร้องขอเอกสาร (DAR)</h3>
-                  <p className="text-xl font-bold text-[#1E1E1E] font-mono mt-0.5">{dar.id}</p>
+                  <p className="text-xl font-bold text-[#1E1E1E] font-mono mt-0.5">
+                    {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+                  </p>
                </div>
                <span className="badge-system">{dar.type}</span>
             </div>
@@ -141,6 +143,20 @@ const TaskApprove = () => {
                <p><span className="text-slate-400 w-24 inline-block font-medium">แผนกเจ้าของ:</span> <span className="font-bold font-mono">{dar.department}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">ผู้ร้องขอ:</span> <span className="font-bold text-[#1E1E1E]">{requesterName}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">วันบังคับใช้:</span> <span className="font-mono font-bold text-emerald-700">{dar.effectiveDate || '-'}</span></p>
+               {task?.dueDate && (
+                 <p className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                   <span className="text-slate-400 w-24 inline-block font-medium">วันครบกำหนด:</span>
+                   <span className={`font-mono font-bold ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-700' : 'text-slate-700'}`}>
+                     {task.dueDate}
+                   </span>
+                   {(task.isUrgent || task.slaType === 'FAST_TRACK') && (
+                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300">
+                       <Zap size={10} className="fill-amber-500 text-amber-600" />
+                       <span>งานด่วน (Fast-Track)</span>
+                     </span>
+                   )}
+                 </p>
+               )}
                
                {/* Confidentiality Pill */}
                <div className="flex items-center gap-2 pt-1">

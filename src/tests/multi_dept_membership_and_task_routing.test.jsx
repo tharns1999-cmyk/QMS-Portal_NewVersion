@@ -331,9 +331,9 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
 
       renderWithRouter(<TaskInbox />);
 
-      // DCC Admin sees all departments despite only belonging to DCC and having level 2
+      // DCC Admin sees DCC/Receipt tasks across departments, but NOT department Review/Approve tasks of other departments
       expect(screen.getByText(/ตรวจรับ SOP-EN-999/i)).toBeInTheDocument();
-      expect(screen.getByText(/ทบทวน SOP-WH-999/i)).toBeInTheDocument();
+      expect(screen.queryByText(/ทบทวน SOP-WH-999/i)).not.toBeInTheDocument();
     });
 
     it('allows QMR to see and access tasks across all departments without explicit membership', () => {

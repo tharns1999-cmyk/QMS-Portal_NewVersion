@@ -283,8 +283,13 @@ const DarObsoleteForm = () => {
               </div>
             </div>
 
-            <div className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 shrink-0">
-              ขอยกเลิก (OBSOLETE)
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                [ ฉบับร่าง (รอออกเลข DAR หลังส่งคำร้อง) ]
+              </span>
+              <div className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                ขอยกเลิก (OBSOLETE)
+              </div>
             </div>
           </div>
 

@@ -433,8 +433,13 @@ const DarNewForm = () => {
               </div>
             </div>
 
-            <div className="text-[11px] font-semibold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-full border border-[#B8E1FF] shrink-0">
-              ร่างคำร้อง DAR ใหม่
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                [ ฉบับร่าง (รอออกเลข DAR หลังส่งคำร้อง) ]
+              </span>
+              <div className="text-[11px] font-semibold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-full border border-[#B8E1FF]">
+                ร่างคำร้อง DAR ใหม่
+              </div>
             </div>
           </div>
 

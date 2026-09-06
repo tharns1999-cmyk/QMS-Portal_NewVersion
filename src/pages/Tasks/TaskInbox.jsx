@@ -18,7 +18,8 @@ import {
   ShieldCheck, 
   Send,
   Calendar,
-  Building2
+  Building2,
+  Zap
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
@@ -151,9 +152,9 @@ const TaskInbox = () => {
     if (checkSLA) checkSLA();
   }, [mockDateOffset, checkSLA]);
 
-  // 🛡️ Wildcard access: DCC_ADMIN or QMR bypasses departmental restrictions
-  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr || currentUser?.id === 'u5';
-  const isDccAdmin = isWildcardUser;
+  // DCC Admin check
+  const isDccAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'EMP-001' || currentUser?.id === 'U001');
+  const isQmr = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR');
   const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
   const userApprovalLevel = Number(currentUser?.approval_level || currentUser?.level || 1);
 
@@ -163,51 +164,69 @@ const TaskInbox = () => {
       return false;
     }
 
-    // 🛡️ Wildcard Bypass: DCC Admin & QMR see all pooled and workflow tasks across all departments
-    if (isWildcardUser) {
+    // 0. Superuser/Wildcard bypass for QMR (executive quality oversight across departments)
+    if (isQmr) {
       return true;
     }
 
-    // 📦 Department-Pooled Receipt Task (แยก Logic สำหรับงานตรวจรับเล่ม ไม่ดักด้วย assigneeId เพื่อให้ทุกคนในแผนกเห็นและรับแทนกันได้)
+    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
+
+    // 1. งานที่ระบุชื่อผู้รับผิดชอบเจาะจงถึง User นี้โดยตรง
+    if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
+      return true;
+    }
+
+    const normType = (t.type || t.taskType || t.task_type || t.category || '').toUpperCase();
+
+    // 2. งานของสายงาน DCC (เฉพาะงานแจกจ่าย, เรียกคืน, ทะเบียน, ดำเนินการสำเนาควบคุม)
+    const isDccSpecificTask = [
+      'DCC_CHECK', 'DCC_REGISTER', 'DCC_DISTRIBUTE', 'DCC_RECALL',
+      'DISTRIBUTION', 'RECALL', 'DCC_ACTION', 'DCC_ISSUE',
+      'DCC_RECALL_WITH_CHECKLIST', 'RECALL_HARDCOPY',
+      'CC_REPLACEMENT_APPROVAL', 'DCC_REPLACEMENT'
+    ].includes(normType) ||
+      normType.startsWith('DCC_') ||
+      t.assignedToRole === 'DCC_ADMIN' ||
+      t.target_role === 'DCC';
+
+    if (isDccAdmin && isDccSpecificTask) {
+      return true;
+    }
+
+    // 3. 📦 Department-Pooled Receipt Task (งานตรวจรับเล่มสำเนาประจำสถานี/แผนก)
     const isReceiptTask = 
-      t.type === 'RECEIPT' || 
-      t.taskType === 'RECEIPT' || 
-      t.category === 'RECEIPT' ||
-      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-      t.type === 'CONFIRM_RECEIPT' ||
-      t.task_type === 'CONFIRM_RECEIPT' ||
+      normType === 'RECEIPT' || 
+      normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      normType === 'CONFIRM_RECEIPT' ||
       t.id?.includes('doc-') ||
       t.id?.includes('task-receipt-') ||
       t.title?.includes('ตรวจรับเล่ม') ||
       t.title?.includes('ตรวจรับเอกสาร');
 
     if (isReceiptTask) {
-      // ตรวจสอบว่า target_department ของงาน ตรงกับแผนกใดแผนกหนึ่งที่ User สังกัดหรือไม่
       const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
-      return userDepts.includes(taskDept) || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDcc;
+      return userDepts.includes(taskDept) || isDccAdmin;
     }
 
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+    // 4. งาน Review / Approve / Revise / Ack ประจำแผนก: ต้องตรงกับแผนกของ User เท่านั้น
+    const isDeptReviewOrApprove = [
+      'REVIEW', 'EXT_REVIEW', 'APPROVE', 'APPROVAL', 'EXT_APPROVAL',
+      'REVISE', 'ACK', 'ACKNOWLEDGE'
+    ].includes(normType);
 
-    // Direct Assignment to this individual
-    if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
-      return true;
-    }
+    if (isDeptReviewOrApprove) {
+      const taskDept = t.department || t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.holder_dept || '';
+      const isDeptMatch = Boolean(taskDept && userDepts.includes(taskDept));
+      const requiredLevel = Number(t.required_approval_level || t.requiredLevel || t.currentHandlerLevel || t.min_level || 1);
+      const isLevelMatch = userApprovalLevel >= requiredLevel;
 
-    // Role-based / Pooled Approval: Must belong to affiliated department and level must meet requirement
-    const requiredLevel = Number(t.required_approval_level || t.requiredLevel || t.currentHandlerLevel || t.min_level || 1);
-    const isDeptMatch = taskDept && userDepts.includes(taskDept);
-    const isLevelMatch = userApprovalLevel >= requiredLevel;
-    const isApprovalOrReview = (t.type === 'REVIEW' || t.type === 'APPROVE' || t.type === 'APPROVAL' || t.taskType === 'REVIEW' || t.taskType === 'APPROVE');
-
-    if (isApprovalOrReview) {
+      // ห้าม DCC_ADMIN หรือผู้ใช้อื่นมองเห็น Review / Approve Task ของแผนกอื่นในกล่องงานนี้
       return isDeptMatch && isLevelMatch;
     }
 
-    // Department-pooled generic tasks (unassigned)
-    if (!taskAssigneeId && isDeptMatch) {
+    // 5. Department-pooled generic tasks (unassigned)
+    const taskDept = t.department || t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.holder_dept || '';
+    if (!taskAssigneeId && taskDept && userDepts.includes(taskDept)) {
       return true;
     }
 
@@ -215,13 +234,13 @@ const TaskInbox = () => {
   });
 
   const availableDepts = useMemo(() => {
-    if (isWildcardUser) {
-      const deptsFromTasks = (tasks || []).map(t => t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept).filter(Boolean);
+    if (isDccAdmin) {
+      const deptsFromTasks = (userTasks || []).map(t => t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept).filter(Boolean);
       const combined = Array.from(new Set([...userDepts, ...deptsFromTasks]));
       return combined.filter(Boolean);
     }
     return userDepts;
-  }, [isWildcardUser, tasks, userDepts]);
+  }, [isDccAdmin, userTasks, userDepts]);
 
   const normalizeTaskCategory = (task) => {
     const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
@@ -287,6 +306,7 @@ const TaskInbox = () => {
 
     const diffTime = dueDateObj.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isUrgent = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
 
     if (diffDays < 0) {
       return (
@@ -296,14 +316,20 @@ const TaskInbox = () => {
       );
     } else if (diffDays === 0) {
       return (
-        <span className="badge-pending flex items-center gap-1 font-semibold">
-          <Clock size={11} /> ครบกำหนดวันนี้
+        <span className={`flex items-center gap-1 font-semibold px-2 py-0.5 rounded text-xs ${isUrgent ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse' : 'badge-pending'}`}>
+          <Clock size={11} className={isUrgent ? 'text-amber-700' : ''} /> ครบกำหนดวันนี้ {isUrgent ? '(เร่งด่วน)' : ''}
         </span>
       );
     } else if (diffDays <= 2) {
       return (
-        <span className="badge-pending flex items-center gap-1">
-          <Clock size={11} /> ใกล้ครบกำหนด (อีก {diffDays} วัน)
+        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${isUrgent ? 'bg-amber-50 text-amber-800 border border-amber-300 font-bold' : 'badge-pending'}`}>
+          <Clock size={11} className={isUrgent ? 'text-amber-600' : ''} /> {isUrgent ? 'ด่วน' : 'ใกล้ครบกำหนด'} (อีก {diffDays} วัน)
+        </span>
+      );
+    } else if (isUrgent) {
+      return (
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+          <Clock size={11} className="text-amber-600" /> งานด่วน (อีก {diffDays} วัน)
         </span>
       );
     } else {
@@ -544,6 +570,12 @@ const TaskInbox = () => {
                         <span className={`px-2.5 py-0.5 rounded text-xs font-semibold ${iconConfig.badgeClass}`}>
                           {iconConfig.label}
                         </span>
+                        {(task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK') && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-300 shadow-xs">
+                            <Zap size={11} className="fill-amber-500 text-amber-600" />
+                            <span>งานด่วน (Fast-Track SLA)</span>
+                          </span>
+                        )}
                         {getRiskBadge(task)}
                       </div>
 
@@ -566,9 +598,16 @@ const TaskInbox = () => {
                         ) : null}
                         
                         {task.dueDate && (
-                          <span className="flex items-center gap-1 text-[#666666]">
-                            <Clock size={12} className="text-[#999999]" />
-                            <span>กำหนดส่ง: <strong className="font-mono text-[#1E1E1E]">{formatThaiDateTime(task.dueDate)}</strong></span>
+                          <span className={`flex items-center gap-1 ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-800' : 'text-[#666666]'}`}>
+                            <Clock size={12} className={task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-600' : 'text-[#999999]'} />
+                            <span>
+                              กำหนดส่ง: <strong className={`font-mono ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-700 font-bold' : 'text-[#1E1E1E]'}`}>{formatThaiDateTime(task.dueDate)}</strong>
+                              {(task.isUrgent || task.slaType === 'FAST_TRACK') && (task.effectiveDate || dar?.effectiveDate) && (
+                                <span className="ml-1 text-[11px] font-medium text-amber-700">
+                                  (จำกัดตามวันบังคับใช้: {formatThaiDateTime(task.effectiveDate || dar?.effectiveDate)})
+                                </span>
+                              )}
+                            </span>
                           </span>
                         )}
                         

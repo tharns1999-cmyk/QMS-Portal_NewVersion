@@ -46,8 +46,15 @@ const DarDetail = () => {
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-[#0D99FF] text-lg">{dar.id}</span>
+              <span className="font-mono font-bold text-[#0D99FF] text-lg">
+                {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+              </span>
               <span className="badge-system">{dar.type}</span>
+              {(dar.isDraft || dar.status === 'DRAFT') && (
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  ฉบับร่าง (Draft)
+                </span>
+              )}
             </div>
             <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">{dar.title}</h2>
           </div>
