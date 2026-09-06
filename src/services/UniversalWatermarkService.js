@@ -1,4 +1,4 @@
-/**
+  /**
  * UniversalWatermarkService.js
  * 
  * Enterprise Document Security & Watermark Engine (Client-Side 100%)
@@ -834,6 +834,32 @@ export class UniversalWatermarkService {
   static async createWatermarkedBlob(pdfBytesOrBuffer, watermarkType, metadata = {}) {
     const outputBytes = await this.stampPdf(pdfBytesOrBuffer, watermarkType, metadata);
     return new Blob([outputBytes], { type: 'application/pdf' });
+  }
+
+  /**
+   * Helper: Directly download clean (unwatermarked) PDF document in browser or open in new tab
+   * Reserved for DCC Admin / Master Custodian (ISO 9001 Clause 7.5.3)
+   */
+  static async downloadCleanPdf(doc, meta = {}, openInTab = false) {
+    const rawPdfBytes = await this.generateQmsPdfDocument(doc, meta);
+    const blob = new Blob([rawPdfBytes], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+
+    if (openInTab) {
+      window.open(url, '_blank');
+      return url;
+    }
+
+    const link = document.createElement('a');
+    link.href = url;
+    const docCode = doc.document_code || doc.doc_code || doc.title || meta.docCode || 'DOCUMENT';
+    const filename = `${docCode}_CLEAN_MASTER.pdf`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    return url;
   }
 
   /**

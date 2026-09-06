@@ -48,9 +48,10 @@ export const isDccOperationalTask = (task) => {
  */
 export const isSameDepartment = (deptA, deptB) => {
   if (!deptA || !deptB) return false;
-  if (deptA === deptB) return true;
-  const a = String(deptA).trim().toUpperCase();
-  const b = String(deptB).trim().toUpperCase();
+  let a = String(deptA).trim().toUpperCase();
+  let b = String(deptB).trim().toUpperCase();
+  if (a === 'DCC') a = 'DC';
+  if (b === 'DCC') b = 'DC';
   if (a === b) return true;
   if ((a === 'QA' || a === 'QA/QC' || a === 'QC') && (b === 'QA' || b === 'QA/QC' || b === 'QC')) return true;
   return false;
@@ -75,11 +76,7 @@ export const isActionableTask = (task, currentUser) => {
   if (!task || !currentUser) return false;
 
   // 1. Reactive completion filter: immediately drop completed or resolved tasks
-  // Exception: DCC Distribution tracking tasks can be passively tracked by DCC staff
   if (task.status === 'COMPLETED' || task.status === 'RESOLVED' || task.is_completed === true) {
-    if (task.delivery_status === 'DISPATCHED_TRACKING' && isDccUser(currentUser)) {
-      return true;
-    }
     return false;
   }
 
@@ -100,7 +97,7 @@ export const isActionableTask = (task, currentUser) => {
   const normType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
 
   // 3. Department-Pooled Receipt Task (Physical controlled copy confirmation at department stations):
-  // Strictly scoped to destination department. Never leak to other departments even if assigneeId was misassigned.
+  // Strictly scoped to destination department. Never leak to DCC or other departments.
   const isReceiptTask = 
     normType === 'RECEIPT' || 
     normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
@@ -113,7 +110,7 @@ export const isActionableTask = (task, currentUser) => {
   if (isReceiptTask) {
     const taskDept = task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.currentHandlerDepartment || task.department || task.holder_dept || '';
     const isDeptMatch = userDepts.some(uDept => isSameDepartment(uDept, taskDept));
-    return isDeptMatch || isDcc;
+    return isDeptMatch;
   }
 
   // 4. Direct user assignment (for department workflow tasks like Review/Approve):
@@ -125,7 +122,7 @@ export const isActionableTask = (task, currentUser) => {
   // 5. Department Workflow Tasks (Review / Approve / Revise / Ack):
   // Must match department AND user's level must meet required approval level
   const isDeptReviewOrApprove = [
-    'REVIEW', 'EXT_REVIEW', 'APPROVE', 'APPROVAL', 'EXT_APPROVAL',
+    'REVIEW', 'DAR_REVIEW', 'EXT_REVIEW', 'APPROVE', 'DAR_APPROVE', 'APPROVAL', 'EXT_APPROVAL',
     'REVISE', 'ACK', 'ACKNOWLEDGE'
   ].includes(normType);
 

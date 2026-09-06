@@ -154,8 +154,8 @@ describe('Bug Fix: Restrict DCC Admin Task Inbox to Actionable Tasks Only (Remov
     // ✅ MUST see DCC Recall task
     expect(screen.getByText(/เรียกคืนเอกสาร Controlled Copy Rev.00/i)).toBeInTheDocument();
 
-    // ✅ MUST see Department-Pooled Receipt task (oversight)
-    expect(screen.getByText(/ตรวจรับเล่มสำเนาควบคุม SOP-PD-001 \(สถานี PD-01\)/i)).toBeInTheDocument();
+    // ❌ Should NOT see Department-Pooled Receipt task for PD department
+    expect(screen.queryByText(/ตรวจรับเล่มสำเนาควบคุม SOP-PD-001 \(สถานี PD-01\)/i)).not.toBeInTheDocument();
 
     // ✅ MUST see direct Review task for DC department assigned to him
     expect(screen.getByText(/ทบทวนระเบียบงาน DCC \(DC Department\)/i)).toBeInTheDocument();

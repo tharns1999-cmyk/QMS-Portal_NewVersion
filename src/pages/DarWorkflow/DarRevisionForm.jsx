@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
-import { Upload, FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, Check, ShieldCheck, UploadCloud, User } from 'lucide-react';
+import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
@@ -10,9 +10,12 @@ import DocumentAccessControlSelector from '../../components/workflow/DocumentAcc
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
-import { calculateCopyAllocations } from '../../services/MasterDataService';
-import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
+import { 
+  normalizeDeptCode, 
+  isUserAuthorizedForDocDept, 
+  isDocumentEligibleForRevision 
+} from '../../utils/darHelper';
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -22,7 +25,9 @@ const DarRevisionForm = () => {
   const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
   const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
   const prefillDocId = location.state?.prefillDocId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate } = useStore();
+  const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.targetDocCode || location.state?.docCode;
+  const deepLinkDocId = searchParams.get('docId') || location.state?.selectedDocId || location.state?.docId || prefillDocId;
+  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies } = useStore();
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
   
   const initialFormState = {
@@ -50,6 +55,7 @@ const DarRevisionForm = () => {
   
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -100,9 +106,25 @@ const DarRevisionForm = () => {
   // Handle Prefill from Periodic Review
   useEffect(() => {
     if (prefillDocId) {
-      setFormData(prev => ({ ...prev, docId: prefillDocId }));
+      const doc = documents.find(d => d.id === prefillDocId);
+      if (doc) {
+        setFormData(prev => ({
+          ...prev,
+          docId: doc.id,
+          title: doc.title || doc.name,
+          changeSummary: 'ทบทวนและแก้ไขเนื้อหาตามรอบการทบทวนประจำปี',
+          changeReason: 'PERIODIC_REVIEW'
+        }));
+      }
     }
-  }, [prefillDocId]);
+  }, [prefillDocId, documents]);
+
+  const allDars = useMemo(() => [...(dars || []), ...(darRequests || [])], [dars, darRequests]);
+
+  // Filter effective documents based on currentUser's department (Canonical Scoping & In-Flight Lock Prevention)
+  const effectiveDocs = useMemo(() => {
+    return (documents || []).filter(d => isDocumentEligibleForRevision(d, currentUser, allDars, targetDraftId));
+  }, [documents, currentUser, allDars, targetDraftId]);
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -115,12 +137,6 @@ const DarRevisionForm = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filter only EFFECTIVE documents for the current user's department
-  const userDept = currentUser?.department || currentUser?.dept || 'PD';
-  const effectiveDocs = useMemo(() => {
-    return (documents || []).filter(d => d && d.status === 'EFFECTIVE' && d.department === userDept);
-  }, [documents, userDept]);
-
   // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
   useEffect(() => {
     if (formData.docId) {
@@ -132,13 +148,45 @@ const DarRevisionForm = () => {
   }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs]);
 
   const filteredDocs = effectiveDocs.filter(d => {
-    const matchesType = docTypeFilter ? d.title.startsWith(docTypeFilter) : true;
-    const matchesSearch = d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          d.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const docCode = d.document_code || d.doc_code || d.code || d.docCode || d.title || '';
+    const docTitle = d.title || '';
+    const docName = d.name || d.docName || '';
+    const docType = d.type || d.docType || d.category || '';
+
+    const matchesType = !docTypeFilter || 
+      docType.toUpperCase() === docTypeFilter.toUpperCase() || 
+      docCode.toUpperCase().startsWith(docTypeFilter.toUpperCase()) ||
+      docTitle.toUpperCase().startsWith(docTypeFilter.toUpperCase());
+
+    const matchesSearch = !searchQuery || 
+      docTitle.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      docName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      docCode.toLowerCase().includes(searchQuery.toLowerCase());
+
     return matchesType && matchesSearch;
   });
 
-  const selectedDoc = effectiveDocs.find(d => d.id === formData.docId);
+  const selectedDoc = (effectiveDocs || []).find(d => d.id === formData.docId) || (documents || []).find(d => d.id === formData.docId);
+
+  // Active Controlled Copies in Circulation for the selected document
+  const activeCopiesInCirculation = useMemo(() => {
+    if (!selectedDoc) return [];
+    const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
+      ? controlledCopyInstances
+      : (documentControlledCopies || []);
+    return allCopies.filter(c => {
+      const isDocMatch = 
+        (c.docCode && (c.docCode === selectedDoc.code || c.docCode === selectedDoc.title)) ||
+        (c.documentId && String(c.documentId) === String(selectedDoc.id)) ||
+        (c.doc_code && (c.doc_code === selectedDoc.code || c.doc_code === selectedDoc.title)) ||
+        (c.docTitle && (c.docTitle === selectedDoc.code || c.docTitle === selectedDoc.title)) ||
+        (c.document_code && (c.document_code === selectedDoc.code || c.document_code === selectedDoc.title)) ||
+        (c.docId && String(c.docId) === String(selectedDoc.id)) ||
+        (c.doc_id && String(c.doc_id) === String(selectedDoc.id));
+      const isActive = c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT';
+      return isDocMatch && isActive;
+    });
+  }, [selectedDoc, controlledCopyInstances, documentControlledCopies]);
 
   const calculateNextRev = (currentRev) => {
     const revNum = parseInt(currentRev, 10);
@@ -153,11 +201,49 @@ const DarRevisionForm = () => {
       authorized_users: [],
       min_access_level: 4
     };
+
+    // Distribution Matrix Mutation: Pull existing active copies as default
+    let initialDistributions = doc.distributions && doc.distributions.length > 0
+      ? JSON.parse(JSON.stringify(doc.distributions))
+      : [];
+
+    if (initialDistributions.length === 0) {
+      const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
+        ? controlledCopyInstances
+        : (documentControlledCopies || []);
+      const docCopies = allCopies.filter(c => {
+        const isDocMatch = 
+          (c.docCode && (c.docCode === doc.code || c.docCode === doc.title)) ||
+          (c.documentId && String(c.documentId) === String(doc.id)) ||
+          (c.doc_code && (c.doc_code === doc.code || c.doc_code === doc.title)) ||
+          (c.docTitle && (c.docTitle === doc.code || c.docTitle === doc.title)) ||
+          (c.document_code && (c.document_code === doc.code || c.document_code === doc.title)) ||
+          (c.docId && String(c.docId) === String(doc.id)) ||
+          (c.doc_id && String(c.doc_id) === String(doc.id));
+        return isDocMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT');
+      });
+      if (docCopies.length > 0) {
+        initialDistributions = docCopies.map((c, idx) => ({
+          id: c.locationId || c.station_id || `loc-${idx}`,
+          locationId: c.locationId || c.station_id || `${c.holder_dept || c.department}-LOC-${idx + 1}`,
+          locationName: c.location || c.locationName || c.station_name || `${c.holder_dept || c.department} Station`,
+          station_id: c.locationId || c.station_id || `${c.holder_dept || c.department}-LOC-${idx + 1}`,
+          station_name: c.location || c.locationName || c.station_name || `${c.holder_dept || c.department} Station`,
+          departmentId: c.holder_dept || c.department || 'PD',
+          department: c.holder_dept || c.department || 'PD',
+          dept: c.holder_dept || c.department || 'PD',
+          dept_code: c.holder_dept || c.department || 'PD',
+          copyNo: c.copy_no || c.copyNo || String(idx + 1).padStart(2, '0'),
+          isMaster: !!c.is_master || !!c.isMaster
+        }));
+      }
+    }
+
     setFormData(prev => ({
       ...prev,
       docId: doc.id,
       title: doc.name,
-      distributions: doc.distributions ? JSON.parse(JSON.stringify(doc.distributions)) : [],
+      distributions: initialDistributions,
       relatedStandards: doc.relatedStandards ? [...doc.relatedStandards] : [],
       otherStandardDetail: doc.otherStandardDetail || '',
       access_control: initialAc,
@@ -172,9 +258,142 @@ const DarRevisionForm = () => {
       ...prev,
       docId: '',
       title: '',
+      distributions: [],
       relatedStandards: [],
-      otherStandardDetail: ''
+      otherStandardDetail: '',
+      access_control: {
+        scope: 'GENERAL',
+        authorized_depts: [],
+        authorized_users: [],
+        min_access_level: 4
+      }
     }));
+    setSearchQuery('');
+  };
+
+  // Handle Prefill / Deep-link from Document Library or URL parameters
+  useEffect(() => {
+    if (targetDraftId || location.state?.draftData) return;
+    if (formData.docId) return;
+
+    if (deepLinkDocId || deepLinkDocCode) {
+      const candidateList = (effectiveDocs && effectiveDocs.length > 0) ? effectiveDocs : (documents || []);
+      const matched = candidateList.find(d => {
+        if (!d) return false;
+        if (deepLinkDocId && String(d.id) === String(deepLinkDocId)) return true;
+        const code = (d.document_code || d.doc_code || d.code || d.docCode || d.title || '').trim().toUpperCase();
+        if (deepLinkDocCode && code === String(deepLinkDocCode).trim().toUpperCase()) return true;
+        return false;
+      });
+
+      if (matched) {
+        handleDocSelect(matched);
+      }
+    }
+  }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId]);
+
+
+  /**
+   * Reactive Pruning Pipeline & Dynamic Copy Re-indexing
+   * When Access Scope or Authorized Departments change:
+   * - Prune distributions for departments that are no longer authorized
+   * - Never prune owner department's Master Copy 01
+   * - Re-index remaining copy numbers sequentially in real-time
+   */
+  const handleAccessControlChange = (newAc) => {
+    const ownerDepartment = selectedDoc?.department || currentUser?.department || 'PD';
+    const normOwner = (ownerDepartment || 'PD').trim();
+    const scope = newAc?.scope || 'GENERAL';
+    const authorizedDepts = (newAc?.authorized_depts || []).map(d => String(d).trim());
+
+    setFormData(prev => {
+      let currentDists = prev.distributions || [];
+
+      // Check if pruning is required based on scope
+      let prunedDists = currentDists;
+      if (scope === 'DEPT_ONLY' || scope === 'RESTRICTED') {
+        // Only keep distributions belonging to the Owner Department
+        prunedDists = currentDists.filter(dist => {
+          const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
+          return distDept === normOwner || dist.isMaster || dist.is_master;
+        });
+      } else if (scope === 'TARGETED' && authorizedDepts.length > 0) {
+        // Only keep distributions belonging to Owner Department or explicitly Authorized Departments
+        prunedDists = currentDists.filter(dist => {
+          const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
+          return distDept === normOwner || authorizedDepts.includes(distDept) || dist.isMaster || dist.is_master;
+        });
+      }
+
+      // Dynamic Copy Number Re-indexing
+      // Separate master copy vs non-master copies and re-index sequentially starting from Copy 02
+      let masterItem = prunedDists.find(d => d.isMaster || d.is_master || d.copyNo === '01');
+      const nonMasterItems = prunedDists.filter(d => !(d.isMaster || d.is_master || d.copyNo === '01'));
+
+      const reindexedNonMasters = nonMasterItems.map((item, idx) => {
+        const copyNum = String(idx + 2).padStart(2, '0');
+        return {
+          ...item,
+          copyNo: copyNum,
+          copy_no: copyNum,
+          copyLabel: `Copy ${copyNum}`
+        };
+      });
+
+      const finalDists = masterItem 
+        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01', isMaster: true }, ...reindexedNonMasters]
+        : reindexedNonMasters;
+
+      return {
+        ...prev,
+        access_control: newAc,
+        distributions: finalDists
+      };
+    });
+  };
+
+  /**
+   * Helper to remove a single distribution chip and dynamically re-index remaining copies
+   * Unchecking chip triggers Two-Way Binding with DistributionSetup
+   */
+  const handleRemoveDistributionChip = (distToRemove) => {
+    if (distToRemove.isMaster || distToRemove.is_master || distToRemove.copyNo === '01') {
+      toast.error('ไม่สามารถลบ Master Copy 01 ของแผนกเจ้าของเอกสารได้');
+      return;
+    }
+
+    setFormData(prev => {
+      const remaining = (prev.distributions || []).filter(d => {
+        const dLocId = d.locationId || d.station_id || d.id;
+        const targetLocId = distToRemove.locationId || distToRemove.station_id || distToRemove.id;
+        const dDept = d.departmentId || d.dept || d.dept_code || d.department;
+        const targetDept = distToRemove.departmentId || distToRemove.dept || distToRemove.dept_code || distToRemove.department;
+        return !(dLocId === targetLocId && dDept === targetDept);
+      });
+
+      // Dynamic Re-indexing
+      const masterItem = remaining.find(d => d.isMaster || d.is_master || d.copyNo === '01');
+      const nonMasterItems = remaining.filter(d => !(d.isMaster || d.is_master || d.copyNo === '01'));
+
+      const reindexed = nonMasterItems.map((item, idx) => {
+        const copyNum = String(idx + 2).padStart(2, '0');
+        return {
+          ...item,
+          copyNo: copyNum,
+          copy_no: copyNum,
+          copyLabel: `Copy ${copyNum}`
+        };
+      });
+
+      const finalDists = masterItem 
+        ? [{ ...masterItem, copyNo: '01', copy_no: '01', isMaster: true }, ...reindexed]
+        : reindexed;
+
+      return {
+        ...prev,
+        distributions: finalDists
+      };
+    });
   };
 
   // Auto-calculated Workflow Participants for Auto-Whitelisting
@@ -192,7 +411,7 @@ const DarRevisionForm = () => {
     }
     const resolvedRevId = formData.manualReviewerId
       ? formData.manualReviewerId
-      : (resolveReviewer(currentUser?.id, currentUser?.department, masterUsers, reviewUsers || masterUsers)?.id);
+      : (resolveReviewer(currentUser?.id, currentUser?.department, masterUsers, reviewUsers || masterUsers, formData.docType)?.id);
     if (resolvedRevId && resolvedRevId !== currentUser?.id) {
       const revUser = (masterUsers || []).find(u => u.id === resolvedRevId);
       if (revUser) {
@@ -208,7 +427,7 @@ const DarRevisionForm = () => {
     }
     const resolvedAppId = formData.manualApproverId
       ? formData.manualApproverId
-      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department, masterUsers, approveUsers || masterUsers)?.id);
+      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department, masterUsers, approveUsers || masterUsers, formData.docType)?.id);
     if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
       const appUser = (masterUsers || []).find(u => u.id === resolvedAppId);
       if (appUser) {
@@ -325,32 +544,69 @@ const DarRevisionForm = () => {
     }
   };
 
-  const executeSubmit = () => {
-    const newDar = {
-      type: 'REVISION',
-      title: formData.title,
-      requesterId: currentUser?.id,
-      department: currentUser?.department || formData.department,
-      date: new Date().toISOString().split('T')[0],
-      docIdRef: formData.docId,
-      targetDocumentId: formData.docId,
-      changeSummary: formData.changeSummary,
-      changeReason: formData.changeReason,
-      otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
-      ackRequirement: formData.ackRequirement,
-      ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
-      distributions: formData.distributions || [],
-      effectiveDate: formData.effectiveDate,
-      relatedStandards: formData.relatedStandards || [],
-      otherStandardDetail: formData.otherStandardDetail,
-      access_control: formData.access_control,
-      isDraft: false
-    };
-    if (targetDraftId && deleteDar) deleteDar(targetDraftId);
-    addDar(newDar);
-    setShowConfirm(false);
-    toast.success('สร้างคำร้อง Revision สำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
-    navigate('/dashboard');
+  const executeSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const docTypeCode = selectedDoc?.docType || selectedDoc?.type || (selectedDoc?.title ? selectedDoc.title.split('-')[0] : (formData.docType || 'WI'));
+      const docCodeStr = selectedDoc?.code || selectedDoc?.title || formData.docId;
+      const docTitleStr = formData.title || selectedDoc?.name || 'Untitled Document';
+      const nextRevStr = calculateNextRev(selectedDoc?.rev);
+
+      const newDar = {
+        type: 'REVISION',
+        title: docTitleStr,
+        name: docTitleStr,
+        docTitle: docTitleStr,
+        docCode: docCodeStr,
+        document_code: docCodeStr,
+        docIdRef: formData.docId,
+        doc_id: formData.docId,
+        targetDocumentId: formData.docId,
+        docType: docTypeCode,
+        currentRev: selectedDoc?.rev || '00',
+        newRev: nextRevStr,
+        rev: nextRevStr,
+        requesterId: currentUser?.id || 'EMP-001',
+        requester_id: currentUser?.id || 'EMP-001',
+        requester_name: currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง',
+        department: currentUser?.department || formData.department || 'PD',
+        date: new Date().toISOString().split('T')[0],
+        changeSummary: formData.changeSummary || '',
+        change_summary: formData.changeSummary || '',
+        changeReason: formData.changeReason || '',
+        change_reason: formData.changeReason || '',
+        otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
+        ackRequirement: formData.ackRequirement || 'NOT_REQUIRED',
+        requireAck: formData.ackRequirement === 'REQUIRED',
+        ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
+        ackUserId: formData.ackUserId,
+        distributions: formData.distributions || [],
+        effectiveDate: formData.effectiveDate || '',
+        effective_date: formData.effectiveDate || '',
+        relatedStandards: formData.relatedStandards || [],
+        otherStandardDetail: formData.otherStandardDetail || '',
+        access_control: formData.access_control,
+        accessScope: formData.access_control?.scope || 'GENERAL',
+        manualReviewerId: formData.manualReviewerId,
+        isDraft: false,
+        status: 'UNDER_REVIEW'
+      };
+
+      if (targetDraftId && deleteDar) {
+        deleteDar(targetDraftId);
+      }
+
+      addDar(newDar);
+      setShowConfirm(false);
+      toast.success('สร้างคำร้อง Revision สำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Failed to submit DAR Revision:', err);
+      toast.error(`เกิดข้อผิดพลาดในการส่งคำร้อง: ${err?.message || 'Unknown Error'}`);
+      setShowConfirm(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -571,6 +827,73 @@ const DarRevisionForm = () => {
               </div>
 
             </div>
+
+            {/* Active Controlled Copies Matrix */}
+            {selectedDoc && (
+              <div className="mt-4 pt-4 border-t border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers size={16} className="text-[#0D99FF]" />
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#1E293B]">
+                      สำเนาควบคุมปัจจุบันที่ใช้งานอยู่ในสายงาน (Current Active Copies in Circulation)
+                    </h4>
+                  </div>
+                  <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    พบ {activeCopiesInCirculation.length} สำเนา
+                  </span>
+                </div>
+
+                {/* ISO 9001 Recall Warning Banner */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <span className="font-bold">ข้อกำหนด ISO 9001 (Control of Documented Information): </span>
+                    <span>เมื่อคำร้องนี้ได้รับการอนุมัติ สำเนาทั้งหมดในรายการนี้จะถูกเรียกคืนกลับสู่ฝ่าย DC</span>
+                  </div>
+                </div>
+
+                {/* Table */}
+                {activeCopiesInCirculation.length > 0 ? (
+                  <div className="overflow-x-auto border border-[#E2E8F0] rounded-xl shadow-xs">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-[#F8FAFC] text-[#475569] font-bold border-b border-[#E2E8F0] uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3">หมายเลขสำเนา (Copy No.)</th>
+                          <th className="py-2.5 px-3">แผนกผู้ถือครอง (Department)</th>
+                          <th className="py-2.5 px-3">จุดใช้งานจริง (Location)</th>
+                          <th className="py-2.5 px-3 text-center">Rev ปัจจุบัน</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#F1F5F9] bg-white">
+                        {activeCopiesInCirculation.map((c, idx) => (
+                          <tr key={c.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-bold text-[#0D99FF]">
+                              Copy {c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0')}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-[#1E293B]">
+                              <span className="inline-flex items-center gap-1">
+                                <Building size={12} className="text-slate-400" />
+                                {c.holder_dept || c.department || c.dept || '-'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-[#334155]">
+                              {c.location || c.locationName || c.station_name || c.holder_name || `${c.holder_dept || c.department || 'PD'} Station`}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-600">
+                              Rev.{c.rev || c.doc_version || c.revision || selectedDoc?.rev || '00'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                    ไม่พบสำเนาควบคุมที่ใช้งานอยู่ในสายงานสำหรับเอกสารนี้ (ไม่มีภาระงานเรียกคืนเล่มจริง)
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Section 3: รายละเอียดการขอแก้ไขและเอกสารแนบ (50/50 Symmetrical Equal-Height Grid) */}
@@ -744,17 +1067,17 @@ const DarRevisionForm = () => {
 
         </div>
 
-        {/* Document Access Scope & Confidentiality */}
+        {/* Document Access Scope & Confidentiality with Reactive Distribution Pruning */}
         <DocumentAccessControlSelector
           value={formData.access_control}
-          onChange={(access_control) => setFormData(prev => ({ ...prev, access_control }))}
+          onChange={handleAccessControlChange}
           ownerDept={selectedDoc?.department || currentUser?.department || 'PD'}
           masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
           masterUsers={masterUsers || []}
           workflowParticipants={workflowParticipants || []}
         />
 
-        {/* Distribution Setup */}
+        {/* Distribution Setup with Two-Way Binding */}
         <DistributionSetup 
           ownerDept={currentUser?.department || 'PD'}
           distributions={formData.distributions || []}
@@ -764,6 +1087,194 @@ const DarRevisionForm = () => {
           accessControl={formData.access_control}
           accessScope={formData.access_control?.scope}
         />
+
+        {/* ========================================================================= */}
+        {/* WIDGET: CIRCULATION & LIFECYCLE IMPACT SUMMARY (BENTO COMPARATIVE CARD)  */}
+        {/* ISO 9001: 7.5 Control of Documented Information Compliance Evidence       */}
+        {/* ========================================================================= */}
+        {selectedDoc && (
+          <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl sm:rounded-3xl p-4 sm:p-5.5 space-y-4 shadow-xs">
+            {/* Header Title */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                  <Layers size={16} strokeWidth={2.2} />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider">
+                    สรุปผลกระทบการหมุนเวียนสำเนา (Circulation & Lifecycle Impact Summary)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    เปรียบเทียบภาระงานเรียกคืนเล่มเดิม vs. การจัดพิมพ์ส่งมอบเล่มใหม่เมื่อคำร้องได้รับการอนุมัติ (ISO 9001: 7.5)
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-white text-slate-600 border border-slate-200 shadow-2xs">
+                {selectedDoc.title} Rev.{selectedDoc.rev || '00'} ➔ Rev.{calculateNextRev(selectedDoc.rev)}
+              </span>
+            </div>
+
+            {/* Split Comparative Columns (Bento Grid) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+              
+              {/* 1. ฝั่งซ้าย: สำเนาเดิมที่จะถูกเรียกคืน (Copies to Recall) */}
+              <div className="border border-amber-200/90 bg-amber-50/40 rounded-2xl p-4 flex flex-col justify-between space-y-3.5 shadow-2xs">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-amber-100/80 text-amber-700 flex items-center justify-center">
+                        <RotateCcw size={14} strokeWidth={2.2} />
+                      </div>
+                      <span className="text-xs font-bold text-amber-950">
+                        เรียกคืนสำเนาฉบับเดิม (Rev.{selectedDoc.rev || '00'})
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-100/90 text-amber-800 border border-amber-200">
+                      ทั้งหมด {activeCopiesInCirculation.length} เล่ม
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-amber-800/85 leading-relaxed">
+                    สำเนาควบคุมปัจจุบันที่ใช้งานอยู่ในสายงาน จะถูกเรียกคืนกลับสู่ฝ่าย DC เพื่อดำเนินการทำลายหรือประทับตราตกรุ่น
+                  </p>
+
+                  {/* List of Copies to Recall */}
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {activeCopiesInCirculation.length > 0 ? (
+                      activeCopiesInCirculation.map((c, idx) => {
+                        const copyNum = c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0');
+                        const dept = c.holder_dept || c.department || c.dept || '-';
+                        const loc = c.location || c.locationName || c.station_name || `${dept} Station`;
+                        return (
+                          <div 
+                            key={c.id || idx}
+                            className="flex items-center justify-between px-3 py-2 bg-white/90 border border-amber-200/70 rounded-xl text-xs shadow-2xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                Copy {copyNum}
+                              </span>
+                              <span className="font-semibold text-slate-800 shrink-0">({dept})</span>
+                              <span className="text-slate-600 truncate text-[11px]" title={loc}>
+                                {loc}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono text-amber-700 font-semibold shrink-0">
+                              Rev.{c.rev || c.doc_version || selectedDoc.rev || '00'}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 bg-white/80 border border-amber-200/60 rounded-xl text-center text-xs text-amber-800/70">
+                        ไม่พบสำเนาควบคุมเดิมในระบบ (ไม่มีภาระการเรียกคืนเล่มจริง)
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Compliance Tag Footer */}
+                <div className="pt-2.5 border-t border-amber-200/70 flex items-center gap-2 text-[11px] font-semibold text-amber-900">
+                  <ShieldCheck size={14} className="text-amber-600 shrink-0" />
+                  <span>ระบบจะสร้าง Task เรียกคืนส่งให้ฝ่าย DC ดำเนินการโดยอัตโนมัติ</span>
+                </div>
+              </div>
+
+              {/* 2. ฝั่งขวา: สำเนาใหม่ที่จะจัดพิมพ์และแจกจ่าย (New Copies to Issue) */}
+              <div className="border border-emerald-200/90 bg-emerald-50/40 rounded-2xl p-4 flex flex-col justify-between space-y-3.5 shadow-2xs">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
+                        <Printer size={14} strokeWidth={2.2} />
+                      </div>
+                      <span className="text-xs font-bold text-emerald-950">
+                        จัดพิมพ์และแจกจ่ายฉบับใหม่ (Rev.{calculateNextRev(selectedDoc.rev)})
+                      </span>
+                    </div>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-emerald-100/90 text-emerald-800 border border-emerald-200">
+                      รวม {(formData.distributions || []).length} เล่ม
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-emerald-800/85 leading-relaxed">
+                    สำเนาควบคุมฉบับปรับปรุงใหม่ที่จะส่งมอบให้ผู้ถือครองประจำจุดใช้งานที่กำหนด
+                  </p>
+
+                  {/* List of New Copies to Distribute with Interactive Tag Removal */}
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {(formData.distributions || []).length > 0 ? (
+                      (formData.distributions || []).map((dist, idx) => {
+                        const copyNum = dist.copyNo || dist.copy_no || String(idx + 1).padStart(2, '0');
+                        const isMaster = dist.isMaster || dist.is_master || copyNum === '01';
+                        const dept = dist.departmentId || dist.dept || dist.dept_code || dist.department || selectedDoc.department || 'PD';
+                        const loc = dist.locationName || dist.station_name || dist.location || `${dept} Station`;
+                        return (
+                          <div 
+                            key={dist.id || `${dept}-${idx}`}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs border shadow-2xs transition-all ${
+                              isMaster 
+                                ? 'bg-zinc-900 text-white border-zinc-800' 
+                                : 'bg-white/90 border-emerald-200/70 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`font-mono font-bold px-1.5 py-0.5 rounded text-[11px] shrink-0 ${
+                                isMaster 
+                                  ? 'bg-amber-400 text-zinc-950' 
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}>
+                                Copy {copyNum}
+                              </span>
+                              <span className={`font-semibold shrink-0 ${isMaster ? 'text-zinc-200' : 'text-slate-800'}`}>
+                                ({dept})
+                              </span>
+                              <span className={`truncate text-[11px] ${isMaster ? 'text-zinc-300' : 'text-slate-600'}`} title={loc}>
+                                {loc}
+                              </span>
+                              {isMaster && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] bg-zinc-800 text-amber-300 border border-zinc-700 font-bold shrink-0">
+                                  Master
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`text-[10px] font-mono font-semibold ${isMaster ? 'text-zinc-400' : 'text-emerald-700'}`}>
+                                Rev.{calculateNextRev(selectedDoc.rev)}
+                              </span>
+                              {!isMaster && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDistributionChip(dist)}
+                                  className="text-slate-400 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
+                                  title="ปลดจุดนี้ออกจากรายการสำเนาใหม่"
+                                >
+                                  <X size={13} strokeWidth={2.5} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 bg-white/80 border border-emerald-200/60 rounded-xl text-center text-xs text-emerald-800/70">
+                        ยังไม่ได้เลือกสำเนาควบคุมสำหรับฉบับใหม่
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Tag Footer */}
+                <div className="pt-2.5 border-t border-emerald-200/70 flex items-center gap-2 text-[11px] font-semibold text-emerald-900">
+                  <Printer size={14} className="text-emerald-600 shrink-0" />
+                  <span>ระบบจะสร้าง Task พิมพ์ส่งมอบให้ฝ่าย DC ดำเนินการตามรายการนี้</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="card-surface p-4 flex justify-end gap-2.5 shadow-2xs mb-2">
@@ -792,9 +1303,10 @@ const DarRevisionForm = () => {
       </form>
 
       {(() => {
+        const docTypeCode = selectedDoc?.docType || selectedDoc?.type || (selectedDoc?.title ? selectedDoc.title.split('-')[0] : (formData.docType || 'WI'));
         const resolvedRevId = formData.manualReviewerId
           ? formData.manualReviewerId
-          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], docTypeCode)?.id);
         const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (
@@ -802,6 +1314,7 @@ const DarRevisionForm = () => {
             isOpen={showConfirm}
             onClose={() => setShowConfirm(false)}
             onConfirm={executeSubmit}
+            isLoading={isSubmitting}
             title="ยืนยันการส่งคำร้องขอแก้ไขเอกสาร (Revision DAR)"
             actionType="submit"
             confirmText="ยืนยันการส่งคำร้องขอแก้ไข"

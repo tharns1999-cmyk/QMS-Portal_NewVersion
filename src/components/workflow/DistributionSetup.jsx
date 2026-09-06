@@ -99,8 +99,10 @@ const DistributionSetup = ({
     return list;
   }, [masterDepartments, storeDepts, isTargeted, authorizedDepts, normOwnerDept]);
 
-  // Active department selected in split-view sidebar
-  const [activeDeptId, setActiveDeptId] = useState(normOwnerDept || 'PD');
+  // Matrix table search & filter state (must be top-level, before any early return)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [expandedCustomInputDept, setExpandedCustomInputDept] = useState(null);
 
   // --- FORM SPECIFIC STATE (Tier 1 Department Level & Global) ---
   const [formMode, setFormMode] = useState(() => {
@@ -706,342 +708,363 @@ const DistributionSetup = ({
   }
 
   // ==========================================
-  // RENDER: ULTRA-MODERN DUAL-PANE MATRIX (NON-FM)
+  // RENDER: HIGH-DENSITY INLINE MATRIX TABLE (NON-FM)
   // ==========================================
-  const activeNormDept = normalizeDepartmentId(activeDeptId);
-  const activeDeptObj = availableDeptsList.find(d => normalizeDepartmentId(d.id) === activeNormDept) || availableDeptsList[0];
-  const isOwnerActive = activeNormDept === normOwnerDept;
+
+  // Filtered rows (computed here, after early return guard, using state set above)
+  const filteredDeptList = useMemo(() => {
+    let list = availableDeptsList;
+    if (showActiveOnly) {
+      list = list.filter(dept => getDeptAllocatedCount(dept.id) > 0);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(dept => {
+        const normDept = normalizeDepartmentId(dept.id);
+        if ((dept.name || '').toLowerCase().includes(q) || normDept.toLowerCase().includes(q)) return true;
+        const stations = getDepartmentStations(normDept, distributionLocations);
+        return stations.some(s => (s.name || s.station_name || '').toLowerCase().includes(q));
+      });
+    }
+    return list;
+  }, [availableDeptsList, showActiveOnly, searchQuery, distributionLocations]);
+
+  const activeDeptCount = useMemo(() =>
+    availableDeptsList.filter(dept => getDeptAllocatedCount(dept.id) > 0).length,
+  [availableDeptsList]);
 
   return (
-    <div className="bg-slate-50/50 border border-slate-200/80 rounded-3xl p-5 sm:p-6 space-y-5 w-full h-auto shadow-sm transition-all">
-      
-      {/* 1. Header Bar (Modern Metric Strip) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
-        {/* Left: Master Location Badge */}
-        <div className="flex items-center gap-2.5 bg-zinc-900 text-zinc-100 border border-zinc-800 rounded-2xl px-4 py-2.5 shadow-sm self-start sm:self-auto">
-          <div className="w-6 h-6 rounded-lg bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
-            <Crown size={14} />
-          </div>
-          <span className="text-xs font-bold text-white tracking-tight">
-            {normOwnerDept} — {ownerMasterStation.name}
-          </span>
-          <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30">
-            Master Copy 01 ล็อกถาวร
-          </span>
-        </div>
+    <div className="bg-white border border-slate-200/80 rounded-3xl p-4 sm:p-5 space-y-3 w-full shadow-sm transition-all">
 
-        {/* Right: Modern Metric Counter Strip */}
-        <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-2xl px-4 py-2 text-xs font-mono text-slate-600 shadow-2xs self-start sm:self-auto">
-          <span>จัดสรรแล้ว: <strong className="text-indigo-600 font-bold">{copyCalculation.totalCopies}</strong> ชุด</span>
-          <span className="text-slate-300">•</span>
-          <span>Master: <strong className="text-slate-900 font-bold">1</strong></span>
-          <span className="text-slate-300">•</span>
-          <span>Controlled: <strong className="text-indigo-600 font-bold">{copyCalculation.distributedCopies.length}</strong></span>
+      {/* ══════════════════════════════════════════════════════════
+          1. Header & Master Summary Strip (≤40px)
+      ══════════════════════════════════════════════════════════ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 bg-slate-50/80 border border-slate-200/60 rounded-xl">
+        {/* Master Badge */}
+        <span className="inline-flex items-center gap-2 text-xs select-none">
+          <Crown size={12} className="text-amber-600 shrink-0" />
+          <span className="font-mono font-bold text-amber-900">Master Copy 01</span>
+          <span className="text-amber-700/60 font-normal">({normOwnerDept} — {ownerMasterStation.name})</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200/60">ล็อกถาวร</span>
+        </span>
+        {/* Inline Metrics */}
+        <div className="flex items-center gap-3 text-xs text-slate-500 shrink-0">
+          <span>รวม <strong className="text-slate-800">{copyCalculation.totalCopies}</strong> ชุด</span>
+          <span className="text-slate-200">|</span>
+          <span>Controlled <strong className="text-indigo-600">{copyCalculation.distributedCopies.length}</strong></span>
         </div>
       </div>
 
-      {/* 2. Split-View Canvas (Dual-Pane) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start w-full">
-        
-        {/* Left Sidebar: Department Target List (4 Cols) */}
-        <div className="lg:col-span-4 border border-slate-200/80 rounded-2xl bg-white divide-y divide-slate-100 overflow-hidden shadow-xs">
-          <div className="p-3.5 px-4 bg-slate-50/70 flex items-center justify-between shrink-0">
-            <span className="text-xs font-bold text-slate-800">
-              แผนกในระบบ ({availableDeptsList.length})
-            </span>
-            <button
-              type="button"
-              onClick={handleGlobalAllToggle}
-              className="text-indigo-600 hover:text-indigo-700 text-[11px] font-bold cursor-pointer transition-colors"
-            >
-              {isAllGlobalSelected ? 'ล้างทุกแผนก' : 'เลือกทุกแผนก'}
+      {/* ══════════════════════════════════════════════════════════
+          2. Search & Quick Actions Bar
+      ══════════════════════════════════════════════════════════ */}
+      <div className="flex items-center gap-2">
+        {/* Omni-Search Slim */}
+        <div className="relative flex-1 flex items-center bg-white border border-slate-200 rounded-xl px-3 py-1.5 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all shadow-2xs">
+          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="ค้นหาแผนกหรือจุดติดตั้ง…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs bg-transparent border-0 text-slate-800 placeholder:text-slate-400 focus:ring-0 focus:outline-none"
+          />
+          {searchQuery && (
+            <button type="button" onClick={() => setSearchQuery('')} className="ml-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0">
+              <X size={13} />
             </button>
-          </div>
-
-          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-            {availableDeptsList.map((dept) => {
-              const normDept = normalizeDepartmentId(dept.id);
-              const isSelected = activeNormDept === normDept;
-              const isOwner = normDept === normOwnerDept;
-              const deptCount = getDeptAllocatedCount(normDept);
-
-              return (
-                <button
-                  key={dept.id}
-                  type="button"
-                  onClick={() => setActiveDeptId(dept.id)}
-                  className={`w-full p-3 px-4 text-left text-xs flex items-center justify-between transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-indigo-50/70 text-indigo-950 font-bold border-l-4 border-l-indigo-600'
-                      : 'hover:bg-slate-50/80 text-slate-700'
-                  }`}
-                >
-                  <div className="min-w-0 pr-2">
-                    <span className="truncate block font-semibold">{dept.name}</span>
-                    {isOwner && <span className="text-[10px] font-bold text-indigo-600 block mt-0.5">Owner Dept</span>}
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono shrink-0 font-bold transition-colors ${
-                    deptCount > 0 
-                      ? 'bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs' 
-                      : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    {deptCount} จุด
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          )}
         </div>
 
-        {/* Right Workspace: Point-of-Use Interactive Grid (8 Cols) */}
-        <div className="lg:col-span-8 border border-slate-200/80 rounded-2xl bg-white p-4 sm:p-5 space-y-4 shadow-xs">
-          {availableDeptsList.map((dept) => {
-            const normDept = normalizeDepartmentId(dept.id);
-            const isCurrentActive = normDept === activeNormDept;
-            const isOwner = normDept === normOwnerDept;
-            const standardStations = getDepartmentStations(normDept, distributionLocations);
-            const customForDept = customLocations.filter(c => c.departmentId === normDept);
-            const allDeptStations = [...standardStations, ...customForDept];
-            const deptAllocatedCount = getDeptAllocatedCount(normDept);
-            const nonMasterStations = allDeptStations.filter(s => !isMasterStation({ ...s, departmentId: normDept }, normOwnerDept));
-            const isAllDeptSelected = nonMasterStations.length > 0 && nonMasterStations.every(s => selectedLocationMap.has(`${normDept}::${getStationKey(s)}`));
+        {/* Quick Filter: All / Active */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowActiveOnly(false)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              !showActiveOnly
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            ทั้งหมด ({availableDeptsList.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowActiveOnly(true)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              showActiveOnly
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            มีการจัดสรร ({activeDeptCount})
+          </button>
+        </div>
 
-            return (
-              <div key={dept.id} className={isCurrentActive ? 'space-y-4' : 'hidden'}>
-                {/* Department Header & Controls */}
-                <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-slate-900">{dept.name}</span>
-                    {isOwner && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono border border-indigo-200 shadow-2xs">
-                        [ OWNER ]
+        {/* Global Select All */}
+        <button
+          type="button"
+          onClick={handleGlobalAllToggle}
+          className="px-3 py-1.5 rounded-xl text-[11px] font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer shadow-2xs shrink-0"
+        >
+          {isAllGlobalSelected ? 'ล้างทุกแผนก' : 'เลือกทุกแผนก'}
+        </button>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════
+          3. Inline Matrix Table Body (max-h-[340px] scrollable)
+      ══════════════════════════════════════════════════════════ */}
+      <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs">
+        {/* Table Header Row */}
+        <div className="grid bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wide" style={{ gridTemplateColumns: '130px 1fr 72px' }}>
+          <div className="px-3.5 py-2 border-r border-slate-100">แผนก</div>
+          <div className="px-3.5 py-2 border-r border-slate-100">จุดติดตั้ง (Point-of-Use Stations)</div>
+          <div className="px-3.5 py-2 text-right">จัดสรร</div>
+        </div>
+
+        {/* Scrollable table body */}
+        <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-100/80">
+          {filteredDeptList.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              ไม่พบแผนกที่ตรงกับคำค้นหา
+            </div>
+          ) : (
+            filteredDeptList.map((dept) => {
+              const normDept = normalizeDepartmentId(dept.id);
+              const isOwner = normDept === normOwnerDept;
+              const standardStations = getDepartmentStations(normDept, distributionLocations);
+              const customForDept = customLocations.filter(c => c.departmentId === normDept);
+              const allDeptStations = [...standardStations, ...customForDept];
+              const deptAllocatedCount = getDeptAllocatedCount(normDept);
+              const nonMasterStations = allDeptStations.filter(s => !isMasterStation({ ...s, departmentId: normDept }, normOwnerDept));
+              const isAllDeptSelected = nonMasterStations.length > 0 && nonMasterStations.every(s => selectedLocationMap.has(`${normDept}::${getStationKey(s)}`));
+              const isExpanded = expandedCustomInputDept === normDept;
+
+              // Highlight matching station names
+              const q = searchQuery.trim().toLowerCase();
+
+              return (
+                <div
+                  key={dept.id}
+                  className={`grid transition-colors ${isOwner ? 'bg-amber-50/20' : 'bg-white hover:bg-slate-50/40'}`}
+                  style={{ gridTemplateColumns: '130px 1fr 72px' }}
+                >
+                  {/* ── Col 1: Department Tag ── */}
+                  <div className="px-3 py-2.5 border-r border-slate-100 flex flex-col justify-center gap-0.5 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      {isOwner && <Crown size={10} className="text-amber-500 shrink-0" />}
+                      <span className={`font-mono font-bold text-xs ${isOwner ? 'text-amber-900' : 'text-slate-800'}`}>
+                        {dept.shortName || dept.id}
                       </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="text-slate-500 font-normal text-[11px]">
-                      เลือกแล้ว <strong className="text-slate-900 font-bold">{deptAllocatedCount}</strong> / {allDeptStations.length} จุด
-                    </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleSelectAllInDept(normDept)}
-                      className="text-indigo-600 hover:text-indigo-700 text-[11px] font-bold cursor-pointer transition-colors"
+                      className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 transition-colors cursor-pointer text-left"
                     >
                       {isAllDeptSelected ? 'ล้างค่า' : 'เลือกทั้งหมด'}
                     </button>
                   </div>
-                </div>
 
-                {/* Interactive Location Action Cards (2 Columns) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {allDeptStations.map((station) => {
-                    const stationKey = getStationKey(station);
-                    const isMaster = isOwner && isMasterStation({ ...station, departmentId: normDept }, normOwnerDept);
-                    const isSelected = selectedLocationMap.has(`${normDept}::${stationKey}`) || isMaster;
-                    const copyLabel = copyNumberByLocationKey.get(`${normDept}::${stationKey}`);
+                  {/* ── Col 2: Inline Station Chips ── */}
+                  <div className="px-2.5 py-2 border-r border-slate-100 flex flex-wrap gap-1.5 items-start min-h-[48px]">
+                    {allDeptStations.map((station) => {
+                      const stationKey = getStationKey(station);
+                      const isMaster = isOwner && isMasterStation({ ...station, departmentId: normDept }, normOwnerDept);
+                      const isSelected = selectedLocationMap.has(`${normDept}::${stationKey}`) || isMaster;
+                      const copyLabel = copyNumberByLocationKey.get(`${normDept}::${stationKey}`);
+                      const stationName = station.name || station.station_name || stationKey;
+                      const matchesSearch = q && stationName.toLowerCase().includes(q);
 
-                    if (isMaster) {
-                      return (
-                        <div
-                          key={stationKey}
-                          className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-white shadow-xs cursor-not-allowed select-none text-xs"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-1">
-                            <input
-                              type="checkbox"
-                              checked={true}
-                              disabled={true}
-                              readOnly
-                              tabIndex={-1}
-                              className="w-4 h-4 rounded border-zinc-700 text-amber-400 bg-zinc-800 cursor-not-allowed shrink-0 pointer-events-none opacity-80"
-                            />
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <MapPin size={13} className="text-amber-400 shrink-0" />
-                              <span className="truncate font-bold text-white text-xs">
-                                {station.name || station.station_name}
+                      /* ── Master Chip (amber, locked) ── */
+                      if (isMaster) {
+                        return (
+                          <span
+                            key={stationKey}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border select-none cursor-not-allowed
+                              bg-amber-50 border-amber-300/80 text-amber-800 font-medium
+                              ${matchesSearch ? 'ring-1 ring-amber-400' : ''}`}
+                          >
+                            <Crown size={10} className="text-amber-500 shrink-0" />
+                            <span>{stationName}</span>
+                            <span className="text-[10px] font-mono font-bold text-amber-600 ml-0.5">01</span>
+                          </span>
+                        );
+                      }
+
+                      /* ── Checked Chip (indigo) ── */
+                      if (isSelected) {
+                        return (
+                          <button
+                            key={stationKey}
+                            type="button"
+                            onClick={() => handleToggleStation(normDept, station)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer select-none
+                              bg-indigo-50 border-indigo-400 text-indigo-950 font-medium hover:bg-indigo-100 active:scale-95
+                              ${matchesSearch ? 'ring-1 ring-indigo-500' : ''}`}
+                          >
+                            <Check size={11} strokeWidth={3} className="text-indigo-600 shrink-0" />
+                            <span>{stationName}</span>
+                            <span className="text-[10px] font-mono font-bold text-indigo-500 bg-indigo-100 px-1 rounded ml-0.5">
+                              {copyLabel}
+                            </span>
+                            {station.isCustom && (
+                              <span
+                                role="button"
+                                onClick={(e) => handleDeleteCustomLocation(normDept, stationKey, e)}
+                                className="text-indigo-300 hover:text-rose-500 transition-colors ml-0.5 cursor-pointer"
+                                title="ลบจุดนี้"
+                              >
+                                <X size={11} />
                               </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg shadow-2xs">
-                              Master
-                            </span>
-                            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-black bg-amber-400 text-zinc-950 shrink-0 shadow-xs">
-                              Copy 01
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    }
+                            )}
+                          </button>
+                        );
+                      }
 
-                    if (isSelected) {
+                      /* ── Unchecked Chip (slate) ── */
                       return (
-                        <div
+                        <button
                           key={stationKey}
-                          role="button"
-                          tabIndex={0}
+                          type="button"
                           onClick={() => handleToggleStation(normDept, station)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer select-none
+                            bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 active:scale-95
+                            ${matchesSearch ? 'ring-1 ring-indigo-400 border-indigo-300' : ''}`}
+                        >
+                          <span>{stationName}</span>
+                          {station.isCustom && (
+                            <span
+                              role="button"
+                              onClick={(e) => handleDeleteCustomLocation(normDept, stationKey, e)}
+                              className="text-slate-300 hover:text-rose-500 transition-colors ml-0.5 cursor-pointer"
+                              title="ลบจุดนี้"
+                            >
+                              <X size={11} />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    {/* + Add Custom Station Chip (dashed pill) */}
+                    {!isExpanded ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedCustomInputDept(normDept)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] border border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-all cursor-pointer select-none"
+                        title="เพิ่มจุดพิเศษ"
+                      >
+                        <Plus size={11} />
+                        <span>เพิ่มจุด</span>
+                      </button>
+                    ) : (
+                      <div className="inline-flex items-center gap-1 bg-white border border-indigo-300 rounded-lg p-0.5 shadow-xs focus-within:ring-1 focus-within:ring-indigo-400 transition-all">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="ชื่อจุด…"
+                          value={customInputs[normDept] || ''}
+                          onChange={(e) => setCustomInputs(prev => ({ ...prev, [normDept]: e.target.value }))}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
+                            if (e.key === 'Enter') {
                               e.preventDefault();
-                              handleToggleStation(normDept, station);
+                              handleAddCustomLocation(normDept);
+                              setExpandedCustomInputDept(null);
+                            }
+                            if (e.key === 'Escape') {
+                              setExpandedCustomInputDept(null);
                             }
                           }}
-                          className="flex items-center justify-between p-3.5 rounded-2xl border-2 border-indigo-600 bg-indigo-50/40 text-indigo-950 font-semibold shadow-xs cursor-pointer text-xs select-none transition-all duration-150 ring-1 ring-indigo-500/20 hover:scale-[1.01]"
+                          className="w-28 text-[11px] bg-transparent border-0 px-2 py-0.5 text-slate-800 placeholder:text-slate-400 focus:ring-0 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAddCustomLocation(normDept);
+                            setExpandedCustomInputDept(null);
+                          }}
+                          className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[10px] font-bold transition-colors cursor-pointer shrink-0"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-1">
-                            <input
-                              type="checkbox"
-                              checked={true}
-                              readOnly
-                              tabIndex={-1}
-                              className="w-4 h-4 rounded border-indigo-600 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0"
-                            />
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <MapPin size={13} className="text-indigo-600 shrink-0" />
-                              <span className="truncate font-bold text-xs text-indigo-950">
-                                {station.name || station.station_name}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {station.isCustom && (
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteCustomLocation(normDept, stationKey, e)}
-                                className="text-slate-400 hover:text-rose-600 transition-colors p-0.5 cursor-pointer"
-                                title="ลบจุดใช้งานนี้"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-indigo-600 text-white shrink-0 shadow-xs">
-                              Copy {copyLabel}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={stationKey}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleToggleStation(normDept, station)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleToggleStation(normDept, station);
-                          }
-                        }}
-                        className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200/90 bg-white text-slate-800 hover:bg-slate-50/80 hover:border-indigo-300 cursor-pointer text-xs select-none transition-all duration-150 group shadow-2xs hover:scale-[1.01]"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 pr-1">
-                          <input
-                            type="checkbox"
-                            checked={false}
-                            readOnly
-                            tabIndex={-1}
-                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0 group-hover:border-indigo-500"
-                          />
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <MapPin size={13} className="text-slate-400 group-hover:text-indigo-600 transition-colors shrink-0" />
-                            <span className="font-semibold text-xs text-slate-700 group-hover:text-slate-900 truncate transition-colors">
-                              {station.name || station.station_name}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {station.isCustom && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteCustomLocation(normDept, stationKey, e)}
-                              className="text-slate-400 hover:text-rose-600 transition-colors p-0.5 cursor-pointer"
-                              title="ลบจุดใช้งานนี้"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <span className="text-[11px] text-indigo-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                            + เลือก
-                          </span>
-                        </div>
+                          ยืนยัน
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCustomInputDept(null)}
+                          className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+                  </div>
 
-                {/* Seamless Quick Add Input Bar */}
-                <div className="pt-3 border-t border-slate-100 flex items-center gap-2.5">
-                  <input
-                    type="text"
-                    placeholder={`เพิ่มจุดติดตั้งพิเศษใน ${dept.shortName || normDept}...`}
-                    value={customInputs[normDept] || ''}
-                    onChange={(e) => setCustomInputs(prev => ({ ...prev, [normDept]: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddCustomLocation(normDept);
-                      }
-                    }}
-                    className="flex-1 h-10 px-4 text-xs bg-slate-50/80 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 transition-all"
-                  />
+                  {/* ── Col 3: Allocated Count Badge ── */}
+                  <div className="px-3 py-2.5 flex items-center justify-end">
+                    {deptAllocatedCount > 0 ? (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 border border-indigo-200/80">
+                        {deptAllocatedCount} จุด
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-xs font-mono">–</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════
+          4. Bottom Summary Tray — Print Allocation Ribbon
+      ══════════════════════════════════════════════════════════ */}
+      {copyCalculation.allAllocations.length > 0 && (
+        <div className="border border-slate-200/70 bg-slate-50/60 rounded-2xl p-2.5 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+              <Printer size={12} className="text-slate-400" />
+              <span>สำเนาที่จะพิมพ์ ({copyCalculation.totalCopies} ชุด)</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {copyCalculation.allAllocations.map((alloc) => (
+              <span
+                key={`${alloc.departmentId}::${alloc.locationId}`}
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-mono border transition-all ${
+                  alloc.isMaster
+                    ? 'bg-amber-50 text-amber-900 border-amber-200/80'
+                    : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
+                }`}
+              >
+                <span className={`font-bold ${alloc.isMaster ? 'text-amber-600' : 'text-indigo-600'}`}>
+                  {alloc.departmentId}
+                </span>
+                <span>·</span>
+                <span>Copy {alloc.copyNo}</span>
+                <span className="text-slate-400 font-sans font-normal truncate max-w-[100px]">{alloc.locationName}</span>
+                {!alloc.isMaster && (
                   <button
                     type="button"
-                    onClick={() => handleAddCustomLocation(normDept)}
-                    className="h-10 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                    onClick={() => handleToggleStation(alloc.departmentId, { id: alloc.locationId, name: alloc.locationName })}
+                    className="text-slate-300 hover:text-rose-500 transition-colors cursor-pointer ml-0.5"
+                    title="ยกเลิกจุดนี้"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>เพิ่มจุด</span>
+                    <X size={11} className="stroke-[2.5]" />
                   </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-      </div>
-
-      {/* 3. แถบสรุปสำเนาที่จะจัดพิมพ์ */}
-      <div className="bg-white border border-[#E2E8F0] p-3 rounded-xl space-y-2">
-        <div className="flex items-center gap-2 text-xs font-bold text-[#1E293B]">
-          <Printer className="text-[#0D99FF] shrink-0" size={15} />
-          <span>สำเนาที่จะพิมพ์ ({copyCalculation.totalCopies} ชุด):</span>
-        </div>
-        
-        <div className="flex flex-wrap gap-1.5">
-          {copyCalculation.allAllocations.map((alloc) => (
-            <span
-              key={`${alloc.departmentId}::${alloc.locationId}`}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border ${
-                alloc.isMaster
-                  ? 'bg-[#1E293B] text-white border-[#1E293B]'
-                  : 'bg-[#F8FAFC] text-[#1E293B] border-[#CBD5E1] shadow-2xs'
-              }`}
-            >
-              <span className={`font-bold uppercase ${alloc.isMaster ? 'text-slate-300' : 'text-[#0D99FF]'}`}>{alloc.departmentId}</span>
-              <span>Copy {alloc.copyNo}</span>
-              <span className={`font-sans font-normal truncate max-w-[140px] ${alloc.isMaster ? 'text-slate-300' : 'text-[#475569]'}`}>
-                {alloc.locationName}
+                )}
               </span>
-              {!alloc.isMaster && (
-                <button
-                  type="button"
-                  onClick={() => handleToggleStation(alloc.departmentId, { id: alloc.locationId, name: alloc.locationName })}
-                  className="text-[#94A3B8] hover:text-[#EF4444] transition-colors p-0.5 cursor-pointer ml-0.5"
-                  title="ลบจุดนี้ออก"
-                >
-                  <X className="w-3 h-3 stroke-[3]" />
-                </button>
-              )}
-            </span>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
+      {/* Confirm Button */}
       {showConfirmButton && (
-        <div className="flex justify-end pt-2 border-t border-slate-200">
+        <div className="flex justify-end pt-1 border-t border-slate-100">
           <button
             type="button"
             onClick={onConfirm}

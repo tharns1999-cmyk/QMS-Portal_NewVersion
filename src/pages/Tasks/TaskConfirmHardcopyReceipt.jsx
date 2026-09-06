@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
+import { userMatchesDepartment } from '../../utils/taskFilter';
 
 const TaskConfirmHardcopyReceipt = () => {
   const { id } = useParams();
@@ -54,18 +55,18 @@ const TaskConfirmHardcopyReceipt = () => {
     );
   }
 
-  const docCode = task.doc_code || copy?.doc_code || copy?.docTitle || task.title;
+  const docCode = task.doc_code || task.docCode || copy?.doc_code || copy?.docCode || copy?.docTitle || task.title;
+  const docTitle = task.docTitle || task.docName || copy?.docName || copy?.docTitle || copy?.title || '';
   const docVersion = task.doc_version || copy?.doc_version || copy?.rev || '01';
   const copyNo = task.copy_no || copy?.copy_no || copy?.ccNumber || '01';
   const issueNo = copy?.issue_no || copy?.issueNumber || '01';
   const location = task.location || copy?.location || copy?.locationName || copy?.station_name || 'จุดใช้งานหลัก';
   const dept = task.target_department || task.targetDepartment || task.assignedToDept || copy?.holder_dept || copy?.department || currentUser?.department;
   const dispatchedAt = copy?.dispatched_at || task.createdAt;
-  const dispatchedBy = copy?.dispatched_by || 'เจ้าหน้าที่ DCC';
+  const dispatchedBy = copy?.dispatched_by || 'เจ้าหน้าที่ DC';
 
   const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr || currentUser?.id === 'u5';
-  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-  const isAuthorized = isWildcardUser || !dept || userDepts.includes(dept);
+  const isAuthorized = isWildcardUser || !dept || userMatchesDepartment(currentUser, dept);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -161,6 +162,12 @@ const TaskConfirmHardcopyReceipt = () => {
                   <span className="text-[#666666] shrink-0">รหัสเอกสาร:</span>
                   <span className="font-bold text-[#1E1E1E] font-mono text-base break-all break-words min-w-0 [overflow-wrap:anywhere] text-right">{docCode}</span>
                 </div>
+                {docTitle && (
+                  <div className="flex justify-between items-start gap-2 min-w-0">
+                    <span className="text-[#666666] shrink-0">ชื่อเอกสาร:</span>
+                    <span className="font-semibold text-slate-800 text-sm break-words min-w-0 text-right leading-snug">{docTitle}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center gap-2 min-w-0">
                   <span className="text-[#666666] shrink-0">ฉบับที่ (Revision):</span>
                   <span className="font-bold text-[#007BE5] font-mono bg-[#E5F4FF] px-2 py-0.5 rounded border border-[#E5F4FF] shrink-0">

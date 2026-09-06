@@ -10,8 +10,6 @@ import {
   Building, 
   MapPin, 
   FileDown, 
-  ChevronLeft, 
-  ChevronRight, 
   X, 
   Layers, 
   ShieldCheck, 
@@ -20,7 +18,8 @@ import {
   History,
   FolderOpen,
   Archive,
-  Flame
+  Flame,
+  PackageCheck
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
@@ -44,6 +43,8 @@ const ControlledCopyRegister = () => {
     completeRecallChecklist,
     recordCopyRecalled,
     destroyControlledCopy,
+    toggleCopyRecallReceived,
+    copyDispositionRecords,
     documents,
     externalDocuments,
     tasks,
@@ -56,7 +57,6 @@ const ControlledCopyRegister = () => {
 
   const navigate = useNavigate();
   const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'DCC_STAFF');
-  const isAdmin = isDccUser;
 
   React.useEffect(() => {
     if (!isDccUser) {
@@ -70,7 +70,7 @@ const ControlledCopyRegister = () => {
     const list = (controlledCopyInstances && controlledCopyInstances.length > 0)
       ? controlledCopyInstances
       : (documentControlledCopies || []);
-    return list;
+    return (list || []).filter(Boolean);
   }, [controlledCopyInstances, documentControlledCopies]);
 
   // Tab State
@@ -101,8 +101,9 @@ const ControlledCopyRegister = () => {
   // Multi-selection state for batch actions
   const [selectedCopyIds, setSelectedCopyIds] = useState([]);
 
-  // Recall Checklist State: { [taskIdOrDocId]: Set of checked copy IDs }
-  const [recallCheckedState, setRecallCheckedState] = useState({});
+  // Audit Trail sub-tab state ('ACTIVITY' | 'DISPOSITION')
+  const [auditSubTab, setAuditSubTab] = useState('ACTIVITY');
+  const [dispositionSearchTerm, setDispositionSearchTerm] = useState('');
 
   // Loading States
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
@@ -138,12 +139,6 @@ const ControlledCopyRegister = () => {
 
   // Audit Trail states
   const [auditSearchTerm, setAuditSearchTerm] = useState('');
-  const [auditPage, setAuditPage] = useState(1);
-  const auditItemsPerPage = 15;
-
-  // Active copies pagination
-  const [activePage, setActivePage] = useState(1);
-  const activeItemsPerPage = 15;
 
   // Department List for Filter
   const departmentList = useMemo(() => {
@@ -170,17 +165,36 @@ const ControlledCopyRegister = () => {
       c.status === 'IN_TRANSIT'
     ).length;
     
-    // Recall count: Copies with PENDING_RECALL, RECALLED, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
+    // Recall count: Copies with SUPERSEDED_PENDING_RECALL, PENDING_RECALL, RECALLED, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
     // STRICTLY EXCLUDE LOST / LOST_RECORDED / DECLARED_LOST
     const recallCopies = allCopies.filter(c => {
+      if (!c) return false;
       if (c.status === 'LOST' || c.status === 'LOST_RECORDED' || c.status === 'DECLARED_LOST') return false;
-      if (c.status === 'PENDING_RECALL' || c.status === 'RECALLED' || c.status === 'OBSOLETE_PENDING_RECALL' || c.status === 'DAMAGED_PENDING_REPLACEMENT') return true;
-      const doc = documents.find(d => String(d.id) === String(c.doc_id || c.docId));
-      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
+      if (
+        c.status === 'SUPERSEDED_PENDING_RECALL' ||
+        c.status === 'PENDING_RECALL' || 
+        c.status === 'DAMAGED_PENDING_RECALL' || 
+        c.status === 'RECALLED' || 
+        c.status === 'OBSOLETE_PENDING_RECALL' || 
+        c.status === 'DAMAGED_PENDING_REPLACEMENT' ||
+        ((c.isDamaged || c.is_damaged) && c.status !== 'DESTROYED' && c.status !== 'RECALLED_DESTROYED' && c.status !== 'ARCHIVED_OBSOLETE')
+      ) return true;
+      const doc = (documents || []).find(d => String(d.id) === String(c.doc_id || c.docId))
+        || (externalDocuments || []).find(d => String(d.id) === String(c.doc_id || c.docId || c.external_doc_id));
+      const isDocSupersededOrObsolete = Boolean(
+        doc && (
+          doc.status === 'SUPERSEDED' || 
+          doc.status === 'SUPERSEDED_ARCHIVED' || 
+          doc.status === 'OBSOLETE' || 
+          doc.status === 'OBSOLETE_ARCHIVED' ||
+          doc.is_superseded ||
+          doc.is_obsolete
+        )
+      );
       return isDocSupersededOrObsolete && (c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED');
     });
 
-    const active = allCopies.filter(c => c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE').length;
+    const active = allCopies.filter(c => c && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE')).length;
 
     return {
       pendingIssue,
@@ -188,7 +202,7 @@ const ControlledCopyRegister = () => {
       recall: recallCopies.length,
       active
     };
-  }, [allCopies, documents]);
+  }, [allCopies, documents, externalDocuments]);
 
   // Combined and Safe Audit / History Logs
   const dccHistoryLogs = useMemo(() => {
@@ -268,6 +282,7 @@ const ControlledCopyRegister = () => {
   // Filtered List for Tab 1: PENDING_ISSUE
   const pendingIssueCopies = useMemo(() => {
     return allCopies.filter(c => {
+      if (!c) return false;
       const isPending = 
         c.status === 'PENDING_ISSUE' || 
         c.status === 'PENDING_PRINT' || 
@@ -293,6 +308,7 @@ const ControlledCopyRegister = () => {
   // Filtered List for Tab 2: DISPATCHED_TRACKING
   const dispatchedCopies = useMemo(() => {
     return allCopies.filter(c => {
+      if (!c) return false;
       const isDispatched = 
         c.status === 'DISPATCHED_PENDING_RECEIPT' || 
         c.status === 'DISPATCHED' || 
@@ -322,13 +338,33 @@ const ControlledCopyRegister = () => {
     const groups = {};
 
     allCopies.forEach(copy => {
+      if (!copy) return;
       // Exclude lost copies completely
       if (copy.status === 'LOST' || copy.status === 'LOST_RECORDED' || copy.status === 'DECLARED_LOST') return;
 
-      const doc = documents.find(d => String(d.id) === String(copy.doc_id || copy.docId))
+      const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
         || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id));
-      const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
-      const isNeedingRecall = copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' || copy.status === 'OBSOLETE_PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_REPLACEMENT' || (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE' || copy.status === 'RECEIVED'));
+
+      const isDocSupersededOrObsolete = Boolean(
+        doc && (
+          doc.status === 'SUPERSEDED' || 
+          doc.status === 'SUPERSEDED_ARCHIVED' || 
+          doc.status === 'OBSOLETE' || 
+          doc.status === 'OBSOLETE_ARCHIVED' ||
+          doc.is_superseded ||
+          doc.is_obsolete
+        )
+      );
+
+      const isNeedingRecall = 
+        copy.status === 'SUPERSEDED_PENDING_RECALL' || 
+        copy.status === 'PENDING_RECALL' || 
+        copy.status === 'DAMAGED_PENDING_RECALL' || 
+        copy.status === 'RECALLED' || 
+        copy.status === 'OBSOLETE_PENDING_RECALL' || 
+        copy.status === 'DAMAGED_PENDING_REPLACEMENT' || 
+        ((copy.isDamaged || copy.is_damaged) && copy.status !== 'DESTROYED' && copy.status !== 'RECALLED_DESTROYED' && copy.status !== 'ARCHIVED_OBSOLETE') ||
+        (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE' || copy.status === 'RECEIVED'));
 
       if (isNeedingRecall) {
         const docId = String(copy.doc_id || copy.docId || copy.doc_code || copy.docTitle || (doc ? doc.id : 'unknown'));
@@ -336,7 +372,7 @@ const ControlledCopyRegister = () => {
           // Find associated recall task if exists
           const recallTask = (tasks || []).find(t => 
             (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.type === 'RECALL_HARDCOPY' || t.taskType === 'RECALL' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST') &&
-            (String(t.doc_id) === docId || String(t.docId) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)) || String(t.copyId) === String(copy.id) || String(t.instanceId) === String(copy.id))
+            (String(t.doc_id) === docId || String(t.docId) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)) || String(t.copyId) === String(copy.id) || String(t.instanceId) === String(copy.id) || (t.supersededCopyIds && t.supersededCopyIds.includes(copy.id)) || (t.doc_code && (t.doc_code === copy.doc_code || t.doc_code === copy.docTitle)))
           );
 
           groups[docId] = {
@@ -344,7 +380,7 @@ const ControlledCopyRegister = () => {
             docCode: copy.doc_code || copy.docTitle || doc?.edCode || doc?.title || 'Unknown Doc',
             docTitle: copy.docName || doc?.title || doc?.name || copy.docTitle || 'Procedure Document',
             docVersion: copy.doc_version || copy.rev || doc?.rev || '01',
-            docStatus: doc?.status || (copy.isDamaged || copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' ? 'DAMAGED_RECALL' : 'SUPERSEDED'),
+            docStatus: doc?.status || (copy.isDamaged || copy.status === 'DAMAGED_PENDING_RECALL' || copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' ? 'DAMAGED_RECALL' : 'SUPERSEDED'),
             taskId: recallTask?.id || `task-recall-${docId}`,
             copies: []
           };
@@ -359,6 +395,7 @@ const ControlledCopyRegister = () => {
   // Filtered List for Tab 4: ACTIVE_REGISTER
   const activeCopies = useMemo(() => {
     return allCopies.filter(c => {
+      if (!c) return false;
       const isActive = c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE';
       if (!isActive) return false;
 
@@ -399,11 +436,63 @@ const ControlledCopyRegister = () => {
     });
   }, [dccHistoryLogs, auditSearchTerm]);
 
+  // Dedicated Disposition Ledger Filter
+  const filteredDispositionRecords = useMemo(() => {
+    const records = copyDispositionRecords || [];
+    if (!dispositionSearchTerm) return records;
+    const q = dispositionSearchTerm.toLowerCase();
+    return records.filter(r => {
+      const code = String(r.docCode || '').toLowerCase();
+      const title = String(r.docTitle || '').toLowerCase();
+      const copyNo = String(r.copyNumber || r.copy_no || '').toLowerCase();
+      const dept = String(r.department || '').toLowerCase();
+      const loc = String(r.location || '').toLowerCase();
+      const by = String(r.disposedBy || r.disposed_by_name || '').toLowerCase();
+      const notes = String(r.notes || '').toLowerCase();
+      const ref = String(r.referenceNo || r.reference_no || '').toLowerCase();
+      const witness = String(r.witnessName || r.witness_name || '').toLowerCase();
+      return (
+        code.includes(q) ||
+        title.includes(q) ||
+        copyNo.includes(q) ||
+        dept.includes(q) ||
+        loc.includes(q) ||
+        by.includes(q) ||
+        notes.includes(q) ||
+        ref.includes(q) ||
+        witness.includes(q)
+      );
+    });
+  }, [copyDispositionRecords, dispositionSearchTerm]);
+
   // Universal Pagination Hook Instances for all tabs
   const pendingIssuePagination = useTablePagination(pendingIssueCopies, 10);
   const dispatchedPagination = useTablePagination(dispatchedCopies, 10);
   const activePagination = useTablePagination(activeCopies, 10);
   const auditPagination = useTablePagination(filteredAuditLogs, 10);
+  const dispositionPagination = useTablePagination(filteredDispositionRecords, 10);
+
+  // Export Disposition Ledger to CSV (ISO 9001 Compliance)
+  const handleExportDispositionCsv = () => {
+    if (!filteredDispositionRecords || filteredDispositionRecords.length === 0) {
+      toast.error('ไม่มีข้อมูล Disposition Ledger ที่ตรงกับเงื่อนไขในการ Export');
+      return;
+    }
+    const headers = ['Timestamp,Document Code,Title,Rev,Copy No,Department,Location,Disposition Type,Method,Disposed By,Witness,Reference No,Notes'];
+    const rows = filteredDispositionRecords.map(r => {
+      const timeStr = r.disposedAt ? new Date(r.disposedAt).toLocaleString('th-TH') : '-';
+      return `"${timeStr}","${r.docCode || ''}","${(r.docTitle || '').replace(/"/g, '""')}","${r.revision || ''}","${r.copyNumber || ''}","${r.department || ''}","${r.location || ''}","${r.dispositionType || ''}","${r.dispositionMethod || ''}","${r.disposedBy || ''}","${r.witnessName || ''}","${r.referenceNo || ''}","${(r.notes || '').replace(/"/g, '""')}"`;
+    });
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers.concat(rows).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Controlled_Copy_Disposition_Ledger_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Export ทะเบียนประวัติการทำลายสำเนา (Disposition Ledger) สำเร็จ');
+  };
 
   // Export to CSV
   const handleExportAuditCsv = () => {
@@ -446,7 +535,7 @@ const ControlledCopyRegister = () => {
     setProcessingCopyId(copy.id);
     const toastId = toast.loading(`กำลังประทับลายน้ำ 45° สำหรับ ${copy.doc_code || copy.docTitle} (Copy ${copy.copy_no || copy.ccNumber})...`);
     try {
-      const doc = documents.find(d => String(d.id) === String(copy.doc_id || copy.docId))
+      const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
         || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id))
         || {
           id: copy.doc_id || copy.id,
@@ -504,7 +593,10 @@ const ControlledCopyRegister = () => {
     try {
       for (let i = 0; i < targets.length; i++) {
         const copy = targets[i];
-        const doc = documents.find(d => String(d.id) === String(copy.doc_id || copy.docId)) || {
+        if (!copy) continue;
+        const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
+          || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id))
+          || {
           id: copy.doc_id || copy.id,
           title: copy.doc_code || copy.docTitle || 'SOP-QMS-001',
           name: copy.docName || 'Controlled Standard Procedure',
@@ -571,37 +663,16 @@ const ControlledCopyRegister = () => {
     }
   };
 
-  // 5. Recall Checklist Toggle
-  const toggleRecallCopy = (groupId, copyId) => {
-    setRecallCheckedState(prev => {
-      const groupSet = new Set(prev[groupId] || []);
-      if (groupSet.has(copyId)) {
-        groupSet.delete(copyId);
-      } else {
-        groupSet.add(copyId);
-      }
-      return {
-        ...prev,
-        [groupId]: groupSet
-      };
-    });
-  };
-
-  // 6. Complete Recall Checklist for a Document Group
-  const handleCompleteRecallGroup = (group, outcome = 'RECALLED_DESTROYED') => {
-    const checkedSet = recallCheckedState[group.docId] || new Set();
-    const checkedArray = Array.from(checkedSet);
-
-    if (checkedArray.length !== group.copies.length) {
-      toast.error(`ยังเรียกเก็บไม่ครบ 100% (เก็บแล้ว ${checkedArray.length}/${group.copies.length} จุด)`);
-      return;
+  // 5. Quick-toggle physical copy receipt at DCC (Step 1 <-> Step 2)
+  const handleToggleRecallReceived = (copy) => {
+    if (!copy) return;
+    const isCurrentlyReceived = copy.status === 'RECALLED' || copy.status === 'RECEIVED_AT_DCC' || copy.status === 'RECALLED_HELD_AT_DCC';
+    toggleCopyRecallReceived(copy.id);
+    if (!isCurrentlyReceived) {
+      toast.success(`ตรวจรับเล่มจริง Copy ${copy.copy_no || copy.ccNumber || '01'} เข้าสู่ DCC เรียบร้อยแล้ว (รอทำลาย/จัดเก็บ)`, { id: `rc-${copy.id}` });
+    } else {
+      toast(`ยกเลิกการตรวจรับเล่ม Copy ${copy.copy_no || copy.ccNumber || '01'} (กลับสู่สถานะรอเก็บเล่ม)`, { id: `rc-${copy.id}` });
     }
-
-    completeRecallChecklist(group.taskId, checkedArray, outcome);
-    const actionLabel = (outcome === 'RECALLED_OBSOLETE' || outcome === 'ARCHIVED_OBSOLETE')
-      ? 'ประทับตรายกเลิกและเก็บเข้าประวัติ (Archived Obsolete)'
-      : 'ทำลาย (Destroyed)';
-    toast.success(`ยืนยันการเรียกคืนและ${actionLabel}เอกสาร ${group.docCode} (Rev.${group.docVersion}) ครบถ้วน ${group.copies.length} จุดเรียบร้อย`);
   };
 
   // 7. Manual Issue Extra Copy
@@ -622,19 +693,16 @@ const ControlledCopyRegister = () => {
   // 8. Report Damaged / Lost
   const handleReportSubmit = (e) => {
     e.preventDefault();
-    if (!reportReason) {
-      toast.error('กรุณาระบุเหตุผล');
+    const trimmedReason = reportReason.trim();
+    if (!trimmedReason) {
+      toast.error('กรุณาระบุสาเหตุและความจำเป็น');
       return;
     }
-    reportCcDamagedLost(selectedInstance.id, reportType, reportReason);
+    reportCcDamagedLost(selectedInstance.id, reportType, trimmedReason);
     setReportModalOpen(false);
     setSelectedInstance(null);
     setReportReason('');
-    if (reportType === 'DAMAGED') {
-      toast.success('แจ้งเอกสารชำรุดสำเร็จ — สร้างงานเรียกคืนเล่มเดิมและคิวออกสำเนาทดแทนแล้ว');
-    } else {
-      toast.success('แจ้งเอกสารสูญหายสำเร็จ — คิวออกสำเนาทดแทนแล้ว (ไม่ต้องเรียกคืนเล่มจริง)');
-    }
+    toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
   };
 
   // Selection Toggles
@@ -1024,7 +1092,7 @@ const ControlledCopyRegister = () => {
       {/* ========================================================================= */}
       {(activeTab === 'RECALL_CHECKLIST' || activeTab === 'RECALL') && (
         <div className="space-y-6">
-          <div className="bg-gradient-to-r from-rose-600 to-red-700 text-white p-6 rounded-3xl shadow-lg shadow-rose-600/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="bg-gradient-to-r from-rose-600 via-rose-700 to-red-800 text-white p-6 rounded-3xl shadow-lg shadow-rose-600/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-md bg-white/20 text-white text-xs font-bold font-mono">
@@ -1039,19 +1107,42 @@ const ControlledCopyRegister = () => {
                 ติดตามการเก็บคืนสำเนาฉบับเก่าจากทุกจุดใช้งานเมื่อเอกสารมีการ Revise หรือประกาศยกเลิก (Obsolete)
               </p>
             </div>
-            <div className="text-right bg-white/10 border border-white/20 rounded-2xl px-4 py-2.5 backdrop-blur-sm self-start sm:self-auto">
-              <div className="text-xs text-rose-200">เอกสารที่ต้องเรียกคืน</div>
-              <div className="text-xl font-black font-mono">{recallGroups.length} เอกสาร</div>
+            <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('AUDIT_TRAIL');
+                  setAuditSubTab('DISPOSITION');
+                  setSearchParams({ tab: 'AUDIT_TRAIL' });
+                }}
+                className="px-3.5 py-2 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold backdrop-blur-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                title="ดูประวัติการทำลายและจัดเก็บสำเนาควบคุม"
+              >
+                <Archive size={14} />
+                <span>ดูทะเบียนประวัติการทำลายสำเนา (Disposal Audit Report)</span>
+              </button>
+              <div className="text-right bg-white/10 border border-white/20 rounded-2xl px-4 py-2.5 backdrop-blur-sm">
+                <div className="text-xs text-rose-200">เอกสารที่ต้องเรียกคืน</div>
+                <div className="text-xl font-black font-mono">{recallGroups.length} เอกสาร</div>
+              </div>
             </div>
           </div>
 
           {/* Grouped Document Recall Cards */}
           {recallGroups.map(group => {
-            const checkedSet = recallCheckedState[group.docId] || new Set();
-            const checkedCount = checkedSet.size;
+            const receivedCopies = group.copies.filter(c => 
+              c.status === 'RECALLED' || 
+              c.status === 'RECEIVED_AT_DCC' || 
+              c.status === 'RECALLED_HELD_AT_DCC' || 
+              c.status === 'DESTROYED' || 
+              c.status === 'RECALLED_DESTROYED' || 
+              c.status === 'ARCHIVED_OBSOLETE'
+            );
+            const receivedCount = receivedCopies.length;
             const totalCount = group.copies.length;
-            const percentage = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 100;
-            const is100Percent = checkedCount === totalCount && totalCount > 0;
+            const percentage = totalCount > 0 ? Math.round((receivedCount / totalCount) * 100) : 0;
+            const isAllReceived = totalCount > 0 && receivedCount === totalCount;
+            const canDispose = receivedCount > 0;
 
             return (
               <div 
@@ -1074,15 +1165,15 @@ const ControlledCopyRegister = () => {
                   <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
                     <div className="w-36 sm:w-48">
                       <div className="flex justify-between text-xs font-semibold mb-1">
-                        <span className="text-slate-600">เก็บแล้ว {checkedCount}/{totalCount} จุด</span>
-                        <span className={`font-mono ${is100Percent ? 'text-emerald-600 font-bold' : 'text-slate-700'}`}>
+                        <span className="text-slate-600">เก็บเล่มแล้ว {receivedCount}/{totalCount} จุด</span>
+                        <span className={`font-mono ${isAllReceived ? 'text-emerald-600 font-bold' : receivedCount > 0 ? 'text-blue-600 font-bold' : 'text-slate-500'}`}>
                           {percentage}%
                         </span>
                       </div>
                       <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
                         <motion.div 
                           className={`h-full transition-all duration-300 ${
-                            is100Percent ? 'bg-emerald-500' : 'bg-rose-500'
+                            isAllReceived ? 'bg-emerald-500' : receivedCount > 0 ? 'bg-blue-500' : 'bg-slate-300'
                           }`}
                           initial={{ width: 0 }}
                           animate={{ width: `${percentage}%` }}
@@ -1091,53 +1182,90 @@ const ControlledCopyRegister = () => {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* ── Replaced bare action buttons with the 3-Step Recall Modal ── */}
+                      {/* Unified Single Action Button */}
                       <button
                         type="button"
                         onClick={() => setRecallModalGroup(group)}
-                        title="เปิดหน้าต่างจัดการเรียกคืนสำเนาแบบ Multi-Step (ตรวจรับ → เลือกวิธีจัดการ → ยืนยัน)"
-                        className="px-3.5 py-2.5 text-xs font-bold rounded-xl bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        disabled={!canDispose}
+                        title={
+                          canDispose 
+                            ? "เปิดหน้าต่างบันทึกจัดการสำเนา (ทำลายทิ้ง หรือ จัดเก็บเข้าคลังประวัติ)" 
+                            : "ต้องติ๊กรับเล่มจริงจากหน้างานเข้ามาที่ DCC อย่างน้อย 1 เล่มก่อนจึงจะสามารถทำลายหรือจัดเก็บได้"
+                        }
+                        className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 shrink-0 ${
+                          canDispose 
+                            ? 'bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-md shadow-blue-500/20 cursor-pointer active:scale-98' 
+                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80'
+                        }`}
                       >
-                        <FolderOpen size={15} />
-                        จัดการเรียกคืนสำเนา (Recall &amp; Disposition)
+                        <FolderOpen size={16} />
+                        <span>ดำเนินการจัดการสำเนา (Disposition &amp; Archive)</span>
+                        {canDispose && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white font-mono">
+                            {receivedCount}
+                          </span>
+                        )}
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Locations Checklist Table (outer reference & inline DCC actions) */}
+                {/* Locations Checklist Table (Unified 2-Stage Flow) */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
                       <tr>
-                        <th className="px-6 py-3 w-14 text-center">เก็บคืน</th>
+                        <th className="px-6 py-3 w-16 text-center">รับเล่มจริง</th>
                         <th className="px-6 py-3">หมายเลขสำเนา</th>
                         <th className="px-6 py-3">แผนกผู้ครอบครอง</th>
                         <th className="px-6 py-3">จุดติดตั้ง (Location Point of Use)</th>
-                        <th className="px-6 py-3 text-center">สถานะการเก็บ</th>
-                        <th className="px-6 py-3 text-center">การดำเนินการ (Actions)</th>
+                        <th className="px-6 py-3 text-center">สถานะทางกายภาพ</th>
+                        <th className="px-6 py-3 text-center">บันทึกตรวจรับ (DCC Custody)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {group.copies.map(copy => {
-                        const isChecked = checkedSet.has(copy.id) || copy.status === 'RECALLED' || copy.status === 'DESTROYED';
-                        const isDamaged = copy.isDamaged || copy.replacementReason === 'DAMAGED' || copy.reportType === 'DAMAGED';
+                        const isReceived = copy.status === 'RECALLED' || 
+                          copy.status === 'RECEIVED_AT_DCC' || 
+                          copy.status === 'RECALLED_HELD_AT_DCC' || 
+                          copy.status === 'DESTROYED' || 
+                          copy.status === 'RECALLED_DESTROYED' || 
+                          copy.status === 'ARCHIVED_OBSOLETE';
+                        const isDamaged = copy.isDamaged || copy.status === 'DAMAGED_PENDING_RECALL' || copy.replacementReason === 'DAMAGED' || copy.reportType === 'DAMAGED';
+                        const isDestroyed = copy.status === 'DESTROYED' || copy.status === 'RECALLED_DESTROYED';
+                        const isArchived = copy.status === 'ARCHIVED_OBSOLETE';
+
                         return (
                           <tr 
                             key={copy.id}
-                            onClick={() => toggleRecallCopy(group.docId, copy.id)}
-                            className={`cursor-pointer transition-colors ${
-                              isChecked ? 'bg-emerald-50/30' : 'hover:bg-slate-50'
+                            onClick={() => !isDestroyed && !isArchived && handleToggleRecallReceived(copy)}
+                            className={`transition-colors ${
+                              isDestroyed || isArchived
+                                ? 'bg-slate-50/60 opacity-80 cursor-default'
+                                : isReceived 
+                                  ? 'bg-blue-50/40 hover:bg-blue-50/60 cursor-pointer' 
+                                  : 'hover:bg-slate-50 cursor-pointer'
                             }`}
                           >
                             <td className="px-6 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
-                                onClick={() => toggleRecallCopy(group.docId, copy.id)}
-                                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
-                                  isChecked 
-                                    ? 'bg-emerald-600 text-white' 
-                                    : 'border-2 border-slate-300 hover:border-indigo-600 text-transparent'
+                                disabled={isDestroyed || isArchived}
+                                onClick={() => handleToggleRecallReceived(copy)}
+                                title={
+                                  isDestroyed ? "ทำลายแล้ว" :
+                                  isArchived ? "จัดเก็บเข้าคลังแล้ว" :
+                                  isReceived ? "คลิกเพื่อยกเลิกการตรวจรับเล่ม (เปลี่ยนกลับเป็นรอไปเก็บ)" :
+                                  "คลิกเพื่อบันทึกว่าได้รับเล่มจริงคืนมาที่ DCC แล้ว"
+                                }
+                                className={`w-6 h-6 mx-auto rounded-lg flex items-center justify-center transition-all ${
+                                  isDestroyed
+                                    ? 'bg-emerald-600 text-white cursor-default'
+                                    : isArchived
+                                      ? 'bg-purple-600 text-white cursor-default'
+                                      : isReceived 
+                                        ? 'bg-[#0D99FF] text-white cursor-pointer shadow-xs shadow-blue-500/30' 
+                                        : 'border-2 border-slate-300 hover:border-blue-500 text-transparent cursor-pointer'
                                 }`}
                               >
                                 <Check size={14} strokeWidth={3} />
@@ -1163,71 +1291,41 @@ const ControlledCopyRegister = () => {
                               </span>
                             </td>
                             <td className="px-6 py-3.5 text-center">
-                              {copy.status === 'DESTROYED' ? (
+                              {isDestroyed ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                   <Check size={12} strokeWidth={2.5} /> ทำลายแล้ว (Destroyed)
                                 </span>
-                              ) : copy.status === 'RECALLED' ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                  <Clock size={12} strokeWidth={2.5} /> รับเล่มคืนแล้ว (รอทำลาย)
+                              ) : isArchived ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                  <Archive size={12} strokeWidth={2.5} /> เก็บเข้าคลังประวัติ (Archived)
                                 </span>
-                              ) : isDamaged ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                  <AlertTriangle size={12} strokeWidth={2.5} /> เล่มชำรุดรอเรียกคืน
-                                </span>
-                              ) : isChecked ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  <Check size={12} strokeWidth={2.5} /> เก็บเล่มคืนแล้ว
+                              ) : isReceived ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                  <Clock size={12} strokeWidth={2.5} /> ได้รับเล่มจริงแล้ว (รอทำลาย)
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                                  รอนำเล่มคืน
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <Clock size={12} strokeWidth={2.5} /> รอไปเก็บเล่มจากหน้างาน
                                 </span>
                               )}
                             </td>
-                            <td className="px-6 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-center gap-1.5">
-                                {copy.status === 'DESTROYED' ? (
-                                  <span className="text-xs text-slate-400 font-medium">ทำลายเรียบร้อย</span>
-                                ) : copy.status === 'RECALLED' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      destroyControlledCopy(copy.id);
-                                      toast.success(`บันทึกการทำลายเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} สำเร็จ`);
-                                    }}
-                                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors flex items-center gap-1 cursor-pointer"
-                                    title="บันทึกการทำลายสำเนา (Destroy)"
-                                  >
-                                    <Flame size={12} /> บันทึกการทำลาย (Destroy)
-                                  </button>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        recordCopyRecalled(copy.id);
-                                        toast.success(`บันทึกรับคืนเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} แล้ว (รอทำลาย)`);
-                                      }}
-                                      className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
-                                      title="บันทึกรับคืนเล่มจริงสู่ DCC"
-                                    >
-                                      <Archive size={12} /> บันทึกรับคืนเล่มชำรุด
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        destroyControlledCopy(copy.id);
-                                        toast.success(`บันทึกรับคืนและทำลายเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} สำเร็จ`);
-                                      }}
-                                      className="px-2 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-                                      title="ทำลายโดยตรง"
-                                    >
-                                      ทำลายทันที
-                                    </button>
-                                  </>
-                                )}
-                              </div>
+                            <td className="px-6 py-3.5 text-center text-xs text-slate-500">
+                              {copy.recalled_at ? (
+                                <div className="space-y-0.5 font-mono">
+                                  <div className="text-slate-700 font-medium">
+                                    {new Date(copy.recalled_at).toLocaleDateString('th-TH')}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">
+                                    โดย {copy.recalled_by || 'DCC'}
+                                  </div>
+                                </div>
+                              ) : isDestroyed ? (
+                                <span className="text-emerald-700 font-medium">ทำลายเรียบร้อย</span>
+                              ) : isArchived ? (
+                                <span className="text-purple-700 font-medium">เข้าคลังประวัติ</span>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1362,119 +1460,326 @@ const ControlledCopyRegister = () => {
       {/* TAB 5: ประวัติและบันทึกการทำงาน (AUDIT_TRAIL / HISTORY) */}
       {/* ========================================================================= */}
       {(activeTab === 'AUDIT_TRAIL' || activeTab === 'HISTORY') && (
-        <div className="w-full bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-2xs space-y-0 h-auto">
-          {/* Header */}
-          <div className="px-4 py-3.5 bg-[#FAFAFA] border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="w-full bg-white border border-[#E5E5E5] rounded-2xl overflow-hidden shadow-xs space-y-0 h-auto">
+          {/* Sub-Tabs Selector */}
+          <div className="px-5 pt-4 pb-0 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-[#0D99FF]" size={16} />
-              <span className="text-sm font-bold text-[#1E1E1E]">บันทึกประวัติการจัดการสำเนาและวงจรเอกสาร (DCC Activity Logs)</span>
-            </div>
-            
-            <div className="flex items-center gap-2.5 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" size={15} />
-                <input
-                  type="text"
-                  placeholder="ค้นหา Log / เอกสาร / ผู้ดำเนินการ..."
-                  value={auditSearchTerm}
-                  onChange={(e) => setAuditSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 h-9 text-xs sm:text-sm bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] placeholder:text-[#999999]"
-                />
-              </div>
-
               <button
-                onClick={handleExportAuditCsv}
-                className="px-3.5 py-1.5 h-9 bg-[#1E1E1E] hover:bg-[#333333] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
-                title="Export CSV"
+                type="button"
+                onClick={() => setAuditSubTab('ACTIVITY')}
+                className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 transition-all cursor-pointer ${
+                  auditSubTab === 'ACTIVITY'
+                    ? 'border-[#0D99FF] text-[#0D99FF]'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
               >
-                <FileDown size={14} /> <span>Export CSV</span>
+                <Clock size={16} />
+                <span>บันทึกกิจกรรมทั่วไป (Activity Logs)</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold ${
+                  auditSubTab === 'ACTIVITY' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {filteredAuditLogs.length}
+                </span>
               </button>
 
-              <span className="text-xs font-mono text-[#666666] hidden sm:inline whitespace-nowrap">
-                ทั้งหมด {(filteredAuditLogs || []).length} รายการ
-              </span>
+              <button
+                type="button"
+                onClick={() => setAuditSubTab('DISPOSITION')}
+                className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 transition-all cursor-pointer ${
+                  auditSubTab === 'DISPOSITION'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Archive size={16} />
+                <span>ทะเบียนประวัติการทำลายสำเนา (Disposition Ledger)</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold ${
+                  auditSubTab === 'DISPOSITION' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {filteredDispositionRecords.length}
+                </span>
+              </button>
+            </div>
+            
+            <div className="pb-3 text-xs text-slate-400 font-mono hidden md:block">
+              ISO 9001: 7.5.3.2 Retention &amp; Disposition
             </div>
           </div>
 
-          {/* Table / List */}
-          {(!auditPagination.paginatedData || auditPagination.paginatedData.length === 0) ? (
-            <div className="p-8 text-center text-xs text-[#888888]">
-              ยังไม่มีประวัติการทำรายการในระบบ
-            </div>
-          ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full scrollbar-thin">
-              <table className="w-full text-left text-xs sm:text-sm border-collapse min-w-[700px]">
-                <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#374151] font-bold text-xs uppercase tracking-wider sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
-                  <tr>
-                    <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">วัน-เวลา</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">กิจกรรม (Action)</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">รหัส / หมายเลขสำเนา</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">ผู้ดำเนินการ</th>
-                    <th className="py-3 px-3.5 bg-[#F8FAFC]">รายละเอียด</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F0F0F0] text-[#333333]">
-                  {auditPagination.paginatedData.map((log, index) => {
-                    const timeStr = log?.timestamp ? (() => {
-                      try {
-                        const d = new Date(log.timestamp);
-                        return isNaN(d.getTime()) ? String(log.timestamp) : d.toLocaleString('th-TH');
-                      } catch {
-                        return String(log.timestamp || '-');
-                      }
-                    })() : '-';
+          {/* Sub-Tab 1: Activity Logs */}
+          {auditSubTab === 'ACTIVITY' && (
+            <div>
+              {/* Header & Controls */}
+              <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="text-xs text-slate-600 font-medium">
+                  บันทึกกิจกรรมการพิมพ์, จ่ายแจก, ยืนยันรับเล่ม และตรวจรับของเจ้าหน้าที่ DCC
+                </div>
+                
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" size={15} />
+                    <input
+                      type="text"
+                      placeholder="ค้นหา Log / เอกสาร / ผู้ดำเนินการ..."
+                      value={auditSearchTerm}
+                      onChange={(e) => setAuditSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 h-9 text-xs sm:text-sm bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] placeholder:text-[#999999]"
+                    />
+                  </div>
 
-                    const actorStr = typeof log?.performed_by === 'object' 
-                      ? (log?.performed_by?.name || log?.performed_by?.user || JSON.stringify(log.performed_by))
-                      : (log?.performed_by || log?.user || log?.actor || '-');
+                  <button
+                    onClick={handleExportAuditCsv}
+                    className="px-3.5 py-1.5 h-9 bg-[#1E1E1E] hover:bg-[#333333] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    title="Export CSV"
+                  >
+                    <FileDown size={14} /> <span>Export CSV</span>
+                  </button>
 
-                    const actionStr = typeof log?.action === 'object'
-                      ? JSON.stringify(log.action)
-                      : (log?.action || 'บันทึกการทำงาน');
+                  <span className="text-xs font-mono text-[#666666] hidden sm:inline whitespace-nowrap">
+                    ทั้งหมด {(filteredAuditLogs || []).length} รายการ
+                  </span>
+                </div>
+              </div>
 
-                    const docStr = typeof log?.document_code === 'object'
-                      ? JSON.stringify(log.document_code)
-                      : (log?.document_code || log?.docTitle || '-');
-
-                    const copyStr = log?.copy_number || log?.ccNumber ? ` (Copy ${log.copy_number || log.ccNumber})` : '';
-
-                    const detailsStr = typeof log?.details === 'object'
-                      ? JSON.stringify(log.details)
-                      : (log?.details || log?.remarks || log?.remark || '-');
-
-                    return (
-                      <tr key={log?.id || index} className="hover:bg-[#F9FBFD] transition-colors">
-                        <td className="py-2.5 px-3 font-mono text-[11px] text-[#666666] whitespace-nowrap">
-                          {timeStr}
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF]">
-                            {actionStr}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-mono font-medium text-[#1E1E1E] whitespace-nowrap">
-                          {docStr}{copyStr}
-                        </td>
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          {actorStr}
-                        </td>
-                        <td className="py-2.5 px-3 text-[#555555] max-w-md break-words">
-                          {detailsStr}
-                        </td>
+              {/* Table / List */}
+              {(!auditPagination.paginatedData || auditPagination.paginatedData.length === 0) ? (
+                <div className="p-12 text-center text-xs text-[#888888]">
+                  <Clock className="mx-auto text-slate-300 mb-2" size={32} />
+                  ยังไม่มีประวัติการทำรายการในระบบ
+                </div>
+              ) : (
+                <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full scrollbar-thin">
+                  <table className="w-full text-left text-xs sm:text-sm border-collapse min-w-[700px]">
+                    <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#374151] font-bold text-xs uppercase tracking-wider sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
+                      <tr>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">วัน-เวลา</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">กิจกรรม (Action)</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">รหัส / หมายเลขสำเนา</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">ผู้ดำเนินการ</th>
+                        <th className="py-3 px-3.5 bg-[#F8FAFC]">รายละเอียด</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-[#F0F0F0] text-[#333333]">
+                      {auditPagination.paginatedData.map((log, index) => {
+                        const timeStr = log?.timestamp ? (() => {
+                          try {
+                            const d = new Date(log.timestamp);
+                            return isNaN(d.getTime()) ? String(log.timestamp) : d.toLocaleString('th-TH');
+                          } catch {
+                            return String(log.timestamp || '-');
+                          }
+                        })() : '-';
+
+                        const actorStr = typeof log?.performed_by === 'object' 
+                          ? (log?.performed_by?.name || log?.performed_by?.user || JSON.stringify(log.performed_by))
+                          : (log?.performed_by || log?.user || log?.actor || '-');
+
+                        const actionStr = typeof log?.action === 'object'
+                          ? JSON.stringify(log.action)
+                          : (log?.action || 'บันทึกการทำงาน');
+
+                        const docStr = typeof log?.document_code === 'object'
+                          ? JSON.stringify(log.document_code)
+                          : (log?.document_code || log?.docTitle || '-');
+
+                        const copyStr = log?.copy_number || log?.ccNumber ? ` (Copy ${log.copy_number || log.ccNumber})` : '';
+
+                        const detailsStr = typeof log?.details === 'object'
+                          ? JSON.stringify(log.details)
+                          : (log?.details || log?.remarks || log?.remark || '-');
+
+                        return (
+                          <tr key={log?.id || index} className="hover:bg-[#F9FBFD] transition-colors">
+                            <td className="py-2.5 px-3 font-mono text-[11px] text-[#666666] whitespace-nowrap">
+                              {timeStr}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF]">
+                                {actionStr}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-medium text-[#1E1E1E] whitespace-nowrap">
+                              {docStr}{copyStr}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              {actorStr}
+                            </td>
+                            <td className="py-2.5 px-3 text-[#555555] max-w-md break-words">
+                              {detailsStr}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <TablePagination
+                currentPage={auditPagination.currentPage}
+                totalItems={auditPagination.totalItems}
+                pageSize={auditPagination.pageSize}
+                onPageChange={auditPagination.setCurrentPage}
+                onPageSizeChange={auditPagination.setPageSize}
+              />
             </div>
           )}
-          <TablePagination
-            currentPage={auditPagination.currentPage}
-            totalItems={auditPagination.totalItems}
-            pageSize={auditPagination.pageSize}
-            onPageChange={auditPagination.setCurrentPage}
-            onPageSizeChange={auditPagination.setPageSize}
-          />
+
+          {/* Sub-Tab 2: Dedicated Disposition Ledger (ISO 9001 Compliance) */}
+          {auditSubTab === 'DISPOSITION' && (
+            <div>
+              {/* Header & Controls */}
+              <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-mono">
+                      ISO 9001: 7.5.3.2
+                    </span>
+                    <span>ทะเบียนประวัติการทำลายและจัดเก็บสำเนาควบคุมถาวร (Disposition Ledger)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    หลักฐานการทำลาย (Shred/Burn) หรือการประทับตรา Obsolete เพื่อจัดเก็บเข้าคลังประวัติ สำหรับการตรวจประเมิน Auditor
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" size={15} />
+                    <input
+                      type="text"
+                      placeholder="ค้นหารหัส / เล่ม / ผู้ทำลาย / อ้างอิง..."
+                      value={dispositionSearchTerm}
+                      onChange={(e) => setDispositionSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 h-9 text-xs sm:text-sm bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 placeholder:text-[#999999]"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleExportDispositionCsv}
+                    className="px-3.5 py-1.5 h-9 bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs shadow-rose-700/20"
+                    title="Export Disposition Ledger CSV"
+                  >
+                    <FileDown size={14} /> <span>Export CSV</span>
+                  </button>
+
+                  <span className="text-xs font-mono text-[#666666] hidden sm:inline whitespace-nowrap">
+                    ทั้งหมด {(filteredDispositionRecords || []).length} รายการ
+                  </span>
+                </div>
+              </div>
+
+              {/* Disposition Table */}
+              {(!dispositionPagination.paginatedData || dispositionPagination.paginatedData.length === 0) ? (
+                <div className="p-12 text-center text-xs text-[#888888] space-y-2">
+                  <Archive className="mx-auto text-slate-300" size={36} />
+                  <div className="font-semibold text-slate-700 text-sm">ยังไม่มีข้อมูลในทะเบียนประวัติการทำลายสำเนา</div>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    เมื่อเจ้าหน้าที่ DCC ดำเนินการย่อยทำลายหรือประทับตราเก็บเข้าคลังในหน้า &quot;เช็กลิสต์เรียกคืนสำเนา&quot; ระบบจะบันทึกประวัติถาวรลงในทะเบียนนี้โดยอัตโนมัติ
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full scrollbar-thin">
+                  <table className="w-full text-left text-xs sm:text-sm border-collapse min-w-[900px]">
+                    <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#374151] font-bold text-xs uppercase tracking-wider sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
+                      <tr>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">วัน-เวลาจัดการ</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">เอกสาร &amp; สำเนา</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">แผนก &amp; จุดใช้งาน</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">การจัดการ (Disposition)</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">ผู้ดำเนินการ (DCC)</th>
+                        <th className="py-3 px-3.5 whitespace-nowrap bg-[#F8FAFC]">พยาน / เอกสารอ้างอิง</th>
+                        <th className="py-3 px-3.5 bg-[#F8FAFC]">บันทึกเพิ่มเติม</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#F0F0F0] text-[#333333]">
+                      {dispositionPagination.paginatedData.map((rec, index) => {
+                        const timeStr = rec.disposedAt ? (() => {
+                          try {
+                            const d = new Date(rec.disposedAt);
+                            return isNaN(d.getTime()) ? String(rec.disposedAt) : d.toLocaleString('th-TH');
+                          } catch {
+                            return String(rec.disposedAt);
+                          }
+                        })() : '-';
+
+                        const isDestroy = rec.dispositionType === 'DESTROYED';
+
+                        return (
+                          <tr key={rec.id || index} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-3 px-3.5 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                              {timeStr}
+                            </td>
+                            <td className="py-3 px-3.5">
+                              <div className="font-mono font-bold text-slate-900 text-xs">
+                                {rec.docCode} <span className="text-slate-400 font-normal">Rev.{rec.revision || '00'}</span>
+                              </div>
+                              <div className="text-slate-500 text-[11px] line-clamp-1 max-w-xs" title={rec.docTitle}>
+                                {rec.docTitle}
+                              </div>
+                              <div className="mt-0.5">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                  Copy {rec.copyNumber || '01'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-3.5 text-xs text-slate-700 whitespace-nowrap">
+                              <div className="font-semibold text-slate-800">{rec.department || '-'}</div>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                <MapPin size={11} /> {rec.location || '-'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3.5 whitespace-nowrap">
+                              {isDestroy ? (
+                                <div className="space-y-1">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    <Flame size={12} /> ย่อยทำลาย (Destroyed)
+                                  </span>
+                                  <div className="text-[10px] text-slate-400">
+                                    {rec.dispositionMethod === 'SHRED' ? 'ย่อยทำลายด้วยเครื่องตัดกระดาษ' :
+                                     rec.dispositionMethod === 'INCINERATE' ? 'เผาทำลาย' :
+                                     rec.dispositionMethod || 'ย่อยทำลาย'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                    <Archive size={12} /> ประทับตราเก็บเข้าคลัง (Archived)
+                                  </span>
+                                  <div className="text-[10px] text-slate-400">
+                                    {rec.dispositionMethod || 'ปั๊ม Obsolete เก็บเข้าประวัติ'}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3.5 text-xs font-medium text-slate-800 whitespace-nowrap">
+                              {rec.disposedBy || 'DCC Officer'}
+                            </td>
+                            <td className="py-3 px-3.5 text-xs text-slate-700 whitespace-nowrap">
+                              <div className="font-medium">{rec.witnessName || '-'}</div>
+                              {rec.referenceNo && (
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                  Ref: {rec.referenceNo}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3.5 text-xs text-slate-600 max-w-xs break-words">
+                              {rec.notes || '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <TablePagination
+                currentPage={dispositionPagination.currentPage}
+                totalItems={dispositionPagination.totalItems}
+                pageSize={dispositionPagination.pageSize}
+                onPageChange={dispositionPagination.setCurrentPage}
+                onPageSizeChange={dispositionPagination.setPageSize}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -1522,7 +1827,7 @@ const ControlledCopyRegister = () => {
                     className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-medium"
                   >
                     <option value="">-- กรุณาเลือกเอกสาร --</option>
-                    {documents.filter(d => d.status === 'EFFECTIVE').map(d => (
+                    {(documents || []).filter(d => d.status === 'EFFECTIVE').map(d => (
                       <option key={d.id} value={d.title}>
                         {d.title} : {d.name} (Rev.{d.rev})
                       </option>
@@ -1705,7 +2010,8 @@ const ControlledCopyRegister = () => {
                   </button>
                   <button
                     type="submit"
-                    className="bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm shadow-rose-200 transition-all flex items-center gap-2"
+                    disabled={!reportReason.trim()}
+                    className="bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm shadow-rose-200 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <AlertTriangle size={16} /> บันทึกรายงาน
                   </button>

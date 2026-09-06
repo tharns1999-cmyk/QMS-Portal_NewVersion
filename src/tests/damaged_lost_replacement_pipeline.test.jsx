@@ -55,7 +55,7 @@ describe('Damaged & Lost Replacement Pipeline, REPLACED_VOID Lifecycle and Dedup
 
     // Old copy
     const oldCopy = copies.find(c => c.id === 'inst-test-01');
-    expect(['PENDING_RECALL', 'DAMAGED_PENDING_REPLACEMENT']).toContain(oldCopy.status);
+    expect(['PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'DAMAGED_PENDING_REPLACEMENT']).toContain(oldCopy.status);
     expect(oldCopy.reportType).toBe('DAMAGED');
     expect(oldCopy.isDamaged).toBe(true);
     expect(oldCopy.reportReason).toContain('เอกสารเปียกน้ำฉีกขาด');

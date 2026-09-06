@@ -88,7 +88,7 @@ const getDocumentIdentifier = (task) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper 2: Extract/clean the real document title
+// Helper 2: Extract/clean the real document title with Multi-Source Fallback Resolver
 // ─────────────────────────────────────────────────────────────────────────────
 const TITLE_PREFIX_PATTERNS = [
   /^\[.*?\]\s*/,                                            // [Any bracket prefix]
@@ -97,7 +97,11 @@ const TITLE_PREFIX_PATTERNS = [
   /^แจกจ่ายสำเนาควบคุม:\s*/,
   /^จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสาร(?:ภายนอก)?:\s*/,
   /^เรียกคืนและทำลายเอกสาร(?:ภายนอก)?(?:ที่ถูกยกเลิก)?:\s*/,
-  /^เรียกคืนสำเนาเอกสารที่ถูกยกเลิก:\s*/,
+  /^เรียกคืนสำเนาเอกสาร(?:ที่ถูก)?ยกเลิก:\s*/,
+  /^เรียกคืนสำเนาตกรุ่น:\s*/,
+  /^เรียกคืนสำเนาชำรุด:\s*/,
+  /^ออกสำเนาควบคุมทดแทน\s*\(.*?\):\s*/,
+  /^ขอออกสำเนาควบคุมเพิ่มเติม:\s*/,
   /^ส่งคืนสำเนาควบคุม:\s*/,
 ];
 
@@ -115,20 +119,89 @@ const stripTitlePrefixes = (raw) => {
   return result;
 };
 
-const getDocumentTitle = (task) => {
-  // 1. Explicit name fields
+const getDocumentTitle = (task, storeContext = {}) => {
+  if (!task) return '';
+  const { documents = [], externalDocuments = [], dars = [], controlledCopyInstances = [] } = storeContext;
+
+  const docCode = getDocumentIdentifier(task);
+
+  // 1. Explicit name fields on task if present and distinct from the code
   const explicit =
     task.docName ||
     task.doc_name ||
     task.documentName ||
+    task.document_name ||
     task.doc_title;
-  if (explicit) return explicit;
+  if (explicit && explicit !== docCode && !explicit.startsWith('Copy ')) {
+    return explicit;
+  }
 
-  // 2. Strip prefixes from task.title
+  // 2. Query documents store by id or code
+  const docId = task.docId || task.doc_id;
+  if (docId || docCode) {
+    const matchedDoc = (documents || []).find(d => 
+      (docId && String(d.id) === String(docId)) ||
+      (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode || d.doc_number === docCode))
+    );
+    if (matchedDoc && (matchedDoc.name || matchedDoc.document_name || matchedDoc.docName)) {
+      return matchedDoc.name || matchedDoc.document_name || matchedDoc.docName;
+    }
+  }
+
+  // 3. Query externalDocuments store
+  const extId = task.externalDocId || task.referenceId || docId;
+  if (extId || docCode) {
+    const matchedExt = (externalDocuments || []).find(d => 
+      (extId && String(d.id) === String(extId)) ||
+      (docCode && (d.edCode === docCode || d.doc_code === docCode || d.docNo === docCode))
+    );
+    if (matchedExt && (matchedExt.title || matchedExt.name || matchedExt.documentName)) {
+      return matchedExt.title || matchedExt.name || matchedExt.documentName;
+    }
+  }
+
+  // 4. Query dars store
+  const darId = task.darId || (task.referenceType === 'INTERNAL_DAR' ? task.referenceId : null);
+  if (darId) {
+    const matchedDar = (dars || []).find(d => String(d.id) === String(darId) || d.darNo === darId || d.dar_no === darId);
+    if (matchedDar && (matchedDar.name || matchedDar.document_name || matchedDar.docName)) {
+      return matchedDar.name || matchedDar.document_name || matchedDar.docName;
+    }
+  }
+
+  // 5. Query controlledCopyInstances store
+  const copyId = task.copyId || task.copy_id || task.instanceId;
+  if (copyId) {
+    const matchedCopy = (controlledCopyInstances || []).find(c => String(c.id) === String(copyId));
+    if (matchedCopy && (matchedCopy.docName || matchedCopy.name || matchedCopy.documentName)) {
+      return matchedCopy.docName || matchedCopy.name || matchedCopy.documentName;
+    }
+  }
+
+  // 6. Check task.docTitle if distinct from docCode
+  if (task.docTitle && task.docTitle !== docCode && !task.docTitle.startsWith('Copy ')) {
+    return task.docTitle;
+  }
+
+  // 7. Extract cleaned title from task.title
   const stripped = stripTitlePrefixes(task.title || '');
-  if (stripped) return stripped;
+  if (stripped) {
+    return stripped;
+  }
 
-  return task.title || '';
+  // 8. Safe fallback — never return empty or undefined
+  return task.title || docCode || 'เอกสารควบคุม';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 2.5: Extract Revision chip label
+// ─────────────────────────────────────────────────────────────────────────────
+const getRevisionChip = (task) => {
+  const raw = task.doc_version || task.revision || task.rev || task.targetRevision;
+  if (!raw || raw === 'ALL') return null;
+  const clean = String(raw).trim();
+  if (clean.toLowerCase().startsWith('rev')) return clean;
+  return `Rev.${clean}`;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,7 +254,7 @@ const getTaskTypeShortLabel = (normType, task) => {
     }
     return 'เรียกคืนสำเนา';
   }
-  if (normType.startsWith('DCC_')) return 'งาน DCC';
+  if (normType.startsWith('DCC_')) return 'งานฝ่ายควบคุมเอกสาร (DC)';
   return 'งาน';
 };
 
@@ -360,7 +433,7 @@ const getSLABadge = (task, mockDateOffset) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const TaskInbox = () => {
   const navigate = useNavigate();
-  const { currentUser, tasks, dars, externalDocuments, mockDateOffset, checkSLA } = useStore();
+  const { currentUser, tasks, dars, documents, externalDocuments, controlledCopyInstances, documentControlledCopies, mockDateOffset, checkSLA } = useStore();
   const [activeTab, setActiveTab] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExtTask, setSelectedExtTask] = useState(null);
@@ -370,28 +443,42 @@ const TaskInbox = () => {
     if (checkSLA) checkSLA();
   }, [mockDateOffset, checkSLA]);
 
+  const storeContext = useMemo(() => ({
+    documents: documents || [],
+    externalDocuments: externalDocuments || [],
+    dars: dars || [],
+    controlledCopyInstances: controlledCopyInstances || documentControlledCopies || []
+  }), [documents, externalDocuments, dars, controlledCopyInstances, documentControlledCopies]);
+
   const isDccAdmin = isDccUser(currentUser);
-  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-  const primaryDept = currentUser?.primary_department || currentUser?.department || '';
+  const userDepts = useMemo(() => {
+    const raw = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
+    return Array.from(new Set(raw.map(d => (d === 'DCC' ? 'DC' : d)).filter(Boolean)));
+  }, [currentUser]);
+
+  const primaryDept = useMemo(() => {
+    const raw = currentUser?.primary_department || currentUser?.department || '';
+    return raw === 'DCC' ? 'DC' : raw;
+  }, [currentUser]);
 
   const [deptFilter, setDeptFilter] = useState(() => {
-    if (isDccAdmin) return 'ALL';
-    return primaryDept || 'ALL';
+    return primaryDept || 'DC';
   });
 
   useEffect(() => {
-    if (!isDccAdmin && primaryDept) {
+    if (primaryDept) {
       setDeptFilter(primaryDept);
-    } else if (isDccAdmin) {
-      setDeptFilter('ALL');
     }
-  }, [currentUser?.id, currentUser?.department, currentUser?.primary_department, isDccAdmin, primaryDept]);
+  }, [currentUser?.id, currentUser?.department, currentUser?.primary_department, primaryDept]);
 
   const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
 
   const availableDepts = useMemo(() => {
     if (isDccAdmin) {
-      const deptsFromTasks = (userTasks || []).map(t => t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept).filter(Boolean);
+      const deptsFromTasks = (userTasks || []).map(t => {
+        const d = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept;
+        return d === 'DCC' ? 'DC' : d;
+      }).filter(Boolean);
       const combined = Array.from(new Set([...userDepts, ...deptsFromTasks]));
       return combined.filter(Boolean);
     }
@@ -425,7 +512,8 @@ const TaskInbox = () => {
     let filtered = userTasks;
     if (deptFilter !== 'ALL') {
       filtered = filtered.filter(t => {
-        const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+        let tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+        if (tDept === 'DCC') tDept = 'DC';
         const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
         if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
           if (tDept && !isSameDepartment(tDept, deptFilter)) return false;
@@ -441,7 +529,7 @@ const TaskInbox = () => {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(t => {
         const docId = getDocumentIdentifier(t) || '';
-        const title = getDocumentTitle(t) || '';
+        const title = getDocumentTitle(t, storeContext) || '';
         return docId.toLowerCase().includes(term) ||
           title.toLowerCase().includes(term) ||
           (t.title || '').toLowerCase().includes(term) ||
@@ -451,7 +539,7 @@ const TaskInbox = () => {
     return filtered;
   };
 
-  const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, deptFilter, activeTab, searchTerm]);
+  const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, deptFilter, activeTab, searchTerm, storeContext]);
   const pagination = useTablePagination(filteredTasks, 10);
 
   const getTaskCount = (tabId) => {
@@ -461,7 +549,7 @@ const TaskInbox = () => {
   };
 
   const tabs = isDccAdmin ? [
-    { id: 'ALL', thaiLabel: 'ทั้งหมด', engLabel: 'All DCC Tasks', count: getTaskCount('ALL') },
+    { id: 'ALL', thaiLabel: 'ทั้งหมด', engLabel: 'All Tasks', count: getTaskCount('ALL') },
     { id: 'DCC_DISTRIBUTE', thaiLabel: 'งานแจกจ่าย', engLabel: 'Distribution', count: getTaskCount('DCC_DISTRIBUTE') },
     { id: 'DCC_RECALL', thaiLabel: 'งานเรียกคืน', engLabel: 'Recall', count: getTaskCount('DCC_RECALL') },
     { id: 'REVIEW', thaiLabel: 'ทบทวน', engLabel: 'Review', count: getTaskCount('REVIEW') },
@@ -597,7 +685,8 @@ const TaskInbox = () => {
             {availableDepts.map(dept => {
               // Mirror getFilteredTasks() logic exactly so pill counts match actual filtered list
               const deptCount = userTasks.filter(t => {
-                const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+                let tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+                if (tDept === 'DCC') tDept = 'DC';
                 const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
                 if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
                   // Directly-assigned tasks: only count if dept also matches (or task has no dept)
@@ -641,18 +730,22 @@ const TaskInbox = () => {
 
               // ── Data extraction (all helpers null-safe) ──
               const docId = getDocumentIdentifier(task);
-              const docTitle = getDocumentTitle(task);
+              const docTitle = getDocumentTitle(task, storeContext);
               const copyNo = getCopyChip(task);
+              const revChip = getRevisionChip(task);
               const taskTypeShortLabel = getTaskTypeShortLabel(normType, task);
               const iconConfig = getTaskIconConfig(task);
               const slaBadge = getSLABadge(task, mockDateOffset);
 
               // ── Metadata chips ──
-              const dept = task.holder_dept || task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || '';
+              const rawDept = task.holder_dept || task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || '';
+              const dept = rawDept === 'DCC' ? 'DC' : rawDept;
               const location = task.location || task.locationName || task.station_name || task.point_of_use || '';
               const dueDate = task.dueDate || null;
               const isReplacement = Boolean(task.is_replacement || task.isReplacement || task.replacementReason === 'DAMAGED');
               const isUrgentFastTrack = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
+
+              const finalDocTitle = isExternal ? (extDoc?.title || docTitle) : docTitle;
 
               return (
                 <div
@@ -684,6 +777,12 @@ const TaskInbox = () => {
                             {copyNo}
                           </span>
                         )}
+                        {/* Rev chip */}
+                        {revChip && (
+                          <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                            {revChip}
+                          </span>
+                        )}
                         {/* Task type chip */}
                         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${iconConfig.chipClass}`}>
                           {taskTypeShortLabel}
@@ -708,9 +807,12 @@ const TaskInbox = () => {
                       </div>
                     </div>
 
-                    {/* ── Level 2: Document Title (primary content) ── */}
-                    <h3 className="text-sm sm:text-[15px] font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors leading-snug [overflow-wrap:anywhere]">
-                      {isExternal ? (extDoc?.title || docTitle) : docTitle}
+                    {/* ── Level 2: Document Title (Primary Heading) ── */}
+                    <h3 
+                      className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors leading-snug tracking-tight line-clamp-2"
+                      title={typeof finalDocTitle === 'string' ? finalDocTitle : undefined}
+                    >
+                      {finalDocTitle}
                       {isReplacement && (
                         <span className="ml-2 inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 align-middle">
                           ฉบับทดแทน

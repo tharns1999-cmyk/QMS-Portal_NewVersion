@@ -49,10 +49,12 @@ const DarDetail = () => {
   let workflow = null;
   if (isAdmin && dar) {
     const requester = masterUsers.find(u => u.id === dar.requesterId);
-    const revId = resolveReviewer(dar.requesterId, dar.department, masterUsers, reviewUsers);
+    const revObj = resolveReviewer(dar.requesterId, dar.department, masterUsers, reviewUsers, dar.docType);
+    const revId = revObj?.id || revObj;
     const reviewer = masterUsers.find(u => u.id === revId);
     
-    const appId = revId ? resolveApprover(dar.requesterId, revId, dar.department, masterUsers, approveUsers) : null;
+    const appObj = revId ? resolveApprover(dar.requesterId, revId, dar.department, masterUsers, approveUsers, dar.docType) : null;
+    const appId = appObj?.id || appObj;
     const approver = masterUsers.find(u => u.id === appId);
 
     workflow = { requester, reviewer, approver };

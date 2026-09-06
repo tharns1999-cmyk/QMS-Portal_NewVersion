@@ -216,7 +216,7 @@ const DarNewForm = () => {
     }
     const resolvedRevId = formData.manualReviewerId
       ? formData.manualReviewerId
-      : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+      : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], formData.docType)?.id);
     if (resolvedRevId && resolvedRevId !== currentUser?.id) {
       const revUser = (masterUsers || []).find(u => u && u.id === resolvedRevId);
       if (revUser) {
@@ -232,7 +232,7 @@ const DarNewForm = () => {
     }
     const resolvedAppId = formData.manualApproverId
       ? formData.manualApproverId
-      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department || 'PD', masterUsers || [], approveUsers || masterUsers || [])?.id);
+      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department || 'PD', masterUsers || [], approveUsers || masterUsers || [], formData.docType)?.id);
     if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
       const appUser = (masterUsers || []).find(u => u && u.id === resolvedAppId);
       if (appUser) {
@@ -809,7 +809,7 @@ const DarNewForm = () => {
         const selectedDocTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
         const resolvedRevId = formData.manualReviewerId
           ? formData.manualReviewerId
-          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [])?.id);
+          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], formData.docType)?.id);
         const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (

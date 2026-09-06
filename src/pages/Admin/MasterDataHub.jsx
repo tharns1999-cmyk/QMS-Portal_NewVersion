@@ -40,6 +40,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import useStore, { SYSTEM_CORE_DEPTS } from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
@@ -2275,9 +2276,10 @@ const MasterDataHub = () => {
                 {/* Selected Departments Tag Tray */}
                 <div className="flex flex-wrap items-center gap-1.5 min-h-[40px] p-2 bg-white border border-slate-200 rounded-lg">
                   {(userFormData.affiliated_departments || []).map((deptCode) => {
-                    const isPrimary = deptCode === userFormData.primary_department;
-                    const deptObj = departmentsList.find(d => d.id === deptCode);
-                    const deptLabel = deptObj ? `${deptCode} - ${deptObj.nameTh || deptObj.name}` : deptCode;
+                    const normDeptCode = normalizeDepartmentId(deptCode);
+                    const isPrimary = normDeptCode === normalizeDepartmentId(userFormData.primary_department);
+                    const deptObj = departmentsList.find(d => normalizeDepartmentId(d.id) === normDeptCode);
+                    const deptLabel = deptObj ? `${normDeptCode} - ${deptObj.nameTh || deptObj.name}` : normDeptCode;
 
                     return (
                       <div

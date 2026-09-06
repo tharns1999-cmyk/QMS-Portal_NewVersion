@@ -5,7 +5,7 @@ import {
   AlertCircle, Clock, CheckCircle, FileText, Activity, 
   Search, Plus, FileEdit, Library, Briefcase, Copy,
   FilterX, Trash2, Edit, ClipboardCheck, Eye, AlertTriangle, ChevronRight,
-  Sparkles, ArrowRight, Printer
+  Sparkles, Printer
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { isActionableTask } from '../../utils/taskFilter';
@@ -34,7 +34,12 @@ const Dashboard = () => {
   const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
 
   // 1. Calculate Stats (Split into Group 1 and Group 2)
-  const myTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
+  const isMyTask = (t) => {
+    if (!t) return false;
+    return isActionableTask(t, currentUser) || t.assigneeId === currentUser?.id;
+  };
+
+  const myTasks = (tasks || []).filter(t => isMyTask(t));
 
   // Tab 1: Group 1: My Requests (คำขอของฉัน - Strict Personal Scoping)
   const userDars = (dars || []).filter(d => isDarRequester(d, currentUser));
@@ -63,7 +68,7 @@ const Dashboard = () => {
   const pendingPrintCount = (controlledCopyInstances || []).filter(i => i.status === 'PENDING_ISSUE' || i.status === 'PENDING_RECEIPT').length;
   const pendingRecallCount = (controlledCopyInstances || []).filter(i => {
     const doc = (documents || []).find(d => d.id === (i.doc_id || i.docId));
-    return (i.status === 'PENDING_RECALL') || (doc && (doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED') && (i.status === 'ACTIVE' || i.status === 'ISSUED_ACTIVE'));
+    return (i.status === 'PENDING_RECALL' || i.status === 'DAMAGED_PENDING_RECALL' || i.status === 'SUPERSEDED_PENDING_RECALL' || i.status === 'OBSOLETE_PENDING_RECALL') || (doc && (doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED') && (i.status === 'ACTIVE' || i.status === 'ISSUED_ACTIVE'));
   }).length;
   const replacementRequestCount = (controlledCopyInstances || []).filter(i => i.status === 'REPLACEMENT_REQUESTED').length;
 
@@ -158,25 +163,26 @@ const Dashboard = () => {
   recentDars = recentDars.slice(0, 10);
 
   const getCurrentHandler = (dar) => {
+    if (!dar) return '-';
     if (dar.status === 'DRAFT') {
-      const user = (masterUsers || []).find(u => u.id === dar.requesterId);
-      return <span className="text-slate-600 font-semibold">{user ? user.name : dar.requesterId} (ผู้ร้องขอ)</span>;
+      const user = (masterUsers || []).find(u => u && u.id === dar.requesterId);
+      return <span className="text-slate-600 font-semibold">{user ? user.name : (dar.requesterId || '-')} (ผู้ร้องขอ)</span>;
     } else if (dar.status === 'APPROVED_WAITING_EFFECTIVE' || dar.status === 'WAITING_EFFECTIVE') {
       return <span className="text-slate-400 font-medium">-</span>;
     } else if (dar.status === 'UNDER_REVIEW' || dar.status === 'PENDING_APPROVAL' || dar.status === 'WAITING_ACKNOWLEDGEMENT') {
-      const activeTasks = (tasks || []).filter(t => t.darId === dar.id);
+      const activeTasks = (tasks || []).filter(t => t && t.darId === dar.id);
       if (activeTasks.length > 0) {
         const handlerNames = activeTasks.map(t => {
-           const user = (masterUsers || []).find(u => u.id === t.assigneeId);
+           const user = (masterUsers || []).find(u => u && u.id === t.assigneeId);
            const role = t.type === 'Review' ? 'ผู้ทบทวน' : t.type === 'Approve' ? 'ผู้อนุมัติ' : 'ผู้รับทราบ';
-           return user ? `${user.name} (${role})` : t.assigneeId;
+           return user ? `${user.name} (${role})` : (t.assigneeId || 'ผู้รับผิดชอบ');
         });
         return <span className="text-slate-900 font-bold">{handlerNames.join(', ')}</span>;
       }
       return '-';
     } else if (dar.status === 'RETURNED_FOR_REVISION') {
-      const user = (masterUsers || []).find(u => u.id === dar.requesterId);
-      return <span className="text-rose-600 font-bold">{user ? user.name : dar.requesterId} (ผู้ร้องขอ - แก้ไข)</span>;
+      const user = (masterUsers || []).find(u => u && u.id === dar.requesterId);
+      return <span className="text-rose-600 font-bold">{user ? user.name : (dar.requesterId || '-')} (ผู้ร้องขอ - แก้ไข)</span>;
     }
     return '-';
   };
@@ -184,6 +190,7 @@ const Dashboard = () => {
   const isDraftDar = (dar) => isDarDraft(dar);
 
   const renderActionButtons = (dar) => {
+    if (!dar) return null;
     if (dar.isTask) {
       return (
         <button 
@@ -200,7 +207,7 @@ const Dashboard = () => {
     }
     
     const canManageDraft = isDarRequester(dar, currentUser);
-    const activeTask = (tasks || []).find(t => t.darId === dar.id && isMyTask(t));
+    const activeTask = (tasks || []).find(t => t && t.darId === dar.id && isMyTask(t));
     
     if (isDraftDar(dar) && canManageDraft) {
       return (
@@ -223,7 +230,7 @@ const Dashboard = () => {
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              if (window.confirm('คุณต้องการลบแบบร่างนี้ทิ้งใช่หรือไม่?')) {
+              if (typeof window !== 'undefined' && window.confirm('คุณต้องการลบแบบร่างนี้ทิ้งใช่หรือไม่?')) {
                 deleteDar(dar.id);
               }
             }}
@@ -262,7 +269,7 @@ const Dashboard = () => {
       );
     }
 
-    if (dar.status === 'RETURNED_FOR_REVISION' && isRequesterOfDar) {
+    if (dar.status === 'RETURNED_FOR_REVISION' && isDarRequester(dar, currentUser)) {
       return (
         <button 
           onClick={() => navigate(`/tasks/revise/${dar.id}`)}
@@ -286,6 +293,7 @@ const Dashboard = () => {
   };
 
   const getStatusBadge = (status) => {
+    if (!status) return <span className="badge-draft">-</span>;
     switch (status) {
       case 'DRAFT': return <span className="badge-draft">ฉบับร่าง</span>;
       case 'UNDER_REVIEW': return <span className="badge-pending">รอการทบทวน</span>;
@@ -297,7 +305,7 @@ const Dashboard = () => {
       case 'WAITING_EFFECTIVE': return <span className="badge-pending">รอประกาศใช้</span>;
       case 'EFFECTIVE': return <span className="badge-active">มีผลบังคับใช้</span>;
       case 'OBSOLETE': return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
-      default: return <span className="badge-active">{status.replace(/_/g, ' ')}</span>;
+      default: return <span className="badge-active">{String(status).replace(/_/g, ' ')}</span>;
     }
   };
 
@@ -917,21 +925,21 @@ const Dashboard = () => {
                             dar.isTask ? navigate(`/tasks/approve-replacement/${dar.taskId}`) : navigate(`/dar/${dar.id}`);
                           }}
                         >
-                          {dar.darNumber || (isDarDraft(dar) ? 'ฉบับร่าง (Draft)' : '-')}
+                          {dar.darNumber || dar.dar_no || dar.darNo || (isDarDraft(dar) ? 'ฉบับร่าง (Draft)' : (dar.id || '-'))}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3.5 font-medium text-[#1E1E1E] break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-[#0D99FF] transition-colors" title={dar.title}>
-                      {dar.title}
+                      {dar.title || '-'}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="px-2 py-0.5 bg-[#F5F5F5] text-[#666666] rounded-md font-mono text-[10px] font-medium uppercase tracking-wider border border-[#E5E5E5]">
-                          {({'NEW': 'จัดทำใหม่', 'NEW_DOCUMENT': 'จัดทำใหม่', 'REVISION': 'ขอแก้ไข', 'REVISE': 'ขอแก้ไข', 'OBSOLETE': 'ขอยกเลิก', 'REPLACEMENT': 'ขอสำเนาทดแทน'})[dar.type] || dar.type}
+                          {({'NEW': 'จัดทำใหม่', 'NEW_DOCUMENT': 'จัดทำใหม่', 'REVISION': 'ขอแก้ไข', 'REVISE': 'ขอแก้ไข', 'OBSOLETE': 'ขอยกเลิก', 'REPLACEMENT': 'ขอสำเนาทดแทน'})[dar.type] || dar.type || '-'}
                         </span>
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-3.5 text-[#444444] font-medium font-mono text-xs whitespace-nowrap">
-                        {dar.department}
+                        {dar.department || '-'}
                       </td>
                     )}
                     <td className="px-4 py-3.5 whitespace-nowrap">
@@ -941,7 +949,7 @@ const Dashboard = () => {
                       {dar.isTask ? 'ผู้จัดการแผนก' : getCurrentHandler(dar)}
                     </td>
                     <td className="px-4 py-3.5 text-[#999999] text-right font-mono text-xs sm:text-sm whitespace-nowrap font-medium">
-                      {dar.date}
+                      {dar.date || '-'}
                     </td>
                   </tr>
                 ))}

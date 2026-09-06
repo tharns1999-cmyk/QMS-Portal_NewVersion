@@ -47,8 +47,15 @@ const ActionConfirmModal = ({
 
   const handleConfirmClick = () => {
     setIsSuccess(true);
-    setTimeout(() => {
-      onConfirm();
+    setTimeout(async () => {
+      try {
+        if (onConfirm) {
+          await onConfirm();
+        }
+      } catch (err) {
+        console.error('ActionConfirmModal onConfirm error:', err);
+        setIsSuccess(false);
+      }
     }, 800);
   };
 

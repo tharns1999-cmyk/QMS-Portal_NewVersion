@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import { FileText, CheckCircle, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, ExternalLink, Sparkles, Zap } from 'lucide-react';
@@ -12,7 +13,7 @@ import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 const TaskReview = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { tasks, dars, timeline, processWorkflow, currentUser, canDownloadDocument, documents, masterUsers } = useStore();
+  const { masterDepartments, tasks, dars, timeline, processWorkflow, currentUser, canDownloadDocument, documents, masterUsers } = useStore();
   
   const [comment, setComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
@@ -141,7 +142,7 @@ const TaskReview = () => {
                <p><span className="text-slate-400 w-24 inline-block font-medium">ฉบับที่:</span> <span className="font-mono font-bold">
                  {dar.type === 'REVISION' ? `${docInfo.docRev} ➡️ ${String(parseInt(docInfo.docRev || 0, 10) + 1).padStart(2, '0')}` : docInfo.docRev}
                </span></p>
-               <p><span className="text-slate-400 w-24 inline-block font-medium">แผนกเจ้าของ:</span> <span className="font-bold font-mono">{dar.department}</span></p>
+               <p><span className="text-slate-400 w-24 inline-block font-medium">แผนกเจ้าของ:</span> <span className="font-bold font-mono">{(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">ผู้ร้องขอ:</span> <span className="font-bold text-[#1E1E1E]">{requesterName}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">วันบังคับใช้:</span> <span className="font-mono font-bold text-emerald-700">{dar.effectiveDate || '-'}</span></p>
                {task?.dueDate && (
@@ -297,12 +298,12 @@ const TaskReview = () => {
                <h1 className="text-2xl font-bold text-center mb-6 border-b pb-3 text-[#1E1E1E]">{dar.title}</h1>
                <h2 className="text-base font-bold text-slate-800 mb-2">1. วัตถุประสงค์ (Purpose)</h2>
                <p className="text-xs text-slate-700 leading-relaxed mb-6">
-                 เอกสารฉบับนี้กำหนดมาตรฐานการปฏิบัติงานสำหรับแผนก {dar.department} เพื่อใช้เป็นแนวทางปฏิบัติงานตามข้อกำหนดระบบบริหารคุณภาพ ISO 9001 / FSSC 22000
+                 เอกสารฉบับนี้กำหนดมาตรฐานการปฏิบัติงานสำหรับแผนก {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()} เพื่อใช้เป็นแนวทางปฏิบัติงานตามข้อกำหนดระบบบริหารคุณภาพ ISO 9001 / FSSC 22000
                  {dar.requestDetail}
                </p>
                <h2 className="text-base font-bold text-slate-800 mb-2">2. ขอบเขต (Scope)</h2>
                <p className="text-xs text-slate-700 leading-relaxed">
-                 ครอบคลุมบุคลากรและกระบวนการทำงานที่เกี่ยวข้องทั้งหมดในสังกัด {dar.department}
+                 ครอบคลุมบุคลากรและกระบวนการทำงานที่เกี่ยวข้องทั้งหมดในสังกัด {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}
                </p>
                <div className="absolute bottom-8 left-0 right-0 text-center text-slate-400 text-xs font-mono">หน้า 1 จาก 2</div>
              </div>

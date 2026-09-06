@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { FileText, CheckCircle, ChevronLeft, Eye, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -9,7 +10,7 @@ import { getDarReason, getDarDetail, getDarDocInfo } from '../../utils/darHelper
 const TaskAck = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { tasks, dars, documents, currentUser, processWorkflow } = useStore();
+  const { masterDepartments, tasks, dars, documents, currentUser, processWorkflow } = useStore();
   const [hasOpenedPdf, setHasOpenedPdf] = useState(false);
 
   const task = tasks.find(t => t.id === id);
@@ -97,7 +98,7 @@ const TaskAck = () => {
           <div><span className="text-slate-400 block mb-0.5">ฉบับที่ (Rev.):</span> <span className="font-mono font-bold text-slate-800">{getDarDocInfo(dar, documents).docRev}</span></div>
           <div><span className="text-slate-400 block mb-0.5">ประเภท:</span> <span className="font-bold text-slate-800">{getDarDocInfo(dar, documents).docType}</span></div>
           <div><span className="text-slate-400 block mb-0.5">วันบังคับใช้:</span> <span className="font-mono text-slate-800">{dar.effectiveDate || '-'}</span></div>
-          <div><span className="text-slate-400 block mb-0.5">แผนกเจ้าของ:</span> <span className="font-bold font-mono text-slate-800">{dar.department}</span></div>
+          <div><span className="text-slate-400 block mb-0.5">แผนกเจ้าของ:</span> <span className="font-bold font-mono text-slate-800">{(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}</span></div>
           <div><span className="text-slate-400 block mb-0.5">สถานะ:</span> <span className="badge-active">{dar.status}</span></div>
         </div>
         

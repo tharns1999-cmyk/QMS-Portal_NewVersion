@@ -61,9 +61,9 @@ export const MASTER_DATA_USER = [
     canViewRegister: true,
     isWorkflowUser: true
   },
-  { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QA'], department: 'PD', dept: 'PD', primary_department: 'PD', affiliated_departments: ['PD', 'QA'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QA/QC'], department: 'PD', dept: 'PD', primary_department: 'PD', affiliated_departments: ['PD', 'QA/QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U004', empId: 'EMP-004', name: 'คุณเรย์', fullName: 'คุณเรย์', email: 'ray.gm@company.com', position: 'General Manager / QMR', level: 6, approval_level: 6, role: 'DEPT_ADMIN', isDcc: false, isQmr: true, depts: ['MGMT'], department: 'MGMT', dept: 'MGMT', primary_department: 'MGMT', affiliated_departments: ['MGMT'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'RAY-GM', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-GM004', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER', 'QMR_ACCESS'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
-  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QA'], department: 'QA', dept: 'QA', primary_department: 'QA', affiliated_departments: ['QA'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'BM-QA', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QA/QC'], department: 'QA/QC', dept: 'QA/QC', primary_department: 'QA/QC', affiliated_departments: ['QA/QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'BM-QA', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U006', empId: 'EMP-006', name: 'รัตนพล', fullName: 'รัตนพล', email: 'rattanapol.en@company.com', position: 'Engineering Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'RTP-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN006', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U007', empId: 'EMP-007', name: 'ชัยวัฒน์', fullName: 'ชัยวัฒน์', email: 'chaiwat.en@company.com', position: 'Engineering Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'CWT-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN007', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U008', empId: 'EMP-008', name: 'คุณกิต', fullName: 'คุณกิต', email: 'kit.fin@company.com', position: 'Finance Director', level: 7, approval_level: 7, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['FIN'], department: 'FIN', dept: 'FIN', primary_department: 'FIN', affiliated_departments: ['FIN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'KIT-FIN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-FN008', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
@@ -86,7 +86,7 @@ export const MASTER_DEPARTMENTS = [
 ];
 
 export const MASTER_DATA_DEPT = MASTER_DEPARTMENTS;
-export const SYSTEM_CORE_DEPTS = ['DC', 'QA', 'QA/QC'];
+export const SYSTEM_CORE_DEPTS = ['DC', 'QA/QC', 'QA/QC'];
 
 // 3. Master Document Types (2-Digit Base Running Number Standard: 01-99 ➔ 100+)
 export const MASTER_DOCUMENT_TYPES = [
@@ -164,7 +164,7 @@ export const MOCK_DARS = [
     title: 'MN-QA-001',
     name: 'คู่มือคุณภาพ (Quality Manual)',
     status: 'PENDING_REVIEW',
-    department: 'QA',
+    department: 'QA/QC',
     requesterId: 'U005',
     requestDate: '2026-07-01T08:00:00Z',
     reason: 'จัดทำคู่มือคุณภาพฉบับใหม่ให้สอดคล้องกับนโยบาย',
@@ -209,6 +209,11 @@ export const MOCK_TASKS = [
     id: 'TASK-MOCK-1',
     type: 'REVIEW',
     darId: 'DAR-MOCK-1',
+    docId: 'DOC-MOCK-QA-001',
+    docCode: 'MN-QA-001',
+    doc_code: 'MN-QA-001',
+    docTitle: 'คู่มือคุณภาพ (Quality Manual)',
+    docName: 'คู่มือคุณภาพ (Quality Manual)',
     title: 'ทบทวนคำร้อง (Review DAR) - MN-QA-001',
     assigneeId: 'U003',
     status: 'PENDING',
@@ -219,6 +224,11 @@ export const MOCK_TASKS = [
     id: 'TASK-MOCK-2',
     type: 'APPROVE',
     darId: 'DAR-MOCK-2',
+    docId: 'DOC-MOCK-WH-002',
+    docCode: 'SOP-WH-002',
+    doc_code: 'SOP-WH-002',
+    docTitle: 'ขั้นตอนการรับสินค้าเข้าคลัง',
+    docName: 'ขั้นตอนการรับสินค้าเข้าคลัง',
     title: 'อนุมัติคำร้อง (Approve DAR) - SOP-WH-002',
     assigneeId: 'U004',
     status: 'PENDING',
@@ -229,6 +239,11 @@ export const MOCK_TASKS = [
     id: 'TASK-MOCK-3',
     type: 'DCC_ACTION',
     darId: 'DAR-MOCK-3',
+    docId: 'DOC-MOCK-PD-010',
+    docCode: 'WI-PD-010',
+    doc_code: 'WI-PD-010',
+    docTitle: 'การใช้งานเครื่องซีลถุง',
+    docName: 'การใช้งานเครื่องซีลถุง',
     title: 'ดำเนินการอัปเดตระบบ (DCC Action) - WI-PD-010',
     assigneeId: 'U001',
     status: 'PENDING',
@@ -239,6 +254,10 @@ export const MOCK_TASKS = [
     id: 'TASK-MOCK-4',
     type: 'ACKNOWLEDGE',
     docId: 'DOC-MOCK-1', // SOP-PD-001
+    docCode: 'SOP-PD-001',
+    doc_code: 'SOP-PD-001',
+    docTitle: 'มาตรฐานการควบคุมเครื่องตรวจจับโลหะ (Metal Detector)',
+    docName: 'มาตรฐานการควบคุมเครื่องตรวจจับโลหะ (Metal Detector)',
     title: 'รับทราบการประกาศใช้เอกสารใหม่ - SOP-PD-001',
     assigneeId: 'U001',
     status: 'PENDING',
@@ -310,7 +329,7 @@ export const MOCK_DOCUMENTS = [
     rev: '02',
     access_control: {
       scope: 'TARGETED',
-      authorized_depts: ['WH', 'PD', 'QA'],
+      authorized_depts: ['WH', 'PD', 'QA/QC'],
       authorized_users: [],
       min_access_level: 1
     }
@@ -436,22 +455,89 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
     i.status === 'PENDING_DISPATCH'
   );
 
-  return (tasks || []).filter(t => {
+  return (tasks || []).map(t => {
+    if (!t) return t;
+    let updated = t;
+    if (
+      t.target_department === 'DCC' ||
+      t.targetDepartment === 'DCC' ||
+      t.department === 'DCC' ||
+      t.dept === 'DCC' ||
+      t.assignedToDept === 'DCC' ||
+      t.destinationDept === 'DCC' ||
+      t.currentHandlerDepartment === 'DCC'
+    ) {
+      updated = {
+        ...updated,
+        target_department: updated.target_department === 'DCC' ? 'DC' : updated.target_department,
+        targetDepartment: updated.targetDepartment === 'DCC' ? 'DC' : updated.targetDepartment,
+        department: updated.department === 'DCC' ? 'DC' : updated.department,
+        dept: updated.dept === 'DCC' ? 'DC' : updated.dept,
+        assignedToDept: updated.assignedToDept === 'DCC' ? 'DC' : updated.assignedToDept,
+        destinationDept: updated.destinationDept === 'DCC' ? 'DC' : updated.destinationDept,
+        currentHandlerDepartment: updated.currentHandlerDepartment === 'DCC' ? 'DC' : updated.currentHandlerDepartment
+      };
+    }
+
+    // Populate missing docTitle/docName from master documents, DARs, or copy instances
+    if (!updated.docName || !updated.docTitle || updated.docTitle === updated.doc_code) {
+      const docCode = updated.doc_code || updated.docCode || updated.document_code;
+      const docId = updated.docId || updated.doc_id;
+      const matchedDoc = safeDocs.find(d => 
+        (docId && String(d.id) === String(docId)) ||
+        (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+      );
+      const matchedDar = safeDars.find(d => String(d.id) === String(updated.darId));
+      const matchedInst = safeInstances.find(i => String(i.id) === String(updated.copyId || updated.copy_id));
+
+      const officialName = 
+        matchedDoc?.name || 
+        matchedDoc?.document_name || 
+        matchedDar?.name || 
+        matchedDar?.document_name || 
+        matchedInst?.docName || 
+        matchedInst?.name;
+
+      if (officialName) {
+        updated = {
+          ...updated,
+          docTitle: officialName,
+          docName: officialName,
+          docCode: docCode || matchedDoc?.title || matchedDoc?.document_code || updated.docCode
+        };
+      }
+    }
+    return updated;
+  }).filter(t => {
     // 1. Immediately drop tasks already completed/resolved (except active DISPATCHED_TRACKING or damaged recall tasks for DCC)
     if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) {
       if (t.delivery_status === 'DISPATCHED_TRACKING' || (t.type === 'DCC_RECALL' && (t.isDamaged || t.copyId || t.copy_id))) return true;
       return false;
     }
 
-    // 2. Distribution Tasks (DCC_DISTRIBUTE, DCC_ISSUE)
-    if (t.type === 'DCC_DISTRIBUTE' || t.type === 'DCC_ISSUE' || t.taskType === 'DCC_DISTRIBUTE') {
+    // 2. Distribution Tasks (DCC_DISTRIBUTE, DCC_ISSUE, DISTRIBUTION)
+    if (t.type === 'DCC_DISTRIBUTE' || t.type === 'DCC_ISSUE' || t.taskType === 'DCC_DISTRIBUTE' || t.taskType === 'DISTRIBUTION' || t.task_type === 'DISTRIBUTION') {
       if (t.delivery_status === 'DISPATCHED_TRACKING') return true;
-      const doc = safeDocs.find(d => d.darId === t.darId || d.id === t.docId || d.title === t.doc_code);
-      if (doc) {
-        return safeInstances.some(i => 
-          (String(i.doc_id || i.docId) === String(doc.id) || i.doc_code === doc.title || i.docTitle === doc.title) && 
-          (i.status === 'PENDING_ISSUE' || i.status === 'PENDING_PRINT' || i.status === 'PENDING_DISPATCH')
-        );
+      const targetRev = t.targetRevision || t.revision || t.doc_version || t.rev;
+      const targetDocCode = t.doc_code || t.docTitle || t.document_code;
+      const targetDocId = String(t.docId || t.doc_id || '');
+
+      // Strict Decoupling: check if ANY copy of this document and this revision is in pending issue/print/dispatch
+      const hasMatchingCopiesPendingIssue = safeInstances.some(i => {
+        const isDocMatch = 
+          (targetDocId && String(i.doc_id || i.docId) === targetDocId) ||
+          (targetDocCode && (i.doc_code === targetDocCode || i.docTitle === targetDocCode || i.document_code === targetDocCode)) ||
+          (t.darId && (String(i.darId || i.superseded_by_dar) === String(t.darId)));
+
+        const isRevMatch = !targetRev || targetRev === 'ALL' || (i.rev === targetRev || i.doc_version === targetRev || i.revision === targetRev);
+
+        const isPendingDist = i.status === 'PENDING_ISSUE' || i.status === 'PENDING_PRINT' || i.status === 'PENDING_DISPATCH';
+
+        return isDocMatch && isRevMatch && isPendingDist;
+      });
+
+      if (targetDocId || targetDocCode || t.darId) {
+        return hasMatchingCopiesPendingIssue;
       }
       return hasPendingDist;
     }
@@ -464,11 +550,12 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
       t.type === 'RECALL' || 
       t.type === 'OBSOLETE_RECALL' ||
       t.type === 'RECALL_HARDCOPY' ||
-      t.taskType === 'RECALL'
+      t.taskType === 'RECALL' ||
+      t.task_type === 'RECALL'
     ) {
       const targetDocId = String(t.docId || t.doc_id || '');
       let targetDocCode = t.doc_code || t.docTitle || t.document_code || '';
-      let targetRev = t.doc_version || t.rev || t.revision || '';
+      let targetRev = t.targetRevision || t.doc_version || t.rev || t.revision || '';
 
       // If not set directly on task, try extracting from title (e.g. "Obsolete: SOP-QA-003" or "Rev.00")
       if (!targetDocCode && t.title) {
@@ -493,6 +580,15 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         (targetDocId && String(d.id) === targetDocId) ||
         (targetDocCode && (d.title === targetDocCode || d.name === targetDocCode || d.code === targetDocCode || d.document_code === targetDocCode))
       );
+
+      // If task specifically targeted supersededCopyIds
+      if (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.length > 0) {
+        const hasUnresolvedTargetCopies = safeInstances.some(i => 
+          t.supersededCopyIds.includes(i.id) &&
+          (i.status === 'SUPERSEDED_PENDING_RECALL' || i.status === 'PENDING_RECALL' || i.status === 'DAMAGED_PENDING_RECALL' || i.status === 'RECALLED' || i.status === 'OBSOLETE_PENDING_RECALL' || i.status === 'DAMAGED_PENDING_REPLACEMENT')
+        );
+        return hasUnresolvedTargetCopies;
+      }
 
       // Find relevant copies for this recall task
       const relevantCopies = safeInstances.filter(i => {
@@ -519,23 +615,30 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
       }
 
       // If task is specifically tied to a single copy (e.g. damaged copy recall)
-      if (t.copyId || t.instanceId || t.copy_id || t.isDamaged) {
+      if (t.copyId || t.instanceId || t.copy_id || t.isDamaged || t.is_damaged) {
         const targetCopyId = String(t.copyId || t.instanceId || t.copy_id || '');
         const copy = targetCopyId ? safeInstances.find(i => String(i.id) === targetCopyId) : null;
         if (copy) {
-          return copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' || copy.status === 'DAMAGED_PENDING_REPLACEMENT';
+          // Never drop recall task for damaged copy until copy is destroyed or archived
+          const isNotYetDestroyed = copy.status !== 'DESTROYED' && copy.status !== 'RECALLED_DESTROYED' && copy.status !== 'ARCHIVED_OBSOLETE' && copy.status !== 'LOST' && copy.status !== 'LOST_RECORDED';
+          if ((copy.isDamaged || copy.is_damaged || t.isDamaged || t.is_damaged) && isNotYetDestroyed) {
+            return true;
+          }
+          return copy.status === 'SUPERSEDED_PENDING_RECALL' || copy.status === 'PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_RECALL' || copy.status === 'RECALLED' || copy.status === 'DAMAGED_PENDING_REPLACEMENT';
         }
-        if (t.isDamaged) return true;
+        if (t.isDamaged || t.is_damaged) return true;
       }
 
       if (relevantCopies.length === 0) {
         // If no copies exist at all for this doc, check if global has any pending recalls
-        return safeInstances.some(i => i.status === 'PENDING_RECALL' || i.status === 'RECALLED' || i.status === 'OBSOLETE_PENDING_RECALL' || i.status === 'DAMAGED_PENDING_REPLACEMENT');
+        return safeInstances.some(i => i.status === 'SUPERSEDED_PENDING_RECALL' || i.status === 'PENDING_RECALL' || i.status === 'DAMAGED_PENDING_RECALL' || i.status === 'RECALLED' || i.status === 'OBSOLETE_PENDING_RECALL' || i.status === 'DAMAGED_PENDING_REPLACEMENT');
       }
 
-      // If ANY copy is still PENDING_RECALL, RECALLED, or OBSOLETE_PENDING_RECALL, or active under obsolete/superseded document, keep the task!
+      // If ANY copy is still SUPERSEDED_PENDING_RECALL, PENDING_RECALL, DAMAGED_PENDING_RECALL, RECALLED, or OBSOLETE_PENDING_RECALL, or active under obsolete/superseded document, keep the task!
       const hasUnrecalledCopy = relevantCopies.some(i => 
+        i.status === 'SUPERSEDED_PENDING_RECALL' ||
         i.status === 'PENDING_RECALL' ||
+        i.status === 'DAMAGED_PENDING_RECALL' ||
         i.status === 'RECALLED' ||
         i.status === 'OBSOLETE_PENDING_RECALL' ||
         i.status === 'DAMAGED_PENDING_REPLACEMENT' ||
@@ -672,6 +775,8 @@ export const getInitialStoreState = () => ({
   documentControlledCopies: [],
   controlledCopyInstances: [],
   controlledCopyAuditTrail: [],
+  copyDispositionRecords: [],
+  dispositionHistory: [],
   periodicReviewSchedules: [],
   periodicReviewTasks: [],
   periodicReviewRecords: [],
@@ -711,6 +816,8 @@ const useStore = create(persist((set, get) => ({
       documentControlledCopies: [],
       controlledCopyInstances: [],
       controlledCopyAuditTrail: [],
+      copyDispositionRecords: [],
+      dispositionHistory: [],
       periodicReviewSchedules: [],
       periodicReviewTasks: [],
       periodicReviewRecords: [],
@@ -737,6 +844,8 @@ const useStore = create(persist((set, get) => ({
           persisted.state.documentControlledCopies = [];
           persisted.state.controlledCopyInstances = [];
           persisted.state.controlledCopyAuditTrail = [];
+          persisted.state.copyDispositionRecords = [];
+          persisted.state.dispositionHistory = [];
           persisted.state.periodicReviewSchedules = [];
           persisted.state.periodicReviewTasks = [];
           persisted.state.periodicReviewRecords = [];
@@ -1062,7 +1171,7 @@ const useStore = create(persist((set, get) => ({
   }),
 
   registerExternalDoc: (doc) => set((state) => {
-    const dept = doc.department || doc.dept || (state.currentUser ? (state.currentUser.department || 'QA') : 'QA');
+    const dept = doc.department || doc.dept || (state.currentUser ? (state.currentUser.department || 'QA/QC') : 'QA/QC');
     const edType = (state.documentTypes || []).find(t => t.code === 'ED' || t.id === 'ED');
     const pattern = edType?.namingPattern || 'ED-{Dept}-{##}';
     const nextSeq = calculateNextExternalDocSequence(dept, state.externalDocuments);
@@ -1091,6 +1200,10 @@ const useStore = create(persist((set, get) => ({
         id: `extt-${Date.now()}-rev`,
         referenceType: 'EXTERNAL_DOC',
         referenceId: newId,
+        docCode: edCode,
+        doc_code: edCode,
+        docTitle: doc.title,
+        docName: doc.title,
         title: `${edCode}: ${doc.title}`,
         type: 'EXT_REVIEW',
         assigneeId: doc.reviewerId,
@@ -1104,6 +1217,10 @@ const useStore = create(persist((set, get) => ({
         id: `extt-${Date.now()}-app`,
         referenceType: 'EXTERNAL_DOC',
         referenceId: newId,
+        docCode: edCode,
+        doc_code: edCode,
+        docTitle: doc.title,
+        docName: doc.title,
         title: `${edCode}: ${doc.title}`,
         type: 'EXT_APPROVAL',
         assigneeId: doc.approverId,
@@ -1119,6 +1236,10 @@ const useStore = create(persist((set, get) => ({
           id: `extt-${Date.now()}-ack-${uid}`,
           referenceType: 'EXTERNAL_DOC',
           referenceId: newId,
+          docCode: edCode,
+          doc_code: edCode,
+          docTitle: doc.title,
+          docName: doc.title,
           title: `${edCode}: ${doc.title}`,
           type: 'Ack',
           assigneeId: uid,
@@ -1190,6 +1311,11 @@ const useStore = create(persist((set, get) => ({
         docId: newId,
         externalDocId: newId,
         doc_code: edCode,
+        docCode: edCode,
+        docTitle: doc.title,
+        docName: doc.title,
+        department: 'DC',
+        target_department: 'DC',
         doc_version: doc.rev || doc.sourceVersion || '01',
         assigneeId: 'U001',
         assignedToRole: 'DCC_ADMIN',
@@ -1555,6 +1681,11 @@ const useStore = create(persist((set, get) => ({
             docId: doc.id,
             externalDocId: doc.id,
             doc_code: docCode,
+            docCode: docCode,
+            docTitle: doc.title || docCode,
+            docName: doc.title || docCode,
+            department: 'DC',
+            target_department: 'DC',
             doc_version: docVer,
             assigneeId: 'U001',
             assignedToRole: 'DCC_ADMIN',
@@ -1592,6 +1723,11 @@ const useStore = create(persist((set, get) => ({
               docId: prevDocId,
               externalDocId: prevDocId,
               doc_code: oldDocCode,
+              docCode: oldDocCode,
+              docTitle: oldDoc?.title || oldDoc?.name || oldDocCode,
+              docName: oldDoc?.title || oldDoc?.name || oldDocCode,
+              department: 'DC',
+              target_department: 'DC',
               doc_version: oldDoc?.rev || '01',
               assigneeId: 'U001',
               assignedToRole: 'DCC_ADMIN',
@@ -1628,6 +1764,11 @@ const useStore = create(persist((set, get) => ({
             docId: targetDocId,
             externalDocId: targetDocId,
             doc_code: docCode,
+            docCode: docCode,
+            docTitle: doc.title || doc.name || docCode,
+            docName: doc.title || doc.name || docCode,
+            department: 'DC',
+            target_department: 'DC',
             doc_version: doc.rev || '01',
             assigneeId: 'U001',
             assignedToRole: 'DCC_ADMIN',
@@ -1719,16 +1860,15 @@ const useStore = create(persist((set, get) => ({
       
       // Generate Reviewer Task
       if (!dar.isDraft) {
-        const resolveReviewer = (reqId, dept, masters, reviewers) => {
-          const reqUser = masters.find(u => u.id === reqId);
-          if (!reqUser) return null;
-          const candidates = reviewers.filter(u => u.department === dept && u.level > reqUser.level);
-          if (candidates.length === 0) return null;
-          candidates.sort((a,b) => a.level - b.level);
-          return { id: candidates[0].id, level: candidates[0].level, dept: candidates[0].department };
-        };
-        
-        let reviewerObj = resolveReviewer(newDar.requesterId, newDar.department, state.masterUsers, state.reviewUsers);
+        realStatus = 'UNDER_REVIEW';
+        let reviewerObj = resolveReviewer(
+          newDar.requesterId, 
+          newDar.department, 
+          state.masterUsers, 
+          state.reviewUsers, 
+          newDar.docType, 
+          state.approvalMatrix
+        );
         
         if (reviewerObj) {
           const newTaskId = `t-${Date.now()}`;
@@ -1749,9 +1889,6 @@ const useStore = create(persist((set, get) => ({
             status: 'NORMAL'
           });
           newNotifications.push({ id: Date.now() + Math.random(), userId: reviewerObj.id, title: 'งานใหม่รอการตรวจสอบ', message: `DAR "${newDar.title}" รอการตรวจสอบจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
-        } else {
-           realStatus = 'PENDING_APPROVAL';
-           // Not fully replicating the approver fallback here, assuming standard DARs will find a reviewer in demo
         }
       }
 
@@ -1799,8 +1936,9 @@ const useStore = create(persist((set, get) => ({
       newDarId = `draft_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     }
 
-    // Ensure distributions array is present
-    const distributions = dar.distributions || [];
+    const today = new Date();
+    today.setDate(today.getDate() + (state.mockDateOffset || 0));
+    const todayStr = today.toISOString().split('T')[0];
 
     const newDar = { 
       ...dar, 
@@ -1808,7 +1946,14 @@ const useStore = create(persist((set, get) => ({
       darNumber: allocatedDarNumber,
       darNo: allocatedDarNumber,
       dar_no: allocatedDarNumber,
-      distributions 
+      title: dar.title || dar.docTitle || dar.name || 'Untitled Document',
+      name: dar.name || dar.title || dar.docTitle || 'Untitled Document',
+      docTitle: dar.docTitle || dar.name || dar.title || 'Untitled Document',
+      department: dar.department || state.currentUser?.department || 'PD',
+      requesterId: dar.requesterId || dar.requester_id || state.currentUser?.id || 'EMP-001',
+      date: dar.date || dar.createdAt?.split('T')[0] || todayStr,
+      type: dar.type || 'NEW',
+      distributions: dar.distributions || []
     };
 
     if (newDar.type === 'NEW' || newDar.type === 'NEW_DOCUMENT') {
@@ -1828,18 +1973,33 @@ const useStore = create(persist((set, get) => ({
     }
 
     // When a DAR is added, it needs a Reviewer assigned from the same department
-    // Criteria: candidate.level > requester.level (Nearest Higher)
+    // Criteria: candidate.level >= minReviewerLevel (L4+ threshold with linear escalation)
     let reviewerObj = null;
     if (!newDar.manualReviewerId) {
-      reviewerObj = resolveReviewer(newDar.requesterId, newDar.department, state.masterUsers, state.reviewUsers);
+      reviewerObj = resolveReviewer(
+        newDar.requesterId, 
+        newDar.department, 
+        state.masterUsers, 
+        state.reviewUsers, 
+        newDar.docType, 
+        state.approvalMatrix
+      );
     } else {
       const u = state.masterUsers.find(m => m.id === newDar.manualReviewerId);
       if (u) reviewerObj = { id: u.id, level: u.level, dept: newDar.department };
     }
 
-    const today = new Date();
-    today.setDate(today.getDate() + state.mockDateOffset);
-    const todayStr = today.toISOString().split('T')[0];
+    // Safety fallback: if no candidate found in pool, escalate to management
+    if (!reviewerObj) {
+      const fallback = state.masterUsers.find(m => 
+        m.id !== newDar.requesterId && 
+        (!m.isDcc || newDar.department === 'DC') && 
+        ((m.approval_level || m.level || 0) >= 4 || m.isQmr || m.role === 'DEPT_ADMIN')
+      );
+      if (fallback) {
+        reviewerObj = { id: fallback.id, level: fallback.approval_level || fallback.level || 4, dept: fallback.department || newDar.department };
+      }
+    }
 
     const reviewSla = calculateTaskDueDate({
       submissionDate: newDar.date || todayStr,
@@ -1852,76 +2012,50 @@ const useStore = create(persist((set, get) => ({
     let newNotifications = [...state.notifications];
     let realStatus = dar.isDraft ? 'DRAFT' : 'UNDER_REVIEW';
 
-    if (!dar.isDraft) {
-      if (reviewerObj) {
-        const newTaskId = `t-${Date.now()}`;
-        newTasks.push({
-          id: newTaskId,
-          referenceType: 'INTERNAL_DAR', referenceId: newDar.id,
-          darId: newDar.id,
-          title: newDar.title,
-          type: 'Review',
-          assigneeId: reviewerObj.id,
-          currentHandlerDepartment: reviewerObj.dept,
-          currentHandlerLevel: reviewerObj.level,
-          dueDate: reviewSla.dueDate,
-          cancelDate: reviewSla.cancelDate,
-          isUrgent: reviewSla.isUrgent,
-          isFastTrack: reviewSla.isFastTrack,
-          priority: reviewSla.isUrgent ? 'URGENT' : 'NORMAL',
-          slaType: reviewSla.slaType,
-          effectiveDate: reviewSla.effectiveDate,
-          status: 'NORMAL'
-        });
-        newNotifications.push({ id: Date.now() + Math.random(), userId: reviewerObj.id, title: 'งานใหม่รอการตรวจสอบ', message: `DAR "${newDar.title}" รอการตรวจสอบจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
-      } else {
-        // Skip Review -> PENDING_APPROVAL
-        realStatus = 'PENDING_APPROVAL';
-        let approverObj = null;
-        if (!newDar.manualApproverId) {
-          approverObj = resolveApprover(newDar.requesterId, newDar.requesterId, newDar.department, state.masterUsers, state.approveUsers);
-        } else {
-          const u = state.masterUsers.find(m => m.id === newDar.manualApproverId);
-          if (u) approverObj = { id: u.id, level: u.level, dept: newDar.department };
-        }
-
-        const approverSla = calculateTaskDueDate({
-          submissionDate: newDar.date || todayStr,
-          effectiveDate: newDar.effectiveDate,
-          stepSlaDays: state.slaSettings?.approvalSlaDays || 3,
-          mockDateOffset: state.mockDateOffset
-        });
-
-        if (approverObj) {
-          newTasks.push({
-            id: `t-${Date.now()}`, referenceType: 'INTERNAL_DAR', referenceId: newDar.id, darId: newDar.id, title: newDar.title, type: 'Approve', assigneeId: approverObj.id,
-            currentHandlerDepartment: approverObj.dept, currentHandlerLevel: approverObj.level,
-            dueDate: approverSla.dueDate, cancelDate: approverSla.cancelDate,
-            isUrgent: approverSla.isUrgent, isFastTrack: approverSla.isFastTrack, priority: approverSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: approverSla.slaType, effectiveDate: approverSla.effectiveDate,
-            status: 'NORMAL'
-          });
-          newNotifications.push({ id: Date.now() + Math.random(), userId: approverObj.id, title: 'งานใหม่รอการอนุมัติ', message: `DAR "${newDar.title}" รอการอนุมัติจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
-        } else {
-          realStatus = dar.ackRequirement === 'REQUIRED' ? 'WAITING_ACKNOWLEDGEMENT' : 'APPROVED_WAITING_EFFECTIVE';
-          if (realStatus === 'WAITING_ACKNOWLEDGEMENT' && dar.ackUserIds?.length > 0) {
-            const ackSla = calculateTaskDueDate({
-              submissionDate: newDar.date || todayStr,
-              effectiveDate: newDar.effectiveDate,
-              stepSlaDays: 3,
-              mockDateOffset: state.mockDateOffset
-            });
-            dar.ackUserIds.forEach(uid => {
-              newTasks.push({
-                id: `t-${Date.now()}-${uid}`, referenceType: 'INTERNAL_DAR', referenceId: newDar.id, darId: newDar.id, title: newDar.title, type: 'Ack', assigneeId: uid,
-                dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
-                isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
-                status: 'NORMAL'
-              });
-              newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `DAR "${newDar.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
-            });
-          }
-        }
-      }
+    if (!dar.isDraft && reviewerObj) {
+      const newTaskId = `t-${Date.now()}`;
+      const docCode = newDar.docCode || newDar.document_code || newDar.docIdInput || newDar.docId || newDar.title || newDar.darNumber;
+      const docOfficialTitle = newDar.docTitle || newDar.name || newDar.document_name || newDar.docName || newDar.title;
+      newTasks.push({
+        id: newTaskId,
+        referenceType: 'INTERNAL_DAR', referenceId: newDar.id,
+        darId: newDar.id,
+        docId: newDar.docId || newDar.id,
+        docCode: docCode,
+        doc_code: docCode,
+        docTitle: docOfficialTitle,
+        docName: docOfficialTitle,
+        title: `[DAR ทบทวน] ${docOfficialTitle} (${docCode})`,
+        type: 'Review',
+        taskType: 'DAR_REVIEW',
+        task_type: 'DAR_REVIEW',
+        assigneeId: reviewerObj.id,
+        assignee_id: reviewerObj.id,
+        assigneeName: reviewerObj.name || '',
+        currentHandlerDepartment: reviewerObj.dept,
+        department: newDar.department || newDar.dept || 'QA/QC',
+        target_department: newDar.department || newDar.dept || 'QA/QC',
+        currentHandlerLevel: reviewerObj.level,
+        required_approval_level: reviewerObj.level,
+        dueDate: reviewSla.dueDate,
+        cancelDate: reviewSla.cancelDate,
+        isUrgent: reviewSla.isUrgent,
+        isFastTrack: reviewSla.isFastTrack,
+        priority: reviewSla.isUrgent ? 'URGENT' : 'NORMAL',
+        slaType: reviewSla.slaType,
+        effectiveDate: reviewSla.effectiveDate,
+        status: 'NORMAL'
+      });
+      newNotifications.push({ 
+        id: Date.now() + Math.random(), 
+        userId: reviewerObj.id, 
+        title: 'งานใหม่รอการตรวจสอบ', 
+        message: `DAR "${docOfficialTitle}" (${docCode}) รอการตรวจสอบจากคุณ`, 
+        isRead: false, 
+        link: '/tasks', 
+        timestamp: new Date().toISOString(), 
+        relatedTaskId: newTaskId 
+      });
     }
 
     return {
@@ -1993,7 +2127,7 @@ const useStore = create(persist((set, get) => ({
         isDraft: true,
         requesterId: draftData.requesterId || draftData.requester_id || state.currentUser?.id,
         requester_name: draftData.requester_name || state.currentUser?.name,
-        department: draftData.department || draftData.owner_dept || state.currentUser?.department || 'QA',
+        department: draftData.department || draftData.owner_dept || state.currentUser?.department || 'QA/QC',
         created_at: draftData.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -2017,7 +2151,16 @@ const useStore = create(persist((set, get) => ({
     const updatedDars = (state.dars || []).filter(d => d.id !== darId && d.dar_no !== darId && d.darNo !== darId);
     return {
       dars: updatedDars,
-      darRequests: updatedDars
+      darRequests: updatedDars,
+      tasks: state.tasks.filter(t => t.darId !== darId),
+      timeline: state.timeline.filter(t => t.darId !== darId),
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'DAR_DELETE',
+        actor: state.currentUser?.name || 'System',
+        details: `Deleted DAR ${darId}`,
+        timestamp: new Date().toISOString()
+      }, ...(state.actionLog || [])]
     };
   }),
 
@@ -2049,17 +2192,39 @@ const useStore = create(persist((set, get) => ({
 
     let newNotifications = state.notifications.map(n => n.relatedTaskId === taskId ? { ...n, isRead: true } : n);
 
-    if (task.type === 'Review') {
+    if (task.type === 'Review' || task.type === 'REVIEW') {
       if (action === 'APPROVE') {
         newStatus = 'PENDING_APPROVAL';
 
-        // Find Approver (Rule: candidate.level > reviewer.level, Nearest Higher)
+        // Find Approver (Rule: candidate.level >= minApproverLevel, Linear Multi-Stage Pipeline)
         let approverObj = null;
         if (!dar.manualApproverId) {
-          approverObj = resolveApprover(dar.requesterId, task.assigneeId, dar.department, state.masterUsers, state.approveUsers);
+          approverObj = resolveApprover(
+            dar.requesterId, 
+            task.assigneeId, 
+            dar.department, 
+            state.masterUsers, 
+            state.approveUsers, 
+            dar.docType || dar.doc_type, 
+            state.approvalMatrix
+          );
         } else {
           const u = state.masterUsers.find(m => m.id === dar.manualApproverId);
           if (u) approverObj = { id: u.id, level: u.level, dept: dar.department };
+        }
+
+        // Safety escalation fallback if still not resolved
+        if (!approverObj) {
+          const fallback = state.masterUsers.find(m => 
+            m.id !== dar.requesterId && 
+            m.id !== task.assigneeId && 
+            (!m.isDcc || dar.department === 'DC') && 
+            ((m.approval_level || m.level || 0) >= 5 || m.isQmr || m.role === 'DEPT_ADMIN')
+          ) || state.masterUsers.find(m => m.id !== dar.requesterId && m.id !== task.assigneeId);
+
+          if (fallback) {
+            approverObj = { id: fallback.id, level: fallback.approval_level || fallback.level || 5, dept: fallback.department || dar.department };
+          }
         }
 
         if (approverObj) {
@@ -2070,34 +2235,23 @@ const useStore = create(persist((set, get) => ({
             mockDateOffset: state.mockDateOffset
           });
           const newTaskId = `t-${Date.now()}`;
+          const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+          const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
           newTasks.push({
-            id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Approve', assigneeId: approverObj.id,
+            id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
+            docId: dar.docId || dar.id,
+            docCode: docCode,
+            doc_code: docCode,
+            docTitle: docOfficialTitle,
+            docName: docOfficialTitle,
+            title: `[DAR รออนุมัติ] ${docOfficialTitle} (${docCode})`,
+            type: 'Approve', assigneeId: approverObj.id,
             currentHandlerDepartment: approverObj.dept, currentHandlerLevel: approverObj.level,
             dueDate: approverSla.dueDate, cancelDate: approverSla.cancelDate,
             isUrgent: approverSla.isUrgent, isFastTrack: approverSla.isFastTrack, priority: approverSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: approverSla.slaType, effectiveDate: approverSla.effectiveDate,
             status: 'NORMAL'
           });
           newNotifications.push({ id: Date.now() + Math.random(), userId: approverObj.id, title: 'งานใหม่รอการอนุมัติ', message: `DAR "${dar.title}" รอการอนุมัติจากคุณ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
-        } else {
-          newStatus = dar.ackRequirement === 'REQUIRED' ? 'WAITING_ACKNOWLEDGEMENT' : 'APPROVED_WAITING_EFFECTIVE';
-          if (newStatus === 'WAITING_ACKNOWLEDGEMENT' && dar.ackUserIds?.length > 0) {
-            const ackSla = calculateTaskDueDate({
-              submissionDate: today,
-              effectiveDate: dar.effectiveDate,
-              stepSlaDays: 3,
-              mockDateOffset: state.mockDateOffset
-            });
-            dar.ackUserIds.forEach(uid => {
-              const newTaskId = `t-${Date.now()}-${uid}`;
-              newTasks.push({
-                id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Ack', assigneeId: uid,
-                dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
-                isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
-                status: 'NORMAL'
-              });
-              newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `DAR "${dar.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
-            });
-          }
         }
       } else if (action === 'RETURN') {
         newStatus = 'RETURNED_FOR_REVISION';
@@ -2108,8 +2262,17 @@ const useStore = create(persist((set, get) => ({
           mockDateOffset: state.mockDateOffset
         });
         const newTaskId = `t-${Date.now()}`;
+        const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+        const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
         newTasks.push({
-          id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Revise', assigneeId: dar.requesterId,
+          id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
+          docId: dar.docId || dar.id,
+          docCode: docCode,
+          doc_code: docCode,
+          docTitle: docOfficialTitle,
+          docName: docOfficialTitle,
+          title: `[DAR ส่งกลับแก้ไข] ${docOfficialTitle} (${docCode})`,
+          type: 'Revise', assigneeId: dar.requesterId,
           dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
           isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
           status: 'NORMAL'
@@ -2134,10 +2297,19 @@ const useStore = create(persist((set, get) => ({
             stepSlaDays: 3,
             mockDateOffset: state.mockDateOffset
           });
+          const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+          const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
           dar.ackUserIds.forEach(uid => {
             const newTaskId = `t-${Date.now()}-${uid}`;
             newTasks.push({
-              id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Ack', assigneeId: uid,
+              id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
+              docId: dar.docId || dar.id,
+              docCode: docCode,
+              doc_code: docCode,
+              docTitle: docOfficialTitle,
+              docName: docOfficialTitle,
+              title: `[รับทราบเอกสาร] ${docOfficialTitle} (${docCode})`,
+              type: 'Ack', assigneeId: uid,
               dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
               isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
               status: 'NORMAL'
@@ -2154,8 +2326,17 @@ const useStore = create(persist((set, get) => ({
           mockDateOffset: state.mockDateOffset
         });
         const newTaskId = `t-${Date.now()}`;
+        const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+        const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
         newTasks.push({
-          id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id, title: dar.title, type: 'Revise', assigneeId: dar.requesterId,
+          id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
+          docId: dar.docId || dar.id,
+          docCode: docCode,
+          doc_code: docCode,
+          docTitle: docOfficialTitle,
+          docName: docOfficialTitle,
+          title: `[DAR ส่งกลับแก้ไข] ${docOfficialTitle} (${docCode})`,
+          type: 'Revise', assigneeId: dar.requesterId,
           dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
           isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
           status: 'NORMAL'
@@ -2202,7 +2383,27 @@ const useStore = create(persist((set, get) => ({
       id: Date.now(), darId: dar.id, action: timelineActionLabel, user: state.currentUser.name, date: new Date().toLocaleString(), comment: comment || '-', isChat: false, userId: state.currentUser.id
     }];
 
+    let updatedDocs = state.documents;
+    if (newStatus === 'COMPLETED' || newStatus === 'REJECTED' || newStatus === 'CANCELLED' || (action === 'APPROVE' && (targetTask?.type === 'Approve' || targetTask?.type === 'APPROVE'))) {
+      const targetDocCode = dar.document_code || dar.doc_code || dar.code || dar.docCode || dar.title;
+      const targetDocId = dar.docIdRef || dar.docId || dar.doc_id || dar.targetDocumentId;
+      updatedDocs = (state.documents || []).map(d => {
+        const isDocMatch = 
+          (targetDocId && String(d.id) === String(targetDocId)) ||
+          (targetDocCode && (d.document_code === targetDocCode || d.doc_code === targetDocCode || d.code === targetDocCode || d.title === targetDocCode));
+        if (isDocMatch) {
+          return {
+            ...d,
+            isLocked: false,
+            hasPendingDar: false
+          };
+        }
+        return d;
+      });
+    }
+
     const newState = {
+      documents: updatedDocs,
       tasks: newTasks,
       notifications: newNotifications,
       dars: updatedDars,
@@ -2244,7 +2445,15 @@ const useStore = create(persist((set, get) => ({
     const updatedDars = state.dars.map(d => d.id === darId ? { ...d, ...updatedData, status: 'UNDER_REVIEW' } : d);
     let newNotifications = [...state.notifications];
 
-    const assignedReviewerId = resolveReviewer(dar.requesterId, dar.department, state.masterUsers, state.reviewUsers);
+    const reviewerObj = resolveReviewer(
+      dar.requesterId, 
+      dar.department, 
+      state.masterUsers, 
+      state.reviewUsers, 
+      dar.docType || dar.doc_type, 
+      state.approvalMatrix
+    );
+    const assignedReviewerId = reviewerObj?.id || reviewerObj;
 
     if (assignedReviewerId) {
       const today = new Date();
@@ -2257,13 +2466,22 @@ const useStore = create(persist((set, get) => ({
         mockDateOffset: state.mockDateOffset
       });
 
+      const docCode = updatedData.title || dar.title || dar.docIdInput;
+      const docOfficialTitle = updatedData.name || dar.name || updatedData.title || dar.title;
       newTasks.push({
         id: `t-${Date.now()}`,
         referenceType: 'INTERNAL_DAR', referenceId: dar.id,
         darId: dar.id,
-        title: updatedData.title || dar.title,
+        docId: dar.docId || dar.id,
+        docCode: docCode,
+        doc_code: docCode,
+        docTitle: docOfficialTitle,
+        docName: docOfficialTitle,
+        title: `[DAR ทบทวนใหม่] ${docOfficialTitle} (${docCode})`,
         type: 'Review',
         assigneeId: assignedReviewerId,
+        currentHandlerDepartment: reviewerObj?.dept || dar.department,
+        currentHandlerLevel: reviewerObj?.level || 4,
         dueDate: taskSla.dueDate,
         cancelDate: taskSla.cancelDate,
         isUrgent: taskSla.isUrgent,
@@ -2527,10 +2745,11 @@ const useStore = create(persist((set, get) => ({
                 stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
                 mockDateOffset: state.mockDateOffset
               });
+              const distDocOfficialTitle = newDoc.name || dar.name || newDoc.title;
               newTasks.push({
                 id: `task-dist-${Date.now()}-${Math.random()}`,
-                title: `แจกจ่ายเอกสาร Controlled Copy (NEW)`,
-                description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
+                title: `แจกจ่ายเอกสาร Controlled Copy (NEW): ${distDocOfficialTitle} (${newDoc.title})`,
+                description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
                 type: 'DCC_DISTRIBUTE',
                 status: 'PENDING',
                 assigneeId: 'U001',
@@ -2538,6 +2757,13 @@ const useStore = create(persist((set, get) => ({
                 target_role: 'DCC',
                 department: 'DC',
                 target_department: 'DC',
+                docId: newDoc.id,
+                doc_id: newDoc.id,
+                document_code: newDoc.title,
+                doc_code: newDoc.title,
+                docCode: newDoc.title,
+                docTitle: distDocOfficialTitle,
+                docName: distDocOfficialTitle,
                 dueDate: distSla.dueDate,
                 cancelDate: distSla.cancelDate,
                 isUrgent: distSla.isUrgent,
@@ -2595,7 +2821,16 @@ const useStore = create(persist((set, get) => ({
                   receipt_remarks: null,
                   recall_task_id: null
                 };
-                newControlledCopyInstances.push(newInst);
+                const alreadyExists = newControlledCopyInstances.some(inst => {
+                  const isMatchDoc = (String(inst.docId || inst.doc_id) === String(createdDoc.id)) ||
+                                     (inst.doc_code === createdDoc.title || inst.docTitle === createdDoc.title);
+                  const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(createdDoc.rev);
+                  const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
+                  return isMatchDoc && isMatchRev && isMatchCopyNo;
+                });
+                if (!alreadyExists) {
+                  newControlledCopyInstances.push(newInst);
+                }
 
                 newAuditTrail.push({
                   id: `audit-${Date.now()}-${idx}`,
@@ -2640,7 +2875,7 @@ const useStore = create(persist((set, get) => ({
                const code = doc.document_code || doc.code || doc.title;
                const isMatch = (targetCode && code === targetCode) || (targetDocId && String(doc.id) === String(targetDocId));
                if (isMatch) {
-                 return { ...doc, status: 'SUPERSEDED', is_superseded: true };
+                 return { ...doc, status: 'SUPERSEDED', is_active: false, is_superseded: true, superseded_at: doc.superseded_at || new Date().toISOString() };
                }
                return doc;
              });
@@ -2653,6 +2888,9 @@ const useStore = create(persist((set, get) => ({
                title: oldDoc ? oldDoc.title : targetCode,
                name: dar.title || oldDoc?.name || 'Procedure Document',
                status: 'EFFECTIVE',
+               is_active: true,
+               is_superseded: false,
+               is_obsolete: false,
                rev: newRevStr,
                revision: newRevStr,
                department: dar.department || oldDoc?.department || 'PD',
@@ -2671,7 +2909,11 @@ const useStore = create(persist((set, get) => ({
                   const isDocMatch = (oldDoc && String(inst.docId || inst.doc_id) === String(oldDoc.id)) ||
                                      (targetCode && copyCode === targetCode) ||
                                      (oldDoc?.title && copyCode === oldDoc.title);
-                  const isOldRev = !inst.rev || !inst.doc_version || inst.rev === oldRev || inst.doc_version === oldRev || inst.revision === oldRev;
+                  const copyRev = inst.rev || inst.doc_version || inst.revision;
+                  if (copyRev && String(copyRev) === String(newDoc.rev)) {
+                    return false;
+                  }
+                  const isOldRev = copyRev ? (String(copyRev) === String(oldRev) || copyRev < newDoc.rev) : true;
                   const isActive = inst.status === 'ACTIVE' || inst.status === 'ISSUED_ACTIVE' || inst.status === 'RECEIVED' || inst.status === 'DISPATCHED_PENDING_RECEIPT';
                   return isDocMatch && isOldRev && isActive;
                 };
@@ -2689,13 +2931,14 @@ const useStore = create(persist((set, get) => ({
                       docRev: inst.rev || inst.doc_version || oldRev,
                       ccNumber: inst.ccNumber || inst.copy_no,
                       oldStatus: inst.status,
-                      newStatus: 'PENDING_RECALL',
-                      remarks: `Superseded by Rev.${newDoc.rev} (DAR ${dar.id}). Set to PENDING_RECALL for physical recall/destruction.`
+                      newStatus: 'SUPERSEDED_PENDING_RECALL',
+                      remarks: `Superseded by Rev.${newDoc.rev} (DAR ${dar.id}). Set to SUPERSEDED_PENDING_RECALL for physical recall/destruction.`
                     });
 
                     return {
                       ...inst,
-                      status: 'PENDING_RECALL',
+                      status: 'SUPERSEDED_PENDING_RECALL',
+                      is_superseded: true,
                       superseded_at: new Date().toISOString(),
                       superseded_by_dar: dar.dar_no || dar.id,
                       superseded_by_rev: newDoc.rev,
@@ -2709,7 +2952,7 @@ const useStore = create(persist((set, get) => ({
                   id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                   actionType: 'REVISION_PUBLISHED',
                   actor: 'System (SLA Engine)',
-                  details: `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newDoc.rev}: สำเนาเดิม Rev.${oldRev} ทั้งหมด (${oldCopiesToRecall.length} เล่ม) ถูกตั้งสถานะเรียกคืน (PENDING_RECALL)`,
+                  details: `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newDoc.rev}: สำเนาเดิม Rev.${oldRev} ทั้งหมด (${oldCopiesToRecall.length} เล่ม) ถูกตั้งสถานะเรียกคืน (SUPERSEDED_PENDING_RECALL)`,
                   timestamp: new Date().toISOString()
                 });
                 
@@ -2718,20 +2961,29 @@ const useStore = create(persist((set, get) => ({
 
                 // Universal Recall Task: ALWAYS created if there are copies to recall or if oldDoc had controlled copies
                 if (oldCopiesToRecall.length > 0 || (oldDoc && oldDoc.controlledCopy > 0)) {
+                  const recallDocOfficialTitle = oldDoc?.name || newDoc.name || dar.name || targetCode;
                   newTasks.push({
-                    id: `task-recall-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                    type: 'RECALL_HARDCOPY',
-                    taskType: 'DCC_RECALL_WITH_CHECKLIST',
+                    id: `task-recall-${targetCode}-${oldRev}-${Date.now()}`,
+                    type: 'DCC_RECALL',
+                    taskType: 'RECALL',
+                    task_type: 'RECALL',
                     target_role: 'DCC',
                     assignedToRole: 'DCC_ADMIN',
-                    assigneeId: 'U001',
-                    department: 'QA',
+                    assigneeId: 'EMP-001',
+                    department: 'DC',
+                    target_department: 'DC',
+                    docId: oldDoc?.id,
+                    doc_id: oldDoc?.id,
                     document_code: targetCode,
                     doc_code: targetCode,
+                    docCode: targetCode,
+                    docTitle: recallDocOfficialTitle,
+                    docName: recallDocOfficialTitle,
+                    targetRevision: oldRev,
                     revision: oldRev,
                     doc_version: oldRev,
-                    title: `[เรียกคืนสำเนาตกรุ่น] เรียกคืนเอกสาร Controlled Copy ${targetCode} (Rev.${oldRev})`,
-                    description: `เอกสาร ${targetCode} มีการอัปเดตเป็น Rev.${newDoc.rev} แล้ว กรุณาเรียกคืนเอกสารฉบับเดิม (Rev.${oldRev}) จากทุกสถานีใช้งาน (${oldCopiesToRecall.length} จุด)`,
+                    title: `[เรียกคืนสำเนาตกรุ่น] ${recallDocOfficialTitle} (${targetCode} Rev.${oldRev})`,
+                    description: `เอกสาร ${targetCode} (${recallDocOfficialTitle}) มีการอัปเดตเป็น Rev.${newDoc.rev} แล้ว กรุณาเรียกคืนเอกสารฉบับเดิม (Rev.${oldRev}) จากทุกสถานีใช้งาน (${oldCopiesToRecall.length} จุด)`,
                     copies_to_recall: oldCopiesToRecall.map(c => ({
                       id: c.id,
                       copy_no: c.copy_no || c.copyNo,
@@ -2739,7 +2991,8 @@ const useStore = create(persist((set, get) => ({
                       location: c.location || c.locationName,
                       status: c.status
                     })),
-                    status: 'PENDING_RECALL',
+                    supersededCopyIds: oldCopiesToRecall.map(c => c.id),
+                    status: 'PENDING',
                     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                     priority: 'HIGH',
                     darId: dar.id,
@@ -2754,14 +3007,30 @@ const useStore = create(persist((set, get) => ({
                     stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
                     mockDateOffset: state.mockDateOffset
                   });
+                  const distDocOfficialTitle = newDoc.name || dar.name || newDoc.title;
                   newTasks.push({
-                    id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                    title: `แจกจ่ายเอกสาร Controlled Copy (Rev.${newDoc.rev})`,
-                    description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
+                    id: `task-dist-${newDoc.title}-${newDoc.rev}-${Date.now()}`,
+                    title: `แจกจ่ายเอกสาร Controlled Copy: ${distDocOfficialTitle} (${newDoc.title} Rev.${newDoc.rev})`,
+                    description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) (Rev.${newDoc.rev}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
                     type: 'DCC_DISTRIBUTE',
-                    status: 'PENDING',
-                    assigneeId: 'U001',
+                    taskType: 'DISTRIBUTION',
+                    task_type: 'DISTRIBUTION',
+                    target_role: 'DCC',
                     assignedToRole: 'DCC_ADMIN',
+                    assigneeId: 'EMP-001',
+                    department: 'DC',
+                    target_department: 'DC',
+                    docId: newDoc.id,
+                    doc_id: newDoc.id,
+                    document_code: newDoc.title,
+                    doc_code: newDoc.title,
+                    docCode: newDoc.title,
+                    docTitle: distDocOfficialTitle,
+                    docName: distDocOfficialTitle,
+                    targetRevision: newDoc.rev,
+                    revision: newDoc.rev,
+                    doc_version: newDoc.rev,
+                    status: 'PENDING',
                     dueDate: distSla.dueDate,
                     cancelDate: distSla.cancelDate,
                     isUrgent: distSla.isUrgent,
@@ -2769,7 +3038,8 @@ const useStore = create(persist((set, get) => ({
                     priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
                     slaType: distSla.slaType,
                     effectiveDate: distSla.effectiveDate,
-                    darId: dar.id
+                    darId: dar.id,
+                    createdAt: new Date().toISOString()
                   });
 
                   allTargets.forEach((dist, idx) => {
@@ -2788,6 +3058,7 @@ const useStore = create(persist((set, get) => ({
                       docName: newDoc.name,
                       doc_version: newDoc.rev,
                       rev: newDoc.rev,
+                      revision: newDoc.rev,
                       copy_no: copyNo,
                       copyNo: copyNo,
                       ccNumber: nextCcNum,
@@ -2820,7 +3091,16 @@ const useStore = create(persist((set, get) => ({
                       receipt_remarks: null,
                       recall_task_id: null
                     };
-                    newControlledCopyInstances.push(newInst);
+                    const alreadyExists = newControlledCopyInstances.some(inst => {
+                      const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
+                                         (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+                      const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
+                      const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
+                      return isMatchDoc && isMatchRev && isMatchCopyNo;
+                    });
+                    if (!alreadyExists) {
+                      newControlledCopyInstances.push(newInst);
+                    }
                     
                     newAuditTrail.push({
                       id: `audit-${Date.now()}-${idx}`,
@@ -2910,19 +3190,31 @@ const useStore = create(persist((set, get) => ({
             return t;
           });
           
-          // 4. Create RECALL_HARDCOPY Task for DCC
+          // 4. Create DCC Recall Task
+          const obsoleteTargetDoc = (newDocuments || []).find(d => (targetDocCode && (d.title === targetDocCode || d.document_code === targetDocCode)) || (targetDocId && String(d.id) === String(targetDocId)));
+          const obsoleteDocOfficialTitle = obsoleteTargetDoc?.name || obsoleteTargetDoc?.document_name || dar.name || targetDocCode;
           newTasks.push({
-            id: `task-recall-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            type: 'RECALL_HARDCOPY',
+            id: `task-recall-${targetDocCode}-ALL-${Date.now()}`,
+            type: 'DCC_RECALL',
             taskType: 'RECALL',
+            task_type: 'RECALL',
             target_role: 'DCC',
             assignedToRole: 'DCC_ADMIN',
-            assigneeId: 'U001',
-            department: 'QA',
+            assigneeId: 'EMP-001',
+            department: 'DC',
+            target_department: 'DC',
+            docId: targetDocId,
+            doc_id: targetDocId,
             document_code: targetDocCode,
+            doc_code: targetDocCode,
+            docCode: targetDocCode,
+            docTitle: obsoleteDocOfficialTitle,
+            docName: obsoleteDocOfficialTitle,
+            targetRevision: 'ALL',
             revision: 'ALL',
-            title: `[เรียกคืนสำเนาเอกสารยกเลิก] เอกสาร ${targetDocCode} (ทั้งหมด ${obsoleteCopiesToRecall.length} เล่ม)`,
-            description: `เอกสาร ${targetDocCode} ถูกประกาศยกเลิกการใช้งาน (OBSOLETE) แล้ว กรุณาเรียกคืนสำเนาทั้งหมด (${obsoleteCopiesToRecall.length} ชุด) เพื่อดำเนินการทำลายหรือจัดเก็บ`,
+            doc_version: 'ALL',
+            title: `[เรียกคืนสำเนาเอกสารยกเลิก] ${obsoleteDocOfficialTitle} (${targetDocCode}) (ทั้งหมด ${obsoleteCopiesToRecall.length} เล่ม)`,
+            description: `เอกสาร ${targetDocCode} (${obsoleteDocOfficialTitle}) ถูกประกาศยกเลิกการใช้งาน (OBSOLETE) แล้ว กรุณาเรียกคืนสำเนาทั้งหมด (${obsoleteCopiesToRecall.length} ชุด) เพื่อดำเนินการทำลายหรือจัดเก็บ`,
             copies_to_recall: obsoleteCopiesToRecall.map(c => ({
               id: c.id,
               copy_no: c.copy_no || c.copyNo,
@@ -2930,7 +3222,8 @@ const useStore = create(persist((set, get) => ({
               location: c.location || c.locationName,
               status: c.status
             })),
-            status: 'PENDING_RECALL',
+            supersededCopyIds: obsoleteCopiesToRecall.map(c => c.id),
+            status: 'PENDING',
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             priority: 'HIGH',
             darId: dar.id,
@@ -3004,21 +3297,6 @@ const useStore = create(persist((set, get) => ({
     });
   },
 
-  deleteDar: (darId) => set((state) => {
-    return {
-      dars: state.dars.filter(d => d.id !== darId),
-      tasks: state.tasks.filter(t => t.darId !== darId),
-      timeline: state.timeline.filter(t => t.darId !== darId),
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'DAR_DELETE',
-        actor: state.currentUser.name,
-        details: `Deleted DAR ${darId}`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
-
   // Phase 1.5 Departmental Access Control
   canAccessDocument: (userId, documentDept, distributions = []) => {
     // We need to look up the user dynamically to get their updated properties
@@ -3044,7 +3322,7 @@ const useStore = create(persist((set, get) => ({
 
     const isMatch = (targetDept) => {
       if (!targetDept) return false;
-      return userDepts.some(u => u === targetDept || (u === 'QA' && targetDept === 'QA/QC') || (u === 'QA/QC' && targetDept === 'QA'));
+      return userDepts.some(u => u === targetDept || (u === 'QA/QC' && targetDept === 'QA/QC') || (u === 'QA/QC' && targetDept === 'QA/QC'));
     };
 
     // 1. Own department document
@@ -3136,7 +3414,7 @@ const useStore = create(persist((set, get) => ({
       resolvedTargetDept = copy.department;
     }
     if (!resolvedTargetDept) {
-      resolvedTargetDept = isMasterCopy ? docOwnerDept : (copy.dept || docOwnerDept || 'QA');
+      resolvedTargetDept = isMasterCopy ? docOwnerDept : (copy.dept || docOwnerDept || 'QA/QC');
     }
 
     const destinationDept = resolvedTargetDept;
@@ -3218,11 +3496,16 @@ const useStore = create(persist((set, get) => ({
         return updatedCopy;
       }
       if (copy.is_replacement && copy.replaced_copy_id && String(c.id) === String(copy.replaced_copy_id)) {
+        // 🛡️ Strict ISO 9001 Invariant: If original copy is awaiting recall/destruction (DAMAGED/SUPERSEDED),
+        // do NOT wipe its status to REPLACED_VOID on dispatch. It MUST remain DAMAGED_PENDING_RECALL or RECALLED
+        // until physical retrieval and destruction in Tab 3 (Recall Checklist).
+        const isAwaitingPhysicalRecall = c.isDamaged || c.status === 'DAMAGED_PENDING_RECALL' || c.status === 'PENDING_RECALL' || c.status === 'RECALLED' || c.status === 'DAMAGED_PENDING_REPLACEMENT';
         return {
           ...c,
-          status: 'REPLACED_VOID',
+          status: isAwaitingPhysicalRecall ? c.status : 'REPLACED_VOID',
           replaced_at: dispatchedAt,
-          replaced_by: dispatchedBy
+          replaced_by: dispatchedBy,
+          replacement_dispatched_at: dispatchedAt
         };
       }
       return c;
@@ -3230,19 +3513,24 @@ const useStore = create(persist((set, get) => ({
 
     // Create DEPT_CONFIRM_HARDCOPY_RECEIPT Task strictly targeted to destination department and assignee
     const newTaskId = `task-receipt-${targetId}-${Date.now()}`;
+    const docOfficialTitle = copy.docName || copy.name || copy.documentName || relatedDoc?.name || relatedDoc?.document_name || relatedDar?.name || copy.doc_code || copy.docTitle || 'เอกสารควบคุม';
+    const docCode = copy.doc_code || copy.docTitle || copy.title || relatedDoc?.title || '';
     const newTask = {
       id: newTaskId,
       type: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
       taskType: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
       task_type: 'CONFIRM_RECEIPT',
-      title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${copy.doc_code || copy.docTitle || copy.title} (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
+      title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${docOfficialTitle} (${docCode}) (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
       description: `กรุณาตรวจสอบเอกสารฉบับพิมพ์จริงที่จุดใช้งาน ${copy.location || copy.locationName || destinationDept} (${destinationDept}) และยืนยันการรับเอกสาร`,
       copy_id: targetId,
       copyId: targetId,
       instanceId: targetId,
       doc_id: copyDocId,
       darId: relatedDar ? String(relatedDar.id) : copyDocId,
-      doc_code: copy.doc_code || copy.docTitle || copy.title || '',
+      doc_code: docCode,
+      docCode: docCode,
+      docTitle: docOfficialTitle,
+      docName: docOfficialTitle,
       doc_version: copy.doc_version || copy.rev || '01',
       copy_no: copy.copy_no || copy.ccNumber || '01',
       location: copy.location || copy.locationName || destinationDept || '',
@@ -3311,9 +3599,52 @@ const useStore = create(persist((set, get) => ({
     const isAllDispatched = docCopies.length > 0 && pendingDocCopies.length === 0;
 
     // Update existing distribution tasks for this document/DAR
+    // 🛡️ Strict Isolation Guard: Never touch, complete, or dismiss DCC_RECALL tasks!
     const updatedTasks = state.tasks.map(t => {
-      const isDistTask = t.type === 'DCC_DISTRIBUTE' || t.type === 'DCC_ISSUE' || t.taskType === 'DCC_DISTRIBUTE';
+      // Strict Invariant: Ignore all recall task types completely
+      const isRecallTask = t.type === 'DCC_RECALL' || 
+                           t.type === 'DCC_RECALL_WITH_CHECKLIST' || 
+                           t.type === 'RECALL' || 
+                           t.type === 'OBSOLETE_RECALL' ||
+                           t.type === 'RECALL_HARDCOPY' ||
+                           t.taskType === 'RECALL' || 
+                           t.taskType === 'DCC_RECALL_WITH_CHECKLIST' ||
+                           t.task_type === 'RECALL' ||
+                           t.isDamaged === true ||
+                           t.is_damaged === true;
+      if (isRecallTask) return t;
+
+      const isDistTask = t.type === 'DCC_DISTRIBUTE' || 
+                         t.type === 'DCC_ISSUE' || 
+                         t.taskType === 'DCC_DISTRIBUTE' ||
+                         t.taskType === 'DISTRIBUTION' ||
+                         t.task_type === 'DISTRIBUTION' ||
+                         t.taskType === 'DCC_ISSUE_CONTROLLED_COPIES';
       if (!isDistTask) return t;
+
+      // For replacement copy tasks tied specifically to this dispatched copy
+      if (t.copyId || t.copy_id || t.instanceId) {
+        const taskCopyId = String(t.copyId || t.copy_id || t.instanceId);
+        if (taskCopyId === targetId) {
+          return {
+            ...t,
+            status: 'COMPLETED',
+            is_completed: true,
+            completedAt: dispatchedAt,
+            actionRequired: false,
+            isUrgent: false,
+            priority: 'NORMAL',
+            delivery_status: 'DISPATCHED_TRACKING',
+            tracking_status: 'WAITING_RECEIPT',
+            status_label: 'ติดตามการส่งมอบ (รอปลายทางตรวจรับ)',
+            title: `ติดตามการส่งมอบ: ${relatedDocCode || t.doc_code || t.title} (รอปลายทางตรวจรับ)`,
+            description: `DCC ได้บันทึกส่งมอบสำเนาทดแทนแล้ว (${dispatchedAt.split('T')[0]}) อยู่ระหว่างรอแผนกปลายทางตรวจรับเล่มสำเนาทางกายภาพ`
+          };
+        }
+        // If tied to another copy ID, do not modify
+        return t;
+      }
+
       const isMatch = (relatedDarId && String(t.darId) === relatedDarId) ||
                       (relatedDocId && (String(t.docId) === relatedDocId || String(t.doc_id) === relatedDocId)) ||
                       (relatedDocCode && (t.doc_code === relatedDocCode || t.docTitle === relatedDocCode || t.title?.includes(relatedDocCode)));
@@ -3435,9 +3766,12 @@ const useStore = create(persist((set, get) => ({
         return updatedCopy;
       }
       if (copy.is_replacement && copy.replaced_copy_id && String(c.id) === String(copy.replaced_copy_id)) {
+        // 🛡️ Strict ISO 9001 Invariant: If original copy is awaiting recall/destruction (DAMAGED/SUPERSEDED),
+        // preserve its status until physically retrieved and destroyed in Tab 3.
+        const isAwaitingPhysicalRecall = c.isDamaged || c.status === 'DAMAGED_PENDING_RECALL' || c.status === 'PENDING_RECALL' || c.status === 'RECALLED' || c.status === 'DAMAGED_PENDING_REPLACEMENT';
         return {
           ...c,
-          status: 'REPLACED_VOID',
+          status: isAwaitingPhysicalRecall ? c.status : 'REPLACED_VOID',
           replaced_at: confirmedAt,
           replaced_by: confirmedBy
         };
@@ -3568,6 +3902,31 @@ const useStore = create(persist((set, get) => ({
     // Hard Delete: Eliminate the recall task from array
     const updatedTasks = state.tasks.filter(t => String(t.id) !== targetTaskId);
 
+    // 🛡️ Dedicated Disposition Ledger Entries (Append-Only)
+    const newDispositionRecords = copies
+      .filter(copy => checkedSet.has(String(copy.id)))
+      .map(copy => ({
+        id: `DISP-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        copyId: copy.id,
+        copy_id: copy.id,
+        docCode: copy.doc_code || copy.docTitle || '',
+        docTitle: copy.docName || copy.doc_title || copy.docTitle || '',
+        revision: copy.doc_version || copy.rev || '01',
+        copyNumber: copy.copy_no ? (String(copy.copy_no).startsWith('Copy') ? copy.copy_no : `Copy ${copy.copy_no}`) : (copy.ccNumber || 'Copy 01'),
+        copy_no: copy.copy_no || copy.ccNumber || '01',
+        department: copy.holder_dept || copy.department || '',
+        location: copy.location || copy.locationName || copy.station_name || '',
+        dispositionType: finalStatus.includes('OBSOLETE') ? 'ARCHIVED_OBSOLETE' : 'DESTROYED',
+        dispositionMethod: finalStatus.includes('OBSOLETE') ? 'STAMP_AND_ARCHIVE' : 'SHRED',
+        disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
+        disposed_by_name: recalledBy,
+        disposed_by_id: state.currentUser?.id || 'U001',
+        disposedAt: recalledAt,
+        witnessName: '',
+        referenceNo: targetTaskId,
+        notes: `Recall Checklist completion: ${outcome}`
+      }));
+
     const auditLog = {
       id: `audit-recall-${Date.now()}`,
       timestamp: recalledAt,
@@ -3581,6 +3940,8 @@ const useStore = create(persist((set, get) => ({
     return {
       documentControlledCopies: newCopies,
       controlledCopyInstances: newCopies,
+      copyDispositionRecords: [...newDispositionRecords, ...(state.copyDispositionRecords || [])],
+      dispositionHistory: [...newDispositionRecords, ...(state.dispositionHistory || [])],
       tasks: cleanupDccTasks(updatedTasks, newCopies, state.documents),
       controlledCopyAuditTrail: [auditLog, ...state.controlledCopyAuditTrail],
       actionLog: [{
@@ -3599,21 +3960,38 @@ const useStore = create(persist((set, get) => ({
     if (!dar) return state;
 
     const targetDocId = dar.docIdRef || dar.docId || dar.doc_id || dar.targetDocumentId;
-    const targetDocCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || (dar.title?.startsWith('[') ? dar.title.replace(/^\[.*?\]\s*/, '') : dar.title);
+    const refDoc = targetDocId ? state.documents.find(d => String(d.id) === String(targetDocId)) : null;
+    let targetDocCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || (refDoc ? (refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title) : null);
+    if (!targetDocCode && dar.title) {
+      targetDocCode = dar.title.startsWith('[') ? dar.title.replace(/^\[.*?\]\s*/, '') : dar.title;
+    }
     const obsoleteAt = new Date().toISOString();
     const darNo = dar.dar_no || dar.id;
 
+    // Rule 2: Cascade Obsolete All Historical Versions (ยกเลิกยกตระกูล)
+    // Matches EVERY Revision having the same document code, whether previously ACTIVE or SUPERSEDED
+    const isDocMatchCode = (doc) => {
+      if (targetDocId && String(doc.id) === String(targetDocId)) return true;
+      const docCode = doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+      if (targetDocCode && docCode && docCode.trim().toLowerCase() === targetDocCode.trim().toLowerCase()) return true;
+      if (refDoc) {
+        const refCode = refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title;
+        if (refCode && docCode && docCode.trim().toLowerCase() === refCode.trim().toLowerCase()) return true;
+      }
+      return false;
+    };
+
     // 1. Cascade Obsolete: Mark EVERY Revision of this document code OBSOLETE
     const updatedDocs = state.documents.map(doc => {
-      const docCode = doc.document_code || doc.code || doc.title;
-      const matchCode = (targetDocId && String(doc.id) === String(targetDocId)) ||
-                        (targetDocCode && (docCode === targetDocCode || doc.name === targetDocCode));
-      if (matchCode) {
+      if (isDocMatchCode(doc)) {
         return {
           ...doc,
           status: 'OBSOLETE',
+          is_active: false,
+          is_superseded: false,
           is_obsolete: true,
           obsolete_at: obsoleteAt,
+          obsoleted_at: obsoleteAt,
           obsolete_dar_id: darNo,
           obsolete_reason: dar.obsoleteReason || dar.reason || 'ถูกยกเลิกตามคำร้อง DAR',
           obsolete_detail: dar.obsoleteDetail || dar.description || '',
@@ -3631,9 +4009,10 @@ const useStore = create(persist((set, get) => ({
       const copyDocCode = copy.document_code || copy.doc_code || copy.docTitle;
       const matchDoc = 
         (targetDocId && (String(copy.doc_id) === String(targetDocId) || String(copy.docId) === String(targetDocId))) ||
-        (copyDocCode && copyDocCode === targetDocCode) ||
+        (targetDocCode && copyDocCode && copyDocCode.trim().toLowerCase() === targetDocCode.trim().toLowerCase()) ||
+        (refDoc && copyDocCode && (refDoc.document_code || refDoc.code || refDoc.title) === copyDocCode) ||
         updatedDocs.some(d => (String(d.id) === String(copy.doc_id || copy.docId) || (d.document_code || d.code || d.title) === copyDocCode) && d.status === 'OBSOLETE');
-      const isActive = copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE' || copy.status === 'RECEIVED' || copy.status === 'DISPATCHED_PENDING_RECEIPT' || copy.status === 'PENDING_RECALL' || copy.status === 'OBSOLETE_PENDING_RECALL';
+      const isActive = copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE' || copy.status === 'RECEIVED' || copy.status === 'DISPATCHED_PENDING_RECEIPT' || copy.status === 'PENDING_RECALL' || copy.status === 'OBSOLETE_PENDING_RECALL' || copy.status === 'SUPERSEDED_PENDING_RECALL';
       return matchDoc && isActive;
     };
 
@@ -3677,22 +4056,39 @@ const useStore = create(persist((set, get) => ({
     // 5. Create DCC Recall Task
     const newTasks = [...invalidatedTasks];
     if (obsoleteCopiesToRecall.length > 0 || (dar.recallPlan && dar.recallPlan.length > 0) || (dar.totalControlledCopies && dar.totalControlledCopies > 0) || (dar.controlledCopy && dar.controlledCopy > 0)) {
+      const matchedDoc = (state.documents || []).find(d => (targetDocCode && (d.title === targetDocCode || d.document_code === targetDocCode)) || (targetDocId && String(d.id) === String(targetDocId)));
+      const docOfficialTitle = matchedDoc?.name || matchedDoc?.document_name || dar.name || targetDocCode;
       newTasks.push({
-        id: `task-recall-${Date.now()}`,
-        type: 'RECALL_HARDCOPY',
+        id: `task-recall-${targetDocCode}-ALL-${Date.now()}`,
+        type: 'DCC_RECALL',
         taskType: 'RECALL',
+        task_type: 'RECALL',
         target_role: 'DCC',
-        department: 'QA',
+        assignedToRole: 'DCC_ADMIN',
+        assigneeId: 'EMP-001',
+        department: 'DC',
+        target_department: 'DC',
+        docId: targetDocId,
+        doc_id: targetDocId,
         document_code: targetDocCode,
         doc_code: targetDocCode,
+        docCode: targetDocCode,
+        docTitle: docOfficialTitle,
+        docName: docOfficialTitle,
+        targetRevision: 'ALL',
         revision: 'ALL',
         doc_version: 'ALL',
-        title: `[เรียกคืนสำเนาขอยกเลิก] เอกสาร ${targetDocCode}`,
+        title: `[เรียกคืนสำเนาขอยกเลิก] ${docOfficialTitle} (${targetDocCode})`,
         description: `เอกสาร ${targetDocCode} ทุก Revision ถูกยกเลิกถาวรตาม ${darNo} กรุณาเรียกคืนสำเนาจากทุกจุด (${obsoleteCopiesToRecall.length} ชุด) และดำเนินการทำลาย/ประทับตรา OBSOLETE`,
-        copies_to_recall: obsoleteCopiesToRecall,
-        status: 'PENDING_RECALL',
-        assigneeId: 'U001',
-        assignedToRole: 'DCC_ADMIN',
+        copies_to_recall: obsoleteCopiesToRecall.map(c => ({
+          id: c.id,
+          copy_no: c.copy_no || c.copyNo,
+          holder_dept: c.holder_dept || c.department,
+          location: c.location || c.locationName,
+          status: c.status
+        })),
+        supersededCopyIds: obsoleteCopiesToRecall.map(c => c.id),
+        status: 'PENDING',
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         priority: 'HIGH',
         darId: dar.id,
@@ -3707,7 +4103,10 @@ const useStore = create(persist((set, get) => ({
       user: state.currentUser ? state.currentUser.name : 'System',
       action: 'DOCUMENT_OBSOLETED',
       docTitle: targetDocCode,
-      remarks: `เอกสาร ${targetDocCode} ทุก Revision ถูกยกเลิกถาวรตามคำร้อง ${darNo} (Cascade Obsolete) — รอ DCC เรียกคืนสำเนา ${obsoleteCopiesToRecall.length} ชุด`
+      remarks: `เอกสาร ${targetDocCode} ทุก Revision ถูกยกเลิกถาวรตามคำร้อง ${darNo} (Cascade Obsolete) — รอ DCC เรียกคืนสำเนา ${obsoleteCopiesToRecall.length} ชุด`,
+      actionType: 'DOCUMENT_OBSOLETED',
+      actor: state.currentUser ? state.currentUser.name : 'System',
+      details: `เอกสาร ${targetDocCode} ทุก Revision ถูกยกเลิกถาวรตามคำร้อง ${darNo} (Cascade Obsolete) — รอ DCC เรียกคืนสำเนา ${obsoleteCopiesToRecall.length} ชุด`
     };
 
     const actionLogEntry = {
@@ -3745,8 +4144,11 @@ const useStore = create(persist((set, get) => ({
     const copies = state.controlledCopyInstances || state.documentControlledCopies || [];
     const updatedCopies = copies.map(c => {
       const matchDoc = (c.document_code || c.doc_code || c.docTitle) === targetDocCode ||
-                       (task.copies_to_recall && task.copies_to_recall.some(rc => rc.id === c.id));
-      const isPending = c.status === 'PENDING_RECALL' || c.status === 'OBSOLETE_PENDING_RECALL';
+                       (task.copyId && String(task.copyId) === String(c.id)) ||
+                       (task.instanceId && String(task.instanceId) === String(c.id)) ||
+                       (task.copies_to_recall && task.copies_to_recall.some(rc => rc.id === c.id)) ||
+                       (task.supersededCopyIds && task.supersededCopyIds.some(sid => sid === c.id));
+      const isPending = c.status === 'PENDING_RECALL' || c.status === 'DAMAGED_PENDING_RECALL' || c.status === 'OBSOLETE_PENDING_RECALL' || c.status === 'SUPERSEDED_PENDING_RECALL';
       if (matchDoc && isPending) {
         return {
           ...c,
@@ -3794,7 +4196,7 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  completeCopyRecallAndArchive: ({ documentCode, collectedCopyIds, dispositionMethod, notes, taskId }) => set((state) => {
+  completeCopyRecallAndArchive: ({ documentCode, collectedCopyIds, dispositionMethod, notes, witnessName, referenceNo, taskId }) => set((state) => {
     const collectedSet = new Set((collectedCopyIds || []).map(id => String(id)));
     const recalledAt = new Date().toISOString();
     const recalledBy = state.currentUser ? state.currentUser.name : 'DCC Officer';
@@ -3810,26 +4212,77 @@ const useStore = create(persist((set, get) => ({
           ...copy,
           status: finalStatus,
           disposition_method: dispositionMethod,
+          disposition_type: finalStatus,
           recalled_at: recalledAt,
           recalled_by: recalledBy,
           dcc_notes: notes || '',
-          dateRecalled: recalledAt.split('T')[0]
+          witness_name: witnessName || '',
+          reference_no: referenceNo || '',
+          dateRecalled: recalledAt.split('T')[0],
+          dateDestroyed: finalStatus === 'DESTROYED' ? recalledAt.split('T')[0] : copy.dateDestroyed
         };
       }
       return copy;
     });
 
+    // 🛡️ Dedicated Disposition Ledger Entries (Append-Only for ISO 9001 Compliance)
+    const newDispositionRecords = copies
+      .filter(copy => collectedSet.has(String(copy.id)))
+      .map(copy => ({
+        id: `DISP-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        copyId: copy.id,
+        copy_id: copy.id,
+        docCode: copy.doc_code || copy.docTitle || documentCode || '',
+        docTitle: copy.docName || copy.doc_title || copy.docTitle || '',
+        revision: copy.doc_version || copy.rev || '01',
+        copyNumber: copy.copy_no ? (String(copy.copy_no).startsWith('Copy') ? copy.copy_no : `Copy ${copy.copy_no}`) : (copy.ccNumber || 'Copy 01'),
+        copy_no: copy.copy_no || copy.ccNumber || '01',
+        department: copy.holder_dept || copy.department || '',
+        location: copy.location || copy.locationName || copy.station_name || '',
+        dispositionType: finalStatus,
+        dispositionMethod: dispositionMethod || (finalStatus === 'ARCHIVED_OBSOLETE' ? 'STAMP_AND_ARCHIVE' : 'DESTROY_SCRAP'),
+        disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
+        disposed_by_name: recalledBy,
+        disposed_by_id: state.currentUser?.id || 'U001',
+        disposedAt: recalledAt,
+        witnessName: witnessName || '',
+        witness_name: witnessName || '',
+        referenceNo: referenceNo || '',
+        reference_no: referenceNo || '',
+        notes: notes || ''
+      }));
+
     // Resolve Recall Task
     let updatedTasks = (state.tasks || []).map(t => {
+      // STRICT ISOLATION GUARD: Never touch distribution tasks!
+      if (t.type === 'DCC_DISTRIBUTE' || t.taskType === 'DISTRIBUTION' || t.task_type === 'DISTRIBUTION') return t;
+
       const isTargetTask = (taskId && String(t.id) === String(taskId)) ||
         (documentCode && (t.doc_code === documentCode || t.docTitle === documentCode || t.title?.includes(documentCode))) ||
         (t.darId && state.dars.some(d => d.id === t.darId && (d.docIdRef === documentCode || d.title === documentCode || d.doc_code === documentCode)));
 
-      if (isTargetTask && (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST' || t.type === 'RECALL' || t.type === 'OBSOLETE_RECALL')) {
-        // Check if there are any remaining copies with PENDING_RECALL for this doc
+      if (isTargetTask && (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST' || t.taskType === 'RECALL' || t.task_type === 'RECALL' || t.type === 'RECALL' || t.type === 'OBSOLETE_RECALL' || t.type === 'RECALL_HARDCOPY')) {
+        // If task has supersededCopyIds, check if all superseded copies are resolved
+        if (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.length > 0) {
+          const allResolved = t.supersededCopyIds.every(id => {
+            const c = updatedCopies.find(copy => String(copy.id) === String(id));
+            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED';
+          });
+          if (allResolved) {
+            return {
+              ...t,
+              status: 'COMPLETED',
+              is_completed: true,
+              completed_at: recalledAt
+            };
+          }
+          return t;
+        }
+
+        // Check if there are any remaining copies with PENDING_RECALL / SUPERSEDED_PENDING_RECALL / OBSOLETE_PENDING_RECALL for this doc
         const remainingPending = updatedCopies.some(c => 
           (c.doc_code === documentCode || c.docTitle === documentCode || (c.doc_id && state.documents.some(d => String(d.id) === String(c.doc_id) && d.title === documentCode))) &&
-          c.status === 'PENDING_RECALL'
+          (c.status === 'PENDING_RECALL' || c.status === 'DAMAGED_PENDING_RECALL' || c.status === 'SUPERSEDED_PENDING_RECALL' || c.status === 'OBSOLETE_PENDING_RECALL')
         );
 
         if (!remainingPending || collectedSet.size >= (copies.filter(c => c.doc_code === documentCode || c.docTitle === documentCode).length || 1)) {
@@ -3867,6 +4320,8 @@ const useStore = create(persist((set, get) => ({
     return {
       controlledCopyInstances: updatedCopies,
       documentControlledCopies: updatedCopies,
+      copyDispositionRecords: [...newDispositionRecords, ...(state.copyDispositionRecords || [])],
+      dispositionHistory: [...newDispositionRecords, ...(state.dispositionHistory || [])],
       tasks: cleanedTasks,
       controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
       actionLog: [actionLogEntry, ...(state.actionLog || [])]
@@ -4024,14 +4479,25 @@ const useStore = create(persist((set, get) => ({
             stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
             mockDateOffset: state.mockDateOffset
           });
+          const distDocOfficialTitle = createdDoc.name || dar.name || createdDoc.title;
           newTasks.push({
             id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            title: `แจกจ่ายเอกสาร Controlled Copy (NEW)`,
-            description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${createdDoc.title} จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
+            title: `แจกจ่ายเอกสาร Controlled Copy (NEW): ${distDocOfficialTitle} (${createdDoc.title})`,
+            description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${createdDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
             type: 'DCC_DISTRIBUTE',
             status: 'PENDING',
             assigneeId: 'U001',
             assignedToRole: 'DCC_ADMIN',
+            target_role: 'DCC',
+            department: 'DC',
+            target_department: 'DC',
+            docId: createdDoc.id,
+            doc_id: createdDoc.id,
+            document_code: createdDoc.title,
+            doc_code: createdDoc.title,
+            docCode: createdDoc.title,
+            docTitle: distDocOfficialTitle,
+            docName: distDocOfficialTitle,
             dueDate: distSla.dueDate,
             cancelDate: distSla.cancelDate,
             isUrgent: distSla.isUrgent,
@@ -4135,15 +4601,21 @@ const useStore = create(persist((set, get) => ({
           return {
             ...d,
             status: 'EFFECTIVE',
+            is_active: true,
+            is_superseded: false,
+            is_obsolete: false,
             published_at: d.published_at || new Date().toISOString()
           };
         }
-        const isSameCode = targetCode && (d.document_code === targetCode || d.code === targetCode || d.title === targetCode);
-        if (isSameCode && d.status === 'EFFECTIVE') {
+        const docCode = d.document_code || d.doc_code || d.code || d.docCode || d.title;
+        const isSameCode = targetCode && docCode && docCode.toLowerCase() === targetCode.toLowerCase();
+        if (isSameCode) {
           return {
             ...d,
             status: 'SUPERSEDED',
-            is_superseded: true
+            is_active: false,
+            is_superseded: true,
+            superseded_at: d.superseded_at || new Date().toISOString()
           };
         }
         return d;
@@ -4183,24 +4655,27 @@ const useStore = create(persist((set, get) => ({
     const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
     if (!dar) return state;
 
-    const targetDocId = dar.docIdRef || dar.docId || dar.doc_id;
-    let targetCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput;
-    if (!targetCode && targetDocId) {
-      const found = state.documents.find(d => String(d.id) === String(targetDocId));
-      if (found) targetCode = found.document_code || found.code || found.title;
-    }
-    if (!targetCode && dar.title && !dar.title.startsWith('[')) {
-      targetCode = dar.title;
+    const targetDocId = dar.docIdRef || dar.docId || dar.doc_id || dar.targetDocumentId;
+    const refDoc = targetDocId ? state.documents.find(d => String(d.id) === String(targetDocId)) : null;
+    let targetCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || (refDoc ? (refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title) : null);
+    if (!targetCode && dar.title) {
+      targetCode = dar.title.startsWith('[') ? dar.title.replace(/^\[.*?\]\s*/, '') : dar.title;
     }
     
     // Strict code matching to find previous revisions
     const isDocMatchCode = (doc) => {
-      const code = doc.document_code || doc.code || doc.title;
-      return (targetCode && code === targetCode) || (targetDocId && String(doc.id) === String(targetDocId));
+      if (targetDocId && String(doc.id) === String(targetDocId)) return true;
+      const code = doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+      if (targetCode && code && code.trim().toLowerCase() === targetCode.trim().toLowerCase()) return true;
+      if (refDoc) {
+        const refCode = refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title;
+        if (refCode && code && code.trim().toLowerCase() === refCode.trim().toLowerCase()) return true;
+      }
+      return false;
     };
 
     const matchingDocs = state.documents.filter(isDocMatchCode);
-    const oldDoc = matchingDocs.find(d => d.status === 'EFFECTIVE') || matchingDocs[matchingDocs.length - 1];
+    const oldDoc = matchingDocs.find(d => d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active) || matchingDocs[matchingDocs.length - 1];
 
     const oldRev = oldDoc ? (oldDoc.revision || oldDoc.rev) : (dar.previous_revision || dar.previousRev || '00');
     const currentRevNum = parseInt(oldRev, 10) || 0;
@@ -4213,30 +4688,50 @@ const useStore = create(persist((set, get) => ({
     const isEffectiveTodayOrPast = !dar.effectiveDate || dar.effectiveDate <= todayStr;
     const docStatus = isEffectiveTodayOrPast ? 'EFFECTIVE' : 'SCHEDULED_EFFECTIVE';
 
-    // 1. Single Effective Invariant: If effective today or past, update ALL previous revisions of this code to SUPERSEDED
+    // 1. Single Active Revision Invariant: If effective today or past, update ALL previous revisions of this code to SUPERSEDED
     let updatedDocs = state.documents.map(doc => {
-      if (isEffectiveTodayOrPast && isDocMatchCode(doc) && doc.status === 'EFFECTIVE') {
+      if (isEffectiveTodayOrPast && isDocMatchCode(doc)) {
         return {
           ...doc,
           status: 'SUPERSEDED',
-          is_superseded: true
+          is_active: false,
+          is_superseded: true,
+          isLocked: false,
+          hasPendingDar: false,
+          superseded_at: doc.superseded_at || new Date().toISOString()
+        };
+      }
+      if (isDocMatchCode(doc)) {
+        return {
+          ...doc,
+          isLocked: false,
+          hasPendingDar: false
         };
       }
       return doc;
     });
 
-    const newDocId = `doc-${Date.now()}-${Math.random()}`;
+    const newDocId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const newDoc = {
       id: newDocId,
       darId: dar.id,
       darNumber: dar.darNumber || dar.id,
-      document_code: targetCode || oldDoc?.document_code || oldDoc?.title,
-      code: targetCode || oldDoc?.code || oldDoc?.title,
+      document_code: targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
+      doc_code: targetCode || oldDoc?.doc_code || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
+      code: targetCode || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
+      docCode: targetCode || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
       title: oldDoc ? oldDoc.title : targetCode,
       name: dar.title || oldDoc?.name || 'Procedure Document',
+      docName: dar.title || oldDoc?.name || 'Procedure Document',
       status: docStatus,
+      is_active: isEffectiveTodayOrPast,
+      is_superseded: false,
+      is_obsolete: false,
+      isLocked: false,
+      hasPendingDar: false,
       rev: newRevStr,
       revision: newRevStr,
+      doc_version: newRevStr,
       department: dar.department || oldDoc?.department || 'PD',
       controlledCopy: oldDoc?.controlledCopy || 0,
       effectiveDate: dar.effectiveDate || todayStr,
@@ -4257,7 +4752,11 @@ const useStore = create(persist((set, get) => ({
       const isDocMatch = (oldDoc && (String(copy.doc_id || copy.docId) === String(oldDoc.id))) ||
                          (targetCode && copyCode === targetCode) ||
                          (oldDoc?.title && copyCode === oldDoc.title);
-      const isRevMatch = !copy.rev || !copy.doc_version || copy.rev === oldRev || copy.doc_version === oldRev || copy.revision === oldRev;
+      const copyRev = copy.rev || copy.doc_version || copy.revision;
+      if (copyRev && String(copyRev) === String(newRevStr)) {
+        return false;
+      }
+      const isRevMatch = copyRev ? (String(copyRev) === String(oldRev) || copyRev < newRevStr) : true;
       const isActive = copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE' || copy.status === 'RECEIVED' || copy.status === 'DISPATCHED_PENDING_RECEIPT';
       return isDocMatch && isRevMatch && isActive;
     };
@@ -4276,13 +4775,14 @@ const useStore = create(persist((set, get) => ({
           docRev: copy.rev || copy.doc_version || oldRev,
           ccNumber: copy.ccNumber || copy.copy_no,
           oldStatus: copy.status,
-          newStatus: 'PENDING_RECALL',
-          remarks: `Superseded by Rev.${newRevStr} (DAR ${dar.id}). Set to PENDING_RECALL for physical recall/destruction.`
+          newStatus: 'SUPERSEDED_PENDING_RECALL',
+          remarks: `Superseded by Rev.${newRevStr} (DAR ${dar.id}). Set to SUPERSEDED_PENDING_RECALL for physical recall/destruction.`
         });
 
         return {
           ...copy,
-          status: 'PENDING_RECALL',
+          status: 'SUPERSEDED_PENDING_RECALL',
+          is_superseded: true,
           superseded_at: new Date().toISOString(),
           superseded_by_dar: dar.dar_no || dar.id,
           superseded_by_rev: newRevStr,
@@ -4345,7 +4845,16 @@ const useStore = create(persist((set, get) => ({
         receipt_remarks: null,
         recall_task_id: null
       };
-      newCreatedCopies.push(newInst);
+      const alreadyExists = currentCopies.some(inst => {
+        const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
+                           (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+        const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
+        const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
+        return isMatchDoc && isMatchRev && isMatchCopyNo;
+      });
+      if (!alreadyExists) {
+        newCreatedCopies.push(newInst);
+      }
 
       newAuditLogs.unshift({
         id: `audit-${Date.now()}-${idx}`,
@@ -4364,7 +4873,7 @@ const useStore = create(persist((set, get) => ({
     // 4. Create DCC Tasks
     let newTasks = [...state.tasks];
 
-    // Distribution Task
+    // Distribution Task: Decoupled for new revision distribution
     if (allTargets.length > 0) {
       const distSla = calculateTaskDueDate({
         submissionDate: new Date(),
@@ -4372,26 +4881,43 @@ const useStore = create(persist((set, get) => ({
         stepSlaDays: state.slaSettings?.hardcopyReceiptSlaDays || 3,
         mockDateOffset: state.mockDateOffset
       });
+      const distDocOfficialTitle = newDoc.name || dar.name || newDoc.title;
       newTasks.push({
-        id: `task-dist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        title: `แจกจ่ายเอกสาร Controlled Copy (Rev.${newDoc.rev})`,
-        description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
+        id: `task-dist-${newDoc.title}-${newDoc.rev}-${Date.now()}`,
+        title: `แจกจ่ายเอกสาร Controlled Copy: ${distDocOfficialTitle} (${newDoc.title} Rev.${newDoc.rev})`,
+        description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) (Rev.${newDoc.rev}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
         type: 'DCC_DISTRIBUTE',
-        status: 'PENDING',
-        assigneeId: 'U001',
+        taskType: 'DISTRIBUTION',
+        task_type: 'DISTRIBUTION',
+        target_role: 'DCC',
         assignedToRole: 'DCC_ADMIN',
-        dueDate: distSla.dueDate,
-        cancelDate: distSla.cancelDate,
+        assigneeId: 'EMP-001',
+        department: 'DC',
+        target_department: 'DC',
+        docId: newDoc.id,
+        doc_id: newDoc.id,
+        document_code: newDoc.title,
+        doc_code: newDoc.title,
+        docCode: newDoc.title,
+        docTitle: distDocOfficialTitle,
+        docName: distDocOfficialTitle,
+        targetRevision: newDoc.rev,
+        revision: newDoc.rev,
+        doc_version: newDoc.rev,
+        status: 'PENDING',
+        priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
         isUrgent: distSla.isUrgent,
         isFastTrack: distSla.isFastTrack,
-        priority: distSla.isUrgent ? 'URGENT' : 'HIGH',
+        dueDate: distSla.dueDate,
+        cancelDate: distSla.cancelDate,
         slaType: distSla.slaType,
         effectiveDate: distSla.effectiveDate,
-        darId: dar.id
+        darId: dar.id,
+        createdAt: new Date().toISOString()
       });
     }
 
-    // Universal Recall Task
+    // Universal Recall Task: Decoupled for old revision recall
     const copiesToRecall = recalledCopies.map(c => ({
       id: c.id,
       copy_no: c.copy_no || c.copyNo,
@@ -4400,26 +4926,37 @@ const useStore = create(persist((set, get) => ({
       status: c.status
     }));
 
-    if (recalledCopies.length > 0 || (oldDoc && oldDoc.controlledCopy > 0)) {
+    if (recalledCopies.length > 0 || oldDoc) {
+      const recallTaskId = `task-recall-${targetCode}-${oldRev}-${Date.now()}`;
+      const recallDocOfficialTitle = oldDoc?.name || newDoc.name || dar.name || targetCode;
       const recallTask = {
-        id: `task-recall-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        type: 'RECALL_HARDCOPY',
-        taskType: 'DCC_RECALL_WITH_CHECKLIST',
+        id: recallTaskId,
+        type: 'DCC_RECALL',
+        taskType: 'RECALL',
+        task_type: 'RECALL',
         target_role: 'DCC',
         assignedToRole: 'DCC_ADMIN',
-        assigneeId: 'U001',
-        department: 'QA',
+        assigneeId: 'EMP-001',
+        department: 'DC',
+        target_department: 'DC',
+        docId: oldDoc?.id,
+        doc_id: oldDoc?.id,
         document_code: targetCode,
         doc_code: targetCode,
-        revision: oldDoc ? (oldDoc.revision || oldDoc.rev) : oldRev,
-        doc_version: oldDoc ? (oldDoc.revision || oldDoc.rev) : oldRev,
-        title: `[เรียกคืนสำเนาตกรุ่น] เรียกคืนเอกสาร Controlled Copy ${targetCode} (Rev.${oldDoc ? (oldDoc.revision || oldDoc.rev) : oldRev})`,
-        description: `เอกสาร ${targetCode} มีการอัปเดตเป็น Rev.${newDoc.rev} แล้ว กรุณาเรียกคืนเอกสารฉบับเดิม (Rev.${oldRev}) จากทุกสถานีใช้งาน (${recalledCopies.length} จุด)`,
+        docCode: targetCode,
+        docTitle: recallDocOfficialTitle,
+        docName: recallDocOfficialTitle,
+        targetRevision: oldRev,
+        revision: oldRev,
+        doc_version: oldRev,
+        supersededCopyIds: recalledCopies.map(c => c.id),
         copies_to_recall: copiesToRecall,
-        status: 'PENDING_RECALL',
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'PENDING',
         priority: 'HIGH',
         darId: dar.id,
+        title: `[เรียกคืนสำเนาตกรุ่น] ${recallDocOfficialTitle} (${targetCode} Rev.${oldRev})`,
+        description: `เอกสาร ${targetCode} มีการอัปเดตเป็น Rev.${newRevStr} แล้ว กรุณาเรียกคืนเอกสารฉบับเดิม (Rev.${oldRev}) จากทุกสถานีใช้งาน (${recalledCopies.length} จุด)`,
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         createdAt: new Date().toISOString()
       };
       newTasks.push(recallTask);
@@ -4433,7 +4970,7 @@ const useStore = create(persist((set, get) => ({
       id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       actionType: 'REVISION_PUBLISHED',
       actor: 'System (Lifecycle Engine)',
-      details: `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newRevStr}: สำเนาเดิม Rev.${oldRev} ทั้งหมด (${recalledCopies.length} เล่ม) ถูกตั้งสถานะเรียกคืน (PENDING_RECALL)`,
+      details: `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newRevStr}: สำเนาเดิม Rev.${oldRev} ทั้งหมด (${recalledCopies.length} เล่ม) ถูกตั้งสถานะเรียกคืน (SUPERSEDED_PENDING_RECALL)`,
       timestamp: new Date().toISOString()
     };
 
@@ -4678,19 +5215,27 @@ const useStore = create(persist((set, get) => ({
 
     // Create DCC task for issuing copies
     const taskId = `task-dcc-issue-${doc.id}-${Date.now()}`;
+    const docOfficialTitle = doc.name || doc.document_name || doc.docName || doc.title || docCode;
     const dccTask = {
       id: taskId,
       type: 'DCC_DISTRIBUTE',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
-      title: `ขอออกสำเนาควบคุมเพิ่มเติม: ${docCode} (${newLocationsList.length} จุด)`,
-      description: `แผนก ${requesterDept} โดยคุณ ${requesterName} ขอรับสำเนาควบคุมเพิ่มเติมสำหรับ ${docCode} (Rev.${docVersion}) จำนวน ${newLocationsList.length} เล่ม เหตุผล: ${reason}`,
+      title: `ขอออกสำเนาควบคุมเพิ่มเติม: ${docOfficialTitle} (${docCode}) (${newLocationsList.length} จุด)`,
+      description: `แผนก ${requesterDept} โดยคุณ ${requesterName} ขอรับสำเนาควบคุมเพิ่มเติมสำหรับ ${docCode} (${docOfficialTitle}) (Rev.${docVersion}) จำนวน ${newLocationsList.length} เล่ม เหตุผล: ${reason}`,
       docId: doc.id,
       darId: isInternal ? doc.id : null,
       externalDocId: isExternal ? doc.id : null,
       doc_code: docCode,
+      docCode: docCode,
+      docTitle: docOfficialTitle,
+      docName: docOfficialTitle,
       doc_version: docVersion,
       assigneeId: 'U001',
       assignedToRole: 'DCC_ADMIN',
+      department: 'DC',
+      target_department: 'DC',
+      targetDepartment: 'DC',
+      target_role: 'DCC',
       status: 'PENDING',
       priority: 'HIGH',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -4732,8 +5277,8 @@ const useStore = create(persist((set, get) => ({
     if (!inst) return state;
 
     // 🛡️ Idempotency Guard: prevent duplicate reporting on copy already pending recall, lost, recalled, or destroyed
-    const invalidStatuses = ['PENDING_RECALL', 'LOST', 'LOST_RECORDED', 'DECLARED_LOST', 'RECALLED', 'DESTROYED', 'RECALLED_DESTROYED', 'REPLACED_VOID', 'DAMAGED_PENDING_REPLACEMENT'];
-    if (invalidStatuses.includes(inst.status) || (type === 'DAMAGED' && (inst.isDamaged || inst.status === 'PENDING_RECALL'))) {
+    const invalidStatuses = ['PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'LOST', 'LOST_RECORDED', 'DECLARED_LOST', 'RECALLED', 'DESTROYED', 'RECALLED_DESTROYED', 'REPLACED_VOID', 'DAMAGED_PENDING_REPLACEMENT'];
+    if (invalidStatuses.includes(inst.status) || (type === 'DAMAGED' && (inst.isDamaged || inst.status === 'DAMAGED_PENDING_RECALL' || inst.status === 'PENDING_RECALL'))) {
       console.warn(`[reportCcDamagedLost] Copy ${targetId} is already in state ${inst.status}. Skipping duplicate request.`);
       return state;
     }
@@ -4746,8 +5291,8 @@ const useStore = create(persist((set, get) => ({
     const userDepts = user?.depts || (userDept ? [userDept] : []);
     const isOwnerDept = Boolean(copyDept && userDepts.some(d => d && (
       d.toUpperCase() === copyDept.toUpperCase() ||
-      (d === 'QA' && copyDept === 'QA/QC') ||
-      (d === 'QA/QC' && copyDept === 'QA')
+      (d === 'QA/QC' && copyDept === 'QA/QC') ||
+      (d === 'QA/QC' && copyDept === 'QA/QC')
     )));
 
     if (user && !isDcc && !isOwnerDept) {
@@ -4764,7 +5309,7 @@ const useStore = create(persist((set, get) => ({
     const nextIssue = `I${nextIssueNo}`;
 
     const isDamaged = type === 'DAMAGED';
-    const newStatus = isDamaged ? 'PENDING_RECALL' : 'LOST';
+    const newStatus = isDamaged ? 'DAMAGED_PENDING_RECALL' : 'LOST';
 
     // 1. Audit log for reporting
     const auditLog = {
@@ -4778,8 +5323,8 @@ const useStore = create(persist((set, get) => ({
       oldStatus: inst.status,
       newStatus: newStatus,
       remarks: isDamaged 
-        ? `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งชำรุดโดย ${reporterName} (${copyDept}) -> สร้างงานเรียกคืนเล่มเดิมและตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
-        : `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งสูญหายโดย ${reporterName} (${copyDept}) -> ปลดออกจากทะเบียนสำเนาใช้งานและตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
+        ? `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งชำรุดโดย ${reporterName} (${copyDept}) -> สร้างงานเรียกคืนเล่มเดิม (DAMAGED_PENDING_RECALL) และตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
+        : `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งสูญหายโดย ${reporterName} (${copyDept}) -> ปลดออกจากทะเบียนสำเนาใช้งาน (LOST) และตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
     };
 
     // 2. Replacement Copy Instance (Enqueued to PENDING_ISSUE for DCC)
@@ -4832,17 +5377,41 @@ const useStore = create(persist((set, get) => ({
     };
 
     // 3. Task for DCC to Issue Replacement Copy
+    const relatedDoc = (state.documents || []).find(d => 
+      String(d.id) === String(inst.doc_id || inst.docId) || 
+      d.title === (inst.doc_code || inst.docTitle) || 
+      d.document_code === (inst.doc_code || inst.docTitle)
+    );
+    const docOfficialTitle = inst.docName || inst.name || relatedDoc?.name || relatedDoc?.document_name || inst.doc_code || inst.docTitle || 'เอกสารควบคุม';
+    const docCode = inst.doc_code || inst.docTitle || relatedDoc?.title || relatedDoc?.document_code || '';
+
     const dccIssueTask = {
       id: `task-dcc-replacement-${inst.id}-${Date.now()}`,
       type: 'DCC_DISTRIBUTE',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
-      title: `ออกสำเนาควบคุมทดแทน (Issue ${nextIssueNo}): ${inst.doc_code || inst.docTitle} (${inst.copy_no || inst.ccNumber})`,
+      task_type: 'DISTRIBUTION',
+      title: `ออกสำเนาควบคุมทดแทน (Issue ${nextIssueNo}): ${docOfficialTitle} (${docCode}) (${inst.copy_no || inst.ccNumber})`,
       description: `แผนก ${inst.holder_dept || inst.department} แจ้ง${isDamaged ? 'ชำรุด' : 'สูญหาย'} ประจำจุด ${inst.location || inst.locationName} เหตุผล: ${reason}`,
       docId: inst.doc_id || inst.docId,
-      doc_code: inst.doc_code || inst.docTitle,
+      doc_id: inst.doc_id || inst.docId,
+      doc_code: docCode,
+      docCode: docCode,
+      docTitle: docOfficialTitle,
+      docName: docOfficialTitle,
       doc_version: inst.doc_version || inst.rev || '01',
+      copyId: replacementCopy.id,
+      copy_id: replacementCopy.id,
+      instanceId: replacementCopy.id,
+      copy_no: inst.copy_no || inst.ccNumber || '01',
+      issue_no: nextIssueNo,
+      issueNumber: nextIssue,
+      is_replacement: true,
       assigneeId: 'U001',
       assignedToRole: 'DCC_ADMIN',
+      department: 'DC',
+      target_department: 'DC',
+      targetDepartment: 'DC',
+      target_role: 'DCC',
       status: 'PENDING',
       priority: 'HIGH',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -4857,21 +5426,25 @@ const useStore = create(persist((set, get) => ({
         type: 'DCC_RECALL',
         taskType: 'RECALL',
         task_type: 'RECALL',
-        title: `เรียกคืนสำเนาชำรุด: ${inst.doc_code || inst.docTitle} ${inst.docName || inst.doc_title || ''} (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`.trim(),
+        title: `เรียกคืนสำเนาชำรุด: ${docOfficialTitle} (${docCode}) (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`,
         description: `แผนก ${copyDept} แจ้งชำรุด ประจำจุด ${inst.location || inst.locationName || copyDept} เหตุผล: ${reason} (กรุณาเรียกคืนเล่มชำรุดมาทำลายตามระเบียบ ISO 9001)`,
         docId: inst.doc_id || inst.docId,
         doc_id: inst.doc_id || inst.docId,
-        doc_code: inst.doc_code || inst.docTitle,
+        doc_code: docCode,
+        docCode: docCode,
+        docTitle: docOfficialTitle,
+        docName: docOfficialTitle,
         doc_version: inst.doc_version || inst.rev || '01',
         copyId: inst.id,
         copy_id: inst.id,
         instanceId: inst.id,
         copy_no: inst.copy_no || inst.ccNumber || '01',
         location: inst.location || inst.locationName || copyDept,
-        department: copyDept,
+        department: 'DC',
         holder_dept: copyDept,
-        target_department: 'DCC',
-        targetDepartment: 'DCC',
+        target_department: 'DC',
+        targetDepartment: 'DC',
+        target_role: 'DCC',
         assignedToRole: 'DCC_ADMIN',
         assigneeId: 'U001',
         status: 'PENDING',
@@ -5006,8 +5579,81 @@ const useStore = create(persist((set, get) => ({
   markCopyRecalled: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
   receiveRecallCopy: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
 
+  // Quick-toggle physical receipt of recalled copy (Step 1 <-> Step 2)
+  toggleCopyRecallReceived: (copyId) => set((state) => {
+    const targetId = String(copyId);
+    const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
+    const inst = copies.find(i => String(i.id) === targetId);
+    if (!inst) return state;
+
+    const isCurrentlyReceived = inst.status === 'RECALLED' || inst.status === 'RECEIVED_AT_DCC' || inst.status === 'RECALLED_HELD_AT_DCC';
+    const nowIso = new Date().toISOString();
+    const userName = state.currentUser ? state.currentUser.name : 'DCC Officer';
+
+    let newStatus;
+    let recalledAt;
+    let recalledBy;
+
+    if (isCurrentlyReceived) {
+      // Revert to Step 1 (Waiting for collection)
+      newStatus = inst.previous_recall_status || 
+                  (inst.isDamaged || inst.is_damaged ? 'DAMAGED_PENDING_RECALL' : 'SUPERSEDED_PENDING_RECALL');
+      recalledAt = null;
+      recalledBy = null;
+    } else {
+      // Advance to Step 2 (Held at DCC awaiting disposition/destruction)
+      newStatus = 'RECALLED';
+      recalledAt = nowIso;
+      recalledBy = userName;
+    }
+
+    const updatedCopies = copies.map(c => {
+      if (String(c.id) === targetId) {
+        return {
+          ...c,
+          status: newStatus,
+          previous_recall_status: isCurrentlyReceived ? null : (c.status || 'PENDING_RECALL'),
+          recalled_at: recalledAt,
+          recalled_by: recalledBy,
+          dateRecalled: recalledAt ? recalledAt.split('T')[0] : null
+        };
+      }
+      return c;
+    });
+
+    const auditLog = {
+      id: `audit-toggle-recall-${Date.now()}`,
+      timestamp: nowIso,
+      user: userName,
+      action: isCurrentlyReceived ? 'CC_RECALL_RECEIPT_REVERTED' : 'CC_RECALL_RECEIVED',
+      docTitle: inst.doc_code || inst.docTitle,
+      docRev: inst.doc_version || inst.rev,
+      ccNumber: inst.copy_no || inst.ccNumber,
+      oldStatus: inst.status,
+      newStatus: newStatus,
+      remarks: isCurrentlyReceived
+        ? `DCC ยกเลิกการบันทึกรับคืนเล่ม Copy ${inst.copy_no || inst.ccNumber} (กลับสู่สถานะรอเก็บเล่มจากหน้างาน)`
+        : `DCC บันทึกตรวจรับเล่มจริง Copy ${inst.copy_no || inst.ccNumber} ประจำจุด ${inst.location || inst.locationName} กลับสู่ DCC เรียบร้อยแล้ว (รอการจัดการ/ทำลาย)`
+    };
+
+    return {
+      controlledCopyInstances: updatedCopies,
+      documentControlledCopies: updatedCopies,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: isCurrentlyReceived ? 'CC_RECALL_REVERT' : 'CC_RECALL_RECEIVED',
+        actor: userName,
+        details: `${isCurrentlyReceived ? 'Reverted' : 'Recorded'} physical receipt of copy ${targetId}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
   // Destroy recalled physical copy and resolve DCC_RECALL tasks
-  destroyControlledCopy: (copyId, dispositionMethod = 'SHRED', notes = '') => set((state) => {
+  destroyControlledCopy: (copyId, dispositionMethod = 'SHRED', notes = '', witnessName = '', referenceNo = '') => set((state) => {
     const targetId = String(copyId);
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
@@ -5023,28 +5669,78 @@ const useStore = create(persist((set, get) => ({
         return {
           ...i,
           status: 'DESTROYED',
+          disposition_type: 'DESTROYED',
           destroyed_at: nowIso,
           destroyed_by: userName,
           recalled_at: i.recalled_at || nowIso,
           recalled_by: i.recalled_by || userName,
           disposition_method: dispositionMethod,
           dcc_notes: notes || i.dcc_notes || '',
+          witness_name: witnessName || i.witness_name || '',
+          reference_no: referenceNo || i.reference_no || '',
           dateDestroyed: nowIso.split('T')[0]
         };
       }
       return i;
     });
 
+    // 🛡️ Dedicated Disposition Ledger Entry (Append-Only)
+    const dispRecord = {
+      id: `DISP-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      copyId: inst.id,
+      copy_id: inst.id,
+      docCode: inst.doc_code || inst.docTitle || '',
+      docTitle: inst.docName || inst.doc_title || inst.docTitle || '',
+      revision: inst.doc_version || inst.rev || '01',
+      copyNumber: inst.copy_no ? (String(inst.copy_no).startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01'),
+      copy_no: inst.copy_no || inst.ccNumber || '01',
+      department: inst.holder_dept || inst.department || '',
+      location: inst.location || inst.locationName || inst.station_name || '',
+      dispositionType: 'DESTROYED',
+      dispositionMethod: dispositionMethod,
+      disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${userName} (DCC)`,
+      disposed_by_name: userName,
+      disposed_by_id: state.currentUser?.id || 'U001',
+      disposedAt: nowIso,
+      witnessName: witnessName || '',
+      witness_name: witnessName || '',
+      referenceNo: referenceNo || '',
+      reference_no: referenceNo || '',
+      notes: notes || ''
+    };
+
     // Check and resolve any DCC_RECALL task associated with this copy or document
     const updatedTasks = (state.tasks || []).map(t => {
+      // STRICT ISOLATION GUARD: Never touch distribution tasks!
+      if (t.type === 'DCC_DISTRIBUTE' || t.taskType === 'DISTRIBUTION' || t.task_type === 'DISTRIBUTION') return t;
+
       const isRecallTask = t.type === 'DCC_RECALL' || t.taskType === 'RECALL' || t.task_type === 'RECALL' || t.type === 'RECALL';
       if (!isRecallTask) return t;
 
       const isMatch = (t.copyId && String(t.copyId) === targetId) ||
                       (t.instanceId && String(t.instanceId) === targetId) ||
-                      (t.copy_id && String(t.copy_id) === targetId);
+                      (t.copy_id && String(t.copy_id) === targetId) ||
+                      (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.some(sid => String(sid) === targetId));
 
       if (isMatch) {
+        if (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.length > 0) {
+          const allResolved = t.supersededCopyIds.every(id => {
+            const c = updatedCopies.find(copy => String(copy.id) === String(id));
+            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED';
+          });
+          if (allResolved) {
+            return {
+              ...t,
+              status: 'COMPLETED',
+              is_completed: true,
+              actionRequired: false,
+              completedAt: nowIso,
+              completed_at: nowIso
+            };
+          }
+          return t;
+        }
+
         return {
           ...t,
           status: 'COMPLETED',
@@ -5075,6 +5771,8 @@ const useStore = create(persist((set, get) => ({
     return {
       controlledCopyInstances: updatedCopies,
       documentControlledCopies: updatedCopies,
+      copyDispositionRecords: [dispRecord, ...(state.copyDispositionRecords || [])],
+      dispositionHistory: [dispRecord, ...(state.dispositionHistory || [])],
       tasks: cleanedTasks,
       controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
       actionLog: [{
@@ -5087,7 +5785,7 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  recordCopyDestroyed: (copyId, method, notes) => useStore.getState().destroyControlledCopy(copyId, method, notes),
+  recordCopyDestroyed: (copyId, method, notes, witnessName, referenceNo) => useStore.getState().destroyControlledCopy(copyId, method, notes, witnessName, referenceNo),
 
   approveCcReplacement: (taskId) => set((state) => {
     const task = state.tasks.find(t => String(t.id) === String(taskId));
@@ -5320,7 +6018,7 @@ const useStore = create(persist((set, get) => ({
   addMasterUser: (userData) => set((state) => {
     const newId = userData.id || `U${String(Date.now()).slice(-4)}`;
     const empId = userData.empId || `EMP-${String((state.masterUsers || []).length + 1).padStart(3, '0')}`;
-    const primaryDept = userData.primary_department || userData.department || userData.dept || 'QA';
+    const primaryDept = userData.primary_department || userData.department || userData.dept || 'QA/QC';
     const rawAffiliated = userData.affiliated_departments || userData.depts || (userData.department ? [userData.department] : [primaryDept]);
     const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
     const approvalLevel = Number(userData.approval_level || userData.level) || 1;
@@ -5364,26 +6062,7 @@ const useStore = create(persist((set, get) => ({
       signatureType: userData.signatureType || 'TYPOGRAPHIC',
       signatureStyle: userData.signatureStyle || 'MODERN_SANS',
       signatureInitials: userData.signatureInitials || `${(userData.name || newId).slice(0, 3).toUpperCase()}-${primaryDept}`,
-      hasRegisteredSignature: userData.hasRegisteredSignature ?? true,
-      certificateSerial: userData.certificateSerial || `CERT-${new Date().getFullYear()}-${primaryDept}${newId.slice(-3)}`,
-      ...userData,
-      id: newId,
-      empId,
-      name: userData.name,
-      department: primaryDept,
-      primary_department: primaryDept,
-      depts: affiliatedDepts,
-      affiliated_departments: affiliatedDepts,
-      level: approvalLevel,
-      approval_level: approvalLevel,
-      role: userData.role || 'GENERAL_USER',
-      isDcc,
-      isQmr,
-      permissions: userPermissions,
-      canCreateDar: userData.canCreateDar !== undefined ? Boolean(userData.canCreateDar) : true,
-      canAccessTasks: userData.canAccessTasks !== undefined ? Boolean(userData.canAccessTasks) : true,
-      canViewRegister: userData.canViewRegister !== undefined ? Boolean(userData.canViewRegister) : true,
-      isWorkflowUser: userData.isWorkflowUser !== undefined ? Boolean(userData.isWorkflowUser) : true
+      hasRegisteredSignature: userData.hasRegisteredSignature ?? true
     };
 
     const updatedUsers = [...(state.masterUsers || []), newUser];
@@ -5417,7 +6096,7 @@ const useStore = create(persist((set, get) => ({
   updateMasterUser: (userId, userData) => set((state) => {
     const updatedUsers = (state.masterUsers || []).map(u => {
       if (u.id === userId) {
-        const primaryDept = userData.primary_department || userData.department || u.primary_department || u.department || 'QA';
+        const primaryDept = userData.primary_department || userData.department || u.primary_department || u.department || 'QA/QC';
         const rawAffiliated = userData.affiliated_departments || userData.depts || u.affiliated_departments || u.depts || [primaryDept];
         const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
         const approvalLevel = userData.approval_level !== undefined 
@@ -6072,7 +6751,7 @@ const useStore = create(persist((set, get) => ({
           const minReq = entryData.minRequesterLevel ?? entryData.min_requester_level ?? item.minRequesterLevel ?? item.min_requester_level ?? 1;
           const reqRev = entryData.requiredReviewerLevel ?? entryData.required_reviewer_level ?? item.requiredReviewerLevel ?? item.required_reviewer_level ?? 4;
           const reqApp = entryData.requiredApproverLevel ?? entryData.required_approver_level ?? item.requiredApproverLevel ?? item.required_approver_level ?? 6;
-          const reqAck = entryData.requireAckDefault ?? entryData.require_ack_default ?? item.requireAckDefault ?? item.require_ack_default ?? false;
+          const reqAck = Boolean(entryData.requireAckDefault ?? entryData.require_ack_default ?? item.requireAckDefault ?? item.require_ack_default ?? false);
           
           return {
             ...item,
@@ -6095,7 +6774,7 @@ const useStore = create(persist((set, get) => ({
       const minReq = entryData.minRequesterLevel ?? entryData.min_requester_level ?? 1;
       const reqRev = entryData.requiredReviewerLevel ?? entryData.required_reviewer_level ?? 4;
       const reqApp = entryData.requiredApproverLevel ?? entryData.required_approver_level ?? 5;
-      const reqAck = entryData.requireAckDefault ?? entryData.require_ack_default ?? false;
+      const reqAck = Boolean(entryData.requireAckDefault ?? entryData.require_ack_default ?? false);
       const newEntry = {
         docType,
         doc_type: docType,
@@ -6196,7 +6875,68 @@ const useStore = create(persist((set, get) => ({
       persistedState.acknowledgments = [];
       persistedState.darHistory = [];
     }
+
+    // Eradicate legacy 'DCC' department code in persisted tasks, copies, and user state
+    if (persistedState.tasks && Array.isArray(persistedState.tasks)) {
+      persistedState.tasks = persistedState.tasks.map(t => {
+        if (!t) return t;
+        let updated = { ...t };
+        if (updated.target_department === 'DCC') updated.target_department = 'DC';
+        if (updated.targetDepartment === 'DCC') updated.targetDepartment = 'DC';
+        if (updated.department === 'DCC') updated.department = 'DC';
+        if (updated.dept === 'DCC') updated.dept = 'DC';
+        if (updated.assignedToDept === 'DCC') updated.assignedToDept = 'DC';
+        if (updated.destinationDept === 'DCC') updated.destinationDept = 'DC';
+        if (updated.currentHandlerDepartment === 'DCC') updated.currentHandlerDepartment = 'DC';
+        return updated;
+      });
+    }
+    if (persistedState.currentUser) {
+      if (persistedState.currentUser.department === 'DCC') persistedState.currentUser.department = 'DC';
+      if (persistedState.currentUser.primary_department === 'DCC') persistedState.currentUser.primary_department = 'DC';
+      if (persistedState.currentUser.dept === 'DCC') persistedState.currentUser.dept = 'DC';
+      if (Array.isArray(persistedState.currentUser.affiliated_departments)) {
+        persistedState.currentUser.affiliated_departments = Array.from(new Set(persistedState.currentUser.affiliated_departments.map(d => d === 'DCC' ? 'DC' : d)));
+      }
+      if (Array.isArray(persistedState.currentUser.depts)) {
+        persistedState.currentUser.depts = Array.from(new Set(persistedState.currentUser.depts.map(d => d === 'DCC' ? 'DC' : d)));
+      }
+    }
+
     return persistedState;
+  },
+  onRehydrateStorage: () => (state) => {
+    if (state && state.tasks && Array.isArray(state.tasks)) {
+      let hasGhost = false;
+      const cleaned = state.tasks.map(t => {
+        if (!t) return t;
+        if (
+          t.target_department === 'DCC' ||
+          t.targetDepartment === 'DCC' ||
+          t.department === 'DCC' ||
+          t.dept === 'DCC' ||
+          t.assignedToDept === 'DCC' ||
+          t.destinationDept === 'DCC' ||
+          t.currentHandlerDepartment === 'DCC'
+        ) {
+          hasGhost = true;
+          return {
+            ...t,
+            target_department: t.target_department === 'DCC' ? 'DC' : t.target_department,
+            targetDepartment: t.targetDepartment === 'DCC' ? 'DC' : t.targetDepartment,
+            department: t.department === 'DCC' ? 'DC' : t.department,
+            dept: t.dept === 'DCC' ? 'DC' : t.dept,
+            assignedToDept: t.assignedToDept === 'DCC' ? 'DC' : t.assignedToDept,
+            destinationDept: t.destinationDept === 'DCC' ? 'DC' : t.destinationDept,
+            currentHandlerDepartment: t.currentHandlerDepartment === 'DCC' ? 'DC' : t.currentHandlerDepartment
+          };
+        }
+        return t;
+      });
+      if (hasGhost) {
+        useStore.setState({ tasks: cleaned });
+      }
+    }
   },
   partialize: (state) => ({
     currentUser: state.currentUser,
@@ -6221,6 +6961,8 @@ const useStore = create(persist((set, get) => ({
     documentControlledCopies: state.documentControlledCopies,
     controlledCopyInstances: state.controlledCopyInstances,
     controlledCopyAuditTrail: state.controlledCopyAuditTrail,
+    copyDispositionRecords: state.copyDispositionRecords,
+    dispositionHistory: state.dispositionHistory,
     actionLog: state.actionLog,
     periodicReviewSchedules: state.periodicReviewSchedules,
     periodicReviewTasks: state.periodicReviewTasks,

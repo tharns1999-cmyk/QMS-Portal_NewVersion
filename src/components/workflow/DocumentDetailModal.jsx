@@ -19,14 +19,18 @@ import {
   ShieldAlert,
   Globe,
   Lock,
-  Building2
+  Building2,
+  RotateCcw,
+  ChevronDown
 } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
+import { ErrorBoundary } from '../ErrorBoundary';
 import { UniversalWatermarkService, WATERMARK_TYPES, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
 import WatermarkStudioModal from './WatermarkStudioModal';
 import ReplacementModal from '../../pages/Library/ReplacementModal';
-import { ACCESS_SCOPE_METADATA, canManageControlledCopy } from '../../utils/accessControl';
+import { canManageControlledCopy } from '../../utils/accessControl';
 import { 
   getDarReason, 
   getDarDetail, 
@@ -40,6 +44,7 @@ import toast from 'react-hot-toast';
 const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) => {
   const { 
     currentUser, 
+    masterDepartments,
     canDownloadDocument, 
     controlledCopyInstances, 
     documentControlledCopies,
@@ -50,6 +55,7 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
   } = useStore();
 
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'history'
+  const [isRecallAuditOpen, setIsRecallAuditOpen] = useState(false); // Collapsed by default for audit inspection
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isWatermarkStudioOpen, setIsWatermarkStudioOpen] = useState(false);
   const [selectedReplacementCopy, setSelectedReplacementCopy] = useState(null);
@@ -61,46 +67,259 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
       : (documentControlledCopies || []);
   }, [controlledCopyInstances, documentControlledCopies]);
 
-  // Copies of this document (Active & deduplicated per station)
-  const docCopies = useMemo(() => {
-    if (!doc) return [];
-    
-    // 1. Filter matching copies excluding voided, superseded, and destroyed records
-    const list = allCopies.filter(c => {
-      const matchDoc = String(c.doc_id || c.docId) === String(doc.id) ||
-        (c.doc_code && c.doc_code === doc.title) ||
-        (c.docTitle && c.docTitle === doc.title);
-      if (!matchDoc) return false;
+  // Current document revision
+  const currentDocRev = String(doc?.rev || doc?.currentRevision || doc?.revision || doc?.doc_version || '01');
 
-      // Exclude voided/replaced, obsolete, and recalled/destroyed copies
-      if (c.status === 'REPLACED_VOID' || c.status === 'RECALLED_DESTROYED' || c.status === 'OBSOLETE' || c.status === 'OBSOLETE_ARCHIVED') {
-        return false;
+  // Strict Revision Scoping & Selector-Level Deduplication (Strict Single-Record per Physical Copy)
+  const { activeCopies, recalledCopies } = useMemo(() => {
+    if (!doc) return { activeCopies: [], recalledCopies: [] };
+
+    const isMatchingDoc = (c) => {
+      const matchId = (c.doc_id && String(c.doc_id) === String(doc.id)) ||
+                      (c.docId && String(c.docId) === String(doc.id));
+      const docCode = (doc.title || doc.doc_code || doc.code || '').trim().toUpperCase();
+      const copyCode = (c.doc_code || c.docTitle || c.document_code || '').trim().toUpperCase();
+      const matchCode = Boolean(docCode && copyCode && docCode === copyCode);
+      return Boolean(matchId || matchCode);
+    };
+
+    const matchingCopies = allCopies.filter(isMatchingDoc);
+
+    const activeRawList = [];
+    const recallRawList = [];
+
+    matchingCopies.forEach(copy => {
+      const copyRev = String(copy.rev || copy.doc_version || copy.revision || copy.docRev || '');
+      const status = String(copy.status || '').toUpperCase();
+
+      const isRecallStatus = [
+        'SUPERSEDED_PENDING_RECALL',
+        'PENDING_RECALL',
+        'DAMAGED_PENDING_RECALL',
+        'OBSOLETE_PENDING_RECALL',
+        'RECALLED',
+        'RECALLED_HELD_AT_DCC',
+        'RECEIVED_AT_DCC',
+        'RECALLED_DESTROYED',
+        'DESTROYED',
+        'ARCHIVED_OBSOLETE',
+        'OBSOLETE_ARCHIVED',
+        'RECALLED_OBSOLETE',
+        'DISPOSED'
+      ].includes(status);
+
+      const isOlderRev = Boolean(copyRev && copyRev !== currentDocRev);
+
+      if (isOlderRev || copy.is_superseded || (isRecallStatus && copyRev !== currentDocRev)) {
+        // Older revision or superseded copy -> Recall & Disposal Ledger
+        recallRawList.push({
+          ...copy,
+          displayRev: copyRev || '00',
+          status: copy.status || 'SUPERSEDED_PENDING_RECALL'
+        });
+      } else {
+        // Current revision copy
+        if (status === 'REPLACED_VOID' || status === 'OBSOLETE' || status === 'OBSOLETE_ARCHIVED') {
+          return;
+        }
+
+        // Heal data pollution on current revision if mistakenly marked SUPERSEDED_PENDING_RECALL
+        let healedStatus = copy.status;
+        if (status === 'SUPERSEDED_PENDING_RECALL') {
+          healedStatus = copy.receipt_confirmed_at ? 'ISSUED_ACTIVE' : 'PENDING_ISSUE';
+        }
+
+        activeRawList.push({
+          ...copy,
+          displayRev: currentDocRev,
+          status: healedStatus
+        });
       }
-      return true;
     });
 
-    // 2. Deduplication per location/station: prioritize latest replacement / active copy
-    const map = new Map();
-    list.forEach(c => {
-      const locKey = `${c.holder_dept || c.department || ''}::${c.location || c.locationName || c.locationId || c.station_id || c.copy_no || c.ccNumber}`.toLowerCase();
-      if (!map.has(locKey)) {
-        map.set(locKey, c);
+    // Lifecycle status priority: most advanced physical disposition status takes precedence
+    const STATUS_PRIORITY = {
+      'DESTROYED': 100,
+      'RECALLED_DESTROYED': 95,
+      'ARCHIVED_OBSOLETE': 90,
+      'OBSOLETE_ARCHIVED': 85,
+      'RECALLED_OBSOLETE': 80,
+      'DISPOSED': 75,
+      'RECALLED': 60,
+      'RECALLED_HELD_AT_DCC': 55,
+      'RECEIVED_AT_DCC': 50,
+      'SUPERSEDED_PENDING_RECALL': 40,
+      'PENDING_RECALL': 35,
+      'DAMAGED_PENDING_RECALL': 30,
+      'OBSOLETE_PENDING_RECALL': 25,
+      'ISSUED_ACTIVE': 20,
+      'ACTIVE': 18,
+      'DISPATCHED_PENDING_RECEIPT': 15,
+      'PENDING_RECEIPT': 12,
+      'PENDING_ISSUE': 10
+    };
+
+    // 🛡️ Deduplicate active copies by copyNumber + revision
+    const activeMap = new Map();
+    activeRawList.forEach(c => {
+      const copyNum = parseInt(String(c.copy_no || c.ccNumber || '0').replace(/\D/g, ''), 10) || 1;
+      const copyKey = `${c.displayRev || currentDocRev}::Copy_${String(copyNum).padStart(2, '0')}`;
+
+      if (!activeMap.has(copyKey)) {
+        activeMap.set(copyKey, c);
       } else {
-        const existing = map.get(locKey);
+        const existing = activeMap.get(copyKey);
         const existingIssue = parseInt(String(existing.issue_no || existing.issueNumber || '1').replace(/\D/g, ''), 10) || 1;
         const newIssue = parseInt(String(c.issue_no || c.issueNumber || '1').replace(/\D/g, ''), 10) || 1;
-        if (newIssue > existingIssue || (c.is_replacement && !existing.is_replacement)) {
-          map.set(locKey, c);
+        const existingPrio = STATUS_PRIORITY[String(existing.status).toUpperCase()] || 0;
+        const newPrio = STATUS_PRIORITY[String(c.status).toUpperCase()] || 0;
+
+        if (newIssue > existingIssue || (c.is_replacement && !existing.is_replacement) || newPrio > existingPrio) {
+          activeMap.set(copyKey, c);
         }
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => {
+    // 🛡️ Deduplicate recall copies by copyNumber + revision (Single record per physical copy)
+    const recallMap = new Map();
+    recallRawList.forEach(c => {
+      const copyNum = parseInt(String(c.copy_no || c.ccNumber || '0').replace(/\D/g, ''), 10) || 1;
+      const copyKey = `${c.displayRev || '00'}::Copy_${String(copyNum).padStart(2, '0')}`;
+
+      if (!recallMap.has(copyKey)) {
+        recallMap.set(copyKey, c);
+      } else {
+        const existing = recallMap.get(copyKey);
+        const existingPrio = STATUS_PRIORITY[String(existing.status).toUpperCase()] || 0;
+        const newPrio = STATUS_PRIORITY[String(c.status).toUpperCase()] || 0;
+
+        // Higher priority lifecycle status wins (e.g. DESTROYED wins over ARCHIVED_OBSOLETE / PENDING_RECALL)
+        if (newPrio > existingPrio) {
+          recallMap.set(copyKey, c);
+        }
+      }
+    });
+
+    const sortedActive = Array.from(activeMap.values()).sort((a, b) => {
       const numA = parseInt(String(a.copy_no || a.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
       const numB = parseInt(String(b.copy_no || b.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
       return numA - numB;
     });
-  }, [allCopies, doc]);
+
+    const sortedRecall = Array.from(recallMap.values()).sort((a, b) => {
+      const numA = parseInt(String(a.copy_no || a.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.copy_no || b.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
+
+    return { activeCopies: sortedActive, recalledCopies: sortedRecall };
+  }, [allCopies, doc, currentDocRev]);
+
+  // Backward compatible alias for existing consumers and test suites
+  const docCopies = activeCopies;
+
+  // Complete Status Mapping for Badges (no unformatted enum leak or text overflow)
+  const renderCopyStatusBadge = (status) => {
+    const normalized = String(status || '').toUpperCase();
+
+    if (normalized === 'ISSUED_ACTIVE' || normalized === 'ACTIVE' || normalized === 'ISSUED' || normalized === 'RECEIVED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span>
+          ใช้งานปกติ
+        </span>
+      );
+    }
+
+    if (normalized === 'PENDING_ISSUE' || normalized === 'PENDING_DISTRIBUTE' || normalized === 'PENDING_DISTRIBUTION') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3B82F6]"></span>
+          รอพิมพ์/แจกจ่าย
+        </span>
+      );
+    }
+
+    if (normalized === 'DISPATCHED_PENDING_RECEIPT' || normalized === 'PENDING_RECEIPT') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]"></span>
+          รอตรวจรับ
+        </span>
+      );
+    }
+
+    if (normalized === 'ARCHIVED_OBSOLETE' || normalized === 'OBSOLETE_ARCHIVED' || normalized === 'RECALLED_OBSOLETE') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]"></span>
+          จัดเก็บเป็นประวัติ (ยกเลิก)
+        </span>
+      );
+    }
+
+    if (normalized === 'DESTROYED' || normalized === 'RECALLED_DESTROYED' || normalized === 'DISPOSED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FEF2F2] text-[#991B1B] border border-[#F87171] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]"></span>
+          ทำลายแล้ว
+        </span>
+      );
+    }
+
+    if (normalized === 'RECALLED' || normalized === 'RECALLED_HELD_AT_DCC' || normalized === 'RECEIVED_AT_DCC') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF7ED] text-[#C2410C] border border-[#FFD8A8] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#F97316]"></span>
+          เรียกคืนแล้ว
+        </span>
+      );
+    }
+
+    if (normalized === 'SUPERSEDED_PENDING_RECALL' || normalized === 'PENDING_RECALL' || normalized === 'OBSOLETE_PENDING_RECALL') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]"></span>
+          รอเรียกคืน (Rev.เดิม)
+        </span>
+      );
+    }
+
+    if (normalized === 'DAMAGED_PENDING_RECALL') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]"></span>
+          รอเรียกคืน (ชำรุด)
+        </span>
+      );
+    }
+
+    if (normalized === 'REPLACEMENT_REQUESTED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FAF5FF] text-[#9333EA] border border-[#E9D5FF] whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#A855F7]"></span>
+          ขอเล่มทดแทน
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono font-semibold bg-[#F5F5F5] text-[#666666] border border-[#E5E5E5] whitespace-nowrap">
+        {status || '-'}
+      </span>
+    );
+  };
+
+  const formatReceiptDate = (dateStr) => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('th-TH');
+    } catch {
+      return '-';
+    }
+  };
 
   // Non-destructive DAR history related to this document
   const docDars = useMemo(() => {
@@ -278,7 +497,7 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
   };
 
   return (
-    <>
+    <ErrorBoundary>
       <AnimatePresence>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
           <motion.div
@@ -358,7 +577,7 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
                         <Building2 size={14} /> แผนกเจ้าของเอกสาร
                       </span>
                       <div className="text-sm font-bold text-[#1E293B] mt-1 truncate">
-                        {doc.department || doc.owner_dept || '-'}
+                        {(() => { const d = normalizeDepartmentId(doc?.department || doc?.owner_dept || ''); const dObj = (masterDepartments || []).find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}
                       </div>
                     </div>
 
@@ -495,92 +714,94 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
                         <Layers size={16} className="text-[#0D99FF]" />
                         สำเนาควบคุมที่แจกจ่ายประจำจุดใช้งาน ({docCopies.length} เล่ม)
                       </h3>
-                      {canRequestAdditionalCopies && (
-                        <button
-                          type="button"
-                          onClick={() => setIsRequestModalOpen(true)}
-                          className="text-xs font-bold text-[#0D99FF] hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <PlusCircle size={13} /> ขอสำเนาเพิ่ม
-                        </button>
-                      )}
+                      <span className="text-xs text-[#64748B] font-medium bg-[#F8FAFC] px-2.5 py-1 rounded-md border border-[#E2E8F0]">
+                        ฉบับปัจจุบัน Rev.{currentDocRev}
+                      </span>
                     </div>
 
-                    {/* Controlled Copies High-Density Table */}
+                    {/* Active Controlled Copies Table (Always Active First) */}
                     <div className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-white shadow-2xs overflow-x-auto overflow-y-auto max-h-[320px] scrollbar-thin">
                       <table className="w-full text-left text-sm table-fixed border-collapse">
                         <thead className="bg-[#F8FAFC] text-[#374151] font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
                           <tr>
-                            <th className="py-3 px-3.5 w-32 bg-[#F8FAFC]">หมายเลขสำเนา</th>
+                            <th className="py-3 px-3.5 w-44 bg-[#F8FAFC]">หมายเลขสำเนา</th>
                             <th className="py-3 px-3.5 w-28 bg-[#F8FAFC]">แผนกผู้รับ</th>
                             <th className="py-3 px-3.5 bg-[#F8FAFC]">จุดติดตั้ง</th>
-                            <th className="py-3 px-3.5 text-center w-36 bg-[#F8FAFC]">สถานะสำเนา</th>
-                            <th className="py-3 px-3.5 w-28 bg-[#F8FAFC]">วันที่ตรวจรับ</th>
+                            <th className="py-3 px-3.5 text-center w-40 bg-[#F8FAFC]">สถานะสำเนา</th>
+                            <th className="py-3 px-3.5 text-center w-32 bg-[#F8FAFC]">วันที่ตรวจรับ</th>
                             <th className="py-3 px-3.5 text-center w-36 bg-[#F8FAFC]">การจัดการ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#F0F0F0]">
-                          {docCopies.map(copy => (
-                            <tr key={copy.id} className="hover:bg-[#F8FAFC] transition-colors">
-                              <td className="py-3 px-3.5 font-mono font-bold text-[#0D99FF] whitespace-nowrap align-middle">
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="text-sm">Copy {copy.copy_no || copy.ccNumber}</span>
-                                  {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
-                                    <span className="inline-block px-2 py-0.5 rounded bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-xs whitespace-nowrap font-sans w-fit">
-                                      Issue {copy.issue_no || '02'} (ทดแทน)
+                          {activeCopies.map(copy => {
+                            const rawNo = copy.copy_no || copy.ccNumber || '01';
+                            const num = parseInt(String(rawNo).replace(/\D/g, ''), 10) || 1;
+                            const isMaster = Boolean(copy.is_master || copy.isMaster || num === 1);
+                            return (
+                              <tr key={copy.id || `active-${num}`} className="hover:bg-[#F8FAFC] transition-colors">
+                                <td className="py-3 px-3.5 whitespace-nowrap align-middle">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-[#F0F7FF] text-[#0284C7] border border-[#BAE6FD]">
+                                      Copy {copy.copy_no || copy.ccNumber}
                                     </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-3.5 font-semibold text-[#1E293B] truncate align-middle text-sm">
-                                {copy.holder_dept || copy.department}
-                              </td>
-                              <td className="py-3 px-3.5 text-slate-700 align-middle text-sm">
-                                <div className="flex items-center gap-1.5 truncate">
-                                  <MapPin size={14} className="text-[#14AE5C] shrink-0" />
-                                  <span className="truncate">
-                                    {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
-                                <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-mono font-semibold border ${
-                                  copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE'
-                                    ? 'bg-[#E6F7ED] text-[#14AE5C] border-[#B3E7C9]'
-                                    : copy.status === 'DISPATCHED_PENDING_RECEIPT'
-                                    ? 'bg-[#FFF8E6] text-[#B87C33] border-[#FDE6B0]'
-                                    : 'bg-[#F5F5F5] text-[#666666] border-[#E5E5E5]'
-                                }`}>
-                                  {copy.status}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3.5 text-slate-600 whitespace-nowrap font-mono text-xs align-middle">
-                                {copy.receipt_confirmed_at ? new Date(copy.receipt_confirmed_at).toLocaleDateString('th-TH') : '-'}
-                              </td>
-                              <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
-                                {(copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE') ? (
-                                  canManageControlledCopy(copy, currentUser) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedReplacementCopy(copy)}
-                                      className="px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] hover:bg-[#FFE5E0] text-[#F24822] border border-[#FDC4B8] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                                      title="แจ้งเอกสารชำรุดหรือสูญหายประจำจุดนี้เพื่อขอออกเล่มทดแทน"
-                                    >
-                                      <AlertTriangle size={13} />
-                                      <span>แจ้งชำรุด/เล่มใหม่</span>
-                                    </button>
+                                    {isMaster ? (
+                                      <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EDE9FE] text-[#6D28D9] border border-[#DDD6FE]">
+                                        Master
+                                      </span>
+                                    ) : (
+                                      <span className="font-sans text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0]">
+                                        Controlled
+                                      </span>
+                                    )}
+                                    {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
+                                      <span className="inline-block px-2 py-0.5 rounded bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-xs whitespace-nowrap font-sans w-fit">
+                                        Issue {copy.issue_no || '02'} (ทดแทน)
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3.5 font-semibold text-[#1E293B] truncate align-middle text-sm">
+                                  {copy.holder_dept || copy.department}
+                                </td>
+                                <td className="py-3 px-3.5 text-slate-700 align-middle text-sm">
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <MapPin size={14} className="text-[#14AE5C] shrink-0" />
+                                    <span className="truncate">
+                                      {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
+                                  {renderCopyStatusBadge(copy.status)}
+                                </td>
+                                <td className="py-3 px-3.5 text-slate-600 text-center whitespace-nowrap font-mono text-xs align-middle">
+                                  {formatReceiptDate(copy.receipt_confirmed_at)}
+                                </td>
+                                <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
+                                  {(copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE') ? (
+                                    canManageControlledCopy(copy, currentUser) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedReplacementCopy(copy)}
+                                        className="px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] hover:bg-[#FFE5E0] text-[#F24822] border border-[#FDC4B8] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                                        title="แจ้งเอกสารชำรุดหรือสูญหายประจำจุดนี้เพื่อขอออกเล่มทดแทน"
+                                      >
+                                        <AlertTriangle size={13} />
+                                        <span>แจ้งชำรุด/เล่มใหม่</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-[11px] text-[#94A3B8] italic">
+                                        เฉพาะผู้ถือสำเนา
+                                      </span>
+                                    )
                                   ) : (
-                                    <span className="text-[11px] text-[#94A3B8] italic">
-                                      เฉพาะผู้ถือสำเนา
-                                    </span>
-                                  )
-                                ) : (
-                                  <span className="text-[#999999] text-xs">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                          {docCopies.length === 0 && (
+                                    <span className="text-[#999999] text-xs">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {activeCopies.length === 0 && (
                             <tr>
                               <td colSpan={6} className="py-8 text-center text-[#888888]">
                                 ยังไม่มีสำเนาควบคุมที่แจกจ่ายสำหรับเอกสารนี้
@@ -590,6 +811,85 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Collapsible Audit Drawer: Recall & Disposal Ledger (ISO 9001 Clause 7.5.3) */}
+                    {recalledCopies.length > 0 && (
+                      <div className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-[#FAFAFA] transition-all">
+                        <button
+                          type="button"
+                          onClick={() => setIsRecallAuditOpen(!isRecallAuditOpen)}
+                          className="w-full px-4 py-3 bg-[#F8FAFC] hover:bg-[#F1F5F9] flex items-center justify-between transition-colors text-left cursor-pointer border-b border-transparent data-[open=true]:border-[#E2E8F0]"
+                          data-open={isRecallAuditOpen}
+                        >
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className="text-base">📁</span>
+                            <span className="font-semibold text-xs sm:text-sm text-[#334155]">
+                              ประวัติการเรียกคืนและทำลายสำเนาฉบับเดิม (Rev.{recalledCopies[0]?.displayRev || '00'}) — สำหรับงาน Audit
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+                              {recalledCopies.length} รายการ
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-[#64748B] font-medium shrink-0 ml-2">
+                            <span>{isRecallAuditOpen ? 'ซ่อนหลักฐาน' : 'คลิกเพื่อดูหลักฐาน ISO 7.5.3'}</span>
+                            <ChevronDown
+                              size={16}
+                              className={`text-[#64748B] transition-transform duration-200 ${isRecallAuditOpen ? 'rotate-180' : ''}`}
+                            />
+                          </div>
+                        </button>
+
+                        {isRecallAuditOpen && (
+                          <div className="p-3 bg-white border-t border-[#E2E8F0] overflow-x-auto max-h-[280px] scrollbar-thin">
+                            <table className="w-full text-left text-sm table-fixed border-collapse">
+                              <thead className="bg-[#F8FAFC] text-[#374151] font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
+                                <tr>
+                                  <th className="py-2.5 px-3 w-36 bg-[#F8FAFC]">หมายเลขสำเนา</th>
+                                  <th className="py-2.5 px-3 w-28 bg-[#F8FAFC]">แผนกผู้ถือเดิม</th>
+                                  <th className="py-2.5 px-3 bg-[#F8FAFC]">จุดติดตั้งเดิม</th>
+                                  <th className="py-2.5 px-3 text-center w-24 bg-[#F8FAFC]">ฉบับเดิม</th>
+                                  <th className="py-2.5 px-3 text-center w-48 bg-[#F8FAFC]">สถานะการเรียกคืน</th>
+                                  <th className="py-2.5 px-3 text-center w-36 bg-[#F8FAFC]">วันที่เรียกคืน/ทำลาย</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#F0F0F0]">
+                                {recalledCopies.map(copy => (
+                                  <tr key={copy.id || `${copy.displayRev}-${copy.copy_no}`} className="hover:bg-[#FFFBF5] transition-colors">
+                                    <td className="py-2.5 px-3 whitespace-nowrap align-middle">
+                                      <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
+                                        Copy {copy.copy_no || copy.ccNumber}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 font-semibold text-[#1E293B] truncate align-middle text-sm">
+                                      {copy.holder_dept || copy.department}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-slate-700 align-middle text-sm">
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <MapPin size={13} className="text-[#94A3B8] shrink-0" />
+                                        <span className="truncate">
+                                          {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center whitespace-nowrap align-middle">
+                                      <span className="inline-block px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] text-xs font-mono font-bold">
+                                        Rev.{copy.displayRev || copy.rev || copy.doc_version || '00'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center whitespace-nowrap align-middle">
+                                      {renderCopyStatusBadge(copy.status)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-slate-600 text-center whitespace-nowrap font-mono text-xs align-middle">
+                                      {formatReceiptDate(copy.destroyed_at || copy.dateDestroyed || copy.recalled_at || copy.dateRecalled || copy.superseded_at)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -677,7 +977,7 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
                               });
                               await UniversalWatermarkService.generateAndDownloadPdf(targetDoc, watermarkConfig, {
                                 userName: currentUser?.name || 'DCC Officer',
-                                userDept: currentUser?.department || 'DCC'
+                                userDept: currentUser?.department || 'DC'
                               });
                               toast.dismiss(toastId);
                               toast.success(`ดาวน์โหลด PDF Rev.${targetRev} สำเร็จ`);
@@ -820,14 +1120,14 @@ const DocumentDetailModal = ({ isOpen, onClose, document: doc, onOpenViewer }) =
           onClose={(success, type, reason) => {
             if (success && type && reason) {
               reportCcDamagedLost(selectedReplacementCopy.id, type, reason);
-              toast.success(`บันทึกแจ้ง${type === 'LOST' ? 'สูญหาย' : 'ชำรุด'}สำหรับ ${selectedReplacementCopy.copy_no || selectedReplacementCopy.ccNumber} (${selectedReplacementCopy.location || selectedReplacementCopy.locationName || 'จุดใช้งาน'}) เรียบร้อยแล้ว`);
+              toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
             }
             setSelectedReplacementCopy(null);
           }}
           instance={selectedReplacementCopy}
         />
       )}
-    </>
+    </ErrorBoundary>
   );
 };
 

@@ -140,16 +140,27 @@ export const hasDocumentAccess = (doc, user) => {
     return true;
   }
 
-  const userDepts = user.depts || (user.department ? [user.department] : []);
-  const docDept = doc.owner_dept || doc.department || doc.dept;
-  const isSameDept = (dept) =>
-    Boolean(dept) &&
-    userDepts.some(
+  const rawUserDepts = [
+    user.primary_department,
+    user.department,
+    user.dept,
+    user.dept_code,
+    ...(Array.isArray(user.departments) ? user.departments : []),
+    ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
+    ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
+    ...(Array.isArray(user.depts) ? user.depts : [])
+  ];
+  const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
+  const docDept = (doc.owner_dept || doc.department || doc.dept || '').toString().trim().toUpperCase();
+  const isSameDept = (dept) => {
+    if (!dept) return false;
+    const cleanDept = String(dept).trim().toUpperCase();
+    return userDepts.some(
       (u) =>
-        u === dept ||
-        (u === 'QA' && dept === 'QA/QC') ||
-        (u === 'QA/QC' && dept === 'QA')
+        u === cleanDept ||
+        ((u === 'QA' || u === 'QA/QC' || u === 'QAQC') && (cleanDept === 'QA' || cleanDept === 'QA/QC' || cleanDept === 'QAQC'))
     );
+  };
 
   // 3. Resolve Scope
   const accessControl = doc.access_control || { scope: doc.access_scope || 'GENERAL' };
@@ -218,18 +229,25 @@ export const canManageControlledCopy = (copy, user) => {
   }
 
   // 2. Department Custodianship Check
-  const copyDept = copy.holder_dept || copy.department || copy.departmentId || copy.dept_code || copy.target_department;
-  const userDept = user.department || user.dept;
-  const userDepts = user.depts || (userDept ? [userDept] : []);
+  const copyDept = (copy.holder_dept || copy.department || copy.departmentId || copy.dept_code || copy.target_department || '').toString().trim().toUpperCase();
+  const rawUserDepts = [
+    user.primary_department,
+    user.department,
+    user.dept,
+    user.dept_code,
+    ...(Array.isArray(user.departments) ? user.departments : []),
+    ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
+    ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
+    ...(Array.isArray(user.depts) ? user.depts : [])
+  ];
+  const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
 
   if (!copyDept) return false;
 
   return userDepts.some(
     (d) =>
-      Boolean(d) &&
-      (d.toUpperCase() === copyDept.toUpperCase() ||
-        (d === 'QA' && copyDept === 'QA/QC') ||
-        (d === 'QA/QC' && copyDept === 'QA'))
+      d === copyDept ||
+      ((d === 'QA' || d === 'QA/QC' || d === 'QAQC') && (copyDept === 'QA' || copyDept === 'QA/QC' || copyDept === 'QAQC'))
   );
 };
 

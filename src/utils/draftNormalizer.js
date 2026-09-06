@@ -79,13 +79,12 @@ export const normalizeDraftToFormState = (draft = {}, defaultState = {}) => {
   const reviewerId = draft.manualReviewerId || draft.manual_reviewer_id || draft.reviewer_id || draft.reviewerId || defaultState.manualReviewerId || defaultState.reviewerId || '';
   const approverId = draft.manualApproverId || draft.manual_approver_id || draft.approver_id || draft.approverId || defaultState.manualApproverId || defaultState.approverId || '';
   
-  const requireAck = draft.require_ack !== undefined 
-    ? Boolean(draft.require_ack)
-    : (draft.requireAck !== undefined 
-      ? Boolean(draft.requireAck) 
-      : (draft.ackRequirement === 'REQUIRED' || defaultState.requireAck || false));
+  const isAckReqStr = draft.ackRequirement !== undefined ? (draft.ackRequirement === 'REQUIRED') : undefined;
+  let requireAck = draft.require_ack ?? draft.requireAck ?? isAckReqStr ?? defaultState.require_ack ?? defaultState.requireAck ?? false;
+  if (typeof requireAck === 'string') requireAck = requireAck === 'true';
+  requireAck = Boolean(requireAck);
   
-  const ackRequirement = draft.ackRequirement || (requireAck ? 'REQUIRED' : 'NOT_REQUIRED');
+  const ackRequirement = draft.ackRequirement ?? (requireAck ? 'REQUIRED' : 'NOT_REQUIRED');
   const ackUserId = draft.ack_user_id || draft.ackUserId || (Array.isArray(draft.ackUserIds) ? draft.ackUserIds[0] : (Array.isArray(draft.ack_user_ids) ? draft.ack_user_ids[0] : (defaultState.ackUserId || '')));
 
   // 7. Standards & Attachments

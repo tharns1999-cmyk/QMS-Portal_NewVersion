@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, AlertTriangle, FileText, CheckCircle2 } from 'lucide-react';
+import { X, AlertTriangle, FileText, CheckCircle2, Copy, MapPin, Building2, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const ReplacementModal = ({ isOpen, onClose, instance }) => {
@@ -10,19 +10,22 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
 
   if (!isOpen || !instance) return null;
 
+  const currentIssue = parseInt((instance.issue_no || instance.issueNumber || '1').replace(/\D/g, ''), 10) || 1;
+  const nextIssueNo = String(currentIssue + 1).padStart(2, '0');
+  const trimmedReason = reasonText.trim();
+  const isReasonValid = trimmedReason.length > 0;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (reasonType === 'LOST' && !reasonText) {
-      toast.error('กรุณาระบุรายละเอียดการสูญหาย');
+    if (!isReasonValid) {
+      toast.error('กรุณาระบุสาเหตุหรือรายละเอียดเพิ่มเติม');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      onClose(true, reasonType, reasonText); // pass to parent to call store
+      await new Promise(resolve => setTimeout(resolve, 300));
+      onClose(true, reasonType, trimmedReason);
     } catch {
       toast.error('เกิดข้อผิดพลาดในการทำรายการ');
     } finally {
@@ -30,158 +33,234 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
     }
   };
 
+  const copyNumber = instance.copy_no || instance.ccNumber || '01';
+  const locationName = instance.location || instance.locationName || instance.station_name || `${instance.holder_dept || instance.department || 'PD'} Station`;
+  const departmentName = instance.holder_dept || instance.department || instance.dept_code || 'PD';
+  const docCode = instance.doc_code || instance.docTitle || instance.title || 'Controlled Document';
+  const docTitle = instance.docName || instance.docTitle || instance.name || docCode;
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-md transition-opacity duration-200 z-50 flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => !isSubmitting && onClose()}
-            className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm"
+            className="fixed inset-0"
           />
           
           <motion.div 
-            initial={{ scale: 0.95, opacity: 0, y: 12 }}
+            initial={{ scale: 0.96, opacity: 0, y: 16 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.95, opacity: 0, y: 12 }}
-            transition={{ type: "spring", stiffness: 320, damping: 30 }}
-            className="relative bg-white w-full max-w-xl overflow-hidden flex flex-col border border-stone-200/50 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] z-10 my-auto"
+            exit={{ scale: 0.96, opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 350, damping: 28 }}
+            className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl shadow-slate-900/15 border border-slate-100 overflow-hidden flex flex-col z-10 my-auto"
           >
-            {/* Header: Claude Aesthetic (White/Flat) */}
-            <div className="bg-white px-8 pt-8 pb-4 border-b border-stone-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#f9f8f6] text-[#b87c33] border border-stone-200 flex items-center justify-center shrink-0">
-                  <AlertTriangle size={24} />
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100/80 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shadow-sm shrink-0">
+                  <AlertTriangle size={22} strokeWidth={2.2} />
                 </div>
                 <div>
-                  <h2 className="text-[#2d2d2d] font-bold text-xl sm:text-2xl tracking-tight">แจ้งเอกสารชำรุด/สูญหาย</h2>
-                  <p className="text-stone-500 text-sm sm:text-base mt-1 font-medium">
-                    ขอออกสำเนาควบคุมทดแทน (Issue 02) ประจำจุดใช้งาน
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                      แจ้งเอกสารชำรุด/สูญหาย
+                    </h2>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                      Issue {nextIssueNo}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    ขอออกสำเนาควบคุมทดแทนประจำจุดใช้งาน
                   </p>
                 </div>
               </div>
               <button 
                 onClick={() => !isSubmitting && onClose()}
-                className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none"
+                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all outline-none"
                 disabled={isSubmitting}
                 title="ปิดหน้าต่าง"
               >
-                <X size={24} />
+                <X size={20} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-8 space-y-6 bg-[#f9f8f6] overflow-y-auto max-h-[75vh]">
-              <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-sm text-sm space-y-3">
-                <div className="flex justify-between items-center pb-3 border-b border-stone-100">
-                  <span className="text-stone-400 font-bold uppercase tracking-widest text-xs">เอกสารควบคุม (Controlled Copy)</span>
-                  <span className="font-mono font-bold text-[#da7756] bg-[#f9f8f6] px-2 py-0.5 rounded-md border border-stone-200">
-                    {instance.doc_code || instance.docTitle || instance.title || 'เอกสารควบคุม'}
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+              {/* Sleek Passport Context Card */}
+              <div className="bg-slate-50/70 border border-slate-200/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-xs font-bold px-2 py-1 rounded-md bg-white border border-slate-200 text-slate-700 shadow-xs shrink-0">
+                    {docCode}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800 truncate text-right flex-1" title={docTitle}>
+                    {docTitle}
                   </span>
                 </div>
-                <div className="text-[#2d2d2d] font-bold text-base leading-snug">
-                  {instance.docName || instance.docTitle || instance.name || instance.doc_code}
-                </div>
-                <div className="grid grid-cols-3 gap-3 pt-2">
-                  <div className="bg-[#f9f8f6] p-3 rounded-xl border border-stone-200">
-                    <span className="text-stone-400 text-[10px] block font-bold uppercase tracking-wider mb-0.5">หมายเลขสำเนา</span>
-                    <span className="font-bold text-[#4a724b] font-mono text-sm">Copy {instance.copy_no || instance.ccNumber || '01'}</span>
+
+                {/* Metadata Grid */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200/40">
+                  <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200/40 font-mono">
+                    <Copy size={13} className="text-slate-400" />
+                    <span>Copy {copyNumber}</span>
                   </div>
-                  <div className="bg-[#f9f8f6] p-3 rounded-xl border border-stone-200">
-                    <span className="text-stone-400 text-[10px] block font-bold uppercase tracking-wider mb-0.5">จุดติดตั้ง</span>
-                    <span className="font-bold text-[#2d2d2d] truncate block text-sm" title={instance.location || instance.locationName || instance.station_name}>
-                      {instance.location || instance.locationName || instance.station_name || `${instance.holder_dept || instance.department} Station`}
-                    </span>
+                  <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200/40">
+                    <MapPin size={13} className="text-slate-400" />
+                    <span className="truncate max-w-[140px]" title={locationName}>{locationName}</span>
                   </div>
-                  <div className="bg-[#f9f8f6] p-3 rounded-xl border border-stone-200">
-                    <span className="text-stone-400 text-[10px] block font-bold uppercase tracking-wider mb-0.5">แผนก</span>
-                    <span className="font-bold text-[#2d2d2d] text-sm font-mono">{instance.holder_dept || instance.department}</span>
+                  <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200/40">
+                    <Building2 size={13} className="text-slate-400" />
+                    <span className="font-medium">{departmentName}</span>
                   </div>
                 </div>
               </div>
 
-              <form id="replacement-form" onSubmit={handleSubmit} className="space-y-6">
+              {/* Form */}
+              <form id="replacement-form" onSubmit={handleSubmit} className="space-y-4">
+                {/* Interactive Request Type Selection */}
                 <div>
-                  <label className="block text-sm font-bold text-[#2d2d2d] mb-3">
-                    ประเภทการแจ้ง <span className="text-[#da7756]">*</span>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2.5">
+                    ประเภทคำขอ <span className="text-rose-500">*</span>
                   </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <label className={`border rounded-xl p-4 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${
-                      reasonType === 'DAMAGED' 
-                        ? 'border-[#b87c33] bg-[#f9f8f6] text-[#b87c33] shadow-sm' 
-                        : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-500'
-                    }`}>
-                      <input 
-                        type="radio" 
-                        name="reasonType" 
-                        value="DAMAGED" 
-                        className="sr-only" 
-                        checked={reasonType === 'DAMAGED'} 
-                        onChange={() => setReasonType('DAMAGED')} 
-                      />
-                      <FileText size={24} className={reasonType === 'DAMAGED' ? 'text-[#b87c33]' : 'text-stone-400'} />
-                      <span className="font-bold text-sm">เอกสารชำรุด (Damaged)</span>
-                    </label>
-                    
-                    <label className={`border rounded-xl p-4 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${
-                      reasonType === 'LOST' 
-                        ? 'border-[#a94442] bg-[#f5e6e6] text-[#a94442] shadow-sm' 
-                        : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-500'
-                    }`}>
-                      <input 
-                        type="radio" 
-                        name="reasonType" 
-                        value="LOST" 
-                        className="sr-only" 
-                        checked={reasonType === 'LOST'} 
-                        onChange={() => setReasonType('LOST')} 
-                      />
-                      <AlertTriangle size={24} className={reasonType === 'LOST' ? 'text-[#a94442]' : 'text-stone-400'} />
-                      <span className="font-bold text-sm">เอกสารสูญหาย (Lost)</span>
-                    </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Damaged Option */}
+                    <div 
+                      onClick={() => setReasonType('DAMAGED')}
+                      className={`relative rounded-2xl p-3.5 flex flex-col cursor-pointer transition-all duration-150 ${
+                        reasonType === 'DAMAGED'
+                          ? 'border-2 border-amber-500 bg-amber-50/40 shadow-xs scale-[1.01]'
+                          : 'border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          reasonType === 'DAMAGED' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          <FileText size={18} />
+                        </div>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-all ${
+                          reasonType === 'DAMAGED'
+                            ? 'bg-amber-500 border-amber-500 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}>
+                          {reasonType === 'DAMAGED' && <Check size={12} strokeWidth={3} />}
+                        </div>
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">
+                        ชำรุด (Damaged)
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        มีเล่มจริงส่งคืน DCC เพื่อทำลาย
+                      </p>
+                    </div>
+
+                    {/* Lost Option */}
+                    <div 
+                      onClick={() => setReasonType('LOST')}
+                      className={`relative rounded-2xl p-3.5 flex flex-col cursor-pointer transition-all duration-150 ${
+                        reasonType === 'LOST'
+                          ? 'border-2 border-amber-500 bg-amber-50/40 shadow-xs scale-[1.01]'
+                          : 'border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          reasonType === 'LOST' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          <AlertTriangle size={18} />
+                        </div>
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-all ${
+                          reasonType === 'LOST'
+                            ? 'bg-amber-500 border-amber-500 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}>
+                          {reasonType === 'LOST' && <Check size={12} strokeWidth={3} />}
+                        </div>
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">
+                        สูญหาย (Lost)
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                        ไม่มีเล่มจริง จำหน่ายออกจากทะเบียน
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-bold text-[#2d2d2d]">
-                    สาเหตุ / รายละเอียดเพิ่มเติม {reasonType === 'LOST' && <span className="text-[#da7756]">*</span>}
-                  </label>
+                {/* Reason Textarea */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      สาเหตุ / รายละเอียดเพิ่มเติม <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {reasonText.length} ตัวอักษร
+                    </span>
+                  </div>
                   <textarea 
                     rows="3"
                     value={reasonText}
                     onChange={(e) => setReasonText(e.target.value)}
-                    className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-[#2d2d2d] placeholder:text-stone-400 focus:border-[#da7756] focus:ring-4 focus:ring-[#da7756]/10 transition-all outline-none font-medium resize-none leading-relaxed shadow-sm"
-                    placeholder={reasonType === 'LOST' ? 'ระบุสาเหตุการสูญหาย...' : 'ระบุส่วนที่ชำรุด (ถ้ามี)...'}
-                    required={reasonType === 'LOST'}
+                    className="w-full bg-white border border-slate-200 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition-all resize-none shadow-xs font-medium"
+                    placeholder={
+                      reasonType === 'LOST' 
+                        ? 'ระบุรายละเอียดและสาเหตุการสูญหาย (จำเป็นต้องระบุ)...' 
+                        : 'ระบุลักษณะการชำรุด เช่น ฉีกขาด, เปียกน้ำ (จำเป็นต้องระบุ)...'
+                    }
+                    required
                   />
+                  {!isReasonValid && reasonText.length > 0 && (
+                    <p className="text-xs text-rose-500 font-medium flex items-center gap-1">
+                      <AlertTriangle size={12} />
+                      กรุณาระบุสาเหตุ (ไม่สามารถส่งเฉพาะช่องว่างได้)
+                    </p>
+                  )}
                 </div>
-                
-                <div className="bg-[#f9f8f6] text-stone-600 p-4 rounded-xl text-sm flex gap-3 border border-stone-200 leading-relaxed shadow-sm">
-                  <CheckCircle2 className="shrink-0 mt-0.5 text-[#4a724b]" size={20} />
-                  <p>เมื่อยืนยัน ระบบจะส่งคำขอไปยังผู้จัดการเพื่ออนุมัติ หลังจากนั้น DCC จะทำการเตรียมเอกสารควบคุมใหม่ภายใต้รหัสเดิม (โดยปรับเพิ่ม Issue No.) ให้ท่านต่อไป</p>
+
+                {/* ISO 9001 Process Callout */}
+                <div className="bg-emerald-50/70 border border-emerald-200/60 rounded-2xl p-3.5 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 size={15} strokeWidth={2.5} />
+                  </div>
+                  <div className="text-xs text-emerald-900 leading-relaxed space-y-0.5">
+                    <div className="font-semibold text-emerald-950">
+                      กระบวนการควบคุมตามมาตรฐาน ISO 9001
+                    </div>
+                    <div>
+                      {reasonType === 'DAMAGED' 
+                        ? `ระบบจะเปิดงานแจกจ่ายเล่มใหม่ (Issue ${nextIssueNo}) และสร้างงานเรียกคืนเล่มเดิม (${copyNumber}) ให้ DCC ตรวจรับมาลงบันทึกทำลาย`
+                        : `ระบบจะเปิดงานแจกจ่ายเล่มใหม่ (Issue ${nextIssueNo}) และตัดจำหน่ายเล่มเดิม (${copyNumber}) ออกจากทะเบียนทันทีโดยไม่ต้องตามเก็บเล่มจริง`
+                      }
+                    </div>
+                  </div>
                 </div>
               </form>
             </div>
 
-            {/* Footer */}
-            <div className="bg-white border-t border-stone-100 px-8 py-5 flex items-center justify-end gap-4 rounded-b-2xl shrink-0">
+            {/* Action Buttons Footer */}
+            <div className="bg-white border-t border-slate-100 px-6 py-4 flex items-center justify-end gap-3 rounded-b-3xl shrink-0">
               <button 
                 type="button"
                 onClick={() => onClose()}
                 disabled={isSubmitting}
-                className="bg-white hover:bg-stone-50 text-stone-600 font-bold text-base px-6 py-3 rounded-xl border border-stone-200 transition-colors focus:ring-4 focus:ring-stone-200 outline-none"
+                className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all outline-none"
               >
                 ยกเลิก (Cancel)
               </button>
               <button 
                 type="submit"
                 form="replacement-form"
-                disabled={isSubmitting}
-                className="bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-base px-6 py-3 rounded-xl shadow-none transition-all flex items-center gap-2 disabled:opacity-50 focus:ring-4 focus:ring-[#da7756]/20 outline-none"
+                disabled={isSubmitting || !isReasonValid}
+                className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-md shadow-amber-500/25 active:scale-[0.98] rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none outline-none flex items-center gap-2"
               >
-                {isSubmitting ? 'กำลังดำเนินการ...' : 'ยืนยันการแจ้ง & ขอฉบับทดแทน'}
+                {isSubmitting ? (
+                  <>กำลังดำเนินการ...</>
+                ) : (
+                  <>ยืนยันการแจ้ง & ขอฉบับทดแทน</>
+                )}
               </button>
             </div>
           </motion.div>

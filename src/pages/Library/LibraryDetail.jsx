@@ -517,9 +517,9 @@ const LibraryDetail = () => {
       <ReplacementModal 
         isOpen={!!replacementInstance} 
         onClose={(success, type, reason) => {
-          if (success) {
+          if (success && type && reason) {
             reportCcDamagedLost(replacementInstance.id, type, reason);
-            toast.success(`ส่งคำขอเบิกเอกสารทดแทนสำเร็จ รอ DCC อนุมัติ`);
+            toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
           }
           setReplacementInstance(null);
         }} 

@@ -260,9 +260,9 @@ describe('Role-Based Task Visibility & Sidebar Badge Tests (No DCC Leak for QMR/
       const taskNavLink = container.querySelector('a[href="/dcc/tasks"]');
       expect(taskNavLink).toBeInTheDocument();
 
-      // DCC Admin has 3 actionable tasks (Distribute, Recall, Receipt)
-      // Badge should display 3
-      expect(taskNavLink.textContent).toContain('3');
+      // DCC Admin has 2 actionable DCC tasks (Distribute, Recall; PD Receipt task is scoped to PD)
+      // Badge should display 2
+      expect(taskNavLink.textContent).toContain('2');
     });
   });
 
