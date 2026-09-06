@@ -8,6 +8,8 @@ import {
   Sparkles, ArrowRight, Printer
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
+import { isActionableTask } from '../../utils/taskFilter';
+import { isDarDraft, isDarRequester } from '../../utils/darHelper';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -32,45 +34,11 @@ const Dashboard = () => {
   const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
 
   // 1. Calculate Stats (Split into Group 1 and Group 2)
-  const isMyTask = (t) => {
-    if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) return false;
-    if (isAdmin || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
+  const myTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
 
-    const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-    
-    const isReceiptTask = 
-      t.type === 'RECEIPT' || 
-      t.taskType === 'RECEIPT' || 
-      t.category === 'RECEIPT' ||
-      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      t.type === 'CONFIRM_RECEIPT' || 
-      t.task_type === 'CONFIRM_RECEIPT' ||
-      t.id?.includes('doc-') ||
-      t.id?.includes('task-receipt-') ||
-      t.title?.includes('ตรวจรับเล่ม') ||
-      t.title?.includes('ตรวจรับเอกสาร');
-
-    if (isReceiptTask) {
-      const taskDept = t.target_department || t.department || t.targetDept || t.destinationDept || t.assignedToDept || t.holder_dept || '';
-      return userDepts.includes(taskDept);
-    }
-
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const taskDept = t.target_department || t.currentHandlerDepartment || t.assignedToDept || '';
-    const isDeptMatched = taskDept && userDepts.includes(taskDept);
-    const isLevelMatched = Number(t.required_approval_level || t.currentHandlerLevel || 1) <= Number(currentUser?.approval_level || currentUser?.level || 1);
-    
-    return (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) || 
-      (isDeptMatched && isLevelMatched) || 
-      (!taskAssigneeId && isDeptMatched);
-  };
-
-  const myTasks = (tasks || []).filter(t => isMyTask(t));
-
-  // Tab 1: Group 1: My Requests (คำขอของฉัน)
-  const userDars = (dars || []).filter(d => isAdmin || d.requesterId === currentUser?.id);
-  const myDraftCount = userDars.filter(d => d.status === 'DRAFT').length;
+  // Tab 1: Group 1: My Requests (คำขอของฉัน - Strict Personal Scoping)
+  const userDars = (dars || []).filter(d => isDarRequester(d, currentUser));
+  const myDraftCount = userDars.filter(d => isDarDraft(d)).length;
   const myInProgressCount = userDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status)).length;
   const myReturnedCount = userDars.filter(d => d.status === 'RETURNED_FOR_REVISION').length;
   const myWaitingCount = userDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE'].includes(d.status)).length;
@@ -99,15 +67,21 @@ const Dashboard = () => {
   }).length;
   const replacementRequestCount = (controlledCopyInstances || []).filter(i => i.status === 'REPLACEMENT_REQUESTED').length;
 
-  // 2. Recent DARs Filtering Logic
-  let recentDars = [...(dars || [])];
+  // 2. Recent DARs Filtering Logic (Enforcing Universal Draft Privacy)
+  let recentDars = (dars || []).filter(d => {
+    // Universal Draft Privacy: drafts are visible ONLY to their creator
+    if (isDarDraft(d)) {
+      return isDarRequester(d, currentUser);
+    }
+    return true;
+  });
 
   if (!isAdmin) {
     if (currentUser?.level <= 3) {
-      recentDars = recentDars.filter(d => d.requesterId === currentUser?.id);
+      recentDars = recentDars.filter(d => isDarRequester(d, currentUser));
     } else {
       const myTaskDarIds = myTasks.map(t => t.darId).filter(Boolean);
-      recentDars = recentDars.filter(d => d.requesterId === currentUser?.id || myTaskDarIds.includes(d.id));
+      recentDars = recentDars.filter(d => isDarRequester(d, currentUser) || myTaskDarIds.includes(d.id));
     }
   }
 
@@ -122,15 +96,15 @@ const Dashboard = () => {
 
   if (activeCardFilter) {
     if (activeCardFilter === 'MY_DRAFT') {
-      recentDars = recentDars.filter(d => d.status === 'DRAFT' && (isAdmin || d.requesterId === currentUser?.id));
+      recentDars = recentDars.filter(d => isDarDraft(d) && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'MY_IN_PROGRESS') {
-      recentDars = recentDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && (isAdmin || d.requesterId === currentUser?.id));
+      recentDars = recentDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'MY_RETURNED') {
-      recentDars = recentDars.filter(d => d.status === 'RETURNED_FOR_REVISION' && (isAdmin || d.requesterId === currentUser?.id));
+      recentDars = recentDars.filter(d => d.status === 'RETURNED_FOR_REVISION' && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'MY_WAITING') {
-      recentDars = recentDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && (isAdmin || d.requesterId === currentUser?.id));
+      recentDars = recentDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'MY_CANCELLED') {
-      recentDars = recentDars.filter(d => d.status === 'CANCELLED_OVERDUE' && (isAdmin || d.requesterId === currentUser?.id));
+      recentDars = recentDars.filter(d => d.status === 'CANCELLED_OVERDUE' && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'ACTION_REVIEW') {
       const matchingDarIds = isAdmin ? (dars || []).filter(d => d.status === 'UNDER_REVIEW').map(d => d.id) : actionReviewTasks.map(t => t.darId);
       recentDars = recentDars.filter(d => matchingDarIds.includes(d.id));
@@ -207,11 +181,16 @@ const Dashboard = () => {
     return '-';
   };
 
+  const isDraftDar = (dar) => isDarDraft(dar);
+
   const renderActionButtons = (dar) => {
     if (dar.isTask) {
       return (
         <button 
-          onClick={() => navigate(`/tasks/approve-replacement/${dar.taskId}`)}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/tasks/approve-replacement/${dar.taskId}`);
+          }}
           className="p-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-all active:scale-90 cursor-pointer"
           title="ดำเนินการอนุมัติ"
         >
@@ -220,25 +199,30 @@ const Dashboard = () => {
       );
     }
     
-    const isRequesterOfDar = dar.requesterId === currentUser?.id;
+    const canManageDraft = isDarRequester(dar, currentUser);
     const activeTask = (tasks || []).find(t => t.darId === dar.id && isMyTask(t));
     
-    if (dar.status === 'DRAFT' && isRequesterOfDar) {
+    if (isDraftDar(dar) && canManageDraft) {
       return (
         <div className="flex items-center gap-1 justify-center">
           <button 
-            onClick={() => {
-              const basePath = dar.type === 'NEW' ? '/dar/new/document' : 
-                              dar.type === 'REVISION' ? '/dar/new/revision' : '/dar/new/obsolete';
-              navigate(`${basePath}?draftId=${dar.id}`);
+            onClick={(e) => {
+              e.stopPropagation();
+              const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                              (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                              '/dcc/dar/new/obsolete';
+              navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                state: { draftId: dar.id, draftData: dar }
+              });
             }}
             className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all active:scale-90 cursor-pointer"
-            title="แก้ไขต่อ"
+            title="แก้ไขต่อ (Resume Draft)"
           >
             <Edit size={16} />
           </button>
           <button 
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (window.confirm('คุณต้องการลบแบบร่างนี้ทิ้งใช่หรือไม่?')) {
                 deleteDar(dar.id);
               }
@@ -872,32 +856,70 @@ const Dashboard = () => {
         {/* Data Table */}
         <div className="overflow-x-auto w-full max-w-full">
           {recentDars.length > 0 ? (
-            <table className="w-full text-left text-xs sm:text-sm table-fixed border-collapse">
+            <table className="w-full text-left text-xs sm:text-sm border-collapse min-w-[960px]">
               <thead className="table-header">
                 <tr>
-                  <th className="px-4 py-3.5 w-20 text-center select-none">จัดการ</th>
-                  <th className="px-4 py-3.5 w-36 font-mono select-none">เลขที่ DAR</th>
-                  <th className="px-4 py-3.5 select-none">ชื่อเอกสาร / หัวข้อ</th>
-                  <th className="px-4 py-3.5 w-28 select-none">ประเภท</th>
-                  {isAdmin && <th className="px-4 py-3.5 w-24 select-none">แผนก</th>}
-                  <th className="px-4 py-3.5 w-36 select-none">สถานะ</th>
-                  <th className="px-4 py-3.5 w-52 select-none">ผู้รับผิดชอบปัจจุบัน</th>
-                  <th className="px-4 py-3.5 w-32 text-right font-mono select-none">วันที่ยื่น</th>
+                  <th className="px-4 py-3.5 w-20 min-w-[80px] text-center select-none">จัดการ</th>
+                  <th className="px-4 py-3.5 w-40 min-w-[140px] font-mono select-none">เลขที่ DAR</th>
+                  <th className="px-4 py-3.5 min-w-[220px] select-none">ชื่อเอกสาร / หัวข้อ</th>
+                  <th className="px-4 py-3.5 w-28 min-w-[100px] select-none">ประเภท</th>
+                  {isAdmin && <th className="px-4 py-3.5 w-24 min-w-[80px] select-none">แผนก</th>}
+                  <th className="px-4 py-3.5 w-36 min-w-[130px] select-none">สถานะ</th>
+                  <th className="px-4 py-3.5 w-48 min-w-[160px] select-none">ผู้รับผิดชอบปัจจุบัน</th>
+                  <th className="px-4 py-3.5 w-32 min-w-[110px] text-right font-mono select-none">วันที่ยื่น</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {recentDars.map((dar) => (
-                  <tr key={dar.id} className="table-row group">
+                  <tr 
+                    key={dar.id} 
+                    className="table-row group hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (dar.isTask) {
+                        navigate(`/tasks/approve-replacement/${dar.taskId}`);
+                      } else if (isDraftDar(dar)) {
+                        const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                        (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                        '/dcc/dar/new/obsolete';
+                        navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                          state: { draftId: dar.id, draftData: dar }
+                        });
+                      } else {
+                        navigate(`/dar/${dar.id}`);
+                      }
+                    }}
+                  >
                     <td className="px-4 py-3.5 text-center">
                       {renderActionButtons(dar)}
                     </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap font-mono font-medium text-sm">
-                      <span 
-                        className="text-[#0D99FF] bg-[#E5F4FF] px-2 py-1 rounded-md border border-[#B8E1FF] inline-block hover:underline cursor-pointer transition-all"
-                        onClick={() => dar.isTask ? navigate(`/tasks/approve-replacement/${dar.taskId}`) : navigate(`/dar/${dar.id}`)}
-                      >
-                        {dar.id}
-                      </span>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      {isDraftDar(dar) ? (
+                        <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                            (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                            '/dcc/dar/new/obsolete';
+                            navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                              state: { draftId: dar.id, draftData: dar }
+                            });
+                          }}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors"
+                          title="คลิกเพื่อแก้ไขแบบร่างต่อ"
+                        >
+                          ฉบับร่าง (Draft)
+                        </span>
+                      ) : (
+                        <span 
+                          className="text-[#0D99FF] bg-[#E5F4FF] px-2 py-1 rounded-md border border-[#B8E1FF] inline-block font-mono font-bold text-xs sm:text-sm hover:underline cursor-pointer transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dar.isTask ? navigate(`/tasks/approve-replacement/${dar.taskId}`) : navigate(`/dar/${dar.id}`);
+                          }}
+                        >
+                          {dar.darNumber || (String(dar.id).startsWith('draft_') ? 'ฉบับร่าง (Draft)' : dar.id)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 font-medium text-[#1E1E1E] break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-[#0D99FF] transition-colors" title={dar.title}>
                       {dar.title}

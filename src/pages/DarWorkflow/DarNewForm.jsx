@@ -38,26 +38,36 @@ const DarNewForm = () => {
   const params = useParams();
   const location = useLocation();
 
-  const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
   const { currentUser, addDar, saveDarDraft, deleteDar, dars, darRequests, documents, masterUsers, reviewUsers, approveUsers, documentTypes, simulatedDate } = useStore();
   
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
 
   const initialFormState = {
+    id: '',
+    darNo: '',
     docType: '',
     docIdInput: '',
+    docCode: '',
     title: '',
+    department: currentUser?.department || 'PD',
+    date: new Date().toISOString().split('T')[0],
     requestDetail: '',
     requestReason: '',
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     distributions: [],
+    distributedDepartments: [],
+    formDistributionMode: 'ALL_DEPTS',
     effectiveDate: '',
     file: null,
     manualReviewerId: '',
     manualApproverId: '',
     relatedStandards: [],
     otherStandardDetail: '',
+    accessScope: 'GENERAL',
+    authorizedDepartments: [],
     access_control: {
       scope: 'GENERAL',
       authorized_depts: [],
@@ -74,7 +84,14 @@ const DarNewForm = () => {
   useEffect(() => {
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
-      const draft = location.state?.draftData || allDarsList.find(d => (d.id === targetDraftId || d.dar_no === targetDraftId || d.darNo === targetDraftId) && (d.status === 'DRAFT' || d.isDraft));
+      const draft = location.state?.draftData || allDarsList.find(d => {
+        if (!targetDraftId) return false;
+        return (
+          String(d.id) === targetDraftId || 
+          String(d.dar_no) === targetDraftId || 
+          String(d.darNo) === targetDraftId
+        );
+      });
       if (draft) {
         const hydrated = normalizeDraftToFormState(draft, initialFormState);
         setFormData(hydrated);

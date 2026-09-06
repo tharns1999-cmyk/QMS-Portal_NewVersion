@@ -19,7 +19,8 @@ const DarRevisionForm = () => {
   const [searchParams] = useSearchParams();
   const params = useParams();
   const location = useLocation();
-  const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
   const prefillDocId = location.state?.prefillDocId;
   const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate } = useStore();
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
@@ -60,7 +61,14 @@ const DarRevisionForm = () => {
   useEffect(() => {
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
-      const draft = location.state?.draftData || allDarsList.find(d => (d.id === targetDraftId || d.dar_no === targetDraftId || d.darNo === targetDraftId) && (d.status === 'DRAFT' || d.isDraft));
+      const draft = location.state?.draftData || allDarsList.find(d => {
+        if (!targetDraftId) return false;
+        return (
+          String(d.id) === targetDraftId || 
+          String(d.dar_no) === targetDraftId || 
+          String(d.darNo) === targetDraftId
+        );
+      });
       if (draft) {
         if (draft.sourceType === 'PERIODIC_REVIEW') {
           try {

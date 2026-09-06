@@ -153,8 +153,18 @@ const ControlledCopyRegister = () => {
 
   // Categorized Copies Counts
   const counts = useMemo(() => {
-    const pendingIssue = allCopies.filter(c => c.status === 'PENDING_ISSUE' || c.status === 'PENDING_RECEIPT').length;
-    const dispatched = allCopies.filter(c => c.status === 'DISPATCHED_PENDING_RECEIPT').length;
+    const pendingIssue = allCopies.filter(c => 
+      c.status === 'PENDING_ISSUE' || 
+      c.status === 'PENDING_PRINT' || 
+      c.status === 'PENDING_DISPATCH'
+    ).length;
+
+    const dispatched = allCopies.filter(c => 
+      c.status === 'DISPATCHED_PENDING_RECEIPT' || 
+      c.status === 'DISPATCHED' || 
+      c.status === 'PENDING_RECEIPT' || 
+      c.status === 'IN_TRANSIT'
+    ).length;
     
     // Recall count: Copies with PENDING_RECALL, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
     const recallCopies = allCopies.filter(c => {
@@ -252,11 +262,14 @@ const ControlledCopyRegister = () => {
   // Filtered List for Tab 1: PENDING_ISSUE
   const pendingIssueCopies = useMemo(() => {
     return allCopies.filter(c => {
-      const isPending = c.status === 'PENDING_ISSUE' || c.status === 'PENDING_RECEIPT';
+      const isPending = 
+        c.status === 'PENDING_ISSUE' || 
+        c.status === 'PENDING_PRINT' || 
+        c.status === 'PENDING_DISPATCH';
       if (!isPending) return false;
 
       const docCode = (c.doc_code || c.docTitle || '').toLowerCase();
-      const dept = (c.holder_dept || c.department || '').toLowerCase();
+      const dept = (c.target_department || c.targetDepartment || c.recipientDepartment || c.holder_dept || c.department || '').toLowerCase();
       const loc = (c.location || c.locationName || '').toLowerCase();
       const copyNo = (c.copy_no || c.ccNumber || '').toLowerCase();
       const query = searchTerm.toLowerCase();
@@ -264,7 +277,7 @@ const ControlledCopyRegister = () => {
       if (searchTerm && !docCode.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
         return false;
       }
-      if (selectedDeptFilter !== 'ALL' && (c.holder_dept || c.department) !== selectedDeptFilter) {
+      if (selectedDeptFilter !== 'ALL' && (c.target_department || c.holder_dept || c.department) !== selectedDeptFilter) {
         return false;
       }
       return true;
@@ -274,10 +287,15 @@ const ControlledCopyRegister = () => {
   // Filtered List for Tab 2: DISPATCHED_TRACKING
   const dispatchedCopies = useMemo(() => {
     return allCopies.filter(c => {
-      if (c.status !== 'DISPATCHED_PENDING_RECEIPT') return false;
+      const isDispatched = 
+        c.status === 'DISPATCHED_PENDING_RECEIPT' || 
+        c.status === 'DISPATCHED' || 
+        c.status === 'PENDING_RECEIPT' || 
+        c.status === 'IN_TRANSIT';
+      if (!isDispatched) return false;
 
       const docCode = (c.doc_code || c.docTitle || '').toLowerCase();
-      const dept = (c.holder_dept || c.department || '').toLowerCase();
+      const dept = (c.target_department || c.targetDepartment || c.recipientDepartment || c.holder_dept || c.department || '').toLowerCase();
       const loc = (c.location || c.locationName || '').toLowerCase();
       const copyNo = (c.copy_no || c.ccNumber || '').toLowerCase();
       const query = searchTerm.toLowerCase();
@@ -285,7 +303,7 @@ const ControlledCopyRegister = () => {
       if (searchTerm && !docCode.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
         return false;
       }
-      if (selectedDeptFilter !== 'ALL' && (c.holder_dept || c.department) !== selectedDeptFilter) {
+      if (selectedDeptFilter !== 'ALL' && (c.target_department || c.holder_dept || c.department) !== selectedDeptFilter) {
         return false;
       }
       return true;
@@ -942,18 +960,20 @@ const ControlledCopyRegister = () => {
                       </div>
                     </td>
                     <td className="py-3.5 px-3.5 align-middle">
-                      <span className="font-semibold text-[#1E293B] text-sm">{copy.holder_dept || copy.department}</span>
+                      <span className="font-semibold text-[#1E293B] text-sm">
+                        {copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department}
+                      </span>
                     </td>
                     <td className="py-3.5 px-3.5 align-middle">
                       <span className="font-medium text-slate-700 flex items-center gap-1.5 text-sm">
                         <MapPin size={14} className="text-slate-400" />
-                        {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
+                        {copy.location || copy.locationName || copy.station_name || `${copy.target_department || copy.holder_dept || copy.department || 'PD'} Head Office`}
                       </span>
                     </td>
                     <td className="py-3.5 px-3.5 text-center align-middle">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
                         <span className="w-2 h-2 rounded-full bg-[#D49800] animate-pulse" />
-                        รอยืนยันรับเล่ม
+                        รอตรวจรับ ({copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department})
                       </span>
                     </td>
                     <td className="py-3.5 px-3.5 text-xs text-slate-600 font-mono align-middle">

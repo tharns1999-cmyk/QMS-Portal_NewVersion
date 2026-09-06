@@ -22,8 +22,9 @@ import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
 import { hasDocumentAccess, canUserAccessDocument } from '../utils/accessControl';
 import { calculateTaskDueDate } from '../utils/slaCalculator';
 import { generateInternalDarNumber } from '../utils/darNumberGenerator';
+import { isSameDepartment, userMatchesDepartment } from '../utils/taskFilter';
 
-export { canUserAccessDocument, hasDocumentAccess, calculateTaskDueDate, generateInternalDarNumber };
+export { canUserAccessDocument, hasDocumentAccess, calculateTaskDueDate, generateInternalDarNumber, isSameDepartment, userMatchesDepartment };
 
 // 1. Master Data Users (Roles: DCC_ADMIN, DEPT_ADMIN, GENERAL_USER)
 export const MASTER_DATA_USER = [
@@ -1934,7 +1935,7 @@ const useStore = create(persist((set, get) => ({
     
     // Check if draft already exists
     const existingIndex = list.findIndex(
-      (d) => d.id === targetId || (targetId && (d.dar_no === targetId || d.darNo === targetId))
+      (d) => String(d.id) === String(targetId) || (targetId && (String(d.dar_no) === String(targetId) || String(d.darNo) === String(targetId)))
     );
 
     let updatedDars;
@@ -2515,6 +2516,10 @@ const useStore = create(persist((set, get) => ({
                 type: 'DCC_DISTRIBUTE',
                 status: 'PENDING',
                 assigneeId: 'U001',
+                assignedToRole: 'DCC_ADMIN',
+                target_role: 'DCC',
+                department: 'DC',
+                target_department: 'DC',
                 dueDate: distSla.dueDate,
                 cancelDate: distSla.cancelDate,
                 isUrgent: distSla.isUrgent,
@@ -2549,6 +2554,11 @@ const useStore = create(persist((set, get) => ({
                   department: deptName,
                   departmentId: deptName,
                   dept_code: deptName,
+                  target_department: deptName,
+                  targetDepartment: deptName,
+                  recipientDepartment: deptName,
+                  recipient_department: deptName,
+                  owner_dept: newDoc.department,
                   holder_name: `${deptName} (${locName})`,
                   location: locName,
                   locationName: locName,
@@ -2769,6 +2779,11 @@ const useStore = create(persist((set, get) => ({
                       department: deptName,
                       departmentId: deptName,
                       dept_code: deptName,
+                      target_department: deptName,
+                      targetDepartment: deptName,
+                      recipientDepartment: deptName,
+                      recipient_department: deptName,
+                      owner_dept: newDoc.department,
                       holder_name: `${deptName} (${locName})`,
                       location: locName,
                       locationName: locName,
@@ -3069,17 +3084,44 @@ const useStore = create(persist((set, get) => ({
     const docOwnerDept = relatedDoc?.department || relatedDar?.department || copy.owner_dept || 'PD';
 
     // Cross-department routing: target_department of this specific copy MUST take precedence over docOwnerDept!
-    const explicitTargetDept = copy.target_department || copy.targetDepartment;
-    const destinationDept = explicitTargetDept || 
-      (isMasterCopy && !copy.holder_dept && !copy.destinationDept ? docOwnerDept : null) ||
-      copy.holder_dept || 
+    let resolvedTargetDept = 
+      copy.target_department || 
+      copy.targetDepartment || 
+      copy.recipientDepartment || 
+      copy.recipient_department || 
       copy.destinationDept || 
-      copy.destination_dept || 
-      copy.departmentId || 
-      copy.dept_code || 
-      (copy.department && copy.department !== docOwnerDept ? copy.department : null) || 
-      copy.location_dept || 
-      (isMasterCopy ? docOwnerDept : (copy.department || docOwnerDept || 'QA'));
+      copy.destination_dept ||
+      copy.holder_dept;
+
+    if (!resolvedTargetDept && (copy.departmentId || copy.department_id || copy.dept_code || copy.deptCode)) {
+      resolvedTargetDept = copy.departmentId || copy.department_id || copy.dept_code || copy.deptCode;
+    }
+
+    if (!resolvedTargetDept && (copy.station_id || copy.locationId || copy.location)) {
+      const targetLocId = copy.station_id || copy.locationId;
+      const foundStation = STANDARD_STATIONS.find(s => s.id === targetLocId || s.name === copy.location);
+      if (foundStation?.departmentId) {
+        resolvedTargetDept = foundStation.departmentId;
+      }
+    }
+
+    if (!resolvedTargetDept && copy.department && copy.department !== docOwnerDept) {
+      resolvedTargetDept = copy.department;
+    }
+    if (!resolvedTargetDept && copy.location_dept) {
+      resolvedTargetDept = copy.location_dept;
+    }
+    if (!resolvedTargetDept && copy.dept && copy.dept !== docOwnerDept) {
+      resolvedTargetDept = copy.dept;
+    }
+    if (!resolvedTargetDept && copy.department) {
+      resolvedTargetDept = copy.department;
+    }
+    if (!resolvedTargetDept) {
+      resolvedTargetDept = isMasterCopy ? docOwnerDept : (copy.dept || docOwnerDept || 'QA');
+    }
+
+    const destinationDept = resolvedTargetDept;
 
     // 4. Resolve strictly targeted recipient/requester for this department
     let requesterId = null;
@@ -3089,7 +3131,7 @@ const useStore = create(persist((set, get) => ({
     if (copy.requester_id || copy.requesterId || copy.holderId) {
       const candidateId = copy.requester_id || copy.requesterId || copy.holderId;
       const candidateUser = (state.masterUsers || []).find(u => u.id === candidateId);
-      if (candidateUser && (candidateUser.department === destinationDept || (candidateUser.depts && candidateUser.depts.includes(destinationDept)))) {
+      if (candidateUser && userMatchesDepartment(candidateUser, destinationDept)) {
         requesterId = candidateUser.id;
         requesterName = candidateUser.name;
       }
@@ -3099,9 +3141,8 @@ const useStore = create(persist((set, get) => ({
     if (!requesterId && relatedDar) {
       const darReqId = relatedDar.requester_id || relatedDar.requesterId || relatedDar.userId || relatedDar.requester?.id || relatedDar.created_by || relatedDar.createdBy;
       const darReqUser = (state.masterUsers || []).find(u => u.id === darReqId);
-      const darReqDept = darReqUser?.department || (darReqUser?.depts ? darReqUser.depts[0] : null) || relatedDar.department;
 
-      if (darReqDept === destinationDept && darReqUser) {
+      if (darReqUser && userMatchesDepartment(darReqUser, destinationDept)) {
         requesterId = darReqId;
         requesterName = darReqUser.name || relatedDar.requester_name || relatedDar.requesterName || relatedDar.requester;
       }
@@ -3109,23 +3150,29 @@ const useStore = create(persist((set, get) => ({
 
     // If no assignee or assignee is not in destinationDept, find supervisor/officer in destinationDept
     if (!requesterId) {
-      const deptUsers = (state.masterUsers || []).filter(u => u.department === destinationDept || (u.depts && u.depts.includes(destinationDept)));
-      // Prefer departmental users who are NOT DCC Admin so the recipient is the actual department staff
+      // Find users matching destinationDept, excluding pure DCC admins
+      const deptUsers = (state.masterUsers || []).filter(u => userMatchesDepartment(u, destinationDept));
       const nonDccDeptUsers = deptUsers.filter(u => !u.isDcc && u.role !== 'DCC_ADMIN');
-      const candidateDeptUsers = nonDccDeptUsers.length > 0 ? nonDccDeptUsers : deptUsers;
+      const candidatePool = nonDccDeptUsers.length > 0 ? nonDccDeptUsers : deptUsers;
 
-      const supervisorUser = candidateDeptUsers.find(u => u.level >= 4 || u.role === 'DEPT_ADMIN' || u.role === 'SUPERVISOR') || candidateDeptUsers[0];
+      // Prioritize users whose PRIMARY department matches destinationDept (to avoid picking someone from another department whose secondary depts matches)
+      const primaryDeptUsers = candidatePool.filter(u => isSameDepartment(u.primary_department || u.department || u.dept, destinationDept));
+      const finalCandidates = primaryDeptUsers.length > 0 ? primaryDeptUsers : candidatePool;
+
+      const supervisorUser = finalCandidates.find(u => u.level >= 4 || u.role === 'DEPT_ADMIN' || u.role === 'SUPERVISOR') || finalCandidates[0];
       if (supervisorUser) {
         requesterId = supervisorUser.id;
         requesterName = supervisorUser.name;
       } else {
-        const anyDeptUser = candidateDeptUsers[0] || (state.masterUsers || []).find(u => u.department === destinationDept || (u.depts && u.depts.includes(destinationDept)));
-        if (anyDeptUser) {
-          requesterId = anyDeptUser.id;
-          requesterName = anyDeptUser.name;
+        // Look in MASTER_DEPARTMENTS for head of this department
+        const foundDept = (state.masterDepartments || MASTER_DEPARTMENTS || []).find(d => isSameDepartment(d.id, destinationDept) || isSameDepartment(d.name, destinationDept));
+        if (foundDept?.headUserId) {
+          const headUser = (state.masterUsers || []).find(u => u.id === foundDept.headUserId);
+          requesterId = foundDept.headUserId;
+          requesterName = headUser?.name || foundDept.headName || `${destinationDept} Controller`;
         } else {
-          requesterId = isMasterCopy && destinationDept === docOwnerDept ? (relatedDar?.requesterId || 'U001') : null;
-          requesterName = isMasterCopy && destinationDept === docOwnerDept ? (relatedDar?.requesterName || 'ธนาวุฒิ สมควรกิจดำรง') : `${destinationDept} Controller`;
+          requesterId = isMasterCopy && isSameDepartment(destinationDept, docOwnerDept) ? (relatedDar?.requesterId || 'U001') : null;
+          requesterName = isMasterCopy && isSameDepartment(destinationDept, docOwnerDept) ? (relatedDar?.requesterName || 'ธนาวุฒิ สมควรกิจดำรง') : `${destinationDept} Controller`;
         }
       }
     }
@@ -3141,6 +3188,8 @@ const useStore = create(persist((set, get) => ({
       dept_code: destinationDept,
       target_department: destinationDept,
       targetDepartment: destinationDept,
+      recipientDepartment: destinationDept,
+      recipient_department: destinationDept,
       requester_id: requesterId,
       requester_name: requesterName,
       dateIssued: dispatchedAt.split('T')[0]
@@ -3182,6 +3231,8 @@ const useStore = create(persist((set, get) => ({
       location_name: copy.location || copy.locationName || destinationDept || '',
       target_department: destinationDept,
       targetDepartment: destinationDept,
+      recipientDepartment: destinationDept,
+      recipient_department: destinationDept,
       destinationDept: destinationDept,
       destination_dept: destinationDept,
       department: destinationDept,
@@ -3279,7 +3330,7 @@ const useStore = create(persist((set, get) => ({
     const targetDept = copy.holder_dept || copy.department || copy.target_department || copy.dept_code;
     
     // 🛡️ Strict Authorization Guard with DCC Admin / QMR Wildcard Bypass:
-    if (!isWildcard && targetDept && !userDepts.includes(targetDept)) {
+    if (!isWildcard && targetDept && !userMatchesDepartment(user, targetDept)) {
       console.warn(`[Guard] Unauthorized confirmHardcopyReceipt: User ${user?.name} (${user?.primary_department || user?.department}) cannot confirm receipt for copy ${targetCopyId} (${targetDept})`);
       return state;
     }
@@ -3825,6 +3876,11 @@ const useStore = create(persist((set, get) => ({
             department: deptName,
             departmentId: deptName,
             dept_code: deptName,
+            target_department: deptName,
+            targetDepartment: deptName,
+            recipientDepartment: deptName,
+            recipient_department: deptName,
+            owner_dept: createdDoc.department,
             holder_name: `${deptName} (${locName})`,
             location: locName,
             locationName: locName,
@@ -4165,6 +4221,11 @@ const useStore = create(persist((set, get) => ({
         department: deptName,
         departmentId: deptName,
         dept_code: deptName,
+        target_department: deptName,
+        targetDepartment: deptName,
+        recipientDepartment: deptName,
+        recipient_department: deptName,
+        owner_dept: newDoc.department,
         holder_name: `${deptName} (${locName})`,
         location: locName,
         locationName: locName,

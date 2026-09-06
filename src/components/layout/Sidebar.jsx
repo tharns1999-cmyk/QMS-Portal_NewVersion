@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
+import { isActionableTask } from '../../utils/taskFilter';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -62,38 +63,8 @@ const Sidebar = () => {
   const isAdmin = isDccAdmin;
 
   // Task Counts Calculations
-  const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-  const userTasks = (tasks || []).filter(t => {
-    if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) return false;
-    if (isAdmin || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
-
-    const isReceiptTask = 
-      t.type === 'RECEIPT' || 
-      t.taskType === 'RECEIPT' || 
-      t.category === 'RECEIPT' ||
-      t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      t.type === 'CONFIRM_RECEIPT' || 
-      t.task_type === 'CONFIRM_RECEIPT' ||
-      t.id?.includes('doc-') ||
-      t.id?.includes('task-receipt-') ||
-      t.title?.includes('ตรวจรับเล่ม') ||
-      t.title?.includes('ตรวจรับเอกสาร');
-
-    if (isReceiptTask) {
-      const taskDept = t.target_department || t.department || t.targetDept || t.destinationDept || t.assignedToDept || t.holder_dept || '';
-      return userDepts.includes(taskDept);
-    }
-
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const taskDept = t.target_department || t.currentHandlerDepartment || t.assignedToDept || '';
-    const isMyTask = (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) || 
-      (taskDept && userDepts.includes(taskDept) && Number(t.required_approval_level || t.currentHandlerLevel || 1) <= Number(currentUser?.approval_level || currentUser?.level || 1)) ||
-      (!taskAssigneeId && taskDept && userDepts.includes(taskDept));
-    
-    return isMyTask;
-  });
-  const myTaskCount = userTasks.length;
+  const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
+  const myTaskCount = userTasks.filter(t => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED').length;
 
   const ccTaskCount = (controlledCopyInstances || []).filter(inst => {
     const doc = (documents || []).find(d => d.id === (inst.doc_id || inst.docId));

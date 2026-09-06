@@ -127,7 +127,7 @@ const TaskApprove = () => {
                <div>
                   <h3 className="text-xs text-slate-400 uppercase tracking-wider font-bold">คำร้องขอเอกสาร (DAR)</h3>
                   <p className="text-xl font-bold text-[#1E1E1E] font-mono mt-0.5">
-                    {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+                    {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
                   </p>
                </div>
                <span className="badge-system">{dar.type}</span>

@@ -4,6 +4,7 @@ import useStore from '../../store/useStore';
 import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { isDarDraft, isDarRequester } from '../../utils/darHelper';
 
 const DarList = () => {
   const navigate = useNavigate();
@@ -13,12 +14,10 @@ const DarList = () => {
 
   const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
   
-  // Department-Wide Visibility
-  const myDars = (dars || []).filter(dar => 
-    isAdmin || 
-    dar.department === currentUser?.department || 
-    dar.requesterId === currentUser?.id
-  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Strict Personal Scoping: "คำร้อง DAR ของฉัน" displays ONLY the current user's requests
+  const myDars = (dars || [])
+    .filter(dar => isDarRequester(dar, currentUser))
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
   const filteredDars = myDars.filter(dar => {
     if (!searchTerm) return true;
@@ -71,19 +70,24 @@ const DarList = () => {
     return '-';
   };
 
+  const isDraftDar = (dar) => isDarDraft(dar);
+
   const renderActionButtons = (dar) => {
-    const isRequesterOfDar = dar.requesterId === currentUser?.id;
+    const isRequesterOfDar = isDarRequester(dar, currentUser);
     const activeTask = (tasks || []).find(t => t.darId === dar.id && isMyTask(t));
     
-    if (dar.status === 'DRAFT' && isRequesterOfDar) {
+    if (isDraftDar(dar)) {
       return (
         <div className="flex items-center justify-center gap-1">
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              const basePath = dar.type === 'NEW' ? '/dar/new/document' : 
-                              dar.type === 'REVISION' ? '/dar/new/revision' : '/dar/new/obsolete';
-              navigate(`${basePath}?draftId=${dar.id}`);
+              const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                              (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                              '/dcc/dar/new/obsolete';
+              navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                state: { draftId: dar.id, draftData: dar }
+              });
             }}
             className="action-icon-btn text-[#0D99FF] hover:bg-[#E5F4FF]"
             title="ดำเนินการต่อ (Resume Draft)"
@@ -180,8 +184,8 @@ const DarList = () => {
     <div className="space-y-6 max-w-7xl mx-auto pb-4 w-full max-w-full overflow-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">ทะเบียนคำร้อง DAR (DAR Register)</h2>
-          <p className="text-xs text-[#666666] mt-0.5">รายการคำร้องขอขึ้นทะเบียน แก้ไข หรือยกเลิกเอกสารทั้งหมดในแผนก</p>
+          <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">คำร้อง DAR ของฉัน (My DAR Requests)</h2>
+          <p className="text-xs text-[#666666] mt-0.5">รายการคำร้องขอจัดการเอกสารที่คุณเป็นผู้ยื่นคำร้อง ติดตามสถานะและจัดการฉบับร่างของคุณ</p>
         </div>
         <button 
           onClick={() => navigate('/dar/new')}
@@ -223,29 +227,62 @@ const DarList = () => {
       {/* Table */}
       <div className="w-full bg-white border border-[#E2E8F0] rounded-xl overflow-hidden shadow-2xs flex flex-col min-h-0 h-auto">
         <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
-          <table className="w-full text-left text-sm table-fixed border-collapse">
+          <table className="w-full text-left text-sm border-collapse min-w-[960px]">
             <thead className="table-header sticky top-0 z-10 bg-[#F8FAFC] border-b border-[#E2E8F0] shadow-xs backdrop-blur-sm whitespace-nowrap">
               <tr>
-                <th className="px-3.5 py-3 w-16 text-center bg-[#F8FAFC]">การจัดการ</th>
-                <th className="px-3.5 py-3 w-32 font-mono bg-[#F8FAFC]">เลขที่ DAR</th>
-                <th className="px-3.5 py-3 bg-[#F8FAFC]">ชื่อเอกสาร / หัวข้อ</th>
-                <th className="px-3.5 py-3 w-24 bg-[#F8FAFC]">ประเภท</th>
-                {isAdmin && <th className="px-3.5 py-3 w-20 bg-[#F8FAFC]">แผนก</th>}
-                <th className="px-3.5 py-3 w-32 bg-[#F8FAFC]">สถานะ</th>
-                <th className="px-3.5 py-3 w-48 bg-[#F8FAFC]">ผู้รับผิดชอบปัจจุบัน</th>
-                <th className="px-3.5 py-3 w-28 text-right font-mono bg-[#F8FAFC]">วันที่ยื่น</th>
+                <th className="px-3.5 py-3 w-20 min-w-[80px] text-center bg-[#F8FAFC]">การจัดการ</th>
+                <th className="px-3.5 py-3 w-40 min-w-[140px] font-mono bg-[#F8FAFC]">เลขที่ DAR</th>
+                <th className="px-3.5 py-3 min-w-[220px] bg-[#F8FAFC]">ชื่อเอกสาร / หัวข้อ</th>
+                <th className="px-3.5 py-3 w-28 min-w-[100px] bg-[#F8FAFC]">ประเภท</th>
+                {isAdmin && <th className="px-3.5 py-3 w-24 min-w-[80px] bg-[#F8FAFC]">แผนก</th>}
+                <th className="px-3.5 py-3 w-36 min-w-[130px] bg-[#F8FAFC]">สถานะ</th>
+                <th className="px-3.5 py-3 w-48 min-w-[160px] bg-[#F8FAFC]">ผู้รับผิดชอบปัจจุบัน</th>
+                <th className="px-3.5 py-3 w-32 min-w-[110px] text-right font-mono bg-[#F8FAFC]">วันที่ยื่น</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagination.paginatedData.map((dar) => (
-                <tr key={dar.id} className="hover:bg-[#F8FAFC] transition-colors cursor-pointer" onClick={() => navigate(`/dar/${dar.id}`)}>
+                <tr 
+                  key={dar.id} 
+                  className="hover:bg-[#F8FAFC] transition-colors cursor-pointer" 
+                  onClick={() => {
+                    if (isDraftDar(dar)) {
+                      const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                      (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                      '/dcc/dar/new/obsolete';
+                      navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                        state: { draftId: dar.id, draftData: dar }
+                      });
+                    } else {
+                      navigate(`/dar/${dar.id}`);
+                    }
+                  }}
+                >
                   <td className="px-3 py-2.5 text-center">
                     {renderActionButtons(dar)}
                   </td>
-                  <td className="px-3.5 py-3 whitespace-nowrap font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px]">
-                    <span className="hover:underline">
-                      {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ฉบับร่าง (Draft)' : dar.id)}
-                    </span>
+                  <td className="px-3.5 py-3 whitespace-nowrap">
+                    {isDraftDar(dar) ? (
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                          (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                          '/dcc/dar/new/obsolete';
+                          navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                            state: { draftId: dar.id, draftData: dar }
+                          });
+                        }}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors"
+                        title="คลิกเพื่อแก้ไขแบบร่างต่อ"
+                      >
+                        ฉบับร่าง (Draft)
+                      </span>
+                    ) : (
+                      <span className="font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px] hover:underline">
+                        {dar.darNumber || (String(dar.id).startsWith('draft_') ? 'ฉบับร่าง (Draft)' : dar.id)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3.5 py-3 font-medium text-slate-800 break-all break-words min-w-0 [overflow-wrap:anywhere] text-sm sm:text-[15px] leading-relaxed" title={dar.title}>
                     {dar.title}
@@ -275,7 +312,9 @@ const DarList = () => {
                 <tr>
                   <td colSpan={isAdmin ? 8 : 7} className="px-6 py-14 text-center text-[#888888]">
                     <FileText className="w-10 h-10 text-[#CCCCCC] mx-auto mb-2" strokeWidth={1.5} />
-                    <p className="text-xs font-medium text-[#888888]">ไม่พบรายการคำร้อง DAR ที่ตรงกับเงื่อนไขการค้นหา</p>
+                    <p className="text-xs font-medium text-[#888888]">
+                      {searchTerm ? 'ไม่พบรายการคำร้อง DAR ที่ตรงกับเงื่อนไขการค้นหา' : 'ไม่พบรายการคำร้อง DAR ที่คุณเป็นผู้ยื่น'}
+                    </p>
                   </td>
                 </tr>
               )}

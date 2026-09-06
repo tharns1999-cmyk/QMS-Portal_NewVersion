@@ -4,7 +4,7 @@ import useStore from '../../store/useStore';
 import { FileText, ChevronLeft, CheckCircle, AlertCircle, Activity, Sparkles } from 'lucide-react';
 import DARComments from '../../components/workflow/DARComments';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
-import { getDarReason, getDarDetail, getDarDocInfo } from '../../utils/darHelper';
+import { getDarReason, getDarDetail, getDarDocInfo, isDarDraft, isDarRequester } from '../../utils/darHelper';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 
 const DarDetail = () => {
@@ -22,6 +22,27 @@ const DarDetail = () => {
   const docInfo = getDarDocInfo(dar, documents);
 
   if (!dar) return <div className="p-6 text-[#666666] font-medium">ไม่พบข้อมูลคำร้อง DAR</div>;
+
+  // Universal Draft Privacy Guard: Drafts are strictly confidential to the creator
+  if (isDarDraft(dar) && !isDarRequester(dar, currentUser)) {
+    return (
+      <div className="max-w-xl mx-auto my-12 p-8 bg-white border border-amber-200 rounded-2xl shadow-sm text-center">
+        <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4">
+          <AlertCircle size={24} />
+        </div>
+        <h3 className="text-lg font-bold text-slate-800 mb-2">ไม่สามารถเข้าถึงเอกสารฉบับร่างได้</h3>
+        <p className="text-sm text-slate-600 mb-6">
+          คำร้องนี้อยู่ในสถานะแบบร่าง (Draft) ซึ่งเป็นสิทธิ์ส่วนบุคคลของผู้สร้างคำร้องเท่านั้น ผู้ใช้อื่นหรือผู้ดูแลระบบไม่สามารถเปิดดูได้
+        </p>
+        <button 
+          onClick={() => navigate(-1)} 
+          className="btn-secondary text-xs px-4 py-2 cursor-pointer"
+        >
+          ย้อนกลับ
+        </button>
+      </div>
+    );
+  }
 
   const isAdmin = currentUser.isDcc || currentUser.role === 'DCC_ADMIN' || currentUser.id === 'u5' || currentUser.id === 'U001';
 
@@ -47,10 +68,10 @@ const DarDetail = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono font-bold text-[#0D99FF] text-lg">
-                {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+                {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
               </span>
               <span className="badge-system">{dar.type}</span>
-              {(dar.isDraft || dar.status === 'DRAFT') && (
+              {(dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_')) && (
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                   ฉบับร่าง (Draft)
                 </span>

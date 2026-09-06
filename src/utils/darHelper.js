@@ -106,3 +106,47 @@ export const getAckNames = (dar, timeline) => {
   }
   return '-';
 };
+
+/**
+ * Universal Draft check
+ * Returns true if the DAR is a draft (unsubmitted)
+ */
+export const isDarDraft = (dar) => {
+  if (!dar) return false;
+  return Boolean(
+    dar.isDraft || 
+    dar.status === 'DRAFT' || 
+    String(dar.id).startsWith('draft_')
+  );
+};
+
+/**
+ * Checks if currentUser is the creator / requester of the DAR
+ */
+export const isDarRequester = (dar, currentUser) => {
+  if (!dar || !currentUser) return false;
+  const userIds = [currentUser.id, currentUser.empId].filter(Boolean);
+  const userNames = [currentUser.name, currentUser.fullName].filter(Boolean);
+
+  const darRequesterIds = [dar.requesterId, dar.requester_id, dar.createdBy, dar.created_by].filter(Boolean);
+  const isMatchId = darRequesterIds.some(id => userIds.includes(id));
+  if (isMatchId) return true;
+
+  if (dar.requester && (userIds.includes(dar.requester) || userNames.includes(dar.requester))) return true;
+  if (dar.createdByName && userNames.includes(dar.createdByName)) return true;
+
+  return false;
+};
+
+/**
+ * Universal Draft Privacy Guard:
+ * Drafts can ONLY be viewed by their creator/requester, regardless of user role.
+ */
+export const canViewDar = (dar, currentUser) => {
+  if (!dar || !currentUser) return false;
+  if (isDarDraft(dar)) {
+    return isDarRequester(dar, currentUser);
+  }
+  return true;
+};
+

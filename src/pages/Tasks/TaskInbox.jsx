@@ -27,6 +27,7 @@ import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfi
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { isActionableTask, isDccUser, isSameDepartment } from '../../utils/taskFilter';
 
 /**
  * Format ISO string or date string to readable localized Thai format
@@ -107,6 +108,14 @@ const getTaskIconConfig = (task) => {
     };
   }
   if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
+    if (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') {
+      return {
+        icon: <Clock size={18} strokeWidth={2} />,
+        bg: 'bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] group-hover:bg-[#FEF3C7] group-hover:border-[#FCD34D]',
+        label: 'ติดตามการส่งมอบ (รอปลายทางตรวจรับ)',
+        badgeClass: 'bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]'
+      };
+    }
     return {
       icon: <Send size={18} strokeWidth={2} />,
       bg: 'bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] group-hover:bg-[#D1EFFF] group-hover:border-[#80CFFF]',
@@ -142,7 +151,6 @@ const TaskInbox = () => {
   const navigate = useNavigate();
   const { currentUser, tasks, dars, externalDocuments, mockDateOffset, checkSLA } = useStore();
   const [activeTab, setActiveTab] = useState('ALL');
-  const [deptFilter, setDeptFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
@@ -153,85 +161,27 @@ const TaskInbox = () => {
   }, [mockDateOffset, checkSLA]);
 
   // DCC Admin check
-  const isDccAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'EMP-001' || currentUser?.id === 'U001');
-  const isQmr = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR');
+  const isDccAdmin = isDccUser(currentUser);
   const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-  const userApprovalLevel = Number(currentUser?.approval_level || currentUser?.level || 1);
+  const primaryDept = currentUser?.primary_department || currentUser?.department || '';
 
-  const userTasks = (tasks || []).filter(t => {
-    // 🛡️ Reactive Completion Filter: Immediately drop tasks that are completed/resolved
-    if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) {
-      return false;
-    }
-
-    // 0. Superuser/Wildcard bypass for QMR (executive quality oversight across departments)
-    if (isQmr) {
-      return true;
-    }
-
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
-
-    // 1. งานที่ระบุชื่อผู้รับผิดชอบเจาะจงถึง User นี้โดยตรง
-    if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
-      return true;
-    }
-
-    const normType = (t.type || t.taskType || t.task_type || t.category || '').toUpperCase();
-
-    // 2. งานของสายงาน DCC (เฉพาะงานแจกจ่าย, เรียกคืน, ทะเบียน, ดำเนินการสำเนาควบคุม)
-    const isDccSpecificTask = [
-      'DCC_CHECK', 'DCC_REGISTER', 'DCC_DISTRIBUTE', 'DCC_RECALL',
-      'DISTRIBUTION', 'RECALL', 'DCC_ACTION', 'DCC_ISSUE',
-      'DCC_RECALL_WITH_CHECKLIST', 'RECALL_HARDCOPY',
-      'CC_REPLACEMENT_APPROVAL', 'DCC_REPLACEMENT'
-    ].includes(normType) ||
-      normType.startsWith('DCC_') ||
-      t.assignedToRole === 'DCC_ADMIN' ||
-      t.target_role === 'DCC';
-
-    if (isDccAdmin && isDccSpecificTask) {
-      return true;
-    }
-
-    // 3. 📦 Department-Pooled Receipt Task (งานตรวจรับเล่มสำเนาประจำสถานี/แผนก)
-    const isReceiptTask = 
-      normType === 'RECEIPT' || 
-      normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      normType === 'CONFIRM_RECEIPT' ||
-      t.id?.includes('doc-') ||
-      t.id?.includes('task-receipt-') ||
-      t.title?.includes('ตรวจรับเล่ม') ||
-      t.title?.includes('ตรวจรับเอกสาร');
-
-    if (isReceiptTask) {
-      const taskDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
-      return userDepts.includes(taskDept) || isDccAdmin;
-    }
-
-    // 4. งาน Review / Approve / Revise / Ack ประจำแผนก: ต้องตรงกับแผนกของ User เท่านั้น
-    const isDeptReviewOrApprove = [
-      'REVIEW', 'EXT_REVIEW', 'APPROVE', 'APPROVAL', 'EXT_APPROVAL',
-      'REVISE', 'ACK', 'ACKNOWLEDGE'
-    ].includes(normType);
-
-    if (isDeptReviewOrApprove) {
-      const taskDept = t.department || t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.holder_dept || '';
-      const isDeptMatch = Boolean(taskDept && userDepts.includes(taskDept));
-      const requiredLevel = Number(t.required_approval_level || t.requiredLevel || t.currentHandlerLevel || t.min_level || 1);
-      const isLevelMatch = userApprovalLevel >= requiredLevel;
-
-      // ห้าม DCC_ADMIN หรือผู้ใช้อื่นมองเห็น Review / Approve Task ของแผนกอื่นในกล่องงานนี้
-      return isDeptMatch && isLevelMatch;
-    }
-
-    // 5. Department-pooled generic tasks (unassigned)
-    const taskDept = t.department || t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.holder_dept || '';
-    if (!taskAssigneeId && taskDept && userDepts.includes(taskDept)) {
-      return true;
-    }
-
-    return false;
+  // Default to user's primary department for personal view (!isDccAdmin), or 'ALL' for DCC Admin
+  const [deptFilter, setDeptFilter] = useState(() => {
+    if (isDccAdmin) return 'ALL';
+    return primaryDept || 'ALL';
   });
+
+  // Ensure department filter updates when profile switches
+  useEffect(() => {
+    if (!isDccAdmin && primaryDept) {
+      setDeptFilter(primaryDept);
+    } else if (isDccAdmin) {
+      setDeptFilter('ALL');
+    }
+  }, [currentUser?.id, currentUser?.department, currentUser?.primary_department, isDccAdmin, primaryDept]);
+
+  // Unified Actionable Tasks Filter: strictly scopes DCC operational tasks to DCC staff only
+  const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
 
   const availableDepts = useMemo(() => {
     if (isDccAdmin) {
@@ -270,7 +220,14 @@ const TaskInbox = () => {
     if (deptFilter !== 'ALL') {
       filtered = filtered.filter(t => {
         const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
-        return tDept === deptFilter;
+        const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
+        if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
+          if (tDept && !isSameDepartment(tDept, deptFilter)) {
+            return false;
+          }
+          return true;
+        }
+        return isSameDepartment(tDept, deptFilter);
       });
     }
     if (activeTab !== 'ALL') {
@@ -295,6 +252,13 @@ const TaskInbox = () => {
   const pagination = useTablePagination(filteredTasks, 10);
 
   const getRiskBadge = (task) => {
+    if (task.delivery_status === 'DISPATCHED_TRACKING' || task.tracking_status === 'WAITING_RECEIPT') {
+      return (
+        <span className="badge-pending flex items-center gap-1 bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] font-medium text-xs px-2 py-0.5 rounded">
+          <Clock size={11} className="text-[#D49800]" /> รอปลายทางตรวจรับ
+        </span>
+      );
+    }
     if (!task.dueDate) return <span className="badge-active flex items-center gap-1"><CheckCircle size={11} /> ปกติ (Normal)</span>;
     
     const today = new Date();
@@ -342,10 +306,11 @@ const TaskInbox = () => {
   };
 
   const getTaskCount = (tabId) => {
-    if (tabId === 'ALL') return userTasks.length;
+    const isActionRequired = (t) => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED';
+    if (tabId === 'ALL') return userTasks.filter(isActionRequired).length;
     return userTasks.filter(t => {
       const cat = normalizeTaskCategory(t);
-      return cat === tabId;
+      return cat === tabId && isActionRequired(t);
     }).length;
   };
 
@@ -394,7 +359,10 @@ const TaskInbox = () => {
     else if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL') navigate(`/tasks/approve/${task.id}`);
     else if (normType === 'ACK' || normType === 'ACKNOWLEDGE') navigate(`/tasks/ack/${task.id}`);
     else if (normType === 'REVISE') navigate(`/tasks/revise/${task.darId || task.referenceId || task.id}`);
-    else if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') navigate(`/controlled-copy?tab=PENDING_ISSUE`);
+    else if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
+      const targetTab = (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') ? 'DISPATCHED_TRACKING' : 'PENDING_ISSUE';
+      navigate(`/controlled-copy?tab=${targetTab}`);
+    }
     else if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || normType === 'RECALL_HARDCOPY' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') navigate(`/controlled-copy?tab=RECALL_CHECKLIST`);
     else if (normType.startsWith('DCC_')) navigate(`/controlled-copy`);
   };
@@ -469,19 +437,25 @@ const TaskInbox = () => {
             <span className="text-slate-500 font-bold shrink-0 flex items-center gap-1.5 mr-1">
               <Building2 size={14} className="text-indigo-600" /> แผนก:
             </span>
-            <button
-              onClick={() => setDeptFilter('ALL')}
-              className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
-                deptFilter === 'ALL'
-                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-              }`}
-            >
-              🏢 งานทั้งหมดทุกแผนก ({userTasks.length})
-            </button>
+            {(isDccAdmin || availableDepts.length > 1) && (
+              <button
+                onClick={() => setDeptFilter('ALL')}
+                className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                  deptFilter === 'ALL'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                {isDccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${userTasks.length})` : `📁 ทุกแผนกที่สังกัด (${userTasks.length})`}
+              </button>
+            )}
             {availableDepts.map(dept => {
               const deptCount = userTasks.filter(t => {
                 const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
+                const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
+                if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
+                  return true;
+                }
                 return tDept === dept;
               }).length;
               const isPrimary = (currentUser?.primary_department || currentUser?.department) === dept;
@@ -539,6 +513,9 @@ const TaskInbox = () => {
                 const norm = (task.type || task.taskType || '').toUpperCase();
                 if (norm === 'ACK' || norm === 'ACKNOWLEDGE') return 'รับทราบเอกสาร (ACK)';
                 if (norm === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT') return 'ตรวจรับเล่มสำเนา (Receipt)';
+                if ((norm === 'DCC_DISTRIBUTE' || norm === 'DCC_ISSUE') && (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED')) {
+                  return 'ติดตามการส่งมอบ';
+                }
                 return null;
               };
 
@@ -570,7 +547,7 @@ const TaskInbox = () => {
                         <span className={`px-2.5 py-0.5 rounded text-xs font-semibold ${iconConfig.badgeClass}`}>
                           {iconConfig.label}
                         </span>
-                        {(task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK') && (
+                        {((task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK') && task.actionRequired !== false && task.delivery_status !== 'DISPATCHED_TRACKING') && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-300 shadow-xs">
                             <Zap size={11} className="fill-amber-500 text-amber-600" />
                             <span>งานด่วน (Fast-Track SLA)</span>

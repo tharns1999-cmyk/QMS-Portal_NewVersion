@@ -68,7 +68,7 @@ const withSuspense = (Component) => (
   </Suspense>
 );
 
-const AliasRedirect = ({ to }) => {
+export const AliasRedirect = ({ to }) => {
   const params = useParams();
   const location = useLocation();
   let resolvedPath = to;
@@ -140,12 +140,12 @@ function App() {
           </Route>
 
           {/* Aliases for backwards compatibility */}
-          <Route path="dashboard" element={<Navigate to="/dcc/dashboard" replace />} />
-          <Route path="dar/new" element={<Navigate to="/dcc/dar/new" replace />} />
-          <Route path="dar/new/document" element={<Navigate to="/dcc/dar/new/document" replace />} />
-          <Route path="dar/new/revision" element={<Navigate to="/dcc/dar/new/revision" replace />} />
-          <Route path="dar/new/obsolete" element={<Navigate to="/dcc/dar/new/obsolete" replace />} />
-          <Route path="dar/list" element={<Navigate to="/dcc/dar/list" replace />} />
+          <Route path="dashboard" element={<AliasRedirect to="/dcc/dashboard" />} />
+          <Route path="dar/new" element={<AliasRedirect to="/dcc/dar/new" />} />
+          <Route path="dar/new/document" element={<AliasRedirect to="/dcc/dar/new/document" />} />
+          <Route path="dar/new/revision" element={<AliasRedirect to="/dcc/dar/new/revision" />} />
+          <Route path="dar/new/obsolete" element={<AliasRedirect to="/dcc/dar/new/obsolete" />} />
+          <Route path="dar/list" element={<AliasRedirect to="/dcc/dar/list" />} />
           <Route path="dar/:id" element={<AliasRedirect to="/dcc/dar/:id" />} />
 
           <Route path="tasks" element={<Navigate to="/dcc/tasks" replace />} />
