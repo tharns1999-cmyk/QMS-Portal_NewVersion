@@ -917,7 +917,7 @@ const Dashboard = () => {
                             dar.isTask ? navigate(`/tasks/approve-replacement/${dar.taskId}`) : navigate(`/dar/${dar.id}`);
                           }}
                         >
-                          {dar.darNumber || (String(dar.id).startsWith('draft_') ? 'ฉบับร่าง (Draft)' : dar.id)}
+                          {dar.darNumber || (isDarDraft(dar) ? 'ฉบับร่าง (Draft)' : '-')}
                         </span>
                       )}
                     </td>
@@ -925,9 +925,9 @@ const Dashboard = () => {
                       {dar.title}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
-                      <span className="px-2 py-0.5 bg-[#F5F5F5] text-[#666666] rounded-md font-mono text-[10px] font-medium uppercase tracking-wider border border-[#E5E5E5]">
-                        {dar.type}
-                      </span>
+                        <span className="px-2 py-0.5 bg-[#F5F5F5] text-[#666666] rounded-md font-mono text-[10px] font-medium uppercase tracking-wider border border-[#E5E5E5]">
+                          {({'NEW': 'จัดทำใหม่', 'NEW_DOCUMENT': 'จัดทำใหม่', 'REVISION': 'ขอแก้ไข', 'REVISE': 'ขอแก้ไข', 'OBSOLETE': 'ขอยกเลิก', 'REPLACEMENT': 'ขอสำเนาทดแทน'})[dar.type] || dar.type}
+                        </span>
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-3.5 text-[#444444] font-medium font-mono text-xs whitespace-nowrap">

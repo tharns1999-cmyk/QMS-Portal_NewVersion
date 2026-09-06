@@ -302,6 +302,12 @@ describe('Recall Workflow for Damaged Controlled Copies & Replacement Request Ar
     );
 
     // Verify damaged recall badge exists in Task Inbox
-    expect(screen.getAllByText(/เล่มชำรุดรอเรียกคืน/i).length).toBeGreaterThanOrEqual(1);
+    // The new 3-Level card design renders the SLA badge as "เล่มชำรุด" (short form)
+    // OR the type chip as "เรียกคืน (ชำรุด)" — either confirms the damaged state is visible
+    const damagedBadge =
+      screen.queryAllByText(/เล่มชำรุด/i).length > 0 ||
+      screen.queryAllByText(/เรียกคืน.*ชำรุด/i).length > 0;
+    expect(damagedBadge).toBe(true);
+
   });
 });

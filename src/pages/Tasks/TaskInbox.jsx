@@ -1,24 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { 
-  Clock, 
-  CheckCircle, 
-  Search, 
-  ChevronRight, 
-  FileEdit, 
-  Eye, 
-  ExternalLink, 
-  AlertCircle, 
+import {
+  Clock,
+  CheckCircle,
+  Search,
+  ChevronRight,
+  FileEdit,
+  Eye,
+  ExternalLink,
+  AlertCircle,
   AlertTriangle,
-  FilterX, 
-  Layers, 
-  CheckSquare, 
-  Bell, 
-  ShieldCheck, 
+  FilterX,
+  Layers,
+  CheckSquare,
+  Bell,
+  ShieldCheck,
   Send,
   Calendar,
   Building2,
+  MapPin,
   Zap
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -29,27 +30,23 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { isActionableTask, isDccUser, isSameDepartment } from '../../utils/taskFilter';
 
-/**
- * Format ISO string or date string to readable localized Thai format
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Date Formatter (null-safe)
+// ─────────────────────────────────────────────────────────────────────────────
 const formatThaiDateTime = (dateInput) => {
-  if (!dateInput) return '-';
+  if (!dateInput) return null;
   try {
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return String(dateInput);
-
     const thaiMonths = [
       'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
       'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
     ];
-
     const day = d.getDate();
     const month = thaiMonths[d.getMonth()];
     const year = d.getFullYear();
-
     const dateStr = String(dateInput);
-    const hasTime = dateStr.includes('T') || dateStr.includes(':');
-
+    const hasTime = dateStr.includes('T') || dateStr.match(/\d{2}:\d{2}/);
     if (hasTime) {
       const hours = String(d.getHours()).padStart(2, '0');
       const minutes = String(d.getMinutes()).padStart(2, '0');
@@ -61,100 +58,306 @@ const formatThaiDateTime = (dateInput) => {
   }
 };
 
-/**
- * Get task icon and theme configuration based on task type
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 1: Extract official document code — returns null if none found
+// NEVER returns raw task.id / UUIDs / timestamps
+// ─────────────────────────────────────────────────────────────────────────────
+const getDocumentIdentifier = (task) => {
+  // 1. Explicit code fields
+  const explicit =
+    task.docCode ||
+    task.doc_code ||
+    task.doc_number ||
+    task.docNumber ||
+    task.darNumber ||
+    task.document_code ||
+    task.edCode;
+  if (explicit) return String(explicit).trim();
+
+  // 2. Extract standard doc code pattern from title (e.g. SOP-PD-01, WI-WH-002)
+  const titleMatch = String(task.title || '').match(
+    /\b([A-Z]{1,5}-[A-Z]{1,5}-\d{2,4}(?:-\d{1,3})?)\b/
+  );
+  if (titleMatch) return titleMatch[1];
+
+  // 3. darId that looks like a formal number (DAR-YYYY-XXX)
+  if (task.darId && /^DAR-\d{4}-\d+/.test(task.darId)) return task.darId;
+
+  // 4. Nothing — caller decides to hide the chip
+  return null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 2: Extract/clean the real document title
+// ─────────────────────────────────────────────────────────────────────────────
+const TITLE_PREFIX_PATTERNS = [
+  /^\[.*?\]\s*/,                                            // [Any bracket prefix]
+  /^ตรวจรับเอกสารควบคุมฉบับพิมพ์:\s*/,
+  /^แจกจ่ายเอกสาร Controlled Copy \(NEW\):\s*/,
+  /^แจกจ่ายสำเนาควบคุม:\s*/,
+  /^จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสาร(?:ภายนอก)?:\s*/,
+  /^เรียกคืนและทำลายเอกสาร(?:ภายนอก)?(?:ที่ถูกยกเลิก)?:\s*/,
+  /^เรียกคืนสำเนาเอกสารที่ถูกยกเลิก:\s*/,
+  /^ส่งคืนสำเนาควบคุม:\s*/,
+];
+
+const stripTitlePrefixes = (raw) => {
+  if (!raw) return '';
+  let result = raw.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pattern of TITLE_PREFIX_PATTERNS) {
+      const next = result.replace(pattern, '');
+      if (next !== result) { result = next.trim(); changed = true; }
+    }
+  }
+  return result;
+};
+
+const getDocumentTitle = (task) => {
+  // 1. Explicit name fields
+  const explicit =
+    task.docName ||
+    task.doc_name ||
+    task.documentName ||
+    task.doc_title;
+  if (explicit) return explicit;
+
+  // 2. Strip prefixes from task.title
+  const stripped = stripTitlePrefixes(task.title || '');
+  if (stripped) return stripped;
+
+  return task.title || '';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 3: Extract copy number chip label
+// ─────────────────────────────────────────────────────────────────────────────
+const getCopyChip = (task) => {
+  const raw =
+    task.copy_no ||
+    task.copyNo ||
+    task.copyNumber ||
+    task.copy_number;
+  if (raw) return `Copy ${String(raw).padStart(2, '0')}`;
+
+  // Try to pull "Copy 03" from title
+  const m = String(task.title || '').match(/\bCopy\s+(\d+)\b/i);
+  if (m) return `Copy ${m[1].padStart(2, '0')}`;
+
+  return null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 4: Short Thai task type label
+// ─────────────────────────────────────────────────────────────────────────────
+const getTaskTypeShortLabel = (normType, task) => {
+  if (normType === 'REVIEW' || normType === 'EXT_REVIEW') return 'ทบทวนเอกสาร';
+  if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL') return 'อนุมัติคำร้อง';
+  if (normType === 'CC_REPLACEMENT_APPROVAL') return 'อนุมัติสำเนาทดแทน';
+  if (normType === 'ACK' || normType === 'ACKNOWLEDGE') return 'รับทราบเอกสาร';
+  if (normType === 'REVISE') return 'แก้ไขคำร้อง';
+  if (
+    normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+    normType === 'CONFIRM_RECEIPT' ||
+    normType === 'RECEIPT'
+  ) return 'ตรวจรับสำเนา';
+  if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
+    if (task?.delivery_status === 'DISPATCHED_TRACKING' || task?.status === 'COMPLETED') {
+      return 'ติดตามการส่งมอบ';
+    }
+    return 'แจกจ่ายสำเนา';
+  }
+  if (
+    normType === 'DCC_RECALL' ||
+    normType === 'DCC_RECALL_WITH_CHECKLIST' ||
+    normType === 'RECALL_HARDCOPY' ||
+    normType === 'RECALL' ||
+    normType === 'OBSOLETE_RECALL'
+  ) {
+    if (task?.isDamaged || task?.reason === 'DAMAGED' || task?.title?.includes('ชำรุด') || task?.description?.includes('ชำรุด')) {
+      return 'เรียกคืน (ชำรุด)';
+    }
+    return 'เรียกคืนสำเนา';
+  }
+  if (normType.startsWith('DCC_')) return 'งาน DCC';
+  return 'งาน';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 5: Icon + color config per task type
+// ─────────────────────────────────────────────────────────────────────────────
 const getTaskIconConfig = (task) => {
   const normType = (task.type || task.taskType || '').toUpperCase();
-  
+
   if (normType === 'REVIEW' || normType === 'EXT_REVIEW') {
     return {
-      icon: <Eye size={18} strokeWidth={2} />,
-      bg: 'bg-[#FFF9EB] text-[#F59E0B] border border-[#FDE68A] group-hover:bg-[#FEF3C7] group-hover:border-[#FCD34D]',
-      label: 'Review Task',
-      badgeClass: 'bg-[#FFF9EB] text-[#B45309] border border-[#FDE68A]'
+      icon: <Eye size={17} strokeWidth={2} />,
+      iconBg: 'bg-indigo-50 text-indigo-600 border border-indigo-100',
+      chipClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
     };
   }
   if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
     return {
-      icon: <ShieldCheck size={18} strokeWidth={2} />,
-      bg: 'bg-[#ECFDF5] text-[#10B981] border border-[#A7F3D0] group-hover:bg-[#D1FAE5] group-hover:border-[#6EE7B7]',
-      label: 'Approve Task',
-      badgeClass: 'bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]'
+      icon: <ShieldCheck size={17} strokeWidth={2} />,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      chipClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
     };
   }
   if (normType === 'ACK' || normType === 'ACKNOWLEDGE') {
     return {
-      icon: <Bell size={18} strokeWidth={2} />,
-      bg: 'bg-[#EFF6FF] text-[#3B82F6] border border-[#BFDBFE] group-hover:bg-[#DBEAFE] group-hover:border-[#93C5FD]',
-      label: 'Acknowledge Task',
-      badgeClass: 'bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]'
+      icon: <Bell size={17} strokeWidth={2} />,
+      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
+      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
   }
   if (normType === 'REVISE') {
     return {
-      icon: <FileEdit size={18} strokeWidth={2} />,
-      bg: 'bg-[#FFF1F2] text-[#F43F5E] border border-[#FECDD3] group-hover:bg-[#FFE4E6] group-hover:border-[#FDA4AF]',
-      label: 'Returned Task',
-      badgeClass: 'bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3]'
+      icon: <FileEdit size={17} strokeWidth={2} />,
+      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
+      chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
     };
   }
-  if (normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT') {
+  if (
+    normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+    task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+    normType === 'CONFIRM_RECEIPT' ||
+    normType === 'RECEIPT'
+  ) {
     return {
-      icon: <Layers size={18} strokeWidth={2} />,
-      bg: 'bg-[#F5F3FF] text-[#8B5CF6] border border-[#DDD6FE] group-hover:bg-[#EDE9FE] group-hover:border-[#C4B5FD]',
-      label: 'Receipt Task',
-      badgeClass: 'bg-[#F5F3FF] text-[#6D28D9] border border-[#DDD6FE]'
+      icon: <Layers size={17} strokeWidth={2} />,
+      iconBg: 'bg-violet-50 text-violet-600 border border-violet-100',
+      chipClass: 'bg-violet-50 text-violet-700 border border-violet-200',
     };
   }
   if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
     if (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') {
       return {
-        icon: <Clock size={18} strokeWidth={2} />,
-        bg: 'bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] group-hover:bg-[#FEF3C7] group-hover:border-[#FCD34D]',
-        label: 'ติดตามการส่งมอบ (รอปลายทางตรวจรับ)',
-        badgeClass: 'bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]'
+        icon: <Clock size={17} strokeWidth={2} />,
+        iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+        chipClass: 'bg-amber-50 text-amber-700 border border-amber-200',
       };
     }
     return {
-      icon: <Send size={18} strokeWidth={2} />,
-      bg: 'bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] group-hover:bg-[#D1EFFF] group-hover:border-[#80CFFF]',
-      label: 'Distribution Task',
-      badgeClass: 'bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]'
+      icon: <Send size={17} strokeWidth={2} />,
+      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
+      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
   }
-  if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || normType === 'RECALL_HARDCOPY' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') {
-    if (task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด')) {
+  if (
+    normType === 'DCC_RECALL' ||
+    normType === 'DCC_RECALL_WITH_CHECKLIST' ||
+    normType === 'RECALL_HARDCOPY' ||
+    normType === 'RECALL' ||
+    normType === 'OBSOLETE_RECALL' ||
+    task.taskType === 'RECALL' ||
+    task.taskType === 'DCC_RECALL_WITH_CHECKLIST'
+  ) {
+    const isDamaged = task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด');
+    if (isDamaged) {
       return {
-        icon: <AlertTriangle size={18} strokeWidth={2} />,
-        bg: 'bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-100 group-hover:border-rose-300',
-        label: 'เล่มชำรุดรอเรียกคืน',
-        badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200'
+        icon: <AlertTriangle size={17} strokeWidth={2} />,
+        iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
+        chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
       };
     }
     return {
-      icon: <AlertTriangle size={18} strokeWidth={2} />,
-      bg: 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] group-hover:bg-[#FFEDD5] group-hover:border-[#FDBA74]',
-      label: 'Recall Task',
-      badgeClass: 'bg-[#FFF7ED] text-[#C2410C] border border-[#FED7AA]'
+      icon: <AlertTriangle size={17} strokeWidth={2} />,
+      iconBg: 'bg-orange-50 text-orange-600 border border-orange-100',
+      chipClass: 'bg-orange-50 text-orange-700 border border-orange-200',
     };
   }
   if (normType.startsWith('DCC_')) {
     return {
-      icon: <AlertCircle size={18} strokeWidth={2} />,
-      bg: 'bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] group-hover:bg-[#D1EFFF] group-hover:border-[#80CFFF]',
-      label: 'DCC Action Task',
-      badgeClass: 'bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]'
+      icon: <AlertCircle size={17} strokeWidth={2} />,
+      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
+      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
   }
   return {
-    icon: <CheckSquare size={18} strokeWidth={2} />,
-    bg: 'bg-[#F5F5F5] text-[#666666] border border-[#E5E5E5] group-hover:bg-[#EAEAEA] group-hover:border-[#CCCCCC]',
-    label: 'Task',
-    badgeClass: 'bg-[#F5F5F5] text-[#333333] border border-[#E5E5E5]'
+    icon: <CheckSquare size={17} strokeWidth={2} />,
+    iconBg: 'bg-slate-100 text-slate-500 border border-slate-200',
+    chipClass: 'bg-slate-100 text-slate-600 border border-slate-200',
   };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper 6: SLA / Priority badge
+// ─────────────────────────────────────────────────────────────────────────────
+const getSLABadge = (task, mockDateOffset) => {
+  // Damaged recall — highest priority visual
+  if (task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด')) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+        <AlertTriangle size={10} /> เล่มชำรุด
+      </span>
+    );
+  }
+
+  // Delivery tracking
+  if (task.delivery_status === 'DISPATCHED_TRACKING' || task.tracking_status === 'WAITING_RECEIPT') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+        <Clock size={10} /> รอปลายทางรับ
+      </span>
+    );
+  }
+
+  if (!task.dueDate) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 text-slate-500 border border-slate-200">
+        <CheckCircle size={10} /> ปกติ
+      </span>
+    );
+  }
+
+  const today = new Date();
+  today.setDate(today.getDate() + (mockDateOffset || 0));
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(task.dueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+  const isUrgent = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
+
+  if (diffDays < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+        <AlertCircle size={10} /> เกินกำหนด {Math.abs(diffDays)} วัน
+      </span>
+    );
+  }
+  if (diffDays === 0) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${isUrgent ? 'bg-amber-100 text-amber-900 border-amber-400 animate-pulse' : 'bg-amber-50 text-amber-800 border-amber-300'}`}>
+        <Clock size={10} /> ครบกำหนดวันนี้{isUrgent ? ' ⚡' : ''}
+      </span>
+    );
+  }
+  if (diffDays <= 2) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${isUrgent ? 'bg-amber-100 text-amber-900 border-amber-400 font-bold' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+        <Clock size={10} /> {isUrgent ? '⚡ งานด่วน' : 'ใกล้ครบกำหนด'} (อีก {diffDays} วัน)
+      </span>
+    );
+  }
+  if (isUrgent) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+        <Zap size={10} className="fill-amber-500" /> งานด่วน (อีก {diffDays} วัน)
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 text-slate-500 border border-slate-200">
+      <CheckCircle size={10} /> ปกติ
+    </span>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task Inbox Component
+// ─────────────────────────────────────────────────────────────────────────────
 const TaskInbox = () => {
   const navigate = useNavigate();
   const { currentUser, tasks, dars, externalDocuments, mockDateOffset, checkSLA } = useStore();
@@ -163,23 +366,19 @@ const TaskInbox = () => {
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
 
-  // Run SLA Check on load (simulated)
   useEffect(() => {
     if (checkSLA) checkSLA();
   }, [mockDateOffset, checkSLA]);
 
-  // DCC Admin check
   const isDccAdmin = isDccUser(currentUser);
   const userDepts = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
   const primaryDept = currentUser?.primary_department || currentUser?.department || '';
 
-  // Default to user's primary department for personal view (!isDccAdmin), or 'ALL' for DCC Admin
   const [deptFilter, setDeptFilter] = useState(() => {
     if (isDccAdmin) return 'ALL';
     return primaryDept || 'ALL';
   });
 
-  // Ensure department filter updates when profile switches
   useEffect(() => {
     if (!isDccAdmin && primaryDept) {
       setDeptFilter(primaryDept);
@@ -188,7 +387,6 @@ const TaskInbox = () => {
     }
   }, [currentUser?.id, currentUser?.department, currentUser?.primary_department, isDccAdmin, primaryDept]);
 
-  // Unified Actionable Tasks Filter: strictly scopes DCC operational tasks to DCC staff only
   const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
 
   const availableDepts = useMemo(() => {
@@ -207,8 +405,8 @@ const TaskInbox = () => {
     if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
     if (rawType === 'REVISE') return 'REVISE';
     if (
-      rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
-      task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+      rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+      task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
       rawType === 'CONFIRM_RECEIPT' ||
       rawType === 'RECEIPT' ||
       task.category === 'RECEIPT' ||
@@ -230,25 +428,22 @@ const TaskInbox = () => {
         const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
         const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
         if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
-          if (tDept && !isSameDepartment(tDept, deptFilter)) {
-            return false;
-          }
+          if (tDept && !isSameDepartment(tDept, deptFilter)) return false;
           return true;
         }
         return isSameDepartment(tDept, deptFilter);
       });
     }
     if (activeTab !== 'ALL') {
-      filtered = filtered.filter(t => {
-        const cat = normalizeTaskCategory(t);
-        return cat === activeTab;
-      });
+      filtered = filtered.filter(t => normalizeTaskCategory(t) === activeTab);
     }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(t => {
-        const refId = t.referenceId || t.darId || t.doc_code || t.docId || t.id || '';
-        return refId.toLowerCase().includes(term) ||
+        const docId = getDocumentIdentifier(t) || '';
+        const title = getDocumentTitle(t) || '';
+        return docId.toLowerCase().includes(term) ||
+          title.toLowerCase().includes(term) ||
           (t.title || '').toLowerCase().includes(term) ||
           (t.description || '').toLowerCase().includes(term);
       });
@@ -259,74 +454,10 @@ const TaskInbox = () => {
   const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, deptFilter, activeTab, searchTerm]);
   const pagination = useTablePagination(filteredTasks, 10);
 
-  const getRiskBadge = (task) => {
-    if (task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด')) {
-      return (
-        <span className="badge-rejected flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-xs px-2 py-0.5 rounded">
-          <AlertTriangle size={11} className="text-rose-600" /> เล่มชำรุดรอเรียกคืน
-        </span>
-      );
-    }
-    if (task.delivery_status === 'DISPATCHED_TRACKING' || task.tracking_status === 'WAITING_RECEIPT') {
-      return (
-        <span className="badge-pending flex items-center gap-1 bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] font-medium text-xs px-2 py-0.5 rounded">
-          <Clock size={11} className="text-[#D49800]" /> รอปลายทางตรวจรับ
-        </span>
-      );
-    }
-    if (!task.dueDate) return <span className="badge-active flex items-center gap-1"><CheckCircle size={11} /> ปกติ (Normal)</span>;
-    
-    const today = new Date();
-    today.setDate(today.getDate() + (mockDateOffset || 0));
-    today.setHours(0, 0, 0, 0);
-
-    const dueDateObj = new Date(task.dueDate);
-    dueDateObj.setHours(0, 0, 0, 0);
-
-    const diffTime = dueDateObj.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isUrgent = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
-
-    if (diffDays < 0) {
-      return (
-        <span className="badge-rejected flex items-center gap-1 font-semibold">
-          <AlertCircle size={11} /> เกินกำหนด ({Math.abs(diffDays)} วัน)
-        </span>
-      );
-    } else if (diffDays === 0) {
-      return (
-        <span className={`flex items-center gap-1 font-semibold px-2 py-0.5 rounded text-xs ${isUrgent ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse' : 'badge-pending'}`}>
-          <Clock size={11} className={isUrgent ? 'text-amber-700' : ''} /> ครบกำหนดวันนี้ {isUrgent ? '(เร่งด่วน)' : ''}
-        </span>
-      );
-    } else if (diffDays <= 2) {
-      return (
-        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${isUrgent ? 'bg-amber-50 text-amber-800 border border-amber-300 font-bold' : 'badge-pending'}`}>
-          <Clock size={11} className={isUrgent ? 'text-amber-600' : ''} /> {isUrgent ? 'ด่วน' : 'ใกล้ครบกำหนด'} (อีก {diffDays} วัน)
-        </span>
-      );
-    } else if (isUrgent) {
-      return (
-        <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-          <Clock size={11} className="text-amber-600" /> งานด่วน (อีก {diffDays} วัน)
-        </span>
-      );
-    } else {
-      return (
-        <span className="badge-active flex items-center gap-1">
-          <CheckCircle size={11} /> ปกติ (Normal)
-        </span>
-      );
-    }
-  };
-
   const getTaskCount = (tabId) => {
     const isActionRequired = (t) => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED';
     if (tabId === 'ALL') return userTasks.filter(isActionRequired).length;
-    return userTasks.filter(t => {
-      const cat = normalizeTaskCategory(t);
-      return cat === tabId && isActionRequired(t);
-    }).length;
+    return userTasks.filter(t => normalizeTaskCategory(t) === tabId && isActionRequired(t)).length;
   };
 
   const tabs = isDccAdmin ? [
@@ -352,8 +483,8 @@ const TaskInbox = () => {
       setSelectedExtTask(task);
       return;
     }
-    const isReceipt = 
-      normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || 
+    const isReceipt =
+      normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
       task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
       normType === 'CONFIRM_RECEIPT' ||
       normType === 'RECEIPT' ||
@@ -361,7 +492,6 @@ const TaskInbox = () => {
       task.id?.includes('task-receipt-') ||
       task.title?.includes('ตรวจรับเล่ม') ||
       task.title?.includes('ตรวจรับเอกสาร');
-
     if (isReceipt) {
       navigate(`/tasks/confirm-receipt/${task.id}`);
       return;
@@ -426,9 +556,9 @@ const TaskInbox = () => {
           <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
             <div className="relative flex-1 md:w-72">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#999999]" size={16} />
-              <input 
-                type="text" 
-                placeholder="ค้นหา DAR No, ชื่อเอกสาร..."
+              <input
+                type="text"
+                placeholder="ค้นหา รหัส, ชื่อเอกสาร..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 h-10 bg-white border border-[#E5E5E5] rounded-lg text-sm font-medium focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all placeholder:text-[#999999] shadow-none"
@@ -501,136 +631,126 @@ const TaskInbox = () => {
           </div>
         )}
 
-        {/* Task List */}
-        <div className="divide-y divide-[#E5E5E5] overflow-y-auto max-h-[580px] scrollbar-thin">
+        {/* ─── Task List ─── */}
+        <div className="divide-y divide-slate-100 overflow-y-auto max-h-[600px] scrollbar-thin">
           {pagination.paginatedData.length > 0 ? (
             pagination.paginatedData.map(task => {
               const isExternal = task.referenceType === 'EXTERNAL_DOC';
-              const dar = (!isExternal) ? (dars || []).find(d => d.id === task.darId) : null;
               const extDoc = isExternal ? (externalDocuments || []).find(d => d.id === task.referenceId) : null;
-              // Suppress raw internal task IDs (e.g. task-recall-xxx-timestamp) for operational tasks
-              const rawId = task.referenceId || task.darId || task.doc_code || '';
-              const normTaskType = (task.type || task.taskType || '').toUpperCase();
-              const operationalLabels = {
-                DCC_DISTRIBUTE: 'งานแจกจ่ายสำเนาควบคุม',
-                DCC_ISSUE: 'งานออกสำเนาควบคุม',
-                DCC_RECALL: 'งานเรียกคืนสำเนาควบคุม',
-                DCC_RECALL_WITH_CHECKLIST: 'งานเรียกคืนสำเนาควบคุม',
-                RECALL_HARDCOPY: 'งานเรียกคืนสำเนาควบคุม',
-                RECALL: 'งานเรียกคืนสำเนาควบคุม',
-                DEPT_CONFIRM_HARDCOPY_RECEIPT: 'งานตรวจรับเล่มสำเนา',
-                CONFIRM_RECEIPT: 'งานตรวจรับเล่มสำเนา',
-                RECEIPT: 'งานตรวจรับเล่มสำเนา',
-              };
-              const displayId = rawId || operationalLabels[normTaskType] || (normTaskType.startsWith('DCC_') ? 'งาน DCC' : null) || task.id;
-              
+              const normType = (task.type || task.taskType || '').toUpperCase();
+
+              // ── Data extraction (all helpers null-safe) ──
+              const docId = getDocumentIdentifier(task);
+              const docTitle = getDocumentTitle(task);
+              const copyNo = getCopyChip(task);
+              const taskTypeShortLabel = getTaskTypeShortLabel(normType, task);
               const iconConfig = getTaskIconConfig(task);
+              const slaBadge = getSLABadge(task, mockDateOffset);
 
-              // Title sanitization: strip empty brackets or undefined strings
-              const sanitizeTitle = (rawTitle) => {
-                if (!rawTitle) return displayId;
-                let clean = String(rawTitle).replace(/^\[\s*\]\s*/, '').replace(/^\[undefined\]\s*/i, '').trim();
-                return clean || displayId;
-              };
-
-              // Clean Type Badge text
-              const getTypeBadgeText = () => {
-                if (isExternal) return 'External Document';
-                if (dar?.type) {
-                  if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') return 'DAR จัดทำใหม่ (NEW)';
-                  if (dar.type === 'REVISION') return 'DAR ขอแก้ไข (REVISION)';
-                  if (dar.type === 'OBSOLETE') return 'DAR ขอยกเลิก (OBSOLETE)';
-                  return `DAR ${dar.type}`;
-                }
-                const norm = (task.type || task.taskType || '').toUpperCase();
-                if (norm === 'ACK' || norm === 'ACKNOWLEDGE') return 'รับทราบเอกสาร (ACK)';
-                if (norm === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT') return 'ตรวจรับเล่มสำเนา (Receipt)';
-                if ((norm === 'DCC_DISTRIBUTE' || norm === 'DCC_ISSUE') && (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED')) {
-                  return 'ติดตามการส่งมอบ';
-                }
-                return null;
-              };
-
-              const typeBadge = getTypeBadgeText();
+              // ── Metadata chips ──
+              const dept = task.holder_dept || task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || '';
+              const location = task.location || task.locationName || task.station_name || task.point_of_use || '';
+              const dueDate = task.dueDate || null;
+              const isReplacement = Boolean(task.is_replacement || task.isReplacement || task.replacementReason === 'DAMAGED');
+              const isUrgentFastTrack = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
 
               return (
                 <div
                   key={task.id}
                   onClick={() => handleTaskClick(task)}
-                  className="p-4 sm:p-5 hover:bg-[#FAFAFA] cursor-pointer transition-all duration-150 group flex items-center justify-between gap-4"
+                  className="px-4 sm:px-5 py-4 sm:py-4.5 hover:bg-slate-50/80 cursor-pointer transition-all duration-150 group flex items-start gap-3.5"
                 >
-                  <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                    {/* Leading Icon Box */}
-                    <div className={`hidden sm:flex items-center justify-center w-10 h-10 rounded-lg shadow-none transition-transform group-hover:scale-105 shrink-0 ${iconConfig.bg}`}>
-                      {iconConfig.icon}
-                    </div>
+                  {/* ── Leading Icon (Level 1 anchor) ── */}
+                  <div className={`flex-none flex items-center justify-center w-10 h-10 rounded-xl mt-0.5 transition-transform duration-150 group-hover:scale-105 ${iconConfig.iconBg}`}>
+                    {iconConfig.icon}
+                  </div>
 
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      {/* Header Badges */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono font-bold text-xs sm:text-sm text-[#1E1E1E] bg-white px-2 py-0.5 rounded border border-[#E5E5E5] group-hover:border-[#0D99FF] group-hover:text-[#0D99FF] transition-colors">
-                          {displayId}
+                  {/* ── Card Content ── */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+
+                    {/* ── Level 1: Header Chips Row ── */}
+                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                      {/* Left group: context chips */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Doc ID chip — only shown if a real code exists */}
+                        {docId && (
+                          <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 group-hover:bg-indigo-50 group-hover:text-indigo-700 group-hover:border-indigo-200 transition-colors whitespace-nowrap">
+                            {docId}
+                          </span>
+                        )}
+                        {/* Copy chip */}
+                        {copyNo && (
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                            {copyNo}
+                          </span>
+                        )}
+                        {/* Task type chip */}
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${iconConfig.chipClass}`}>
+                          {taskTypeShortLabel}
                         </span>
+                        {/* External badge */}
                         {isExternal && (
                           <span className="bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1">
-                            <ExternalLink size={12} /> External
+                            <ExternalLink size={10} /> External
                           </span>
                         )}
-                        <span className={`px-2.5 py-0.5 rounded text-xs font-semibold ${iconConfig.badgeClass}`}>
-                          {iconConfig.label}
+                        {/* Fast-track badge */}
+                        {(isUrgentFastTrack && task.actionRequired !== false && task.delivery_status !== 'DISPATCHED_TRACKING') && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300">
+                            <Zap size={9} className="fill-amber-500" /> Fast-Track
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right: SLA / Priority badge */}
+                      <div className="shrink-0">
+                        {slaBadge}
+                      </div>
+                    </div>
+
+                    {/* ── Level 2: Document Title (primary content) ── */}
+                    <h3 className="text-sm sm:text-[15px] font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors leading-snug [overflow-wrap:anywhere]">
+                      {isExternal ? (extDoc?.title || docTitle) : docTitle}
+                      {isReplacement && (
+                        <span className="ml-2 inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 align-middle">
+                          ฉบับทดแทน
                         </span>
-                        {((task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK') && task.actionRequired !== false && task.delivery_status !== 'DISPATCHED_TRACKING') && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-700 border border-amber-300 shadow-xs">
-                            <Zap size={11} className="fill-amber-500 text-amber-600" />
-                            <span>งานด่วน (Fast-Track SLA)</span>
-                          </span>
-                        )}
-                        {getRiskBadge(task)}
-                      </div>
+                      )}
+                    </h3>
 
-                      {/* Clean Sanitized Title */}
-                      <h3 className="text-sm sm:text-base font-bold text-[#1E1E1E] break-all break-words min-w-0 [overflow-wrap:anywhere] flex items-center gap-1.5 flex-wrap leading-snug group-hover:text-[#0D99FF] transition-colors">
-                        {typeBadge && (
-                          <span className="text-[#666666] font-semibold">
-                            [{typeBadge}]
-                          </span>
-                        )}
-                        <span>{sanitizeTitle(task.title)}</span>
-                      </h3>
-
-                      {/* Footer Metadata with Localized DateTime */}
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-[#666666] pt-0.5">
-                        {isExternal ? (
-                          <span>สถานะ: <span className="font-semibold text-[#0D99FF]">{extDoc?.status}</span></span>
-                        ) : isDccAdmin && task.description ? (
-                          <span className="text-[#666666]">{task.description}</span>
-                        ) : null}
-                        
-                        {task.dueDate && (
-                          <span className={`flex items-center gap-1 ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-800' : 'text-[#666666]'}`}>
-                            <Clock size={12} className={task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-600' : 'text-[#999999]'} />
-                            <span>
-                              กำหนดส่ง: <strong className={`font-mono ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-700 font-bold' : 'text-[#1E1E1E]'}`}>{formatThaiDateTime(task.dueDate)}</strong>
-                              {(task.isUrgent || task.slaType === 'FAST_TRACK') && (task.effectiveDate || dar?.effectiveDate) && (
-                                <span className="ml-1 text-[11px] font-medium text-amber-700">
-                                  (จำกัดตามวันบังคับใช้: {formatThaiDateTime(task.effectiveDate || dar?.effectiveDate)})
-                                </span>
-                              )}
-                            </span>
-                          </span>
-                        )}
-                        
-                        {task.cancelDate && (
-                          <span className="flex items-center gap-1 text-[#E02424]">
-                            <Calendar size={12} className="text-[#F98080]" />
-                            <span>วันตัดสิทธิ์: <strong className="font-mono text-[#E02424]">{formatThaiDateTime(task.cancelDate)}</strong></span>
-                          </span>
-                        )}
-                      </div>
+                    {/* ── Level 3: Metadata Footer Chips ── */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                      {isExternal && extDoc?.status && (
+                        <span>สถานะ: <span className="font-semibold text-indigo-600">{extDoc.status}</span></span>
+                      )}
+                      {dept && (
+                        <span className="flex items-center gap-1">
+                          <Building2 size={11} className="text-slate-400" />
+                          <span className="font-mono font-semibold text-slate-600">{dept}</span>
+                        </span>
+                      )}
+                      {location && (
+                        <span className="flex items-center gap-1">
+                          <MapPin size={11} className="text-slate-400" />
+                          <span className="text-slate-600">{location}</span>
+                        </span>
+                      )}
+                      {dueDate && (
+                        <span className={`flex items-center gap-1 ${isUrgentFastTrack ? 'text-amber-700 font-semibold' : ''}`}>
+                          <Clock size={11} className={isUrgentFastTrack ? 'text-amber-500' : 'text-slate-400'} />
+                          <span>กำหนด: <strong className="font-mono">{formatThaiDateTime(dueDate)}</strong></span>
+                        </span>
+                      )}
+                      {isDccAdmin && task.description && !dept && !location && (
+                        <span className="text-slate-500 line-clamp-1">{task.description}</span>
+                      )}
+                      {!dueDate && !dept && !location && !isExternal && (
+                        <span className="text-slate-400 text-[10px]">ไม่มีข้อมูลเพิ่มเติม</span>
+                      )}
                     </div>
                   </div>
 
-                  <ChevronRight className="text-[#CCCCCC] group-hover:text-[#0D99FF] group-hover:translate-x-0.5 transition-all shrink-0" size={18} />
+                  <ChevronRight className="flex-none text-slate-300 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all mt-1.5" size={17} />
                 </div>
               );
             })
@@ -653,17 +773,17 @@ const TaskInbox = () => {
 
       <AnimatePresence>
         {selectedExtTask && (
-          <ExternalDocActionModal 
-            isOpen={!!selectedExtTask} 
-            onClose={() => setSelectedExtTask(null)} 
-            task={selectedExtTask} 
+          <ExternalDocActionModal
+            isOpen={!!selectedExtTask}
+            onClose={() => setSelectedExtTask(null)}
+            task={selectedExtTask}
           />
         )}
         {selectedReceiptTask && (
-          <TaskConfirmHardcopyReceiptModal 
-            isOpen={!!selectedReceiptTask} 
-            onClose={() => setSelectedReceiptTask(null)} 
-            task={selectedReceiptTask} 
+          <TaskConfirmHardcopyReceiptModal
+            isOpen={!!selectedReceiptTask}
+            onClose={() => setSelectedReceiptTask(null)}
+            task={selectedReceiptTask}
           />
         )}
       </AnimatePresence>
