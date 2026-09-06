@@ -437,9 +437,9 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
   );
 
   return (tasks || []).filter(t => {
-    // 1. Immediately drop tasks already completed/resolved (except active DISPATCHED_TRACKING for DCC)
+    // 1. Immediately drop tasks already completed/resolved (except active DISPATCHED_TRACKING or damaged recall tasks for DCC)
     if (t.status === 'COMPLETED' || t.status === 'RESOLVED' || t.is_completed === true) {
-      if (t.delivery_status === 'DISPATCHED_TRACKING') return true;
+      if (t.delivery_status === 'DISPATCHED_TRACKING' || (t.type === 'DCC_RECALL' && (t.isDamaged || t.copyId || t.copy_id))) return true;
       return false;
     }
 
@@ -513,15 +513,32 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         return true;
       });
 
-      if (relevantCopies.length === 0) {
-        // If no copies exist at all for this doc, check if global has any pending recalls
-        return safeInstances.some(i => i.status === 'PENDING_RECALL' || i.status === 'OBSOLETE_PENDING_RECALL');
+      // If task is already completed, preserve it
+      if (t.is_completed || t.status === 'COMPLETED') {
+        return true;
       }
 
-      // If ANY copy is still PENDING_RECALL or OBSOLETE_PENDING_RECALL, or active under obsolete/superseded document, keep the task!
+      // If task is specifically tied to a single copy (e.g. damaged copy recall)
+      if (t.copyId || t.instanceId || t.copy_id || t.isDamaged) {
+        const targetCopyId = String(t.copyId || t.instanceId || t.copy_id || '');
+        const copy = targetCopyId ? safeInstances.find(i => String(i.id) === targetCopyId) : null;
+        if (copy) {
+          return copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' || copy.status === 'DAMAGED_PENDING_REPLACEMENT';
+        }
+        if (t.isDamaged) return true;
+      }
+
+      if (relevantCopies.length === 0) {
+        // If no copies exist at all for this doc, check if global has any pending recalls
+        return safeInstances.some(i => i.status === 'PENDING_RECALL' || i.status === 'RECALLED' || i.status === 'OBSOLETE_PENDING_RECALL' || i.status === 'DAMAGED_PENDING_REPLACEMENT');
+      }
+
+      // If ANY copy is still PENDING_RECALL, RECALLED, or OBSOLETE_PENDING_RECALL, or active under obsolete/superseded document, keep the task!
       const hasUnrecalledCopy = relevantCopies.some(i => 
         i.status === 'PENDING_RECALL' ||
+        i.status === 'RECALLED' ||
         i.status === 'OBSOLETE_PENDING_RECALL' ||
+        i.status === 'DAMAGED_PENDING_REPLACEMENT' ||
         (matchingDoc && (matchingDoc.status === 'SUPERSEDED' || matchingDoc.status === 'SUPERSEDED_ARCHIVED' || matchingDoc.status === 'OBSOLETE' || matchingDoc.status === 'OBSOLETE_ARCHIVED') && (i.status === 'ACTIVE' || i.status === 'ISSUED_ACTIVE' || i.status === 'RECEIVED'))
       );
 
@@ -3275,10 +3292,62 @@ const useStore = create(persist((set, get) => ({
       timestamp: dispatchedAt
     };
 
+    // Check remaining pending copies for this document in newCopies
+    const relatedDocId = String(copyDocId || copy.doc_id || copy.docId || '');
+    const relatedDocCode = copy.doc_code || copy.docTitle || copy.title || '';
+    const relatedDarId = relatedDar ? String(relatedDar.id) : (copy.dar_id ? String(copy.dar_id) : '');
+
+    const docCopies = newCopies.filter(c => {
+      return (relatedDocId && String(c.doc_id || c.docId) === relatedDocId) ||
+             (relatedDocCode && (c.doc_code === relatedDocCode || c.docTitle === relatedDocCode));
+    });
+
+    const pendingDocCopies = docCopies.filter(c => 
+      c.status === 'PENDING_ISSUE' || 
+      c.status === 'PENDING_PRINT' || 
+      c.status === 'PENDING_DISPATCH'
+    );
+
+    const isAllDispatched = docCopies.length > 0 && pendingDocCopies.length === 0;
+
+    // Update existing distribution tasks for this document/DAR
+    const updatedTasks = state.tasks.map(t => {
+      const isDistTask = t.type === 'DCC_DISTRIBUTE' || t.type === 'DCC_ISSUE' || t.taskType === 'DCC_DISTRIBUTE';
+      if (!isDistTask) return t;
+      const isMatch = (relatedDarId && String(t.darId) === relatedDarId) ||
+                      (relatedDocId && (String(t.docId) === relatedDocId || String(t.doc_id) === relatedDocId)) ||
+                      (relatedDocCode && (t.doc_code === relatedDocCode || t.docTitle === relatedDocCode || t.title?.includes(relatedDocCode)));
+      if (!isMatch) return t;
+
+      if (isAllDispatched) {
+        return {
+          ...t,
+          status: 'COMPLETED',
+          is_completed: true,
+          completedAt: dispatchedAt,
+          actionRequired: false,
+          isUrgent: false,
+          priority: 'NORMAL',
+          delivery_status: 'DISPATCHED_TRACKING',
+          tracking_status: 'WAITING_RECEIPT',
+          status_label: 'ติดตามการส่งมอบ (รอปลายทางตรวจรับ)',
+          title: `ติดตามการส่งมอบ: ${relatedDocCode || t.doc_code || t.title} (รอปลายทางตรวจรับ)`,
+          description: `DCC ได้บันทึกส่งมอบสำเนาครบทุกฉบับแล้ว (${dispatchedAt.split('T')[0]}) อยู่ระหว่างรอแผนกปลายทางตรวจรับเล่มสำเนาทางกายภาพ`
+        };
+      } else {
+        const dispatchedCount = docCopies.length - pendingDocCopies.length;
+        return {
+          ...t,
+          title: `แจกจ่ายสำเนาควบคุม: ${relatedDocCode || t.doc_code || t.title} (ส่งมอบแล้ว ${dispatchedCount}/${docCopies.length})`,
+          description: `อยู่ระหว่างส่งมอบสำเนา (ส่งมอบแล้ว ${dispatchedCount}/${docCopies.length} ฉบับ) ยังคงเหลือสำเนาที่ต้องพิมพ์/ส่งมอบอีก ${pendingDocCopies.length} ฉบับ`
+        };
+      }
+    });
+
     return {
       documentControlledCopies: newCopies,
       controlledCopyInstances: newCopies,
-      tasks: [newTask, ...state.tasks.filter(t => t.id !== newTaskId)],
+      tasks: [newTask, ...updatedTasks.filter(t => t.id !== newTaskId)],
       controlledCopyAuditTrail: [auditLog, ...state.controlledCopyAuditTrail],
       notifications: [notif, ...state.notifications],
       actionLog: [{
@@ -3291,7 +3360,7 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  // Batch dispatch helper
+  // Batch dispatch helper & aliases
   dispatchControlledCopies: (docIdOrCopyIds, copiesToDispatch) => {
     if (Array.isArray(docIdOrCopyIds)) {
       docIdOrCopyIds.forEach(id => {
@@ -3307,12 +3376,18 @@ const useStore = create(persist((set, get) => ({
     }
     if (typeof docIdOrCopyIds === 'string') {
       const state = useStore.getState();
-      const copies = (state.controlledCopyInstances || []).filter(c => (c.doc_id === docIdOrCopyIds || c.docId === docIdOrCopyIds) && c.status === 'PENDING_ISSUE');
+      const copies = (state.controlledCopyInstances || state.documentControlledCopies || []).filter(c => 
+        (c.doc_id === docIdOrCopyIds || c.docId === docIdOrCopyIds || c.doc_code === docIdOrCopyIds || c.docTitle === docIdOrCopyIds) && 
+        (c.status === 'PENDING_ISSUE' || c.status === 'PENDING_PRINT' || c.status === 'PENDING_DISPATCH')
+      );
       copies.forEach(c => {
         useStore.getState().dispatchControlledCopy(c.id);
       });
     }
   },
+
+  dispatchCopy: (copyId) => useStore.getState().dispatchControlledCopy(copyId),
+  dispatchAllCopies: (docIdOrCopyIds, copiesToDispatch) => useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch),
 
   confirmHardcopyReceipt: (copyId, taskId, recipientData = {}) => set((state) => {
     // Strict Type Coercion to prevent comparison bugs
@@ -3419,10 +3494,35 @@ const useStore = create(persist((set, get) => ({
       timestamp: confirmedAt
     };
 
+    // If all copies of this document are now active/confirmed, mark tracking distribution task complete
+    const remainingUnconfirmedCopies = newCopies.filter(c => {
+      const isSameDoc = (docId && (c.doc_code === docId || c.docTitle === docId || String(c.doc_id || c.docId) === String(copy.doc_id || copy.docId)));
+      return isSameDoc && c.status !== 'ISSUED_ACTIVE' && c.status !== 'ACTIVE' && c.status !== 'VOID' && c.status !== 'REPLACED_VOID';
+    });
+    const isAllConfirmed = remainingUnconfirmedCopies.length === 0;
+
+    const finalTasks = updatedTasks.map(t => {
+      if (t.delivery_status === 'DISPATCHED_TRACKING' && isAllConfirmed) {
+        const isMatch = (copy.doc_code && (t.doc_code === copy.doc_code || t.title?.includes(copy.doc_code)));
+        if (isMatch) {
+          return {
+            ...t,
+            delivery_status: 'ALL_RECEIPTS_CONFIRMED',
+            tracking_status: 'DONE',
+            status: 'COMPLETED',
+            is_completed: true,
+            title: `การแจกจ่ายเสร็จสมบูรณ์: ${copy.doc_code || t.title}`,
+            description: `ทุกแผนกได้ตรวจรับเล่มสำเนาควบคุมครบถ้วนแล้ว ณ ${confirmedAt.split('T')[0]}`
+          };
+        }
+      }
+      return t;
+    });
+
     return {
       documentControlledCopies: newCopies,
       controlledCopyInstances: newCopies,
-      tasks: cleanupDccTasks(updatedTasks, newCopies, state.documents),
+      tasks: cleanupDccTasks(finalTasks, newCopies, state.documents),
       controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
       physicalCopyAuditLogs: [auditLog, ...(state.physicalCopyAuditLogs || [])],
       notifications: [notif, ...state.notifications],
@@ -4631,10 +4731,17 @@ const useStore = create(persist((set, get) => ({
     const inst = copies.find(i => String(i.id) === targetId);
     if (!inst) return state;
 
+    // 🛡️ Idempotency Guard: prevent duplicate reporting on copy already pending recall, lost, recalled, or destroyed
+    const invalidStatuses = ['PENDING_RECALL', 'LOST', 'LOST_RECORDED', 'DECLARED_LOST', 'RECALLED', 'DESTROYED', 'RECALLED_DESTROYED', 'REPLACED_VOID', 'DAMAGED_PENDING_REPLACEMENT'];
+    if (invalidStatuses.includes(inst.status) || (type === 'DAMAGED' && (inst.isDamaged || inst.status === 'PENDING_RECALL'))) {
+      console.warn(`[reportCcDamagedLost] Copy ${targetId} is already in state ${inst.status}. Skipping duplicate request.`);
+      return state;
+    }
+
     // 🛡️ Security Check: RBAC Custodianship Guard
     const user = state.currentUser;
     const isDcc = Boolean(user && (user.isDcc || user.role === 'DCC_ADMIN' || user.role === 'SUPER_ADMIN' || user.id === 'U001' || user.id === 'u5'));
-    const copyDept = inst.holder_dept || inst.department || inst.departmentId || inst.dept_code;
+    const copyDept = inst.holder_dept || inst.department || inst.departmentId || inst.dept_code || 'PD';
     const userDept = user?.department || user?.dept;
     const userDepts = user?.depts || (userDept ? [userDept] : []);
     const isOwnerDept = Boolean(copyDept && userDepts.some(d => d && (
@@ -4656,18 +4763,23 @@ const useStore = create(persist((set, get) => ({
     const nextIssueNo = String(currentIssue + 1).padStart(2, '0');
     const nextIssue = `I${nextIssueNo}`;
 
+    const isDamaged = type === 'DAMAGED';
+    const newStatus = isDamaged ? 'PENDING_RECALL' : 'LOST';
+
     // 1. Audit log for reporting
     const auditLog = {
       id: `audit-${Date.now()}`,
       timestamp: nowIso,
       user: reporterName,
-      action: type === 'LOST' ? 'REPORT_LOST' : 'REPORT_DAMAGED',
+      action: isDamaged ? 'REPORT_DAMAGED' : 'REPORT_LOST',
       docTitle: inst.doc_code || inst.docTitle,
       docRev: inst.doc_version || inst.rev,
       ccNumber: inst.copy_no || inst.ccNumber,
       oldStatus: inst.status,
-      newStatus: type === 'LOST' ? 'LOST_RECORDED' : 'DAMAGED_PENDING_REPLACEMENT',
-      remarks: `User reported ${type === 'LOST' ? 'เอกสารสูญหาย' : 'เอกสารชำรุด'}: ${reason}`
+      newStatus: newStatus,
+      remarks: isDamaged 
+        ? `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งชำรุดโดย ${reporterName} (${copyDept}) -> สร้างงานเรียกคืนเล่มเดิมและตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
+        : `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งสูญหายโดย ${reporterName} (${copyDept}) -> ปลดออกจากทะเบียนสำเนาใช้งานและตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
     };
 
     // 2. Replacement Copy Instance (Enqueued to PENDING_ISSUE for DCC)
@@ -4704,6 +4816,8 @@ const useStore = create(persist((set, get) => ({
       status: 'PENDING_ISSUE', // Directly available for DCC to print & issue
       is_replacement: true,
       is_adhoc: false,
+      isDamaged: false,
+      is_damaged: false,
       replaced_copy_id: inst.id,
       replacement_reason: `${type}: ${reason}`,
       requested_by: reporterName,
@@ -4718,12 +4832,12 @@ const useStore = create(persist((set, get) => ({
     };
 
     // 3. Task for DCC to Issue Replacement Copy
-    const dccTask = {
+    const dccIssueTask = {
       id: `task-dcc-replacement-${inst.id}-${Date.now()}`,
       type: 'DCC_DISTRIBUTE',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
       title: `ออกสำเนาควบคุมทดแทน (Issue ${nextIssueNo}): ${inst.doc_code || inst.docTitle} (${inst.copy_no || inst.ccNumber})`,
-      description: `แผนก ${inst.holder_dept || inst.department} แจ้ง${type === 'LOST' ? 'สูญหาย' : 'ชำรุด'} ประจำจุด ${inst.location || inst.locationName} เหตุผล: ${reason}`,
+      description: `แผนก ${inst.holder_dept || inst.department} แจ้ง${isDamaged ? 'ชำรุด' : 'สูญหาย'} ประจำจุด ${inst.location || inst.locationName} เหตุผล: ${reason}`,
       docId: inst.doc_id || inst.docId,
       doc_code: inst.doc_code || inst.docTitle,
       doc_version: inst.doc_version || inst.rev || '01',
@@ -4735,14 +4849,51 @@ const useStore = create(persist((set, get) => ({
       createdAt: nowIso
     };
 
-    // 4. Notification for DCC
+    // 4. Recall Task for DCC (ONLY for DAMAGED, NEVER for LOST)
+    let dccRecallTask = null;
+    if (isDamaged) {
+      dccRecallTask = {
+        id: `task-dcc-recall-${inst.id}-${Date.now()}`,
+        type: 'DCC_RECALL',
+        taskType: 'RECALL',
+        task_type: 'RECALL',
+        title: `เรียกคืนสำเนาชำรุด: ${inst.doc_code || inst.docTitle} ${inst.docName || inst.doc_title || ''} (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`.trim(),
+        description: `แผนก ${copyDept} แจ้งชำรุด ประจำจุด ${inst.location || inst.locationName || copyDept} เหตุผล: ${reason} (กรุณาเรียกคืนเล่มชำรุดมาทำลายตามระเบียบ ISO 9001)`,
+        docId: inst.doc_id || inst.docId,
+        doc_id: inst.doc_id || inst.docId,
+        doc_code: inst.doc_code || inst.docTitle,
+        doc_version: inst.doc_version || inst.rev || '01',
+        copyId: inst.id,
+        copy_id: inst.id,
+        instanceId: inst.id,
+        copy_no: inst.copy_no || inst.ccNumber || '01',
+        location: inst.location || inst.locationName || copyDept,
+        department: copyDept,
+        holder_dept: copyDept,
+        target_department: 'DCC',
+        targetDepartment: 'DCC',
+        assignedToRole: 'DCC_ADMIN',
+        assigneeId: 'U001',
+        status: 'PENDING',
+        priority: 'HIGH',
+        isDamaged: true,
+        is_damaged: true,
+        reason: 'DAMAGED',
+        actionRequired: true,
+        is_completed: false,
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        createdAt: nowIso
+      };
+    }
+
+    // 5. Notification for DCC
     const dccNotification = {
       id: `notif-rep-${Date.now()}`,
       userId: 'U001',
-      title: `มีคำขอออกสำเนาทดแทน (${type === 'LOST' ? 'สูญหาย' : 'ชำรุด'})`,
+      title: `มีคำขอออกสำเนาทดแทน (${isDamaged ? 'ชำรุด' : 'สูญหาย'})`,
       message: `แผนก ${inst.holder_dept || inst.department} แจ้งออกสำเนาทดแทน ${inst.doc_code || inst.docTitle} (${inst.copy_no || inst.ccNumber}) จุด ${inst.location || inst.locationName}`,
       isRead: false,
-      link: '/controlled-copy?tab=PENDING_ISSUE',
+      link: isDamaged ? '/controlled-copy?tab=RECALL_CHECKLIST' : '/controlled-copy?tab=PENDING_ISSUE',
       timestamp: nowIso
     };
 
@@ -4751,23 +4902,32 @@ const useStore = create(persist((set, get) => ({
         String(i.id) === targetId 
           ? { 
               ...i, 
-              status: type === 'LOST' ? 'LOST_RECORDED' : 'DAMAGED_PENDING_REPLACEMENT', 
+              status: newStatus,
+              isDamaged: isDamaged,
+              is_damaged: isDamaged,
+              isLost: !isDamaged,
+              is_lost: !isDamaged,
+              replacementReason: type,
+              replacement_reason: type,
               reportType: type, 
               reportReason: reason, 
               reportRequesterName: reporterName, 
               reportRequesterId: state.currentUser ? state.currentUser.id : null,
-              reportedAt: nowIso 
+              reportedAt: nowIso,
+              reported_at: nowIso 
             } 
           : i
       ),
       replacementCopy
     ];
 
+    const tasksToAdd = dccRecallTask ? [dccRecallTask, dccIssueTask] : [dccIssueTask];
+
     return {
       documentControlledCopies: newInstances,
       controlledCopyInstances: newInstances,
       controlledCopyAuditTrail: [auditLog, ...state.controlledCopyAuditTrail],
-      tasks: [dccTask, ...state.tasks],
+      tasks: [...tasksToAdd, ...state.tasks],
       notifications: [dccNotification, ...state.notifications],
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -4779,10 +4939,155 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  // Backward compatibility / RBAC alias
+  // Backward compatibility & RBAC aliases
   reportCopyDamaged: ({ copyId, reason, requestReplacement, type = 'DAMAGED' } = {}) => {
     return useStore.getState().reportCcDamagedLost(copyId, type, reason);
   },
+  requestCopyReplacement: (copyId, reason, type = 'DAMAGED') => {
+    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
+  },
+  reportCopyIssue: (copyId, type = 'DAMAGED', reason = '') => {
+    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
+  },
+
+  // Record physical receipt of recalled copy by DCC
+  recordCopyRecalled: (copyId, notes = '') => set((state) => {
+    const targetId = String(copyId);
+    const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
+    const inst = copies.find(i => String(i.id) === targetId);
+    if (!inst) return state;
+
+    const nowIso = new Date().toISOString();
+    const userName = state.currentUser ? state.currentUser.name : 'DCC Officer';
+
+    const updatedCopies = copies.map(i => {
+      if (String(i.id) === targetId) {
+        return {
+          ...i,
+          status: 'RECALLED',
+          recalled_at: nowIso,
+          recalled_by: userName,
+          dcc_notes: notes || i.dcc_notes || '',
+          dateRecalled: nowIso.split('T')[0]
+        };
+      }
+      return i;
+    });
+
+    const auditLog = {
+      id: `audit-recall-${Date.now()}`,
+      timestamp: nowIso,
+      user: userName,
+      action: 'CC_RECALL_RECEIVED',
+      docTitle: inst.doc_code || inst.docTitle,
+      docRev: inst.doc_version || inst.rev,
+      ccNumber: inst.copy_no || inst.ccNumber,
+      oldStatus: inst.status,
+      newStatus: 'RECALLED',
+      remarks: `DCC บันทึกรับคืนเล่มชำรุด Copy ${inst.copy_no || inst.ccNumber} จากแผนก ${inst.holder_dept || inst.department} เรียบร้อยแล้ว (รอทำลาย)`
+    };
+
+    return {
+      controlledCopyInstances: updatedCopies,
+      documentControlledCopies: updatedCopies,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_RECALL_RECEIVED',
+        actor: userName,
+        details: `Recorded physical receipt of recalled copy ${targetId}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  markCopyRecalled: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
+  receiveRecallCopy: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
+
+  // Destroy recalled physical copy and resolve DCC_RECALL tasks
+  destroyControlledCopy: (copyId, dispositionMethod = 'SHRED', notes = '') => set((state) => {
+    const targetId = String(copyId);
+    const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
+    const inst = copies.find(i => String(i.id) === targetId);
+    if (!inst) return state;
+
+    const nowIso = new Date().toISOString();
+    const userName = state.currentUser ? state.currentUser.name : 'DCC Officer';
+
+    const updatedCopies = copies.map(i => {
+      if (String(i.id) === targetId) {
+        return {
+          ...i,
+          status: 'DESTROYED',
+          destroyed_at: nowIso,
+          destroyed_by: userName,
+          recalled_at: i.recalled_at || nowIso,
+          recalled_by: i.recalled_by || userName,
+          disposition_method: dispositionMethod,
+          dcc_notes: notes || i.dcc_notes || '',
+          dateDestroyed: nowIso.split('T')[0]
+        };
+      }
+      return i;
+    });
+
+    // Check and resolve any DCC_RECALL task associated with this copy or document
+    const updatedTasks = (state.tasks || []).map(t => {
+      const isRecallTask = t.type === 'DCC_RECALL' || t.taskType === 'RECALL' || t.task_type === 'RECALL' || t.type === 'RECALL';
+      if (!isRecallTask) return t;
+
+      const isMatch = (t.copyId && String(t.copyId) === targetId) ||
+                      (t.instanceId && String(t.instanceId) === targetId) ||
+                      (t.copy_id && String(t.copy_id) === targetId);
+
+      if (isMatch) {
+        return {
+          ...t,
+          status: 'COMPLETED',
+          is_completed: true,
+          actionRequired: false,
+          completedAt: nowIso,
+          completed_at: nowIso
+        };
+      }
+      return t;
+    });
+
+    const cleanedTasks = cleanupDccTasks(updatedTasks, updatedCopies, state.documents, state.dars);
+
+    const auditLog = {
+      id: `audit-destroy-${Date.now()}`,
+      timestamp: nowIso,
+      user: userName,
+      action: 'CONTROLLED_COPY_DISPOSITION',
+      docTitle: inst.doc_code || inst.docTitle,
+      docRev: inst.doc_version || inst.rev,
+      ccNumber: inst.copy_no || inst.ccNumber,
+      oldStatus: inst.status,
+      newStatus: 'DESTROYED',
+      remarks: `DCC บันทึกการทำลาย (${dispositionMethod}) สำหรับสำเนา Copy ${inst.copy_no || inst.ccNumber} ของ ${inst.doc_code || inst.docTitle} เรียบร้อยแล้ว`
+    };
+
+    return {
+      controlledCopyInstances: updatedCopies,
+      documentControlledCopies: updatedCopies,
+      tasks: cleanedTasks,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_DESTROYED',
+        actor: userName,
+        details: `Destroyed copy ${targetId} via ${dispositionMethod}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  recordCopyDestroyed: (copyId, method, notes) => useStore.getState().destroyControlledCopy(copyId, method, notes),
 
   approveCcReplacement: (taskId) => set((state) => {
     const task = state.tasks.find(t => String(t.id) === String(taskId));

@@ -18,7 +18,9 @@ import {
   PlusCircle, 
   Check,
   History,
-  FolderOpen
+  FolderOpen,
+  Archive,
+  Flame
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
@@ -40,6 +42,8 @@ const ControlledCopyRegister = () => {
     dispatchControlledCopy,
     reportCcDamagedLost, 
     completeRecallChecklist,
+    recordCopyRecalled,
+    destroyControlledCopy,
     documents,
     externalDocuments,
     tasks,
@@ -166,9 +170,11 @@ const ControlledCopyRegister = () => {
       c.status === 'IN_TRANSIT'
     ).length;
     
-    // Recall count: Copies with PENDING_RECALL, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
+    // Recall count: Copies with PENDING_RECALL, RECALLED, OBSOLETE_PENDING_RECALL, DAMAGED_PENDING_REPLACEMENT or active copies of superseded/obsolete docs
+    // STRICTLY EXCLUDE LOST / LOST_RECORDED / DECLARED_LOST
     const recallCopies = allCopies.filter(c => {
-      if (c.status === 'PENDING_RECALL' || c.status === 'OBSOLETE_PENDING_RECALL' || c.status === 'DAMAGED_PENDING_REPLACEMENT') return true;
+      if (c.status === 'LOST' || c.status === 'LOST_RECORDED' || c.status === 'DECLARED_LOST') return false;
+      if (c.status === 'PENDING_RECALL' || c.status === 'RECALLED' || c.status === 'OBSOLETE_PENDING_RECALL' || c.status === 'DAMAGED_PENDING_REPLACEMENT') return true;
       const doc = documents.find(d => String(d.id) === String(c.doc_id || c.docId));
       const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
       return isDocSupersededOrObsolete && (c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED');
@@ -316,18 +322,21 @@ const ControlledCopyRegister = () => {
     const groups = {};
 
     allCopies.forEach(copy => {
+      // Exclude lost copies completely
+      if (copy.status === 'LOST' || copy.status === 'LOST_RECORDED' || copy.status === 'DECLARED_LOST') return;
+
       const doc = documents.find(d => String(d.id) === String(copy.doc_id || copy.docId))
         || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id));
       const isDocSupersededOrObsolete = doc && (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED');
-      const isNeedingRecall = copy.status === 'PENDING_RECALL' || copy.status === 'OBSOLETE_PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_REPLACEMENT' || (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE' || copy.status === 'RECEIVED'));
+      const isNeedingRecall = copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' || copy.status === 'OBSOLETE_PENDING_RECALL' || copy.status === 'DAMAGED_PENDING_REPLACEMENT' || (isDocSupersededOrObsolete && (copy.status === 'ACTIVE' || copy.status === 'ISSUED_ACTIVE' || copy.status === 'RECEIVED'));
 
       if (isNeedingRecall) {
-        const docId = String(copy.doc_id || copy.docId || copy.doc_code || copy.docTitle);
+        const docId = String(copy.doc_id || copy.docId || copy.doc_code || copy.docTitle || (doc ? doc.id : 'unknown'));
         if (!groups[docId]) {
           // Find associated recall task if exists
           const recallTask = (tasks || []).find(t => 
             (t.type === 'DCC_RECALL' || t.type === 'DCC_RECALL_WITH_CHECKLIST' || t.type === 'RECALL_HARDCOPY' || t.taskType === 'RECALL' || t.taskType === 'DCC_RECALL_WITH_CHECKLIST') &&
-            (String(t.doc_id) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)))
+            (String(t.doc_id) === docId || String(t.docId) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)) || String(t.copyId) === String(copy.id) || String(t.instanceId) === String(copy.id))
           );
 
           groups[docId] = {
@@ -335,7 +344,7 @@ const ControlledCopyRegister = () => {
             docCode: copy.doc_code || copy.docTitle || doc?.edCode || doc?.title || 'Unknown Doc',
             docTitle: copy.docName || doc?.title || doc?.name || copy.docTitle || 'Procedure Document',
             docVersion: copy.doc_version || copy.rev || doc?.rev || '01',
-            docStatus: doc?.status || 'SUPERSEDED',
+            docStatus: doc?.status || (copy.isDamaged || copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' ? 'DAMAGED_RECALL' : 'SUPERSEDED'),
             taskId: recallTask?.id || `task-recall-${docId}`,
             copies: []
           };
@@ -621,7 +630,11 @@ const ControlledCopyRegister = () => {
     setReportModalOpen(false);
     setSelectedInstance(null);
     setReportReason('');
-    toast.success(`แจ้งเอกสาร ${reportType === 'LOST' ? 'สูญหาย' : 'ชำรุด'} สำเร็จ (ส่งเรื่องรออนุมัติออกเล่มทดแทน)`);
+    if (reportType === 'DAMAGED') {
+      toast.success('แจ้งเอกสารชำรุดสำเร็จ — สร้างงานเรียกคืนเล่มเดิมและคิวออกสำเนาทดแทนแล้ว');
+    } else {
+      toast.success('แจ้งเอกสารสูญหายสำเร็จ — คิวออกสำเนาทดแทนแล้ว (ไม่ต้องเรียกคืนเล่มจริง)');
+    }
   };
 
   // Selection Toggles
@@ -1092,7 +1105,7 @@ const ControlledCopyRegister = () => {
                   </div>
                 </div>
 
-                {/* Locations Checklist Table (outer readonly reference — checked via modal) */}
+                {/* Locations Checklist Table (outer reference & inline DCC actions) */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
@@ -1102,11 +1115,13 @@ const ControlledCopyRegister = () => {
                         <th className="px-6 py-3">แผนกผู้ครอบครอง</th>
                         <th className="px-6 py-3">จุดติดตั้ง (Location Point of Use)</th>
                         <th className="px-6 py-3 text-center">สถานะการเก็บ</th>
+                        <th className="px-6 py-3 text-center">การดำเนินการ (Actions)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {group.copies.map(copy => {
-                        const isChecked = checkedSet.has(copy.id);
+                        const isChecked = checkedSet.has(copy.id) || copy.status === 'RECALLED' || copy.status === 'DESTROYED';
+                        const isDamaged = copy.isDamaged || copy.replacementReason === 'DAMAGED' || copy.reportType === 'DAMAGED';
                         return (
                           <tr 
                             key={copy.id}
@@ -1129,7 +1144,14 @@ const ControlledCopyRegister = () => {
                               </button>
                             </td>
                             <td className="px-6 py-3.5 font-mono font-bold text-slate-800">
-                              Copy {copy.copy_no || copy.ccNumber || '01'}
+                              <div className="flex items-center gap-1.5">
+                                <span>Copy {copy.copy_no || copy.ccNumber || '01'}</span>
+                                {isDamaged && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                    ชำรุด
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-6 py-3.5 font-semibold text-slate-800">
                               {copy.holder_dept || copy.department}
@@ -1141,7 +1163,19 @@ const ControlledCopyRegister = () => {
                               </span>
                             </td>
                             <td className="px-6 py-3.5 text-center">
-                              {isChecked ? (
+                              {copy.status === 'DESTROYED' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <Check size={12} strokeWidth={2.5} /> ทำลายแล้ว (Destroyed)
+                                </span>
+                              ) : copy.status === 'RECALLED' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  <Clock size={12} strokeWidth={2.5} /> รับเล่มคืนแล้ว (รอทำลาย)
+                                </span>
+                              ) : isDamaged ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  <AlertTriangle size={12} strokeWidth={2.5} /> เล่มชำรุดรอเรียกคืน
+                                </span>
+                              ) : isChecked ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                   <Check size={12} strokeWidth={2.5} /> เก็บเล่มคืนแล้ว
                                 </span>
@@ -1150,6 +1184,50 @@ const ControlledCopyRegister = () => {
                                   รอนำเล่มคืน
                                 </span>
                               )}
+                            </td>
+                            <td className="px-6 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-center gap-1.5">
+                                {copy.status === 'DESTROYED' ? (
+                                  <span className="text-xs text-slate-400 font-medium">ทำลายเรียบร้อย</span>
+                                ) : copy.status === 'RECALLED' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      destroyControlledCopy(copy.id);
+                                      toast.success(`บันทึกการทำลายเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} สำเร็จ`);
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="บันทึกการทำลายสำเนา (Destroy)"
+                                  >
+                                    <Flame size={12} /> บันทึกการทำลาย (Destroy)
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        recordCopyRecalled(copy.id);
+                                        toast.success(`บันทึกรับคืนเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} แล้ว (รอทำลาย)`);
+                                      }}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                      title="บันทึกรับคืนเล่มจริงสู่ DCC"
+                                    >
+                                      <Archive size={12} /> บันทึกรับคืนเล่มชำรุด
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        destroyControlledCopy(copy.id);
+                                        toast.success(`บันทึกรับคืนและทำลายเล่มชำรุด Copy ${copy.copy_no || copy.ccNumber} สำเร็จ`);
+                                      }}
+                                      className="px-2 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                                      title="ทำลายโดยตรง"
+                                    >
+                                      ทำลายทันที
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

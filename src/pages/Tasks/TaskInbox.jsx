@@ -124,6 +124,14 @@ const getTaskIconConfig = (task) => {
     };
   }
   if (normType === 'DCC_RECALL' || normType === 'DCC_RECALL_WITH_CHECKLIST' || normType === 'RECALL_HARDCOPY' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') {
+    if (task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด')) {
+      return {
+        icon: <AlertTriangle size={18} strokeWidth={2} />,
+        bg: 'bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-100 group-hover:border-rose-300',
+        label: 'เล่มชำรุดรอเรียกคืน',
+        badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200'
+      };
+    }
     return {
       icon: <AlertTriangle size={18} strokeWidth={2} />,
       bg: 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] group-hover:bg-[#FFEDD5] group-hover:border-[#FDBA74]',
@@ -252,6 +260,13 @@ const TaskInbox = () => {
   const pagination = useTablePagination(filteredTasks, 10);
 
   const getRiskBadge = (task) => {
+    if (task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด')) {
+      return (
+        <span className="badge-rejected flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-xs px-2 py-0.5 rounded">
+          <AlertTriangle size={11} className="text-rose-600" /> เล่มชำรุดรอเรียกคืน
+        </span>
+      );
+    }
     if (task.delivery_status === 'DISPATCHED_TRACKING' || task.tracking_status === 'WAITING_RECEIPT') {
       return (
         <span className="badge-pending flex items-center gap-1 bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] font-medium text-xs px-2 py-0.5 rounded">
@@ -450,13 +465,16 @@ const TaskInbox = () => {
               </button>
             )}
             {availableDepts.map(dept => {
+              // Mirror getFilteredTasks() logic exactly so pill counts match actual filtered list
               const deptCount = userTasks.filter(t => {
                 const tDept = t.target_department || t.targetDepartment || t.destinationDept || t.assignedToDept || t.currentHandlerDepartment || t.department || t.holder_dept || '';
                 const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
                 if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
+                  // Directly-assigned tasks: only count if dept also matches (or task has no dept)
+                  if (tDept && !isSameDepartment(tDept, dept)) return false;
                   return true;
                 }
-                return tDept === dept;
+                return isSameDepartment(tDept, dept);
               }).length;
               const isPrimary = (currentUser?.primary_department || currentUser?.department) === dept;
               const isSelected = deptFilter === dept;
@@ -490,7 +508,21 @@ const TaskInbox = () => {
               const isExternal = task.referenceType === 'EXTERNAL_DOC';
               const dar = (!isExternal) ? (dars || []).find(d => d.id === task.darId) : null;
               const extDoc = isExternal ? (externalDocuments || []).find(d => d.id === task.referenceId) : null;
-              const displayId = task.referenceId || task.darId || task.id;
+              // Suppress raw internal task IDs (e.g. task-recall-xxx-timestamp) for operational tasks
+              const rawId = task.referenceId || task.darId || task.doc_code || '';
+              const normTaskType = (task.type || task.taskType || '').toUpperCase();
+              const operationalLabels = {
+                DCC_DISTRIBUTE: 'งานแจกจ่ายสำเนาควบคุม',
+                DCC_ISSUE: 'งานออกสำเนาควบคุม',
+                DCC_RECALL: 'งานเรียกคืนสำเนาควบคุม',
+                DCC_RECALL_WITH_CHECKLIST: 'งานเรียกคืนสำเนาควบคุม',
+                RECALL_HARDCOPY: 'งานเรียกคืนสำเนาควบคุม',
+                RECALL: 'งานเรียกคืนสำเนาควบคุม',
+                DEPT_CONFIRM_HARDCOPY_RECEIPT: 'งานตรวจรับเล่มสำเนา',
+                CONFIRM_RECEIPT: 'งานตรวจรับเล่มสำเนา',
+                RECEIPT: 'งานตรวจรับเล่มสำเนา',
+              };
+              const displayId = rawId || operationalLabels[normTaskType] || (normTaskType.startsWith('DCC_') ? 'งาน DCC' : null) || task.id;
               
               const iconConfig = getTaskIconConfig(task);
 
