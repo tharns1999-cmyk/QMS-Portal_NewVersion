@@ -1759,7 +1759,7 @@ const MasterDataHub = () => {
                       <th className="px-4 py-3.5 w-28 whitespace-nowrap bg-[#F8FAFC]">แผนก</th>
                       <th className="px-4 py-3.5 w-32 font-mono whitespace-nowrap bg-[#F8FAFC]">Location ID</th>
                       <th className="px-4 py-3.5 min-w-[260px] bg-[#F8FAFC]">ชื่อจุดใช้งานหน้างาน (Point of Use / Station)</th>
-                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">Master Lock (Copy 01)</th>
+                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">จุดคุมงานต้นทาง (Copy 01)</th>
                       <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">สำเนาควบคุมผูกอยู่</th>
                       <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
                       <th className="px-4 py-3.5 text-right w-28 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
@@ -1794,8 +1794,8 @@ const MasterDataHub = () => {
                           </td>
                           <td className="px-4 py-3 text-center whitespace-nowrap">
                             {loc.isMasterOffice ? (
-                              <span className="bg-amber-50 text-amber-700 border border-amber-200/70 text-xs font-bold px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
-                                <Crown size={14} className="text-amber-600" /> Master Station
+                              <span className="bg-sky-50 text-sky-700 border border-sky-200/70 text-xs font-bold px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
+                                <Crown size={14} className="text-sky-600" /> จุดคุมงานต้นทาง
                               </span>
                             ) : (
                               <span className="text-slate-400 text-xs">-</span>
@@ -3065,8 +3065,8 @@ const MasterDataHub = () => {
                       className="w-4 h-4 text-[#0D99FF] rounded"
                     />
                     <div>
-                      <span className="font-bold text-slate-800">เป็นจุดคุมงานหลัก (Master Station)</span>
-                      <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 ประจำแผนก</p>
+                      <span className="font-bold text-slate-800">เป็นจุดคุมงานหลักประจำแผนก (Origin Office)</span>
+                      <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 (สำเนาควบคุม) ประจำแผนกเจ้าของเอกสาร</p>
                     </div>
                   </label>
                 </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle, FileText, CheckCircle2, Copy, MapPin, Building2, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { cleanLocationName } from '../../services/MasterDataService';
 
 const ReplacementModal = ({ isOpen, onClose, instance }) => {
   const [reasonType, setReasonType] = useState('DAMAGED');
@@ -37,7 +38,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
   };
 
   const copyNumber = instance.copy_no || instance.ccNumber || '01';
-  const locationName = instance.location || instance.locationName || instance.station_name || `${instance.holder_dept || instance.department || 'PD'} Station`;
+  const locationName = cleanLocationName(instance.location || instance.locationName || instance.station_name || `${instance.holder_dept || instance.department || 'PD'} Station`);
   const departmentName = instance.holder_dept || instance.department || instance.dept_code || 'PD';
   const docCode = instance.doc_code || instance.docTitle || instance.title || 'Controlled Document';
   const docTitle = instance.docName || instance.docTitle || instance.name || docCode;

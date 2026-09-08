@@ -13,6 +13,7 @@ import {
 import { 
   STANDARD_STATIONS, 
   calculateCopyAllocations, 
+  cleanLocationName,
   formatDocumentRunningNumber, 
   calculateNextDocumentSequence,
   calculateNextExternalDocSequence
@@ -5200,10 +5201,11 @@ const useStore = create(persist((set, get) => ({
 
               allTargets.forEach((dist, idx) => {
                 const deptName = dist.departmentId || dist.dept || dist.dept_code || newDoc.department;
-                const locName = dist.station_name || dist.locationName || dist.name || dist.location || (dist.isMaster ? `${deptName} Head Office (จุดคุมงานหลัก Master)` : `${deptName} Station ${idx + 1}`);
+                const locName = cleanLocationName(dist.station_name || dist.locationName || dist.name || dist.location || `${deptName} Head Office`);
                 const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
                 const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
                 const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+                const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
                 const newInst = {
                   id: `inst-${Date.now()}-${idx}`,
                   doc_id: newDoc.id,
@@ -5233,8 +5235,12 @@ const useStore = create(persist((set, get) => ({
                   locationId: locId,
                   station_id: locId,
                   station_name: locName,
-                  is_master: !!dist.isMaster || !!dist.is_master,
-                  isMaster: !!dist.isMaster || !!dist.is_master,
+                  is_master: false,
+                  isMaster: false,
+                  is_owner: isOrigin,
+                  isOwner: isOrigin,
+                  copy_type: 'CONTROLLED',
+                  copyType: 'CONTROLLED',
                   status: 'PENDING_ISSUE',
                   is_replacement: false,
                   dispatched_at: null,
@@ -5470,10 +5476,11 @@ const useStore = create(persist((set, get) => ({
 
                   allTargets.forEach((dist, idx) => {
                     const deptName = dist.departmentId || dist.dept || dist.dept_code || newDoc.department;
-                    const locName = dist.station_name || dist.locationName || dist.name || dist.location || (dist.isMaster ? `${deptName} Head Office (จุดคุมงานหลัก Master)` : `${deptName} Station ${idx + 1}`);
+                    const locName = cleanLocationName(dist.station_name || dist.locationName || dist.name || dist.location || `${deptName} Head Office`);
                     const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
                     const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
                     const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+                    const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
                     const newInst = {
                       id: `inst-${Date.now()}-${idx}`,
@@ -5505,8 +5512,12 @@ const useStore = create(persist((set, get) => ({
                       locationId: locId,
                       station_id: locId,
                       station_name: locName,
-                      is_master: !!dist.isMaster || !!dist.is_master,
-                      isMaster: !!dist.isMaster || !!dist.is_master,
+                      is_master: false,
+                      isMaster: false,
+                      is_owner: isOrigin,
+                      isOwner: isOrigin,
+                      copy_type: 'CONTROLLED',
+                      copyType: 'CONTROLLED',
                       status: 'PENDING_ISSUE',
                       is_replacement: false,
                       dispatched_at: null,
@@ -6900,10 +6911,11 @@ const useStore = create(persist((set, get) => ({
       if (allTargets.length > 0) {
         allTargets.forEach((dist, idx) => {
           const deptName = dist.departmentId || dist.dept || dist.dept_code || createdDoc.department;
-          const locName = dist.station_name || dist.locationName || dist.name || dist.location || (dist.isMaster ? `${deptName} Head Office (จุดคุมงานหลัก Master)` : `${deptName} Station ${idx + 1}`);
+          const locName = cleanLocationName(dist.station_name || dist.locationName || dist.name || dist.location || `${deptName} Head Office`);
           const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
           const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
           const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+          const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
           const newInst = {
             id: `inst-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
@@ -6934,8 +6946,12 @@ const useStore = create(persist((set, get) => ({
             locationId: locId,
             station_id: locId,
             station_name: locName,
-            is_master: !!dist.isMaster || !!dist.is_master,
-            isMaster: !!dist.isMaster || !!dist.is_master,
+            is_master: false,
+            isMaster: false,
+            is_owner: isOrigin,
+            isOwner: isOrigin,
+            copy_type: 'CONTROLLED',
+            copyType: 'CONTROLLED',
             status: 'PENDING_ISSUE',
             is_replacement: false,
             dispatched_at: null,
@@ -7328,10 +7344,11 @@ const useStore = create(persist((set, get) => ({
 
     allTargets.forEach((dist, idx) => {
       const deptName = dist.departmentId || dist.dept || dist.dept_code || newDoc.department;
-      const locName = dist.station_name || dist.locationName || dist.name || dist.location || (dist.isMaster ? `${deptName} Head Office (จุดคุมงานหลัก Master)` : `${deptName} Station ${idx + 1}`);
+      const locName = cleanLocationName(dist.station_name || dist.locationName || dist.name || dist.location || `${deptName} Head Office`);
       const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
       const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
       const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+      const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
       const newInst = {
         id: `inst-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
@@ -7362,8 +7379,12 @@ const useStore = create(persist((set, get) => ({
         locationId: locId,
         station_id: locId,
         station_name: locName,
-        is_master: !!dist.isMaster || !!dist.is_master,
-        isMaster: !!dist.isMaster || !!dist.is_master,
+        is_master: false,
+        isMaster: false,
+        is_owner: isOrigin,
+        isOwner: isOrigin,
+        copy_type: 'CONTROLLED',
+        copyType: 'CONTROLLED',
         status: 'PENDING_ISSUE',
         is_replacement: false,
         dispatched_at: null,
@@ -9768,7 +9789,7 @@ const useStore = create(persist((set, get) => ({
     const newLoc = {
       id: locData.id || `${locData.departmentId}-${Date.now().toString().slice(-4)}`,
       departmentId: locData.departmentId,
-      name: locData.name,
+      name: cleanLocationName(locData.name),
       code: locData.code || locData.id,
       isMasterOffice: Boolean(locData.isMasterOffice),
       description: locData.description || '',

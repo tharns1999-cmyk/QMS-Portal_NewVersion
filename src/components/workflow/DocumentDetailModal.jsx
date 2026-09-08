@@ -23,7 +23,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import useStore from '../../store/useStore';
-import { normalizeDepartmentId } from '../../services/MasterDataService';
+import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterDataService';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { UniversalWatermarkService, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
@@ -1213,9 +1213,9 @@ const DocumentDetailModal = ({
                           {activeCopies.map(copy => {
                             const rawNo = copy.copy_no || copy.ccNumber || '01';
                             const num = parseInt(String(rawNo).replace(/\D/g, ''), 10) || 1;
-                            const isMaster = Boolean(copy.is_master || copy.isMaster || num === 1);
+                            const isOrigin = Boolean(copy.is_owner || copy.isOwner || num === 1);
                             const deptName = copy.holder_dept || copy.department || '-';
-                            const locName = copy.location || copy.locationName || copy.station_name || `${deptName || 'PD'} Head Office`;
+                            const locName = cleanLocationName(copy.location || copy.locationName || copy.station_name || `${deptName || 'PD'} Head Office`);
                             return (
                               <tr key={copy.id || `active-${num}`} className="hover:bg-[#F8FAFC] transition-colors">
                                 <td className="py-3 px-3.5 whitespace-nowrap align-middle">
@@ -1223,13 +1223,12 @@ const DocumentDetailModal = ({
                                     <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-[#F0F7FF] text-[#0284C7] border border-[#BAE6FD]">
                                       Copy {copy.copy_no || copy.ccNumber}
                                     </span>
-                                    {isMaster ? (
-                                      <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EDE9FE] text-[#6D28D9] border border-[#DDD6FE]">
-                                        Master
-                                      </span>
-                                    ) : (
-                                      <span className="font-sans text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0]">
-                                        Controlled
+                                    <span className="font-sans text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0]">
+                                      เล่มควบคุม
+                                    </span>
+                                    {isOrigin && (
+                                      <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">
+                                        จุดต้นทาง
                                       </span>
                                     )}
                                     {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
@@ -1380,7 +1379,7 @@ const DocumentDetailModal = ({
                                     <tbody className="divide-y divide-[#F0F0F0]">
                                       {group.copies.map(copy => {
                                         const deptName = copy.departmentName || copy.department || copy.holder_dept || '-';
-                                        const locName = copy.location || copy.originalLocation || copy.point || copy.locationName || copy.station_name || `${deptName || 'PD'} Head Office`;
+                                        const locName = cleanLocationName(copy.location || copy.originalLocation || copy.point || copy.locationName || copy.station_name || `${deptName || 'PD'} Head Office`);
                                         return (
                                           <tr key={copy.id || `${group.revision}-${copy.copy_no}`} className="hover:bg-[#FFFBF5] transition-colors">
                                             <td className="py-2.5 px-3 whitespace-nowrap align-middle">
@@ -1388,11 +1387,9 @@ const DocumentDetailModal = ({
                                                 <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1]">
                                                   Copy {copy.copy_no || copy.ccNumber}
                                                 </span>
-                                                {(copy.is_master || copy.isMaster) && (
-                                                  <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EDE9FE] text-[#6D28D9] border border-[#DDD6FE]">
-                                                    Master
-                                                  </span>
-                                                )}
+                                                <span className="font-sans text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0]">
+                                                  เล่มควบคุม
+                                                </span>
                                                 {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
                                                   <span className="inline-block px-1.5 py-0.5 rounded bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-[10px] whitespace-nowrap">
                                                     Issue {copy.issue_no || '02'}

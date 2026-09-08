@@ -27,6 +27,7 @@ import useStore from '../../store/useStore';
 import { ACCESS_SCOPES, ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { calculateCopyAllocations, cleanLocationName } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 
 /**
@@ -98,10 +99,13 @@ const DarReviewModal = ({
 
   const scopeMeta = ACCESS_SCOPE_METADATA[accessControl.scope] || ACCESS_SCOPE_METADATA.GENERAL;
 
-  // Controlled Copies & Distributions
-  const distributions = dar.distributions || dar.distribution_locations || [];
-  const totalPhysicalCopies = distributions.filter(d => d.copyType === 'CONTROLLED' || d.type === 'CONTROLLED').length;
-  const isDigitalOnly = distributions.length === 0;
+  // Controlled Copies & Distributions (ISO 9001: Master strictly held at DCC, all distributed copies are Controlled Copies)
+  const isFormDoc = String(dar.docType || dar.doc_type || docInfo.docCode || '').startsWith('FM');
+  const rawDistributions = dar.distributions || dar.distribution_locations || [];
+  const allocations = calculateCopyAllocations(ownerDept, rawDistributions);
+  const allControlledCopies = isFormDoc && rawDistributions.length === 0 ? [] : (allocations?.allAllocations || []);
+  const totalControlledCopies = allControlledCopies.length;
+  const isDigitalOnly = isFormDoc || totalControlledCopies === 0;
 
   // Standards Badges
   const relatedStandards = dar.relatedStandards || dar.standards || [];
@@ -370,25 +374,39 @@ const DarReviewModal = ({
                   <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <span className="text-[#666666]">ยอดจัดสรรสำเนา:</span>
                     <span className="font-bold font-mono text-[#1E1E1E]">
-                      Master: 1 ชุด | เล่มควบคุม: {totalPhysicalCopies} ชุด
+                      {isDigitalOnly 
+                        ? '📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)' 
+                        : `ต้นฉบับ (Master): จัดเก็บที่ DCC | เล่มควบคุมแจกจ่าย: ${totalControlledCopies} ชุด`}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">รายการสำเนาและจุดประจำหน้างาน:</span>
-                    <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                      <div className="flex items-center justify-between p-1.5 bg-indigo-50/60 rounded border border-indigo-100 text-[11px]">
-                        <span className="font-bold text-indigo-900">Master 01 (ต้นฉบับ)</span>
-                        <span className="text-indigo-700 font-medium">{ownerDept} Head Office (ล็อกถาวร)</span>
-                      </div>
-
-                      {distributions.length > 0 ? (
-                        distributions.map((d, i) => (
-                          <div key={i} className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[11px]">
-                            <span className="font-bold text-slate-800">Copy {String(i + 1).padStart(2, '0')}</span>
-                            <span className="text-slate-600 truncate max-w-[180px]">{d.location || d.stationName || d.departmentId || 'จุดหน้างาน'}</span>
-                          </div>
-                        ))
+                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                      {!isDigitalOnly && allControlledCopies.length > 0 ? (
+                        allControlledCopies.map((d, i) => {
+                          const isOrigin = d.copyNo === '01' || d.isOwner || i === 0;
+                          const rawLoc = d.location || d.station_name || d.stationName || d.locationName || d.name || d.departmentId || 'จุดหน้างาน';
+                          const cleanLoc = cleanLocationName(rawLoc);
+                          const deptTag = d.departmentId || d.dept || ownerDept;
+                          return (
+                            <div 
+                              key={i} 
+                              className={`flex items-center justify-between p-1.5 rounded border text-[11px] ${
+                                isOrigin 
+                                  ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950' 
+                                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                              }`}
+                            >
+                              <span className="font-bold font-mono text-indigo-900">
+                                Copy {d.copyNo || String(i + 1).padStart(2, '0')} (เล่มควบคุม)
+                              </span>
+                              <span className="text-slate-600 truncate max-w-[220px]">
+                                {cleanLoc} {isOrigin ? `(${ownerDept} — ล็อกถาวร)` : `(${deptTag})`}
+                              </span>
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className="p-2 text-center text-slate-400 text-[11px] italic bg-slate-50 rounded">
                           📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)

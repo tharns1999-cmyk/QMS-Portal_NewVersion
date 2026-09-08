@@ -21,6 +21,7 @@ import Button from '../../components/ui/Button';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { 
   calculateCopyAllocations, 
+  cleanLocationName,
   formatDocumentRunningNumber, 
   calculateNextDocumentSequence 
 } from '../../services/MasterDataService';
@@ -919,17 +920,25 @@ const DarNewForm = () => {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
                 value: (() => {
                   const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
+                  const allList = allocs?.allAllocations || [];
                   return (
                     <div className="space-y-1.5 pt-0.5">
                       <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
-                          Copy 01 (Master): {allocs?.masterCopy?.station_name || allocs?.masterCopy?.locationName || 'PD Head Office'}
-                        </span>
-                        {(allocs?.distributedCopies || []).map((d, idx) => (
-                          <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-[#E5F4FF] text-[#007BE5] border border-indigo-100">
-                            {d.copyLabel || `Copy ${d.copyNo}`}: {d.station_name || d.locationName || d.name || d.location}
-                          </span>
-                        ))}
+                        {allList.map((d, idx) => {
+                          const isOrigin = d.copyNo === '01' || d.isOwner || idx === 0;
+                          return (
+                            <span 
+                              key={idx} 
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${
+                                isOrigin
+                                  ? 'bg-indigo-50 text-indigo-800 border-indigo-200 font-bold shadow-2xs'
+                                  : 'bg-[#E5F4FF] text-[#007BE5] border-indigo-100'
+                              }`}
+                            >
+                              Copy {d.copyNo || String(idx + 1).padStart(2, '0')} (เล่มควบคุม): {cleanLocationName(d.station_name || d.locationName || d.name || d.location || 'จุดหน้างาน')}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
                   );

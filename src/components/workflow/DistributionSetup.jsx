@@ -2,13 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Building2, Check, ChevronRight, 
   Globe, Plus, Trash2, MapPin, Sparkles, Layers,
-  FileSpreadsheet, CheckCircle2, ShieldCheck, X, Crown, Printer, Info
+  FileSpreadsheet, CheckCircle2, ShieldCheck, Shield, X, Crown, Printer, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useStore from '../../store/useStore';
 import { 
   DEPARTMENT_METADATA, 
   normalizeDepartmentId, 
+  cleanLocationName,
   getDepartmentStations, 
   getMasterStationForDept,
   calculateCopyAllocations 
@@ -736,21 +737,21 @@ const DistributionSetup = ({
     <div className="bg-white border border-slate-200/80 rounded-3xl p-4 sm:p-5 space-y-3 w-full shadow-sm transition-all">
 
       {/* ══════════════════════════════════════════════════════════
-          1. Header & Master Summary Strip (≤40px)
+          1. Header & Summary Strip (≤40px)
       ══════════════════════════════════════════════════════════ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 bg-slate-50/80 border border-slate-200/60 rounded-xl">
-        {/* Master Badge */}
+        {/* Origin Controlled Copy Badge */}
         <span className="inline-flex items-center gap-2 text-xs select-none">
-          <Crown size={12} className="text-amber-600 shrink-0" />
-          <span className="font-mono font-bold text-amber-900">Master Copy 01</span>
-          <span className="text-amber-700/60 font-normal">({normOwnerDept} — {ownerMasterStation.name})</span>
-          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200/60">ล็อกถาวร</span>
+          <Shield size={12} className="text-indigo-600 shrink-0" />
+          <span className="font-mono font-bold text-indigo-900">Copy 01 (สำเนาควบคุม)</span>
+          <span className="text-slate-600 font-normal">({normOwnerDept} — {cleanLocationName(ownerMasterStation.name)})</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-bold border border-indigo-200/60">ล็อกถาวร</span>
         </span>
         {/* Inline Metrics */}
         <div className="flex items-center gap-3 text-xs text-slate-500 shrink-0">
-          <span>รวม <strong className="text-slate-800">{copyCalculation.totalCopies}</strong> ชุด</span>
-          <span className="text-slate-200">|</span>
-          <span>Controlled <strong className="text-indigo-600">{copyCalculation.distributedCopies.length}</strong></span>
+          <span className="hidden sm:inline text-slate-400">ต้นฉบับ (Master): <strong className="text-slate-600 font-medium">จัดเก็บที่ DCC</strong></span>
+          <span className="hidden sm:inline text-slate-200">|</span>
+          <span>ยอดจัดสรรเล่มควบคุม: <strong className="text-indigo-600 font-bold">{copyCalculation.totalCopies}</strong> ชุด</span>
         </div>
       </div>
 
@@ -878,18 +879,19 @@ const DistributionSetup = ({
                       const stationName = station.name || station.station_name || stationKey;
                       const matchesSearch = q && stationName.toLowerCase().includes(q);
 
-                      /* ── Master Chip (amber, locked) ── */
+                      /* ── Origin Station Chip (Copy 01, locked) ── */
                       if (isMaster) {
                         return (
                           <span
                             key={stationKey}
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border select-none cursor-not-allowed
-                              bg-amber-50 border-amber-300/80 text-amber-800 font-medium
-                              ${matchesSearch ? 'ring-1 ring-amber-400' : ''}`}
+                              bg-indigo-50/70 border-indigo-200 text-indigo-900 font-medium
+                              ${matchesSearch ? 'ring-1 ring-indigo-400' : ''}`}
+                            title="สำเนาควบคุม Copy 01 ประจำจุดคุมงานแผนกต้นทาง (ล็อกอัตโนมัติ)"
                           >
-                            <Crown size={10} className="text-amber-500 shrink-0" />
-                            <span>{stationName}</span>
-                            <span className="text-[10px] font-mono font-bold text-amber-600 ml-0.5">01</span>
+                            <Shield size={10} className="text-indigo-500 shrink-0" />
+                            <span>{cleanLocationName(stationName)}</span>
+                            <span className="text-[10px] font-mono font-bold text-indigo-600 ml-0.5">01 (ต้นทาง)</span>
                           </span>
                         );
                       }
@@ -906,7 +908,7 @@ const DistributionSetup = ({
                               ${matchesSearch ? 'ring-1 ring-indigo-500' : ''}`}
                           >
                             <Check size={11} strokeWidth={3} className="text-indigo-600 shrink-0" />
-                            <span>{stationName}</span>
+                            <span>{cleanLocationName(stationName)}</span>
                             <span className="text-[10px] font-mono font-bold text-indigo-500 bg-indigo-100 px-1 rounded ml-0.5">
                               {copyLabel}
                             </span>
@@ -1026,37 +1028,43 @@ const DistributionSetup = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
               <Printer size={12} className="text-slate-400" />
-              <span>สำเนาที่จะพิมพ์ ({copyCalculation.totalCopies} ชุด)</span>
+              <span>สำเนาควบคุมที่จะพิมพ์ ({copyCalculation.totalCopies} ชุด)</span>
             </div>
+            <span className="text-[11px] text-slate-400">
+              ต้นฉบับ (Master) จัดเก็บรักษาที่ DCC
+            </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {copyCalculation.allAllocations.map((alloc) => (
-              <span
-                key={`${alloc.departmentId}::${alloc.locationId}`}
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-mono border transition-all ${
-                  alloc.isMaster
-                    ? 'bg-amber-50 text-amber-900 border-amber-200/80'
-                    : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
-                }`}
-              >
-                <span className={`font-bold ${alloc.isMaster ? 'text-amber-600' : 'text-indigo-600'}`}>
-                  {alloc.departmentId}
+            {copyCalculation.allAllocations.map((alloc) => {
+              const isOriginCopy = alloc.isOwner || alloc.copyNo === '01';
+              return (
+                <span
+                  key={`${alloc.departmentId}::${alloc.locationId}`}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-mono border transition-all ${
+                    isOriginCopy
+                      ? 'bg-indigo-50 text-indigo-900 border-indigo-200/80 font-medium'
+                      : 'bg-white text-slate-700 border-slate-200 shadow-2xs'
+                  }`}
+                >
+                  <span className="font-bold text-indigo-600">
+                    {alloc.departmentId}
+                  </span>
+                  <span>·</span>
+                  <span>Copy {alloc.copyNo} (เล่มควบคุม)</span>
+                  <span className="text-slate-500 font-sans font-normal truncate max-w-[120px]">{cleanLocationName(alloc.locationName)}</span>
+                  {!isOriginCopy && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStation(alloc.departmentId, { id: alloc.locationId, name: alloc.locationName })}
+                      className="text-slate-300 hover:text-rose-500 transition-colors cursor-pointer ml-0.5"
+                      title="ยกเลิกจุดนี้"
+                    >
+                      <X size={11} className="stroke-[2.5]" />
+                    </button>
+                  )}
                 </span>
-                <span>·</span>
-                <span>Copy {alloc.copyNo}</span>
-                <span className="text-slate-400 font-sans font-normal truncate max-w-[100px]">{alloc.locationName}</span>
-                {!alloc.isMaster && (
-                  <button
-                    type="button"
-                    onClick={() => handleToggleStation(alloc.departmentId, { id: alloc.locationId, name: alloc.locationName })}
-                    className="text-slate-300 hover:text-rose-500 transition-colors cursor-pointer ml-0.5"
-                    title="ยกเลิกจุดนี้"
-                  >
-                    <X size={11} className="stroke-[2.5]" />
-                  </button>
-                )}
-              </span>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

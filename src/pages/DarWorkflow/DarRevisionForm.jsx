@@ -16,6 +16,7 @@ import {
   isUserAuthorizedForDocDept, 
   isDocumentEligibleForRevision 
 } from '../../utils/darHelper';
+import { cleanLocationName } from '../../services/MasterDataService';
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -308,8 +309,9 @@ const DarRevisionForm = () => {
       initialDistributions = uniqueDocCopies.map((c, idx) => {
         const copyNo = normCopyNo(c, idx + 1);
         const dept = c.holder_dept || c.department || c.dept || doc.department || 'PD';
-        const locName = c.location || c.locationName || c.station_name || `${dept} Station`;
+        const locName = cleanLocationName(c.location || c.locationName || c.station_name || `${dept} Station`);
         const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
+        const isOrigin = copyNo === '01' || !!c.is_owner || !!c.isOwner;
         return {
           id: c.locationId || c.station_id || `loc-${idx}`,
           locationId: locId,
@@ -321,7 +323,12 @@ const DarRevisionForm = () => {
           dept: dept,
           dept_code: dept,
           copyNo: copyNo,
-          isMaster: copyNo === '01' || !!c.is_master || !!c.isMaster
+          copyLabel: `Copy ${copyNo} (สำเนาควบคุม)`,
+          copyType: 'CONTROLLED',
+          isMaster: false,
+          is_master: false,
+          isOwner: isOrigin,
+          is_owner: isOrigin
         };
       });
     } else if (doc.distributions && doc.distributions.length > 0) {
@@ -393,8 +400,9 @@ const DarRevisionForm = () => {
         const alignedDists = activeCopiesInCirculation.map((c, idx) => {
           const copyNo = c.normalizedCopyNo || normCopyNo(c, idx + 1);
           const dept = c.holder_dept || c.department || c.dept || selectedDoc.department || 'PD';
-          const locName = c.location || c.locationName || c.station_name || `${dept} Station`;
+          const locName = cleanLocationName(c.location || c.locationName || c.station_name || `${dept} Station`);
           const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
+          const isOrigin = copyNo === '01' || !!c.is_owner || !!c.isOwner;
           return {
             id: c.locationId || c.station_id || `loc-${idx}`,
             locationId: locId,
@@ -406,7 +414,12 @@ const DarRevisionForm = () => {
             dept: dept,
             dept_code: dept,
             copyNo: copyNo,
-            isMaster: copyNo === '01' || !!c.is_master || !!c.isMaster
+            copyLabel: `Copy ${copyNo} (สำเนาควบคุม)`,
+            copyType: 'CONTROLLED',
+            isMaster: false,
+            is_master: false,
+            isOwner: isOrigin,
+            is_owner: isOrigin
           };
         });
         setFormData(prev => ({
@@ -441,20 +454,20 @@ const DarRevisionForm = () => {
         // Only keep distributions belonging to the Owner Department
         prunedDists = currentDists.filter(dist => {
           const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
-          return distDept === normOwner || dist.isMaster || dist.is_master;
+          return distDept === normOwner || dist.isOwner || dist.is_owner || dist.isMaster || dist.is_master || dist.copyNo === '01';
         });
       } else if (scope === 'TARGETED' && authorizedDepts.length > 0) {
         // Only keep distributions belonging to Owner Department or explicitly Authorized Departments
         prunedDists = currentDists.filter(dist => {
           const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
-          return distDept === normOwner || authorizedDepts.includes(distDept) || dist.isMaster || dist.is_master;
+          return distDept === normOwner || authorizedDepts.includes(distDept) || dist.isOwner || dist.is_owner || dist.isMaster || dist.is_master || dist.copyNo === '01';
         });
       }
 
       // Dynamic Copy Number Re-indexing
-      // Separate master copy vs non-master copies and re-index sequentially starting from Copy 02
-      let masterItem = prunedDists.find(d => d.isMaster || d.is_master || d.copyNo === '01');
-      const nonMasterItems = prunedDists.filter(d => !(d.isMaster || d.is_master || d.copyNo === '01'));
+      // Separate origin copy 01 vs non-origin copies and re-index sequentially starting from Copy 02
+      let masterItem = prunedDists.find(d => d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01');
+      const nonMasterItems = prunedDists.filter(d => !(d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01'));
 
       const reindexedNonMasters = nonMasterItems.map((item, idx) => {
         const copyNum = String(idx + 2).padStart(2, '0');
@@ -462,12 +475,15 @@ const DarRevisionForm = () => {
           ...item,
           copyNo: copyNum,
           copy_no: copyNum,
-          copyLabel: `Copy ${copyNum}`
+          copyLabel: `Copy ${copyNum} (สำเนาควบคุม)`,
+          copyType: 'CONTROLLED',
+          isMaster: false,
+          isOwner: false
         };
       });
 
       const finalDists = masterItem 
-        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01', isMaster: true }, ...reindexedNonMasters]
+        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01 (สำเนาควบคุม)', copyType: 'CONTROLLED', isMaster: false, isOwner: true }, ...reindexedNonMasters]
         : reindexedNonMasters;
 
       return {
@@ -483,8 +499,8 @@ const DarRevisionForm = () => {
    * Unchecking chip triggers Two-Way Binding with DistributionSetup
    */
   const handleRemoveDistributionChip = (distToRemove) => {
-    if (distToRemove.isMaster || distToRemove.is_master || distToRemove.copyNo === '01') {
-      toast.error('ไม่สามารถลบ Master Copy 01 ของแผนกเจ้าของเอกสารได้');
+    if (distToRemove.isOwner || distToRemove.is_owner || distToRemove.isMaster || distToRemove.is_master || distToRemove.copyNo === '01') {
+      toast.error('ไม่สามารถลบ Copy 01 (สำเนาควบคุม) ของแผนกเจ้าของเอกสารได้');
       return;
     }
 
@@ -498,8 +514,8 @@ const DarRevisionForm = () => {
       });
 
       // Dynamic Re-indexing
-      const masterItem = remaining.find(d => d.isMaster || d.is_master || d.copyNo === '01');
-      const nonMasterItems = remaining.filter(d => !(d.isMaster || d.is_master || d.copyNo === '01'));
+      const masterItem = remaining.find(d => d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01');
+      const nonMasterItems = remaining.filter(d => !(d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01'));
 
       const reindexed = nonMasterItems.map((item, idx) => {
         const copyNum = String(idx + 2).padStart(2, '0');
@@ -507,12 +523,15 @@ const DarRevisionForm = () => {
           ...item,
           copyNo: copyNum,
           copy_no: copyNum,
-          copyLabel: `Copy ${copyNum}`
+          copyLabel: `Copy ${copyNum} (สำเนาควบคุม)`,
+          copyType: 'CONTROLLED',
+          isMaster: false,
+          isOwner: false
         };
       });
 
       const finalDists = masterItem 
-        ? [{ ...masterItem, copyNo: '01', copy_no: '01', isMaster: true }, ...reindexed]
+        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01 (สำเนาควบคุม)', copyType: 'CONTROLLED', isMaster: false, isOwner: true }, ...reindexed]
         : reindexed;
 
       return {
@@ -1343,44 +1362,44 @@ const DarRevisionForm = () => {
                     {(formData.distributions || []).length > 0 ? (
                       (formData.distributions || []).map((dist, idx) => {
                         const copyNum = dist.copyNo || dist.copy_no || String(idx + 1).padStart(2, '0');
-                        const isMaster = dist.isMaster || dist.is_master || copyNum === '01';
+                        const isOrigin = dist.isOwner || dist.is_owner || copyNum === '01';
                         const dept = dist.departmentId || dist.dept || dist.dept_code || dist.department || selectedDoc.department || 'PD';
-                        const loc = dist.locationName || dist.station_name || dist.location || `${dept} Station`;
+                        const loc = cleanLocationName(dist.locationName || dist.station_name || dist.location || `${dept} Station`);
                         return (
                           <div 
                             key={dist.id || `${dept}-${idx}`}
                             className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs border shadow-2xs transition-all ${
-                              isMaster 
-                                ? 'bg-zinc-900 text-white border-zinc-800' 
+                              isOrigin 
+                                ? 'bg-sky-50/70 border-sky-200/80 text-slate-800' 
                                 : 'bg-white/90 border-emerald-200/70 text-slate-800'
                             }`}
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className={`font-mono font-bold px-1.5 py-0.5 rounded text-[11px] shrink-0 ${
-                                isMaster 
-                                  ? 'bg-amber-400 text-zinc-950' 
+                                isOrigin 
+                                  ? 'bg-sky-100 text-sky-800 border border-sky-200' 
                                   : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               }`}>
                                 Copy {copyNum}
                               </span>
-                              <span className={`font-semibold shrink-0 ${isMaster ? 'text-zinc-200' : 'text-slate-800'}`}>
+                              <span className="font-semibold shrink-0 text-slate-800">
                                 ({dept})
                               </span>
-                              <span className={`truncate text-[11px] ${isMaster ? 'text-zinc-300' : 'text-slate-600'}`} title={loc}>
+                              <span className="truncate text-[11px] text-slate-600" title={loc}>
                                 {loc}
                               </span>
-                              {isMaster && (
-                                <span className="px-1.5 py-0.2 rounded text-[10px] bg-zinc-800 text-amber-300 border border-zinc-700 font-bold shrink-0">
-                                  Master
+                              {isOrigin && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] bg-sky-100 text-sky-800 border border-sky-200 font-semibold shrink-0">
+                                  ต้นทาง
                                 </span>
                               )}
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className={`text-[10px] font-mono font-semibold ${isMaster ? 'text-zinc-400' : 'text-emerald-700'}`}>
+                              <span className="text-[10px] font-mono font-semibold text-emerald-700">
                                 Rev.{calculateNextRev(selectedDoc.rev)}
                               </span>
-                              {!isMaster && (
+                              {!isOrigin && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveDistributionChip(dist)}

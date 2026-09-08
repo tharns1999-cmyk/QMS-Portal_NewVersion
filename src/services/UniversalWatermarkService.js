@@ -15,6 +15,7 @@
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import { cleanLocationName } from './MasterDataService';
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -1072,7 +1073,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     return [
       'OFFICIAL CONTROLLED COPY — DO NOT DUPLICATE',
       `Doc: ${docCode} | Rev.${docRev}`,
-      `Copy: ${copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || 'Copy 01'} | Station: ${copyInfo.station_name || copyInfo.location || copyInfo.locationName || 'Master'}`,
+      `Copy: ${copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || 'Copy 01'} | Station: ${cleanLocationName(copyInfo.station_name || copyInfo.location || copyInfo.locationName || 'จุดใช้งาน')}`,
       `Issued Date: ${nowStr} | Issuer: ${userStr}`,
     ];
   }
