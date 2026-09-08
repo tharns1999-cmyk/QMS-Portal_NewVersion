@@ -134,16 +134,26 @@ function App() {
             <Route path="external/my-requests" element={withSuspense(MyExternalRequests)} />
             <Route path="external/requests/:id" element={withSuspense(ExternalRequestDetail)} />
             <Route path="external/my-requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
-            <Route path="external-docs/my-requests" element={<Navigate to="/dcc/external/my-requests" replace />} />
+            <Route path="external-docs/my-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
+            {/* Alias redirects within /dcc */}
+            <Route path="documents" element={<AliasRedirect to="/dcc/library" />} />
+            <Route path="documents/:id" element={<AliasRedirect to="/dcc/library/:id" />} />
+            <Route path="external/library" element={<AliasRedirect to="/dcc/external-docs" />} />
+            <Route path="external-docs/library" element={<AliasRedirect to="/dcc/external-docs" />} />
+            <Route path="external-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
+            <Route path="dar-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="my-tasks" element={<AliasRedirect to="/dcc/tasks" />} />
+            <Route path="task-dashboard" element={<AliasRedirect to="/dcc/tasks" />} />
+
             {/* Master List Registry Deprecation Fallback Redirects -> Document Library */}
-            <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
-            <Route path="registry" element={<Navigate to="/dcc/library" replace />} />
-            <Route path="master-register" element={<Navigate to="/dcc/library" replace />} />
-            <Route path="document-register" element={<Navigate to="/dcc/library" replace />} />
+            <Route path="master-list" element={<AliasRedirect to="/dcc/library" />} />
+            <Route path="registry" element={<AliasRedirect to="/dcc/library" />} />
+            <Route path="master-register" element={<AliasRedirect to="/dcc/library" />} />
+            <Route path="document-register" element={<AliasRedirect to="/dcc/library" />} />
             
             <Route path="periodic-reviews" element={withSuspense(PeriodicReviewDashboard)} />
             <Route path="periodic-reviews/:reviewId" element={withSuspense(PeriodicReviewDetail)} />
-
 
           </Route>
 
@@ -157,8 +167,12 @@ function App() {
           <Route path="dar/new/:docType" element={<AliasRedirect to="/dcc/dar/new/:docType" />} />
           <Route path="dar/list" element={<AliasRedirect to="/dcc/dar/list" />} />
           <Route path="dar/:id" element={<AliasRedirect to="/dcc/dar/:id" />} />
+          <Route path="dar-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+          <Route path="requests" element={<AliasRedirect to="/dcc/dar/list" />} />
 
-          <Route path="tasks" element={<Navigate to="/dcc/tasks" replace />} />
+          <Route path="tasks" element={<AliasRedirect to="/dcc/tasks" />} />
+          <Route path="my-tasks" element={<AliasRedirect to="/dcc/tasks" />} />
+          <Route path="task-dashboard" element={<AliasRedirect to="/dcc/tasks" />} />
           <Route path="tasks/review/:id" element={<AliasRedirect to="/dcc/tasks/review/:id" />} />
           <Route path="tasks/approve/:id" element={<AliasRedirect to="/dcc/tasks/approve/:id" />} />
           <Route path="tasks/ack/:id" element={<AliasRedirect to="/dcc/tasks/ack/:id" />} />
@@ -166,29 +180,34 @@ function App() {
           <Route path="tasks/approve-replacement/:id" element={<AliasRedirect to="/dcc/tasks/approve-replacement/:id" />} />
           <Route path="tasks/confirm-receipt/:id" element={<AliasRedirect to="/dcc/tasks/confirm-receipt/:id" />} />
 
-          <Route path="library" element={<Navigate to="/dcc/library" replace />} />
+          <Route path="library" element={<AliasRedirect to="/dcc/library" />} />
           <Route path="library/:id" element={<AliasRedirect to="/dcc/library/:id" />} />
+          <Route path="documents" element={<AliasRedirect to="/dcc/library" />} />
+          <Route path="documents/:id" element={<AliasRedirect to="/dcc/library/:id" />} />
           <Route path="viewer/:docId/:rev" element={<AliasRedirect to="/dcc/viewer/:docId/:rev" />} />
 
-          <Route path="admin/health" element={<Navigate to="/dcc/admin/health" replace />} />
-          <Route path="admin/action-log" element={<Navigate to="/dcc/admin/action-log" replace />} />
-          <Route path="admin/master-data" element={<Navigate to="/dcc/admin/master-data" replace />} />
-          <Route path="master-data" element={<Navigate to="/dcc/admin/master-data" replace />} />
-          <Route path="reports" element={<Navigate to="/dcc/reports" replace />} />
+          <Route path="admin/health" element={<AliasRedirect to="/dcc/admin/health" />} />
+          <Route path="admin/action-log" element={<AliasRedirect to="/dcc/admin/action-log" />} />
+          <Route path="admin/master-data" element={<AliasRedirect to="/dcc/admin/master-data" />} />
+          <Route path="master-data" element={<AliasRedirect to="/dcc/admin/master-data" />} />
+          <Route path="reports" element={<AliasRedirect to="/dcc/reports" />} />
 
-          <Route path="controlled-copy" element={<Navigate to="/dcc/controlled-copy" replace />} />
-          <Route path="external-docs" element={<Navigate to="/dcc/external-docs" replace />} />
+          <Route path="controlled-copy" element={<AliasRedirect to="/dcc/controlled-copy" />} />
+          <Route path="external-docs" element={<AliasRedirect to="/dcc/external-docs" />} />
+          <Route path="external/library" element={<AliasRedirect to="/dcc/external-docs" />} />
+          <Route path="external-docs/library" element={<AliasRedirect to="/dcc/external-docs" />} />
           <Route path="external/my-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
+          <Route path="external-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
           <Route path="external/requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
           <Route path="external/my-requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
-          <Route path="external-docs/my-requests" element={<Navigate to="/dcc/external/my-requests" replace />} />
+          <Route path="external-docs/my-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
           {/* Master List Registry Deprecation Fallbacks -> Document Library */}
-          <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
-          <Route path="registry" element={<Navigate to="/dcc/library" replace />} />
-          <Route path="master-register" element={<Navigate to="/dcc/library" replace />} />
-          <Route path="document-register" element={<Navigate to="/dcc/library" replace />} />
+          <Route path="master-list" element={<AliasRedirect to="/dcc/library" />} />
+          <Route path="registry" element={<AliasRedirect to="/dcc/library" />} />
+          <Route path="master-register" element={<AliasRedirect to="/dcc/library" />} />
+          <Route path="document-register" element={<AliasRedirect to="/dcc/library" />} />
           
-          <Route path="periodic-reviews" element={<Navigate to="/dcc/periodic-reviews" replace />} />
+          <Route path="periodic-reviews" element={<AliasRedirect to="/dcc/periodic-reviews" />} />
           <Route path="periodic-reviews/:reviewId" element={<AliasRedirect to="/dcc/periodic-reviews/:reviewId" />} />
 
           {/* Prototypes */}

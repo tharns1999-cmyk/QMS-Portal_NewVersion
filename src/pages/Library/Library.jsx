@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
   Search, 
@@ -85,6 +85,23 @@ const Library = () => {
   // For Replacement & Ad-Hoc Copy Requests
   const [replacementInstance, setReplacementInstance] = useState(null);
   const [adHocDoc, setAdHocDoc] = useState(null);
+
+  // Deep-linking from notifications or external triggers
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const deepLinkDocId = searchParams.get('docId') || searchParams.get('id') || location.state?.openDocId || location.state?.docId;
+
+  useEffect(() => {
+    if (deepLinkDocId && (documents || []).length > 0) {
+      const found = documents.find(d => 
+        String(d.id) === String(deepLinkDocId) || 
+        String(d.document_code || d.doc_code || d.code) === String(deepLinkDocId)
+      );
+      if (found) {
+        setPreviewDoc(found);
+      }
+    }
+  }, [deepLinkDocId, documents]);
 
   // Close overflow menu on outside click, window resize, or Escape key
   useEffect(() => {

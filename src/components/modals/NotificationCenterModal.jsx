@@ -18,6 +18,7 @@ import useStore, { isNotificationVisibleToUser, isNotificationReadByUser } from 
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { TablePagination } from '../common/TablePagination';
 import toast from 'react-hot-toast';
+import { resolveNotificationNavigation } from '../../utils/notificationRouter';
 
 dayjs.extend(relativeTime);
 
@@ -99,10 +100,9 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
     if (markAsRead && item.id) {
       markAsRead(item.id, currentUser?.id);
     }
-    if (item.link) {
-      onClose();
-      navigate(item.link);
-    }
+    onClose();
+    const target = resolveNotificationNavigation(item, store);
+    navigate(target.path, { state: target.state });
   };
 
   const handleMarkAllRead = () => {

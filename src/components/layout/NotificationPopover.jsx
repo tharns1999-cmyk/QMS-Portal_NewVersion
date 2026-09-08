@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import useStore, { isNotificationVisibleToUser, isNotificationReadByUser } from '../../store/useStore';
 import { NotificationCenterModal } from '../modals/NotificationCenterModal';
+import { resolveNotificationNavigation } from '../../utils/notificationRouter';
 
 dayjs.extend(relativeTime);
 
@@ -63,17 +64,14 @@ const NotificationPopover = ({
   const handleNotificationClick = (item) => {
     if (propOnNotificationClick) {
       propOnNotificationClick(item);
-    } else {
-      if (markNotificationAsRead && item.id) {
-        markNotificationAsRead(item.id, currentUser?.id);
-      }
-      setIsOpen(false);
-      if (item.link) {
-        navigate(item.link);
-      } else {
-        navigate('/dcc/tasks');
-      }
+      return;
     }
+    if (markNotificationAsRead && item.id) {
+      markNotificationAsRead(item.id, currentUser?.id);
+    }
+    setIsOpen(false);
+    const target = resolveNotificationNavigation(item, store);
+    navigate(target.path, { state: target.state });
   };
 
   const handleViewAllNotifications = (e) => {

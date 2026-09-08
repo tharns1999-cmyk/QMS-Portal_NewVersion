@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
   FileText, 
@@ -119,6 +119,25 @@ const ExternalDocsList = () => {
 
   // Row-level 3-dot action menu
   const [openMenuDocId, setOpenMenuDocId] = useState(null);
+
+  // Deep-linking from notifications or external triggers
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.openDocCode;
+  const deepLinkDocId = searchParams.get('docId') || searchParams.get('id') || location.state?.openDocId;
+
+  useEffect(() => {
+    if ((deepLinkDocCode || deepLinkDocId) && (externalDocuments || []).length > 0) {
+      const found = externalDocuments.find(d => 
+        (deepLinkDocId && String(d.id) === String(deepLinkDocId)) ||
+        (deepLinkDocCode && (d.doc_code === deepLinkDocCode || d.document_code === deepLinkDocCode || d.code === deepLinkDocCode || d.docCode === deepLinkDocCode))
+      );
+      if (found) {
+        setDocToDetail(found);
+        setIsDetailOpen(true);
+      }
+    }
+  }, [deepLinkDocCode, deepLinkDocId, externalDocuments]);
 
   const isDccAdmin = Boolean(
     currentUser?.role === 'DCC' || 
