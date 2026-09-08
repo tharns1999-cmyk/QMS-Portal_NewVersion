@@ -644,9 +644,13 @@ const DarObsoleteForm = () => {
       </form>
 
       {(() => {
-        const resolvedRevId = formData.manualReviewerId
-          ? formData.manualReviewerId
-          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], formData.docType || formData.targetDocType)?.id);
+        const resolvedRevId = resolveReviewer(
+          currentUser?.id, 
+          currentUser?.department || 'PD', 
+          masterUsers || [], 
+          reviewUsers || masterUsers || [], 
+          formData.docType || formData.targetDocType
+        )?.id;
         const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (

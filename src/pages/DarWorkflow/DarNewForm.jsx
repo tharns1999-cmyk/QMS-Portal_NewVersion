@@ -7,7 +7,6 @@ import {
   FileText, 
   User, 
   Calendar, 
-  Settings, 
   X, 
   ShieldAlert, 
   ChevronLeft, 
@@ -62,8 +61,6 @@ const DarNewForm = () => {
     formDistributionMode: 'ALL_DEPTS',
     effectiveDate: '',
     file: null,
-    manualReviewerId: '',
-    manualApproverId: '',
     relatedStandards: [],
     otherStandardDetail: '',
     accessScope: 'GENERAL',
@@ -214,9 +211,13 @@ const DarNewForm = () => {
         roleTitle: 'ผู้จัดทำ (Requester)'
       });
     }
-    const resolvedRevId = formData.manualReviewerId
-      ? formData.manualReviewerId
-      : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], formData.docType)?.id);
+    const resolvedRevId = resolveReviewer(
+      currentUser?.id, 
+      currentUser?.department || 'PD', 
+      masterUsers || [], 
+      reviewUsers || masterUsers || [], 
+      formData.docType
+    )?.id;
     if (resolvedRevId && resolvedRevId !== currentUser?.id) {
       const revUser = (masterUsers || []).find(u => u && u.id === resolvedRevId);
       if (revUser) {
@@ -230,9 +231,14 @@ const DarNewForm = () => {
         });
       }
     }
-    const resolvedAppId = formData.manualApproverId
-      ? formData.manualApproverId
-      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department || 'PD', masterUsers || [], approveUsers || masterUsers || [], formData.docType)?.id);
+    const resolvedAppId = resolveApprover(
+      currentUser?.id, 
+      resolvedRevId, 
+      currentUser?.department || 'PD', 
+      masterUsers || [], 
+      approveUsers || masterUsers || [], 
+      formData.docType
+    )?.id;
     if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
       const appUser = (masterUsers || []).find(u => u && u.id === resolvedAppId);
       if (appUser) {
@@ -247,7 +253,7 @@ const DarNewForm = () => {
       }
     }
     return list;
-  }, [currentUser, formData.manualReviewerId, formData.manualApproverId, masterUsers, reviewUsers, approveUsers]);
+  }, [currentUser, formData.docType, masterUsers, reviewUsers, approveUsers]);
 
   const getPreviewCode = () => {
     if (!formData.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
@@ -379,8 +385,6 @@ const DarNewForm = () => {
       distributions: formData.distributions || [],
       effectiveDate: formData.effectiveDate,
       isDraft: false,
-      manualReviewerId: formData.manualReviewerId,
-      manualApproverId: formData.manualApproverId,
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
       access_control: formData.access_control
@@ -391,10 +395,6 @@ const DarNewForm = () => {
     toast.success('สร้างคำร้องสำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
     navigate('/dashboard');
   };
-
-  // Get available candidates for Dev Test UI
-  const availableReviewers = (useStore.getState().reviewUsers || masterUsers || []).filter(u => u && (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser?.department)) && u.id !== currentUser?.id);
-  const availableApprovers = (useStore.getState().approveUsers || masterUsers || []).filter(u => u && (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser?.department)) && u.id !== currentUser?.id && u.id !== formData.manualReviewerId);
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
@@ -738,48 +738,6 @@ const DarNewForm = () => {
           />
         )}
 
-        {/* Developer Testing Section */}
-        <div className="card-surface bg-amber-50/40 border-amber-200 overflow-hidden">
-          <div className="px-6 py-3.5 border-b border-amber-200 bg-amber-100/50 flex items-center gap-2">
-            <Settings className="text-amber-700" size={16} />
-            <h3 className="font-bold text-sm text-amber-900 uppercase tracking-wider">ส่วนทดสอบระบบ: ตรวจสอบการแบ่งแยกหน้าที่ (SoD Validation)</h3>
-          </div>
-          <div className="p-6">
-             <p className="text-sm text-amber-900 mb-3 leading-relaxed">
-               (เฉพาะโหมดทดสอบ) ปกติระบบจะคำนวณ Reviewer และ Approver ให้คุณอัตโนมัติตาม Position Level แต่คุณสามารถใช้ช่องนี้เพื่อทดสอบหลักการ Segregation of Duties (SoD) ได้ว่ารายชื่อจะหายไปจากตัวเลือก
-             </p>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <label className="block font-semibold text-amber-950 mb-1.5">เลือก Reviewer ทดสอบ (ห้ามเป็น Requester)</label>
-                  <select 
-                    value={formData.manualReviewerId}
-                    onChange={(e) => setFormData({...formData, manualReviewerId: e.target.value, manualApproverId: ''})}
-                    className="w-full h-10.5 px-3.5 text-sm bg-white text-slate-800 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    <option value="">-- ให้ระบบคำนวณอัตโนมัติ --</option>
-                    {availableReviewers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} (ID: {u.id})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-amber-950 mb-1.5">เลือก Approver ทดสอบ (ห้ามซ้ำ Reviewer/Requester)</label>
-                  <select 
-                    value={formData.manualApproverId}
-                    onChange={(e) => setFormData({...formData, manualApproverId: e.target.value})}
-                    className="w-full h-10.5 px-3.5 text-sm bg-white text-slate-800 border border-amber-300 rounded-lg disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    disabled={!formData.manualReviewerId}
-                  >
-                    <option value="">-- ให้ระบบคำนวณอัตโนมัติ --</option>
-                    {availableApprovers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} (ID: {u.id})</option>
-                    ))}
-                  </select>
-                </div>
-             </div>
-          </div>
-        </div>
-
         {/* Action Buttons */}
         <div className="card-surface p-4 flex justify-end gap-2.5">
           <Button 
@@ -807,9 +765,13 @@ const DarNewForm = () => {
 
       {(() => {
         const selectedDocTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
-        const resolvedRevId = formData.manualReviewerId
-          ? formData.manualReviewerId
-          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], formData.docType)?.id);
+        const resolvedRevId = resolveReviewer(
+          currentUser?.id, 
+          currentUser?.department || 'PD', 
+          masterUsers || [], 
+          reviewUsers || masterUsers || [], 
+          formData.docType
+        )?.id;
         const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (

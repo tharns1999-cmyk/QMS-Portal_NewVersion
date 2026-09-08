@@ -409,9 +409,13 @@ const DarRevisionForm = () => {
         roleTitle: 'ผู้จัดทำ (Requester)'
       });
     }
-    const resolvedRevId = formData.manualReviewerId
-      ? formData.manualReviewerId
-      : (resolveReviewer(currentUser?.id, currentUser?.department, masterUsers, reviewUsers || masterUsers, formData.docType)?.id);
+    const resolvedRevId = resolveReviewer(
+      currentUser?.id, 
+      currentUser?.department, 
+      masterUsers, 
+      reviewUsers || masterUsers, 
+      formData.docType
+    )?.id;
     if (resolvedRevId && resolvedRevId !== currentUser?.id) {
       const revUser = (masterUsers || []).find(u => u.id === resolvedRevId);
       if (revUser) {
@@ -425,9 +429,14 @@ const DarRevisionForm = () => {
         });
       }
     }
-    const resolvedAppId = formData.manualApproverId
-      ? formData.manualApproverId
-      : (resolveApprover(currentUser?.id, resolvedRevId, currentUser?.department, masterUsers, approveUsers || masterUsers, formData.docType)?.id);
+    const resolvedAppId = resolveApprover(
+      currentUser?.id, 
+      resolvedRevId, 
+      currentUser?.department, 
+      masterUsers, 
+      approveUsers || masterUsers, 
+      formData.docType
+    )?.id;
     if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
       const appUser = (masterUsers || []).find(u => u.id === resolvedAppId);
       if (appUser) {
@@ -442,7 +451,7 @@ const DarRevisionForm = () => {
       }
     }
     return list;
-  }, [currentUser, formData.manualReviewerId, formData.manualApproverId, masterUsers, reviewUsers, approveUsers]);
+  }, [currentUser, formData.docType, masterUsers, reviewUsers, approveUsers]);
   
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -587,7 +596,6 @@ const DarRevisionForm = () => {
         otherStandardDetail: formData.otherStandardDetail || '',
         access_control: formData.access_control,
         accessScope: formData.access_control?.scope || 'GENERAL',
-        manualReviewerId: formData.manualReviewerId,
         isDraft: false,
         status: 'UNDER_REVIEW'
       };
@@ -1304,9 +1312,13 @@ const DarRevisionForm = () => {
 
       {(() => {
         const docTypeCode = selectedDoc?.docType || selectedDoc?.type || (selectedDoc?.title ? selectedDoc.title.split('-')[0] : (formData.docType || 'WI'));
-        const resolvedRevId = formData.manualReviewerId
-          ? formData.manualReviewerId
-          : (resolveReviewer(currentUser?.id, currentUser?.department || 'PD', masterUsers || [], reviewUsers || masterUsers || [], docTypeCode)?.id);
+        const resolvedRevId = resolveReviewer(
+          currentUser?.id, 
+          currentUser?.department || 'PD', 
+          masterUsers || [], 
+          reviewUsers || masterUsers || [], 
+          docTypeCode
+        )?.id;
         const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (

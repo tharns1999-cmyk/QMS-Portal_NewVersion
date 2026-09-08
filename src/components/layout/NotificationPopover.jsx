@@ -105,29 +105,29 @@ const NotificationPopover = ({
           onClick={handleToggle}
           aria-expanded={isOpen}
           aria-label="การแจ้งเตือนระบบ"
-          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[#0D99FF] border cursor-pointer ${
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 border cursor-pointer ${
             isOpen
-              ? 'bg-[#F9F9F9] text-[#1E1E1E] font-medium border-[#CCCCCC] shadow-none'
-              : 'bg-white hover:bg-[#F5F5F5] text-[#444444] font-medium border-[#E5E5E5] shadow-2xs'
+              ? 'bg-dream-surface-soft text-dream-primary font-medium border-dream-subtle shadow-none'
+              : 'bg-white hover:bg-dream-surface-soft text-dream-secondary font-medium border-dream-subtle shadow-2xs'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="relative flex items-center justify-center">
-              <Bell size={16} strokeWidth={2} className="text-[#0D99FF]" />
+              <Bell size={16} strokeWidth={2} className="text-indigo-600" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#0D99FF] ring-2 ring-white animate-pulse" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-white animate-pulse" />
               )}
             </div>
-            <span className="truncate tracking-tight text-xs font-semibold text-[#1E293B]">
+            <span className="truncate tracking-tight text-xs font-semibold text-dream-primary">
               การแจ้งเตือนระบบ
             </span>
           </div>
           {unreadCount > 0 ? (
-            <span className="bg-[#0D99FF] text-white text-[11px] font-mono font-bold px-2 py-0.5 rounded-full shadow-none">
+            <span className="bg-indigo-600 text-white text-[11px] font-mono font-bold px-2 py-0.5 rounded-full shadow-none">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           ) : (
-            <span className="text-xs text-slate-400 font-mono font-medium">0</span>
+            <span className="text-xs text-dream-muted font-mono font-medium">0</span>
           )}
         </button>
 
@@ -139,15 +139,15 @@ const NotificationPopover = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 6 }}
               transition={{ duration: 0.15, ease: [0.32, 0.72, 0, 1] }}
-              className="absolute left-0 sm:left-full sm:ml-3 top-0 w-88 sm:w-96 max-w-[calc(100vw-2rem)] bg-white border border-[#E2E8F0] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] z-50 focus:outline-none divide-y divide-[#F1F5F9] overflow-hidden origin-top-left"
+              className="absolute left-0 sm:left-full sm:ml-3 top-0 w-88 sm:w-96 max-w-[calc(100vw-2rem)] bg-white border border-dream-subtle rounded-2xl shadow-dream z-50 focus:outline-none divide-y divide-dream-subtle overflow-hidden origin-top-left"
             >
               {/* 1. Header: Title + Unread Badge + Mark All As Read */}
-              <div className="p-3.5 px-4 bg-[#F8FAFC] flex items-center justify-between border-b border-[#F1F5F9]">
+              <div className="p-3.5 px-4 bg-dream-surface-soft flex items-center justify-between border-b border-dream-subtle">
                 <div className="flex items-center gap-2">
-                  <Bell className="text-[#0D99FF]" size={16} strokeWidth={2} />
-                  <h3 className="text-sm font-bold text-[#1E293B]">การแจ้งเตือน</h3>
+                  <Bell className="text-indigo-600" size={16} strokeWidth={2} />
+                  <h3 className="text-sm font-bold text-dream-primary">การแจ้งเตือน</h3>
                   {unreadCount > 0 && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF]">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-dream-lavender text-indigo-700 border border-indigo-200/60">
                       {unreadCount} ใหม่
                     </span>
                   )}
@@ -156,7 +156,7 @@ const NotificationPopover = ({
                   <button
                     type="button"
                     onClick={handleMarkAllAsRead}
-                    className="text-xs font-semibold text-[#0D99FF] hover:text-[#007BE5] hover:underline transition-all cursor-pointer"
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline transition-all cursor-pointer"
                   >
                     อ่านทั้งหมด
                   </button>
@@ -164,11 +164,11 @@ const NotificationPopover = ({
               </div>
 
               {/* 2. Scrollable Notification Items Area */}
-              <div className="max-h-[380px] overflow-y-auto divide-y divide-[#F1F5F9] custom-scrollbar bg-white">
+              <div className="max-h-[380px] overflow-y-auto divide-y divide-dream-subtle custom-scrollbar bg-white">
                 {userNotis.length === 0 ? (
                   <div className="py-10 px-4 text-center">
-                    <BellOff className="text-[#CBD5E1] mx-auto mb-2" size={28} strokeWidth={1.5} />
-                    <p className="text-xs font-medium text-[#64748B]">ไม่มีการแจ้งเตือนใหม่</p>
+                    <BellOff className="text-dream-muted mx-auto mb-2" size={28} strokeWidth={1.5} />
+                    <p className="text-xs font-medium text-dream-muted">ไม่มีการแจ้งเตือนใหม่</p>
                   </div>
                 ) : (
                   userNotis.map((item) => {
@@ -181,14 +181,14 @@ const NotificationPopover = ({
                       <div
                         key={item.id || item.title + (item.timestamp || Math.random())}
                         onClick={() => handleNotificationClick(item)}
-                        className={`p-3.5 px-4 flex items-start gap-3 hover:bg-[#F8FAFC] cursor-pointer transition-colors ${
-                          isUnread ? 'bg-[#F0F7FF]/50' : 'bg-white'
+                        className={`p-3.5 px-4 flex items-start gap-3 hover:bg-dream-surface-soft cursor-pointer transition-colors ${
+                          isUnread ? 'bg-dream-lavender/30' : 'bg-white'
                         }`}
                       >
                         {/* Unread Indicator Dot */}
                         <div className="pt-1.5 shrink-0">
                           {isUnread ? (
-                            <span className="block w-2 h-2 rounded-full bg-[#0D99FF]" />
+                            <span className="block w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.6)]" />
                           ) : (
                             <span className="block w-2 h-2 rounded-full bg-transparent" />
                           )}
@@ -197,14 +197,14 @@ const NotificationPopover = ({
                         {/* Notification Content */}
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className={`text-xs truncate ${isUnread ? 'font-bold text-[#1E293B]' : 'font-semibold text-[#475569]'}`}>
+                            <p className={`text-xs truncate ${isUnread ? 'font-bold text-dream-primary' : 'font-semibold text-dream-secondary'}`}>
                               {item.title}
                             </p>
-                            <span className="text-[10px] font-mono text-[#94A3B8] shrink-0 whitespace-nowrap">
+                            <span className="text-[10px] font-mono text-dream-muted shrink-0 whitespace-nowrap">
                               {timeDisplay}
                             </span>
                           </div>
-                          <p className="text-xs text-[#64748B] line-clamp-2 leading-relaxed break-words">
+                          <p className="text-xs text-dream-secondary line-clamp-2 leading-relaxed break-words">
                             {item.message || item.description}
                           </p>
                         </div>
@@ -215,11 +215,11 @@ const NotificationPopover = ({
               </div>
 
               {/* 3. Footer */}
-              <div className="p-2.5 bg-[#F8FAFC] text-center border-t border-[#F1F5F9]">
+              <div className="p-2.5 bg-dream-surface-soft text-center border-t border-dream-subtle">
                 <button
                   type="button"
                   onClick={handleViewAllNotifications}
-                  className="text-xs font-semibold text-[#64748B] hover:text-[#1E293B] transition-colors cursor-pointer"
+                  className="text-xs font-semibold text-dream-secondary hover:text-dream-primary transition-colors cursor-pointer"
                 >
                   ดูประวัติการแจ้งเตือนทั้งหมด
                 </button>

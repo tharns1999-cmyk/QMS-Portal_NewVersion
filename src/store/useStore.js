@@ -14,7 +14,6 @@ import {
   STANDARD_STATIONS, 
   calculateCopyAllocations, 
   formatDocumentRunningNumber, 
-  generateDocumentCode,
   calculateNextDocumentSequence,
   calculateNextExternalDocSequence
 } from '../services/MasterDataService';
@@ -22,9 +21,40 @@ import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
 import { hasDocumentAccess, canUserAccessDocument } from '../utils/accessControl';
 import { calculateTaskDueDate } from '../utils/slaCalculator';
 import { generateInternalDarNumber } from '../utils/darNumberGenerator';
-import { isSameDepartment, userMatchesDepartment } from '../utils/taskFilter';
+import { 
+  isSameDepartment, 
+  userMatchesDepartment, 
+  isDccAdmin, 
+  isDccExclusiveTask, 
+  isDccOperationalTask,
+  getUserLevelNumber,
+  isLevel6Plus,
+  isLevel1To5,
+  isReceiptTask,
+  isActionableTask
+} from '../utils/taskFilter';
 
-export { canUserAccessDocument, hasDocumentAccess, calculateTaskDueDate, generateInternalDarNumber, isSameDepartment, userMatchesDepartment };
+export { 
+  canUserAccessDocument, 
+  hasDocumentAccess, 
+  calculateTaskDueDate, 
+  generateInternalDarNumber, 
+  isSameDepartment, 
+  userMatchesDepartment, 
+  isDccAdmin, 
+  isDccExclusiveTask, 
+  isDccOperationalTask,
+  getUserLevelNumber,
+  isLevel6Plus,
+  isLevel1To5,
+  isReceiptTask,
+  isActionableTask
+};
+
+export const resolveDccAdminUserId = (masterUsers) => {
+  const admin = (masterUsers || []).find(u => isDccAdmin(u));
+  return admin?.id || 'EMP-001';
+};
 
 // 1. Master Data Users (Roles: DCC_ADMIN, DEPT_ADMIN, GENERAL_USER)
 export const MASTER_DATA_USER = [
@@ -216,6 +246,10 @@ export const MOCK_TASKS = [
     docName: 'คู่มือคุณภาพ (Quality Manual)',
     title: 'ทบทวนคำร้อง (Review DAR) - MN-QA-001',
     assigneeId: 'U003',
+    department: 'QA',
+    target_department: 'QA',
+    owner_dept: 'QA',
+    currentHandlerDepartment: 'QA',
     status: 'PENDING',
     createdAt: '2026-07-01T08:00:00Z',
     dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // Due Soon (in 2 days)
@@ -231,6 +265,10 @@ export const MOCK_TASKS = [
     docName: 'ขั้นตอนการรับสินค้าเข้าคลัง',
     title: 'อนุมัติคำร้อง (Approve DAR) - SOP-WH-002',
     assigneeId: 'U004',
+    department: 'WH',
+    target_department: 'WH',
+    owner_dept: 'WH',
+    currentHandlerDepartment: 'WH',
     status: 'PENDING',
     createdAt: '2026-06-25T08:00:00Z',
     dueDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // Overdue (5 days ago)
@@ -246,6 +284,10 @@ export const MOCK_TASKS = [
     docName: 'การใช้งานเครื่องซีลถุง',
     title: 'ดำเนินการอัปเดตระบบ (DCC Action) - WI-PD-010',
     assigneeId: 'U001',
+    department: 'PD',
+    target_department: 'PD',
+    owner_dept: 'PD',
+    currentHandlerDepartment: 'PD',
     status: 'PENDING',
     createdAt: '2026-07-08T08:00:00Z',
     dueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(), // Normal
@@ -260,6 +302,10 @@ export const MOCK_TASKS = [
     docName: 'มาตรฐานการควบคุมเครื่องตรวจจับโลหะ (Metal Detector)',
     title: 'รับทราบการประกาศใช้เอกสารใหม่ - SOP-PD-001',
     assigneeId: 'U001',
+    department: 'PD',
+    target_department: 'PD',
+    owner_dept: 'PD',
+    currentHandlerDepartment: 'PD',
     status: 'PENDING',
     createdAt: '2026-07-05T08:00:00Z',
     dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // Overdue by 1 day
@@ -444,6 +490,88 @@ export const calculateSLAStatus = (effectiveDate, currentDate) => {
   return 'NORMAL';
 };
 
+/**
+ * Resolves recipient department for a controlled copy or receipt task.
+ * Strict ISO 9001 Invariant:
+ * 1. Physical station / location (e.g. 'EN Office (Master)') determines recipient department.
+ * 2. NEVER falls back to docOwnerDept ('PD').
+ */
+export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => {
+  if (!copyOrTask) return 'EN';
+
+  // 1. Check station or location
+  const loc = 
+    matchedCopy?.station_id || 
+    matchedCopy?.locationId || 
+    matchedCopy?.location || 
+    matchedCopy?.locationName || 
+    matchedCopy?.location_name ||
+    copyOrTask.station_id ||
+    copyOrTask.locationId ||
+    copyOrTask.location || 
+    copyOrTask.locationName || 
+    copyOrTask.location_name || '';
+
+  const foundStation = STANDARD_STATIONS.find(s => 
+    s.id === loc || 
+    s.name === loc || 
+    (loc && typeof loc === 'string' && (loc.includes(s.name) || (s.name && s.name.includes(loc))))
+  );
+
+  if (foundStation?.departmentId) {
+    return foundStation.departmentId === 'DCC' ? 'DC' : foundStation.departmentId;
+  }
+
+  const textToCheck = `${typeof loc === 'string' ? loc : ''} ${copyOrTask.title || ''} ${copyOrTask.description || ''}`;
+  if (textToCheck.includes('EN Office') || textToCheck.includes('EN-') || textToCheck.includes('(EN)')) {
+    return 'EN';
+  }
+  if (textToCheck.includes('WH Office') || textToCheck.includes('WH-') || textToCheck.includes('(WH)') || textToCheck.includes('คลังสินค้า')) {
+    return 'WH';
+  }
+  if (textToCheck.includes('QC Lab') || textToCheck.includes('QA/QC') || textToCheck.includes('QA Office') || textToCheck.includes('ห้องแล็บ')) {
+    return 'QA/QC';
+  }
+
+  // 2. Explicit target/recipient department fields
+  const explicitTargetDept = 
+    copyOrTask.target_department || 
+    copyOrTask.targetDepartment || 
+    copyOrTask.recipientDepartment || 
+    copyOrTask.recipient_department || 
+    copyOrTask.destinationDept || 
+    copyOrTask.destination_dept ||
+    matchedCopy?.targetDepartment || 
+    matchedCopy?.target_department || 
+    matchedCopy?.recipientDepartment || 
+    matchedCopy?.recipient_department || 
+    matchedCopy?.destinationDept || 
+    matchedCopy?.destination_dept;
+
+  if (explicitTargetDept && explicitTargetDept !== 'DCC') {
+    return explicitTargetDept === 'DCC' ? 'DC' : explicitTargetDept;
+  }
+
+  // 3. Fallback to copy department or task department if valid and non-DCC
+  const fallbackDept = 
+    copyOrTask.department || 
+    copyOrTask.departmentId || 
+    copyOrTask.dept_code || 
+    copyOrTask.deptCode || 
+    copyOrTask.holder_dept || 
+    copyOrTask.dept || 
+    matchedCopy?.department || 
+    matchedCopy?.departmentId || 
+    matchedCopy?.dept_code || 
+    matchedCopy?.deptCode;
+
+  if (fallbackDept && fallbackDept !== 'DCC') {
+    return fallbackDept === 'DCC' ? 'DC' : fallbackDept;
+  }
+
+  return 'EN';
+};
+
 export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
   const safeInstances = instances || [];
   const safeDocs = documents || [];
@@ -479,6 +607,26 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
       };
     }
 
+    // Ensure task has clear origin distinction (INTERNAL vs EXTERNAL)
+    let origin = updated.origin;
+    if (!origin) {
+      if (
+        updated.referenceType === 'EXTERNAL_DOC' ||
+        (updated.type && String(updated.type).startsWith('EXT_')) ||
+        (updated.taskType && String(updated.taskType).startsWith('EXT_')) ||
+        updated.extAction ||
+        updated.is_external ||
+        updated.isExternal ||
+        String(updated.doc_code || updated.docCode || '').startsWith('ED-') ||
+        (updated.title && (updated.title.includes('เอกสารภายนอก') || updated.title.includes('External Doc')))
+      ) {
+        origin = 'EXTERNAL';
+      } else {
+        origin = 'INTERNAL';
+      }
+    }
+    updated = { ...updated, origin };
+
     // Populate missing docTitle/docName from master documents, DARs, or copy instances
     if (!updated.docName || !updated.docTitle || updated.docTitle === updated.doc_code) {
       const docCode = updated.doc_code || updated.docCode || updated.document_code;
@@ -507,6 +655,82 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         };
       }
     }
+
+    // Contextual Revision Scoping Data Alignment:
+    // Ensure task holds explicit sourceRevision and targetRevision from DAR or Document if not already set
+    if (updated.darId) {
+      const matchedDar = safeDars.find(d => String(d.id) === String(updated.darId));
+      if (matchedDar) {
+        const darSourceRev = matchedDar.sourceRevision || matchedDar.revisesRev || matchedDar.previousRev || (matchedDar.type === 'REVISION' ? (safeDocs.find(d => String(d.id) === String(matchedDar.docIdRef || matchedDar.docId))?.rev || '00') : null);
+        const darTargetRev = matchedDar.targetRevision || matchedDar.rev || matchedDar.targetRev || matchedDar.proposedRev;
+        if (!updated.sourceRevision && darSourceRev) {
+          updated.sourceRevision = darSourceRev;
+        }
+        if (!updated.targetRevision && darTargetRev) {
+          updated.targetRevision = darTargetRev;
+        }
+      }
+    }
+
+    // Strict Task Department Scoping:
+    // Enforce that task.department is ALWAYS bound to the document or DAR owner department, NEVER the assignee's department!
+    const effectiveDocCode = updated.doc_code || updated.docCode || updated.document_code || updated.title || '';
+    const effectiveDocId = updated.docId || updated.doc_id;
+    const taskDar = safeDars.find(d => String(d.id) === String(updated.darId));
+    const taskDoc = safeDocs.find(d => 
+      (effectiveDocId && String(d.id) === String(effectiveDocId)) ||
+      (effectiveDocCode && (d.title === effectiveDocCode || d.document_code === effectiveDocCode || d.code === effectiveDocCode))
+    );
+    let ownerDept = taskDar?.department || taskDoc?.department;
+    if (!ownerDept) {
+      if (String(effectiveDocCode).includes('-PD-') || String(updated.title).includes('-PD-') || String(updated.darId).includes('-PD-')) {
+        ownerDept = 'PD';
+      }
+    }
+
+    const isDccTask = isDccExclusiveTask(updated) || isDccOperationalTask(updated);
+    const isReceipt = isReceiptTask(updated);
+
+    if (isDccTask) {
+      updated = {
+        ...updated,
+        department: 'DC',
+        target_department: 'DC',
+        targetDepartment: 'DC',
+        targetRole: 'DCC_ADMIN',
+        target_role: 'DCC_ADMIN',
+        assignedToRole: 'DCC_ADMIN'
+      };
+    } else if (isReceipt) {
+      // 🛡️ Phase 1: Controlled Copy Receipt Task MUST be routed strictly to recipient department, NEVER ownerDept
+      const targetCopyId = String(updated.copy_id || updated.copyId || updated.instanceId || '');
+      const matchedCopy = safeInstances.find(i => String(i.id) === targetCopyId);
+      const cleanRecipientDept = resolveReceiptTaskDepartment(updated, matchedCopy);
+
+      updated = {
+        ...updated,
+        department: cleanRecipientDept,
+        target_department: cleanRecipientDept,
+        targetDepartment: cleanRecipientDept,
+        destinationDept: cleanRecipientDept,
+        destination_dept: cleanRecipientDept,
+        recipientDepartment: cleanRecipientDept,
+        recipient_department: cleanRecipientDept,
+        currentHandlerDepartment: cleanRecipientDept,
+        assignedToDept: cleanRecipientDept,
+        dept_code: cleanRecipientDept
+      };
+    } else if (ownerDept) {
+      const cleanDept = ownerDept === 'DCC' ? 'DC' : ownerDept;
+      updated = {
+        ...updated,
+        department: cleanDept,
+        target_department: cleanDept,
+        owner_dept: cleanDept,
+        currentHandlerDepartment: cleanDept
+      };
+    }
+
     return updated;
   }).filter(t => {
     // 1. Immediately drop tasks already completed/resolved (except active DISPATCHED_TRACKING or damaged recall tasks for DCC)
@@ -678,6 +902,123 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
 
 export const reconcileAndResolveTasks = (tasks, instances, documents, dars = []) => {
   return cleanupDccTasks(tasks, instances, documents, dars);
+};
+
+/**
+ * Creates a receipt task for a controlled copy instance.
+ * Strict Invariants:
+ * 1. task.department is ALWAYS bound to the recipient department (copy.department or copy.targetDepartment), NEVER docOwnerDept (PD).
+ * 2. Assignee is strictly restricted to Level 1-5 personnel. Level 6+ executives (GM, QMR, PM) are excluded.
+ */
+export const createReceiptTask = (copy, relatedDoc = null, relatedDar = null, masterUsers = MASTER_DATA_USER) => {
+  if (!copy) return null;
+  const targetId = String(copy.id || '');
+  const destinationDept = resolveReceiptTaskDepartment(copy, copy);
+
+  let requesterId = null;
+  let requesterName = null;
+
+  // L1-L5 only: never assign to Level 6+
+  if (copy.requester_id || copy.requesterId || copy.holderId) {
+    const candidateId = copy.requester_id || copy.requesterId || copy.holderId;
+    const candidateUser = (masterUsers || []).find(u => u.id === candidateId);
+    if (candidateUser && userMatchesDepartment(candidateUser, destinationDept) && isLevel1To5(candidateUser)) {
+      requesterId = candidateUser.id;
+      requesterName = candidateUser.name;
+    }
+  }
+
+  if (!requesterId && relatedDar) {
+    const darReqId = relatedDar.requester_id || relatedDar.requesterId || relatedDar.userId || relatedDar.requester?.id || relatedDar.created_by || relatedDar.createdBy;
+    const darReqUser = (masterUsers || []).find(u => u.id === darReqId);
+    if (darReqUser && userMatchesDepartment(darReqUser, destinationDept) && isLevel1To5(darReqUser)) {
+      requesterId = darReqId;
+      requesterName = darReqUser.name || relatedDar.requester_name || relatedDar.requesterName || relatedDar.requester;
+    }
+  }
+
+  if (!requesterId) {
+    const deptUsers = (masterUsers || []).filter(u => userMatchesDepartment(u, destinationDept) && isLevel1To5(u));
+    const nonDccDeptUsers = deptUsers.filter(u => !u.isDcc && u.role !== 'DCC_ADMIN');
+    const candidatePool = nonDccDeptUsers.length > 0 ? nonDccDeptUsers : deptUsers;
+
+    const primaryDeptUsers = candidatePool.filter(u => isSameDepartment(u.primary_department || u.department || u.dept, destinationDept));
+    const finalCandidates = primaryDeptUsers.length > 0 ? primaryDeptUsers : candidatePool;
+
+    const supervisorUser = finalCandidates.find(u => u.level === 5 || u.level === 4 || u.role === 'DEPT_ADMIN' || u.role === 'SUPERVISOR') || finalCandidates[0];
+    if (supervisorUser) {
+      requesterId = supervisorUser.id;
+      requesterName = supervisorUser.name;
+    } else {
+      requesterId = null;
+      requesterName = `${destinationDept} Controller`;
+    }
+  }
+
+  const docOfficialTitle = copy.docName || copy.name || copy.documentName || relatedDoc?.name || relatedDoc?.document_name || relatedDar?.name || copy.doc_code || copy.docTitle || 'เอกสารควบคุม';
+  const docCode = copy.doc_code || copy.docTitle || copy.title || relatedDoc?.title || '';
+  const dispatchedAt = new Date().toISOString();
+
+  return {
+    id: `task-receipt-${targetId}-${Date.now()}`,
+    type: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
+    taskType: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
+    task_type: 'CONFIRM_RECEIPT',
+    title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${docOfficialTitle} (${docCode}) (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
+    description: `กรุณาตรวจสอบเอกสารฉบับพิมพ์จริงที่จุดใช้งาน ${copy.location || copy.locationName || destinationDept} (${destinationDept}) และยืนยันการรับเอกสาร`,
+    copy_id: targetId,
+    copyId: targetId,
+    instanceId: targetId,
+    doc_id: String(copy.doc_id || copy.docId || relatedDoc?.id || relatedDar?.id || ''),
+    darId: relatedDar ? String(relatedDar.id) : (copy.dar_id || String(relatedDoc?.id || '')),
+    doc_code: docCode,
+    docCode: docCode,
+    docTitle: docOfficialTitle,
+    docName: docOfficialTitle,
+    doc_version: copy.doc_version || copy.rev || '01',
+    copy_no: copy.copy_no || copy.ccNumber || '01',
+    location: copy.location || copy.locationName || destinationDept || '',
+    location_name: copy.location || copy.locationName || destinationDept || '',
+    target_department: destinationDept,
+    targetDepartment: destinationDept,
+    recipientDepartment: destinationDept,
+    recipient_department: destinationDept,
+    destinationDept: destinationDept,
+    destination_dept: destinationDept,
+    department: destinationDept,
+    dept_code: destinationDept,
+    currentHandlerDepartment: destinationDept,
+    assignee_id: requesterId,
+    assigneeId: requesterId,
+    assignee_name: requesterName,
+    assigneeName: requesterName,
+    assignee_dept: destinationDept,
+    assignedToDept: destinationDept,
+    assignedToRole: 'DEPARTMENT_CONTROLLER',
+    origin: (
+      copy.is_external ||
+      copy.isExternal ||
+      copy.doc_type === 'ED' ||
+      copy.docType === 'ED' ||
+      String(docCode).startsWith('ED-') ||
+      Boolean(copy.external_doc_id || copy.externalDocId)
+    ) ? 'EXTERNAL' : 'INTERNAL',
+    status: 'PENDING',
+    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    createdAt: dispatchedAt,
+    priority: 'HIGH'
+  };
+};
+
+export const getUserActionableTasks = (tasks = [], user = null) => {
+  if (!user) return [];
+  return (tasks || []).filter(t => isActionableTask(t, user));
+};
+
+export const getUserTaskBadgeCount = (tasks = [], user = null) => {
+  if (!user) return 0;
+  const actionable = getUserActionableTasks(tasks, user);
+  return actionable.filter(t => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED').length;
 };
 
 /**
@@ -1207,6 +1548,7 @@ const useStore = create(persist((set, get) => ({
         title: `${edCode}: ${doc.title}`,
         type: 'EXT_REVIEW',
         assigneeId: doc.reviewerId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'REGISTER'
       });
@@ -1224,6 +1566,7 @@ const useStore = create(persist((set, get) => ({
         title: `${edCode}: ${doc.title}`,
         type: 'EXT_APPROVAL',
         assigneeId: doc.approverId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'REGISTER'
       });
@@ -1243,6 +1586,7 @@ const useStore = create(persist((set, get) => ({
           title: `${edCode}: ${doc.title}`,
           type: 'Ack',
           assigneeId: uid,
+          origin: 'EXTERNAL',
           status: 'PENDING'
         });
         newNotifications.push({ id: Date.now() + Math.random(), userId: uid, title: 'โปรดรับทราบเอกสาร', message: `เอกสารภายนอก "${edCode} - ${doc.title}" บังคับใช้แล้ว โปรดรับทราบ`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
@@ -1304,6 +1648,7 @@ const useStore = create(persist((set, get) => ({
 
       newTasks.push({
         id: `task-dcc-issue-ext-${newId}-${Date.now()}`,
+        referenceType: 'EXTERNAL_DOC',
         type: 'DCC_DISTRIBUTE',
         taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
         title: `จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสารภายนอก: ${edCode} (${stations.length} จุด)`,
@@ -1317,8 +1662,11 @@ const useStore = create(persist((set, get) => ({
         department: 'DC',
         target_department: 'DC',
         doc_version: doc.rev || doc.sourceVersion || '01',
-        assigneeId: 'U001',
+        assigneeId: resolveDccAdminUserId(state.masterUsers),
         assignedToRole: 'DCC_ADMIN',
+        targetRole: 'DCC_ADMIN',
+        target_role: 'DCC_ADMIN',
+        origin: 'EXTERNAL',
         status: 'PENDING',
         priority: 'HIGH',
         dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1419,6 +1767,7 @@ const useStore = create(persist((set, get) => ({
         title: `${edCode}: ${newDoc.title} (Rev.${newRevStr})`,
         type: 'EXT_REVIEW',
         assigneeId: newDoc.reviewerId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'UPDATE'
       });
@@ -1432,6 +1781,7 @@ const useStore = create(persist((set, get) => ({
         title: `${edCode}: ${newDoc.title} (Rev.${newRevStr})`,
         type: 'EXT_APPROVAL',
         assigneeId: newDoc.approverId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'UPDATE'
       });
@@ -1497,6 +1847,7 @@ const useStore = create(persist((set, get) => ({
         title: oldDoc.title,
         type: 'EXT_REVIEW',
         assigneeId: payload.reviewerId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'OBSOLETE'
       });
@@ -1510,6 +1861,7 @@ const useStore = create(persist((set, get) => ({
         title: oldDoc.title,
         type: 'EXT_APPROVAL',
         assigneeId: payload.approverId,
+        origin: 'EXTERNAL',
         status: 'PENDING',
         extAction: 'OBSOLETE'
       });
@@ -1599,6 +1951,7 @@ const useStore = create(persist((set, get) => ({
             title: doc.title,
             type: 'EXT_APPROVAL',
             assigneeId: approverId,
+            origin: 'EXTERNAL',
             status: 'PENDING',
             extAction: task.extAction
           });
@@ -1674,6 +2027,7 @@ const useStore = create(persist((set, get) => ({
 
           newTasks.push({
             id: `task-dcc-issue-ext-${doc.id}-${Date.now()}`,
+            referenceType: 'EXTERNAL_DOC',
             type: 'DCC_DISTRIBUTE',
             taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
             title: `จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสารภายนอก: ${docCode} (${stations.length} จุด)`,
@@ -1687,8 +2041,11 @@ const useStore = create(persist((set, get) => ({
             department: 'DC',
             target_department: 'DC',
             doc_version: docVer,
-            assigneeId: 'U001',
+            assigneeId: resolveDccAdminUserId(state.masterUsers),
             assignedToRole: 'DCC_ADMIN',
+            targetRole: 'DCC_ADMIN',
+            target_role: 'DCC_ADMIN',
+            origin: 'EXTERNAL',
             status: 'PENDING',
             priority: 'HIGH',
             dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1716,6 +2073,7 @@ const useStore = create(persist((set, get) => ({
             const oldDocCode = oldDoc?.edCode || oldDoc?.doc_code || docCode;
             newTasks.push({
               id: `task-dcc-recall-ext-${prevDocId}-${Date.now()}`,
+              referenceType: 'EXTERNAL_DOC',
               type: 'DCC_RECALL_WITH_CHECKLIST',
               taskType: 'DCC_RECALL_WITH_CHECKLIST',
               title: `เรียกคืนและทำลายเอกสารภายนอกฉบับเดิม: ${oldDocCode} (Rev.${oldDoc?.rev || '01'}) จำนวน ${prevActiveCopies.length} จุด`,
@@ -1729,8 +2087,11 @@ const useStore = create(persist((set, get) => ({
               department: 'DC',
               target_department: 'DC',
               doc_version: oldDoc?.rev || '01',
-              assigneeId: 'U001',
+              assigneeId: resolveDccAdminUserId(state.masterUsers),
               assignedToRole: 'DCC_ADMIN',
+              targetRole: 'DCC_ADMIN',
+              target_role: 'DCC_ADMIN',
+              origin: 'EXTERNAL',
               status: 'PENDING',
               priority: 'HIGH',
               dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1757,6 +2118,7 @@ const useStore = create(persist((set, get) => ({
           const docCode = doc.edCode || doc.doc_code || doc.title;
           newTasks.push({
             id: `task-dcc-recall-ext-${targetDocId}-${Date.now()}`,
+            referenceType: 'EXTERNAL_DOC',
             type: 'DCC_RECALL_WITH_CHECKLIST',
             taskType: 'DCC_RECALL_WITH_CHECKLIST',
             title: `เรียกคืนและทำลายเอกสารภายนอกที่ถูกยกเลิก: ${docCode} จำนวน ${activeDocCopies.length} จุด`,
@@ -1770,8 +2132,11 @@ const useStore = create(persist((set, get) => ({
             department: 'DC',
             target_department: 'DC',
             doc_version: doc.rev || '01',
-            assigneeId: 'U001',
+            assigneeId: resolveDccAdminUserId(state.masterUsers),
             assignedToRole: 'DCC_ADMIN',
+            targetRole: 'DCC_ADMIN',
+            target_role: 'DCC_ADMIN',
+            origin: 'EXTERNAL',
             status: 'PENDING',
             priority: 'HIGH',
             dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -1872,12 +2237,16 @@ const useStore = create(persist((set, get) => ({
         
         if (reviewerObj) {
           const newTaskId = `t-${Date.now()}`;
+          const darDept = newDar.department || 'PD';
           newTasks.push({
             id: newTaskId,
             referenceType: 'INTERNAL_DAR', referenceId: newDar.id,
             darId: newDar.id, title: newDar.title, type: 'Review',
             assigneeId: reviewerObj.id,
-            currentHandlerDepartment: reviewerObj.dept,
+            department: darDept,
+            target_department: darDept,
+            owner_dept: darDept,
+            currentHandlerDepartment: darDept,
             currentHandlerLevel: reviewerObj.level,
             dueDate: reviewSla.dueDate,
             cancelDate: reviewSla.cancelDate,
@@ -2032,9 +2401,10 @@ const useStore = create(persist((set, get) => ({
         assigneeId: reviewerObj.id,
         assignee_id: reviewerObj.id,
         assigneeName: reviewerObj.name || '',
-        currentHandlerDepartment: reviewerObj.dept,
-        department: newDar.department || newDar.dept || 'QA/QC',
-        target_department: newDar.department || newDar.dept || 'QA/QC',
+        department: newDar.department || newDar.dept || 'PD',
+        target_department: newDar.department || newDar.dept || 'PD',
+        owner_dept: newDar.department || newDar.dept || 'PD',
+        currentHandlerDepartment: newDar.department || newDar.dept || 'PD',
         currentHandlerLevel: reviewerObj.level,
         required_approval_level: reviewerObj.level,
         dueDate: reviewSla.dueDate,
@@ -2187,8 +2557,8 @@ const useStore = create(persist((set, get) => ({
 
     const today = new Date();
     today.setDate(today.getDate() + state.mockDateOffset);
-    const dueDateStr = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const cancelDateStr = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const _dueDateStr = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const _cancelDateStr = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     let newNotifications = state.notifications.map(n => n.relatedTaskId === taskId ? { ...n, isRead: true } : n);
 
@@ -2237,6 +2607,7 @@ const useStore = create(persist((set, get) => ({
           const newTaskId = `t-${Date.now()}`;
           const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
           const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
+          const darDept = dar.department || 'PD';
           newTasks.push({
             id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
             docId: dar.docId || dar.id,
@@ -2246,7 +2617,11 @@ const useStore = create(persist((set, get) => ({
             docName: docOfficialTitle,
             title: `[DAR รออนุมัติ] ${docOfficialTitle} (${docCode})`,
             type: 'Approve', assigneeId: approverObj.id,
-            currentHandlerDepartment: approverObj.dept, currentHandlerLevel: approverObj.level,
+            department: darDept,
+            target_department: darDept,
+            owner_dept: darDept,
+            currentHandlerDepartment: darDept,
+            currentHandlerLevel: approverObj.level,
             dueDate: approverSla.dueDate, cancelDate: approverSla.cancelDate,
             isUrgent: approverSla.isUrgent, isFastTrack: approverSla.isFastTrack, priority: approverSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: approverSla.slaType, effectiveDate: approverSla.effectiveDate,
             status: 'NORMAL'
@@ -2264,6 +2639,7 @@ const useStore = create(persist((set, get) => ({
         const newTaskId = `t-${Date.now()}`;
         const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
         const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
+        const darDept = dar.department || 'PD';
         newTasks.push({
           id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
           docId: dar.docId || dar.id,
@@ -2273,6 +2649,10 @@ const useStore = create(persist((set, get) => ({
           docName: docOfficialTitle,
           title: `[DAR ส่งกลับแก้ไข] ${docOfficialTitle} (${docCode})`,
           type: 'Revise', assigneeId: dar.requesterId,
+          department: darDept,
+          target_department: darDept,
+          owner_dept: darDept,
+          currentHandlerDepartment: darDept,
           dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
           isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
           status: 'NORMAL'
@@ -2299,6 +2679,7 @@ const useStore = create(persist((set, get) => ({
           });
           const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
           const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
+          const darDept = dar.department || 'PD';
           dar.ackUserIds.forEach(uid => {
             const newTaskId = `t-${Date.now()}-${uid}`;
             newTasks.push({
@@ -2310,6 +2691,10 @@ const useStore = create(persist((set, get) => ({
               docName: docOfficialTitle,
               title: `[รับทราบเอกสาร] ${docOfficialTitle} (${docCode})`,
               type: 'Ack', assigneeId: uid,
+              department: darDept,
+              target_department: darDept,
+              owner_dept: darDept,
+              currentHandlerDepartment: darDept,
               dueDate: ackSla.dueDate, cancelDate: ackSla.cancelDate,
               isUrgent: ackSla.isUrgent, isFastTrack: ackSla.isFastTrack, priority: ackSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: ackSla.slaType, effectiveDate: ackSla.effectiveDate,
               status: 'NORMAL'
@@ -2328,6 +2713,7 @@ const useStore = create(persist((set, get) => ({
         const newTaskId = `t-${Date.now()}`;
         const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
         const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
+        const darDept = dar.department || 'PD';
         newTasks.push({
           id: newTaskId, referenceType: 'INTERNAL_DAR', referenceId: dar.id, darId: dar.id,
           docId: dar.docId || dar.id,
@@ -2337,6 +2723,10 @@ const useStore = create(persist((set, get) => ({
           docName: docOfficialTitle,
           title: `[DAR ส่งกลับแก้ไข] ${docOfficialTitle} (${docCode})`,
           type: 'Revise', assigneeId: dar.requesterId,
+          department: darDept,
+          target_department: darDept,
+          owner_dept: darDept,
+          currentHandlerDepartment: darDept,
           dueDate: reviseSla.dueDate, cancelDate: reviseSla.cancelDate,
           isUrgent: reviseSla.isUrgent, isFastTrack: reviseSla.isFastTrack, priority: reviseSla.isUrgent ? 'URGENT' : 'NORMAL', slaType: reviseSla.slaType, effectiveDate: reviseSla.effectiveDate,
           status: 'NORMAL'
@@ -2437,6 +2827,51 @@ const useStore = create(persist((set, get) => ({
     }
   },
 
+  // Complete task alias forwarding to processWorkflow
+  completeTask: (taskId, action, comment) => {
+    return get().processWorkflow(taskId, action, comment);
+  },
+
+  // Advance workflow stage alias forwarding to processWorkflow
+  advanceWorkflowStage: (taskId, action, comment) => {
+    return get().processWorkflow(taskId, action, comment);
+  },
+
+  // Generic createTask helper enforcing Task Department Scoping (Document/DAR Owner Authority)
+  createTask: (taskInput) => set((state) => {
+    if (!taskInput) return state;
+    const safeDars = state.dars || [];
+    const safeDocs = state.documents || [];
+    const matchedDar = safeDars.find(d => String(d.id) === String(taskInput.darId));
+    const docCode = taskInput.doc_code || taskInput.docCode || taskInput.document_code || '';
+    const docId = taskInput.docId || taskInput.doc_id;
+    const matchedDoc = safeDocs.find(d => 
+      (docId && String(d.id) === String(docId)) ||
+      (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+    );
+
+    let ownerDept = matchedDar?.department || matchedDoc?.department || taskInput.department;
+    if (!ownerDept) {
+      if (String(docCode).includes('-PD-') || String(taskInput.title).includes('-PD-') || String(taskInput.darId).includes('-PD-')) {
+        ownerDept = 'PD';
+      }
+    }
+    const cleanDept = ownerDept === 'DCC' ? 'DC' : (ownerDept || 'PD');
+
+    const newTask = {
+      ...taskInput,
+      id: taskInput.id || `t-${Date.now()}`,
+      department: cleanDept,
+      target_department: cleanDept,
+      owner_dept: cleanDept,
+      currentHandlerDepartment: cleanDept
+    };
+
+    return {
+      tasks: [newTask, ...state.tasks]
+    };
+  }),
+
   resubmitDar: (darId, updatedData, taskId) => set((state) => {
     const dar = state.dars.find(d => d.id === darId);
     if (!dar) return state;
@@ -2458,7 +2893,7 @@ const useStore = create(persist((set, get) => ({
     if (assignedReviewerId) {
       const today = new Date();
       today.setDate(today.getDate() + state.mockDateOffset);
-      const todayStr = today.toISOString().split('T')[0];
+      const _todayStr = today.toISOString().split('T')[0];
       const taskSla = calculateTaskDueDate({
         submissionDate: today,
         effectiveDate: updatedData.effectiveDate || dar.effectiveDate,
@@ -2468,6 +2903,7 @@ const useStore = create(persist((set, get) => ({
 
       const docCode = updatedData.title || dar.title || dar.docIdInput;
       const docOfficialTitle = updatedData.name || dar.name || updatedData.title || dar.title;
+      const darDept = dar.department || updatedData.department || 'PD';
       newTasks.push({
         id: `t-${Date.now()}`,
         referenceType: 'INTERNAL_DAR', referenceId: dar.id,
@@ -2480,7 +2916,10 @@ const useStore = create(persist((set, get) => ({
         title: `[DAR ทบทวนใหม่] ${docOfficialTitle} (${docCode})`,
         type: 'Review',
         assigneeId: assignedReviewerId,
-        currentHandlerDepartment: reviewerObj?.dept || dar.department,
+        department: darDept,
+        target_department: darDept,
+        owner_dept: darDept,
+        currentHandlerDepartment: darDept,
         currentHandlerLevel: reviewerObj?.level || 4,
         dueDate: taskSla.dueDate,
         cancelDate: taskSla.cancelDate,
@@ -2537,11 +2976,15 @@ const useStore = create(persist((set, get) => ({
 
     if (managerObj) {
       const newTaskId = `t-${Date.now()}-cra`;
+      const copyDept = doc.department || dept || state.currentUser.department || 'PD';
       newTasks.push({
         id: newTaskId,
         title: `อนุมัติเบิกสำเนาเพิ่มเติม (${doc.title})`,
         type: 'CC_REPLACEMENT_APPROVAL',
         assigneeId: managerObj.id,
+        department: copyDept,
+        target_department: copyDept,
+        owner_dept: copyDept,
         status: 'PENDING',
         requestId: request.id
       });
@@ -2554,6 +2997,9 @@ const useStore = create(persist((set, get) => ({
         title: `แจกจ่ายสำเนาเพิ่มเติม (${doc.title})`,
         type: 'DCC_REPLACEMENT',
         assigneeId: 'U001',
+        department: 'DC',
+        target_department: 'DC',
+        owner_dept: 'DC',
         status: 'PENDING',
         requestId: request.id
       });
@@ -2597,6 +3043,9 @@ const useStore = create(persist((set, get) => ({
         title: `แจกจ่ายสำเนาเพิ่มเติม (${request.docTitle})`,
         type: 'DCC_REPLACEMENT',
         assigneeId: 'U001',
+        department: 'DC',
+        target_department: 'DC',
+        owner_dept: 'DC',
         status: 'PENDING',
         requestId: request.id
       });
@@ -2751,10 +3200,13 @@ const useStore = create(persist((set, get) => ({
                 title: `แจกจ่ายเอกสาร Controlled Copy (NEW): ${distDocOfficialTitle} (${newDoc.title})`,
                 description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
                 type: 'DCC_DISTRIBUTE',
+                taskType: 'DISTRIBUTION',
+                task_type: 'DISTRIBUTION',
                 status: 'PENDING',
-                assigneeId: 'U001',
+                assigneeId: resolveDccAdminUserId(state.masterUsers),
                 assignedToRole: 'DCC_ADMIN',
-                target_role: 'DCC',
+                targetRole: 'DCC_ADMIN',
+                target_role: 'DCC_ADMIN',
                 department: 'DC',
                 target_department: 'DC',
                 docId: newDoc.id,
@@ -2967,9 +3419,10 @@ const useStore = create(persist((set, get) => ({
                     type: 'DCC_RECALL',
                     taskType: 'RECALL',
                     task_type: 'RECALL',
-                    target_role: 'DCC',
+                    targetRole: 'DCC_ADMIN',
+                    target_role: 'DCC_ADMIN',
                     assignedToRole: 'DCC_ADMIN',
-                    assigneeId: 'EMP-001',
+                    assigneeId: resolveDccAdminUserId(state.masterUsers),
                     department: 'DC',
                     target_department: 'DC',
                     docId: oldDoc?.id,
@@ -3015,9 +3468,10 @@ const useStore = create(persist((set, get) => ({
                     type: 'DCC_DISTRIBUTE',
                     taskType: 'DISTRIBUTION',
                     task_type: 'DISTRIBUTION',
-                    target_role: 'DCC',
+                    targetRole: 'DCC_ADMIN',
+                    target_role: 'DCC_ADMIN',
                     assignedToRole: 'DCC_ADMIN',
-                    assigneeId: 'EMP-001',
+                    assigneeId: resolveDccAdminUserId(state.masterUsers),
                     department: 'DC',
                     target_department: 'DC',
                     docId: newDoc.id,
@@ -3198,9 +3652,10 @@ const useStore = create(persist((set, get) => ({
             type: 'DCC_RECALL',
             taskType: 'RECALL',
             task_type: 'RECALL',
-            target_role: 'DCC',
+            targetRole: 'DCC_ADMIN',
+            target_role: 'DCC_ADMIN',
             assignedToRole: 'DCC_ADMIN',
-            assigneeId: 'EMP-001',
+            assigneeId: resolveDccAdminUserId(state.masterUsers),
             department: 'DC',
             target_department: 'DC',
             docId: targetDocId,
@@ -3269,8 +3724,17 @@ const useStore = create(persist((set, get) => ({
   },
 
   addComment: (darId, commentStr, user) => set((state) => {
+    const cleanDarId = String(darId || '').trim();
+    if (!cleanDarId || !commentStr?.trim()) return state;
     const newTimeline = [...state.timeline, {
-      id: Date.now(), darId: darId, action: 'Comment', user: user.name, date: new Date().toLocaleString(), comment: commentStr, isChat: true, userId: user.id
+      id: Date.now(),
+      darId: cleanDarId,
+      action: 'Comment',
+      user: user?.name || user?.fullName || 'ผู้ใช้งาน',
+      date: new Date().toLocaleDateString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+      comment: commentStr.trim(),
+      isChat: true,
+      userId: user?.id || user?.empId || 'U-GUEST'
     }];
     return { timeline: newTimeline };
   }),
@@ -3347,6 +3811,12 @@ const useStore = create(persist((set, get) => ({
   },
 
   // --- CONTROLLED COPY STATE MACHINE & LIFECYCLE METHODS ---
+  createReceiptTask: (copy, relatedDoc, relatedDar) => {
+    return createReceiptTask(copy, relatedDoc, relatedDar, useStore.getState().masterUsers);
+  },
+  distributeCopies: (docIdOrCopyIds, copiesToDispatch) => {
+    return useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch);
+  },
   dispatchControlledCopy: (copyId) => set((state) => {
     const targetId = String(copyId);
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
@@ -3373,103 +3843,51 @@ const useStore = create(persist((set, get) => ({
       String(d.id) === copyDocId || (copyDocCode && d.title === copyDocCode)
     );
 
-    // 2. Identify whether this copy is Master Copy (Copy 01)
-    const isMasterCopy = copy.is_master || copy.isMaster || copy.copy_no === '01' || copy.copy_no === 1 || copy.copyNo === '01' || copy.copyNo === 1 || copy.ccNumber === 'CC-001' || copy.ccNumber === '01';
+    // 2. Resolve Target Department (Recipient department MUST ALWAYS take precedence over docOwnerDept)
+    // Cross-department routing: Recipient department of this copy MUST ALWAYS take precedence over docOwnerDept!
+    const destinationDept = resolveReceiptTaskDepartment(copy, copy);
 
-    // 3. Resolve Owner Department vs Target Department
-    const docOwnerDept = relatedDoc?.department || relatedDar?.department || copy.owner_dept || 'PD';
-
-    // Cross-department routing: target_department of this specific copy MUST take precedence over docOwnerDept!
-    let resolvedTargetDept = 
-      copy.target_department || 
-      copy.targetDepartment || 
-      copy.recipientDepartment || 
-      copy.recipient_department || 
-      copy.destinationDept || 
-      copy.destination_dept ||
-      copy.holder_dept;
-
-    if (!resolvedTargetDept && (copy.departmentId || copy.department_id || copy.dept_code || copy.deptCode)) {
-      resolvedTargetDept = copy.departmentId || copy.department_id || copy.dept_code || copy.deptCode;
-    }
-
-    if (!resolvedTargetDept && (copy.station_id || copy.locationId || copy.location)) {
-      const targetLocId = copy.station_id || copy.locationId;
-      const foundStation = STANDARD_STATIONS.find(s => s.id === targetLocId || s.name === copy.location);
-      if (foundStation?.departmentId) {
-        resolvedTargetDept = foundStation.departmentId;
-      }
-    }
-
-    if (!resolvedTargetDept && copy.department && copy.department !== docOwnerDept) {
-      resolvedTargetDept = copy.department;
-    }
-    if (!resolvedTargetDept && copy.location_dept) {
-      resolvedTargetDept = copy.location_dept;
-    }
-    if (!resolvedTargetDept && copy.dept && copy.dept !== docOwnerDept) {
-      resolvedTargetDept = copy.dept;
-    }
-    if (!resolvedTargetDept && copy.department) {
-      resolvedTargetDept = copy.department;
-    }
-    if (!resolvedTargetDept) {
-      resolvedTargetDept = isMasterCopy ? docOwnerDept : (copy.dept || docOwnerDept || 'QA/QC');
-    }
-
-    const destinationDept = resolvedTargetDept;
-
-    // 4. Resolve strictly targeted recipient/requester for this department
+    // 4. Resolve strictly targeted recipient/requester for this department (Level 1-5 ONLY; exclude Level 6+)
     let requesterId = null;
     let requesterName = null;
 
-    // Check if the copy itself already specified a valid holder in destinationDept
+    // Check if the copy itself already specified a valid holder in destinationDept (must be L1-L5)
     if (copy.requester_id || copy.requesterId || copy.holderId) {
       const candidateId = copy.requester_id || copy.requesterId || copy.holderId;
       const candidateUser = (state.masterUsers || []).find(u => u.id === candidateId);
-      if (candidateUser && userMatchesDepartment(candidateUser, destinationDept)) {
+      if (candidateUser && userMatchesDepartment(candidateUser, destinationDept) && isLevel1To5(candidateUser)) {
         requesterId = candidateUser.id;
         requesterName = candidateUser.name;
       }
     }
 
-    // If DAR requester belongs to destinationDept, prioritize DAR requester
+    // If DAR requester belongs to destinationDept, prioritize DAR requester if L1-L5
     if (!requesterId && relatedDar) {
       const darReqId = relatedDar.requester_id || relatedDar.requesterId || relatedDar.userId || relatedDar.requester?.id || relatedDar.created_by || relatedDar.createdBy;
       const darReqUser = (state.masterUsers || []).find(u => u.id === darReqId);
 
-      if (darReqUser && userMatchesDepartment(darReqUser, destinationDept)) {
+      if (darReqUser && userMatchesDepartment(darReqUser, destinationDept) && isLevel1To5(darReqUser)) {
         requesterId = darReqId;
         requesterName = darReqUser.name || relatedDar.requester_name || relatedDar.requesterName || relatedDar.requester;
       }
     }
 
-    // If no assignee or assignee is not in destinationDept, find supervisor/officer in destinationDept
+    // If no assignee or candidate not in destinationDept or is Level 6+, select L1-L5 employee in destinationDept
     if (!requesterId) {
-      // Find users matching destinationDept, excluding pure DCC admins
-      const deptUsers = (state.masterUsers || []).filter(u => userMatchesDepartment(u, destinationDept));
+      const deptUsers = (state.masterUsers || []).filter(u => userMatchesDepartment(u, destinationDept) && isLevel1To5(u));
       const nonDccDeptUsers = deptUsers.filter(u => !u.isDcc && u.role !== 'DCC_ADMIN');
       const candidatePool = nonDccDeptUsers.length > 0 ? nonDccDeptUsers : deptUsers;
 
-      // Prioritize users whose PRIMARY department matches destinationDept (to avoid picking someone from another department whose secondary depts matches)
       const primaryDeptUsers = candidatePool.filter(u => isSameDepartment(u.primary_department || u.department || u.dept, destinationDept));
       const finalCandidates = primaryDeptUsers.length > 0 ? primaryDeptUsers : candidatePool;
 
-      const supervisorUser = finalCandidates.find(u => u.level >= 4 || u.role === 'DEPT_ADMIN' || u.role === 'SUPERVISOR') || finalCandidates[0];
+      const supervisorUser = finalCandidates.find(u => u.level === 5 || u.level === 4 || u.role === 'DEPT_ADMIN' || u.role === 'SUPERVISOR') || finalCandidates[0];
       if (supervisorUser) {
         requesterId = supervisorUser.id;
         requesterName = supervisorUser.name;
       } else {
-        // Look in MASTER_DEPARTMENTS for head of this department
-        const foundDept = (state.masterDepartments || MASTER_DEPARTMENTS || []).find(d => isSameDepartment(d.id, destinationDept) || isSameDepartment(d.name, destinationDept));
-        if (foundDept?.headUserId) {
-          const headUser = (state.masterUsers || []).find(u => u.id === foundDept.headUserId);
-          requesterId = foundDept.headUserId;
-          requesterName = headUser?.name || foundDept.headName || `${destinationDept} Controller`;
-        } else {
-          requesterId = isMasterCopy && isSameDepartment(destinationDept, docOwnerDept) ? (relatedDar?.requesterId || 'U001') : null;
-          requesterName = isMasterCopy && isSameDepartment(destinationDept, docOwnerDept) ? (relatedDar?.requesterName || 'ธนาวุฒิ สมควรกิจดำรง') : `${destinationDept} Controller`;
-        }
+        requesterId = null;
+        requesterName = `${destinationDept} Controller`;
       }
     }
 
@@ -3719,6 +4137,8 @@ const useStore = create(persist((set, get) => ({
 
   dispatchCopy: (copyId) => useStore.getState().dispatchControlledCopy(copyId),
   dispatchAllCopies: (docIdOrCopyIds, copiesToDispatch) => useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch),
+  getUserActionableTasks: (user) => getUserActionableTasks(useStore.getState().tasks, user || useStore.getState().currentUser),
+  getUserTaskBadgeCount: (user) => getUserTaskBadgeCount(useStore.getState().tasks, user || useStore.getState().currentUser),
 
   confirmHardcopyReceipt: (copyId, taskId, recipientData = {}) => set((state) => {
     // Strict Type Coercion to prevent comparison bugs
@@ -3732,7 +4152,7 @@ const useStore = create(persist((set, get) => ({
 
     const user = state.currentUser;
     const isWildcard = user?.isDcc || user?.role === 'DCC_ADMIN' || user?.role === 'QMR' || user?.isQmr || user?.id === 'u5';
-    const userDepts = user?.affiliated_departments || user?.depts || (user?.primary_department ? [user.primary_department] : (user?.department ? [user.department] : []));
+    const _userDepts = user?.affiliated_departments || user?.depts || (user?.primary_department ? [user.primary_department] : (user?.department ? [user.department] : []));
     
     const targetDept = copy.holder_dept || copy.department || copy.target_department || copy.dept_code;
     
@@ -4063,9 +4483,10 @@ const useStore = create(persist((set, get) => ({
         type: 'DCC_RECALL',
         taskType: 'RECALL',
         task_type: 'RECALL',
-        target_role: 'DCC',
+        targetRole: 'DCC_ADMIN',
+        target_role: 'DCC_ADMIN',
         assignedToRole: 'DCC_ADMIN',
-        assigneeId: 'EMP-001',
+        assigneeId: resolveDccAdminUserId(state.masterUsers),
         department: 'DC',
         target_department: 'DC',
         docId: targetDocId,
@@ -4934,9 +5355,10 @@ const useStore = create(persist((set, get) => ({
         type: 'DCC_RECALL',
         taskType: 'RECALL',
         task_type: 'RECALL',
-        target_role: 'DCC',
+        targetRole: 'DCC_ADMIN',
+        target_role: 'DCC_ADMIN',
         assignedToRole: 'DCC_ADMIN',
-        assigneeId: 'EMP-001',
+        assigneeId: resolveDccAdminUserId(state.masterUsers),
         department: 'DC',
         target_department: 'DC',
         docId: oldDoc?.id,
@@ -5230,12 +5652,13 @@ const useStore = create(persist((set, get) => ({
       docTitle: docOfficialTitle,
       docName: docOfficialTitle,
       doc_version: docVersion,
-      assigneeId: 'U001',
+      assigneeId: resolveDccAdminUserId(state.masterUsers),
       assignedToRole: 'DCC_ADMIN',
+      targetRole: 'DCC_ADMIN',
+      target_role: 'DCC_ADMIN',
       department: 'DC',
       target_department: 'DC',
       targetDepartment: 'DC',
-      target_role: 'DCC',
       status: 'PENDING',
       priority: 'HIGH',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -5405,13 +5828,13 @@ const useStore = create(persist((set, get) => ({
       copy_no: inst.copy_no || inst.ccNumber || '01',
       issue_no: nextIssueNo,
       issueNumber: nextIssue,
-      is_replacement: true,
-      assigneeId: 'U001',
+      assigneeId: resolveDccAdminUserId(state.masterUsers),
       assignedToRole: 'DCC_ADMIN',
+      targetRole: 'DCC_ADMIN',
+      target_role: 'DCC_ADMIN',
       department: 'DC',
       target_department: 'DC',
       targetDepartment: 'DC',
-      target_role: 'DCC',
       status: 'PENDING',
       priority: 'HIGH',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -5444,9 +5867,10 @@ const useStore = create(persist((set, get) => ({
         holder_dept: copyDept,
         target_department: 'DC',
         targetDepartment: 'DC',
-        target_role: 'DCC',
+        targetRole: 'DCC_ADMIN',
+        target_role: 'DCC_ADMIN',
         assignedToRole: 'DCC_ADMIN',
-        assigneeId: 'U001',
+        assigneeId: resolveDccAdminUserId(state.masterUsers),
         status: 'PENDING',
         priority: 'HIGH',
         isDamaged: true,
@@ -5513,7 +5937,7 @@ const useStore = create(persist((set, get) => ({
   }),
 
   // Backward compatibility & RBAC aliases
-  reportCopyDamaged: ({ copyId, reason, requestReplacement, type = 'DAMAGED' } = {}) => {
+  reportCopyDamaged: ({ copyId, reason, requestReplacement: _requestReplacement, type = 'DAMAGED' } = {}) => {
     return useStore.getState().reportCcDamagedLost(copyId, type, reason);
   },
   requestCopyReplacement: (copyId, reason, type = 'DAMAGED') => {
@@ -6266,58 +6690,463 @@ const useStore = create(persist((set, get) => ({
   }),
 
   // --- 2. Department Management Actions ---
-  addDepartment: (deptData) => set((state) => {
-    const newDept = {
-      id: deptData.id.toUpperCase().trim(),
-      name: deptData.name || deptData.id,
-      nameTh: deptData.nameTh || deptData.name || deptData.id,
-      nameEn: deptData.nameEn || deptData.name || deptData.id,
-      headUserId: deptData.headUserId || '',
-      headName: deptData.headName || '',
-      status: deptData.status || 'ACTIVE',
-      color: deptData.color || 'indigo'
-    };
+  addDepartment: (deptData) => {
+    try {
+      set((state) => {
+        const rawId = String(deptData?.id || deptData?.code || deptData?.deptCode || '').toUpperCase().trim();
+        const rawNameTh = String(deptData?.nameTh || deptData?.name || deptData?.name_th || rawId).trim();
+        const rawNameEn = String(deptData?.nameEn || deptData?.name_en || deptData?.name || rawId).trim();
+        const headNameVal = deptData?.headName || deptData?.manager || '';
 
-    const currentDepts = state.departments || state.masterDepartments || [];
-    if (currentDepts.some(d => d.id === newDept.id)) {
-      throw new Error(`รหัสแผนก "${newDept.id}" มีอยู่ในระบบแล้ว`);
+        if (!rawId) {
+          throw new Error('รหัสแผนกไม่ถูกต้อง');
+        }
+
+        const newDept = {
+          id: rawId,
+          code: rawId,
+          deptCode: rawId,
+          name: rawNameTh,
+          nameTh: rawNameTh,
+          name_th: rawNameTh,
+          nameEn: rawNameEn,
+          name_en: rawNameEn,
+          headUserId: deptData?.headUserId || '',
+          headName: headNameVal,
+          manager: headNameVal,
+          status: deptData?.status || 'ACTIVE',
+          color: deptData?.color || 'indigo'
+        };
+
+        const currentDepts = state.departments || state.masterDepartments || [];
+        if (currentDepts.some(d => String(d.id || d.code || d.deptCode || '').toUpperCase().trim() === newDept.id)) {
+          throw new Error(`รหัสแผนก "${newDept.id}" มีอยู่ในระบบแล้ว`);
+        }
+
+        const updatedDepts = [...currentDepts, newDept];
+        return {
+          departments: updatedDepts,
+          masterDepartments: updatedDepts,
+          actionLog: [{
+            id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            actionType: 'MASTER_DEPT_CREATED',
+            actor: state.currentUser?.name || 'DCC Officer',
+            details: `Created department ${newDept.id} (${newDept.nameTh})`,
+            timestamp: new Date().toISOString()
+          }, ...(state.actionLog || [])]
+        };
+      });
+      return true;
+    } catch (err) {
+      console.error('addDepartment error:', err);
+      throw err;
+    }
+  },
+
+  updateDepartment: (deptId, deptData) => {
+    try {
+      set((state) => {
+        const currentDepts = state.departments || state.masterDepartments || [];
+        const oldCode = String(deptId || deptData?.oldCode || '').trim().toUpperCase();
+        const newCode = String(deptData?.id || deptData?.code || deptData?.deptCode || deptId || '').trim().toUpperCase();
+        const isCodeChanged = Boolean(oldCode && newCode && oldCode !== newCode);
+
+        if (!newCode) {
+          throw new Error('รหัสแผนกไม่ถูกต้อง');
+        }
+
+        // Case-Insensitive Uniqueness Check (prevent duplicate department code)
+        if (isCodeChanged) {
+          const duplicateDept = currentDepts.find(d => {
+            const existingCode = String(d.id || d.code || d.deptCode || '').trim().toUpperCase();
+            const isSelf = existingCode === oldCode;
+            return !isSelf && existingCode === newCode;
+          });
+          if (duplicateDept) {
+            throw new Error(`รหัสแผนก "${newCode}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);
+          }
+        }
+
+        const headNameVal = deptData.headName !== undefined 
+          ? deptData.headName 
+          : (deptData.manager !== undefined ? deptData.manager : undefined);
+
+        // 1. Update Departments Collection
+        const updatedDepts = currentDepts.map(d => {
+          const c = String(d.id || d.code || d.deptCode || '').trim().toUpperCase();
+          if (c === oldCode) {
+            return {
+              ...d,
+              ...deptData,
+              id: newCode,
+              code: newCode,
+              deptCode: newCode,
+              name: deptData.name || deptData.nameTh || d.name,
+              nameTh: deptData.nameTh || deptData.name || d.nameTh,
+              name_th: deptData.nameTh || deptData.name || d.name_th || d.nameTh,
+              nameEn: deptData.nameEn !== undefined ? deptData.nameEn : (d.nameEn || d.name_en || ''),
+              name_en: deptData.nameEn !== undefined ? deptData.nameEn : (d.name_en || d.nameEn || ''),
+              headUserId: deptData.headUserId !== undefined ? deptData.headUserId : d.headUserId,
+              headName: headNameVal !== undefined ? headNameVal : (d.headName || d.manager || ''),
+              manager: headNameVal !== undefined ? headNameVal : (d.manager || d.headName || '')
+            };
+          }
+          return d;
+        });
+
+    // If code has NOT changed, return simple single-collection update
+    if (!isCodeChanged) {
+      return {
+        departments: updatedDepts,
+        masterDepartments: updatedDepts,
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_DEPT_UPDATED',
+          actor: state.currentUser?.name || 'DCC Officer',
+          details: `Updated department ${deptId}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     }
 
-    const updatedDepts = [...currentDepts, newDept];
-    return {
-      departments: updatedDepts,
-      masterDepartments: updatedDepts,
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'MASTER_DEPT_CREATED',
-        actor: state.currentUser?.name || 'DCC Officer',
-        details: `Created department ${newDept.id} (${newDept.nameTh})`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
-
-  updateDepartment: (deptId, deptData) => set((state) => {
-    const currentDepts = state.departments || state.masterDepartments || [];
-    const updatedDepts = currentDepts.map(d => {
-      if (d.id === deptId) {
-        return { ...d, ...deptData };
+    // 2. Cascading Relational Propagation Engine (Atomic-like single set call)
+    const matchDept = (val) => {
+      if (!val) return false;
+      if (typeof val === 'string') {
+        return val.trim().toUpperCase() === oldCode;
       }
-      return d;
+      if (typeof val === 'object') {
+        const code = val.id || val.code || val.dept || val.department || val.departmentId;
+        return typeof code === 'string' && code.trim().toUpperCase() === oldCode;
+      }
+      return false;
+    };
+
+    const replaceDeptString = (val) => {
+      if (!val) return val;
+      if (typeof val === 'string') {
+        return val.trim().toUpperCase() === oldCode ? newCode : val;
+      }
+      return val;
+    };
+
+    // 2.1 Master Users & Participant lists
+    const updateUsersCollection = (usersList) => {
+      if (!Array.isArray(usersList)) return usersList;
+      return usersList.map(u => {
+        let changed = false;
+        let updated = { ...u };
+        if (matchDept(u.department)) { updated.department = newCode; changed = true; }
+        if (matchDept(u.dept)) { updated.dept = newCode; changed = true; }
+        if (matchDept(u.primary_department)) { updated.primary_department = newCode; changed = true; }
+        if (matchDept(u.dept_code)) { updated.dept_code = newCode; changed = true; }
+        if (Array.isArray(u.departments)) {
+          updated.departments = u.departments.map(d => replaceDeptString(d));
+          changed = true;
+        }
+        if (Array.isArray(u.secondaryDepartments)) {
+          updated.secondaryDepartments = u.secondaryDepartments.map(d => replaceDeptString(d));
+          changed = true;
+        }
+        if (Array.isArray(u.affiliated_departments)) {
+          updated.affiliated_departments = u.affiliated_departments.map(d => replaceDeptString(d));
+          changed = true;
+        }
+        if (Array.isArray(u.depts)) {
+          updated.depts = u.depts.map(d => replaceDeptString(d));
+          changed = true;
+        }
+        return changed ? updated : u;
+      });
+    };
+
+    const updatedMasterUsers = updateUsersCollection(state.masterUsers);
+    const updatedRequestUsers = updateUsersCollection(state.requestUsers);
+    const updatedReviewUsers = updateUsersCollection(state.reviewUsers);
+    const updatedApproveUsers = updateUsersCollection(state.approveUsers);
+
+    // 2.2 Current Session User (Prevent privilege loss)
+    let updatedCurrentUser = state.currentUser;
+    if (state.currentUser) {
+      let cuChanged = false;
+      let newCu = { ...state.currentUser };
+      if (matchDept(newCu.department)) { newCu.department = newCode; cuChanged = true; }
+      if (matchDept(newCu.dept)) { newCu.dept = newCode; cuChanged = true; }
+      if (matchDept(newCu.primary_department)) { newCu.primary_department = newCode; cuChanged = true; }
+      if (matchDept(newCu.dept_code)) { newCu.dept_code = newCode; cuChanged = true; }
+      if (Array.isArray(newCu.departments)) {
+        newCu.departments = newCu.departments.map(d => replaceDeptString(d));
+        cuChanged = true;
+      }
+      if (Array.isArray(newCu.secondaryDepartments)) {
+        newCu.secondaryDepartments = newCu.secondaryDepartments.map(d => replaceDeptString(d));
+        cuChanged = true;
+      }
+      if (Array.isArray(newCu.affiliated_departments)) {
+        newCu.affiliated_departments = newCu.affiliated_departments.map(d => replaceDeptString(d));
+        cuChanged = true;
+      }
+      if (Array.isArray(newCu.depts)) {
+        newCu.depts = newCu.depts.map(d => replaceDeptString(d));
+        cuChanged = true;
+      }
+      if (cuChanged) {
+        updatedCurrentUser = newCu;
+      }
+    }
+
+    // 2.3 Master Documents
+    const updatedDocuments = (state.documents || []).map(doc => {
+      let changed = false;
+      let updated = { ...doc };
+
+      if (matchDept(doc.department)) { updated.department = newCode; changed = true; }
+      if (matchDept(doc.owner_dept)) { updated.owner_dept = newCode; changed = true; }
+      if (matchDept(doc.dept)) { updated.dept = newCode; changed = true; }
+      if (matchDept(doc.dept_code)) { updated.dept_code = newCode; changed = true; }
+
+      if (Array.isArray(doc.controlledCopies)) {
+        updated.controlledCopies = doc.controlledCopies.map(copy => {
+          let copyChanged = false;
+          let c = { ...copy };
+          if (matchDept(c.department)) { c.department = newCode; copyChanged = true; }
+          if (matchDept(c.holder_dept)) { c.holder_dept = newCode; copyChanged = true; }
+          if (matchDept(c.dept)) { c.dept = newCode; copyChanged = true; }
+          return copyChanged ? c : copy;
+        });
+        changed = true;
+      }
+
+      if (Array.isArray(doc.distributions)) {
+        updated.distributions = doc.distributions.map(dist => {
+          let distChanged = false;
+          let d = { ...dist };
+          if (matchDept(d.departmentId)) { d.departmentId = newCode; distChanged = true; }
+          if (matchDept(d.department)) { d.department = newCode; distChanged = true; }
+          if (matchDept(d.dept)) { d.dept = newCode; distChanged = true; }
+          return distChanged ? d : dist;
+        });
+        changed = true;
+      }
+      if (Array.isArray(doc.distributed_depts)) {
+        updated.distributed_depts = doc.distributed_depts.map(d => replaceDeptString(d));
+        changed = true;
+      }
+      if (Array.isArray(doc.distributionTargets)) {
+        updated.distributionTargets = doc.distributionTargets.map(d => replaceDeptString(d));
+        changed = true;
+      }
+
+      if (doc.access_control && Array.isArray(doc.access_control.departments)) {
+        updated.access_control = {
+          ...doc.access_control,
+          departments: doc.access_control.departments.map(d => replaceDeptString(d))
+        };
+        changed = true;
+      }
+      if (Array.isArray(doc.accessDepartments)) {
+        updated.accessDepartments = doc.accessDepartments.map(d => replaceDeptString(d));
+        changed = true;
+      }
+
+      return changed ? updated : doc;
     });
 
+    // 2.4 Controlled Copies (Store Collections)
+    const updateCopiesCollection = (copiesList) => {
+      if (!Array.isArray(copiesList)) return copiesList;
+      return copiesList.map(copy => {
+        let changed = false;
+        let c = { ...copy };
+        if (matchDept(c.department)) { c.department = newCode; changed = true; }
+        if (matchDept(c.holder_dept)) { c.holder_dept = newCode; changed = true; }
+        if (matchDept(c.dept)) { c.dept = newCode; changed = true; }
+        return changed ? c : copy;
+      });
+    };
+
+    const updatedControlledCopyInstances = updateCopiesCollection(state.controlledCopyInstances);
+    const updatedDocumentControlledCopies = updateCopiesCollection(state.documentControlledCopies);
+
+    // 2.5 External Documents
+    const updatedExternalDocuments = (state.externalDocuments || []).map(doc => {
+      let changed = false;
+      let updated = { ...doc };
+
+      if (matchDept(doc.department)) { updated.department = newCode; changed = true; }
+      if (matchDept(doc.dept)) { updated.dept = newCode; changed = true; }
+      if (matchDept(doc.owner_dept)) { updated.owner_dept = newCode; changed = true; }
+
+      if (Array.isArray(doc.distributions)) {
+        updated.distributions = doc.distributions.map(dist => {
+          let distChanged = false;
+          let d = { ...dist };
+          if (matchDept(d.departmentId)) { d.departmentId = newCode; distChanged = true; }
+          if (matchDept(d.department)) { d.department = newCode; distChanged = true; }
+          if (matchDept(d.dept)) { d.dept = newCode; distChanged = true; }
+          return distChanged ? d : dist;
+        });
+        changed = true;
+      }
+      if (Array.isArray(doc.distributed_depts)) {
+        updated.distributed_depts = doc.distributed_depts.map(d => replaceDeptString(d));
+        changed = true;
+      }
+      if (Array.isArray(doc.accessDepartments)) {
+        updated.accessDepartments = doc.accessDepartments.map(d => replaceDeptString(d));
+        changed = true;
+      }
+      if (Array.isArray(doc.controlledCopies)) {
+        updated.controlledCopies = doc.controlledCopies.map(copy => {
+          let copyChanged = false;
+          let c = { ...copy };
+          if (matchDept(c.department)) { c.department = newCode; copyChanged = true; }
+          if (matchDept(c.holder_dept)) { c.holder_dept = newCode; copyChanged = true; }
+          if (matchDept(c.dept)) { c.dept = newCode; copyChanged = true; }
+          return copyChanged ? c : copy;
+        });
+        changed = true;
+      }
+
+      return changed ? updated : doc;
+    });
+
+    // 2.6 DAR Workflow Records
+    const updateDarsCollection = (darList) => {
+      if (!Array.isArray(darList)) return darList;
+      return darList.map(dar => {
+        let changed = false;
+        let updated = { ...dar };
+
+        if (matchDept(dar.department)) { updated.department = newCode; changed = true; }
+        if (matchDept(dar.requestingDepartment)) { updated.requestingDepartment = newCode; changed = true; }
+        if (matchDept(dar.requesting_dept)) { updated.requesting_dept = newCode; changed = true; }
+        if (matchDept(dar.dept)) { updated.dept = newCode; changed = true; }
+        if (matchDept(dar.owner_dept)) { updated.owner_dept = newCode; changed = true; }
+        if (matchDept(dar.targetDept)) { updated.targetDept = newCode; changed = true; }
+
+        if (Array.isArray(dar.targetDepartments)) {
+          updated.targetDepartments = dar.targetDepartments.map(d => replaceDeptString(d));
+          changed = true;
+        }
+        if (Array.isArray(dar.distributions)) {
+          updated.distributions = dar.distributions.map(dist => {
+            let distChanged = false;
+            let d = { ...dist };
+            if (matchDept(d.departmentId)) { d.departmentId = newCode; distChanged = true; }
+            if (matchDept(d.department)) { d.department = newCode; distChanged = true; }
+            if (matchDept(d.dept)) { d.dept = newCode; distChanged = true; }
+            return distChanged ? d : dist;
+          });
+          changed = true;
+        }
+        if (Array.isArray(dar.distributed_depts)) {
+          updated.distributed_depts = dar.distributed_depts.map(d => replaceDeptString(d));
+          changed = true;
+        }
+
+        return changed ? updated : dar;
+      });
+    };
+
+    const updatedDars = updateDarsCollection(state.dars);
+    const updatedDarRequests = updateDarsCollection(state.darRequests);
+
+    // 2.7 Tasks Collections
+    const updateTasksCollection = (taskList) => {
+      if (!Array.isArray(taskList)) return taskList;
+      return taskList.map(task => {
+        let changed = false;
+        let updated = { ...task };
+
+        if (matchDept(task.department)) { updated.department = newCode; changed = true; }
+        if (matchDept(task.dept)) { updated.dept = newCode; changed = true; }
+        if (matchDept(task.assignedToDept)) { updated.assignedToDept = newCode; changed = true; }
+        if (matchDept(task.assignee_dept)) { updated.assignee_dept = newCode; changed = true; }
+        if (matchDept(task.target_department)) { updated.target_department = newCode; changed = true; }
+        if (matchDept(task.targetDepartment)) { updated.targetDepartment = newCode; changed = true; }
+        if (matchDept(task.currentHandlerDepartment)) { updated.currentHandlerDepartment = newCode; changed = true; }
+        if (matchDept(task.requester_dept)) { updated.requester_dept = newCode; changed = true; }
+        if (matchDept(task.owner_dept)) { updated.owner_dept = newCode; changed = true; }
+
+        return changed ? updated : task;
+      });
+    };
+
+    const updatedTasks = updateTasksCollection(state.tasks);
+    const updatedPeriodicReviewTasks = updateTasksCollection(state.periodicReviewTasks);
+
+    // 2.8 Approval Matrix
+    const updateMatrixCollection = (matrixList) => {
+      if (!Array.isArray(matrixList)) return matrixList;
+      return matrixList.map(entry => {
+        let changed = false;
+        let updated = { ...entry };
+        if (matchDept(entry.departmentId)) { updated.departmentId = newCode; changed = true; }
+        if (matchDept(entry.department)) { updated.department = newCode; changed = true; }
+        if (matchDept(entry.dept)) { updated.dept = newCode; changed = true; }
+        return changed ? updated : entry;
+      });
+    };
+
+    const updatedApprovalMatrix = updateMatrixCollection(state.approvalMatrix);
+    const updatedApprovalMatrixAlt = updateMatrixCollection(state.approval_matrix);
+
+    // 2.9 Distribution Locations & Copy Requests
+    const updatedLocations = (state.distributionLocations || []).map(loc => {
+      let changed = false;
+      let updated = { ...loc };
+      if (matchDept(loc.departmentId)) { updated.departmentId = newCode; changed = true; }
+      if (matchDept(loc.department)) { updated.department = newCode; changed = true; }
+      if (matchDept(loc.dept)) { updated.dept = newCode; changed = true; }
+      return changed ? updated : loc;
+    });
+
+    const updatedCopyRequests = (state.copyRequests || []).map(req => {
+      let changed = false;
+      let updated = { ...req };
+      if (matchDept(req.department)) { updated.department = newCode; changed = true; }
+      if (matchDept(req.dept)) { updated.dept = newCode; changed = true; }
+      if (matchDept(req.requesting_dept)) { updated.requesting_dept = newCode; changed = true; }
+      return changed ? updated : req;
+    });
+
+    // Return all cascaded collections in a single atomic state batch
     return {
       departments: updatedDepts,
       masterDepartments: updatedDepts,
+      masterUsers: updatedMasterUsers,
+      requestUsers: updatedRequestUsers,
+      reviewUsers: updatedReviewUsers,
+      approveUsers: updatedApproveUsers,
+      currentUser: updatedCurrentUser,
+      documents: updatedDocuments,
+      controlledCopyInstances: updatedControlledCopyInstances,
+      documentControlledCopies: updatedDocumentControlledCopies,
+      externalDocuments: updatedExternalDocuments,
+      dars: updatedDars,
+      darRequests: updatedDarRequests,
+      tasks: updatedTasks,
+      periodicReviewTasks: updatedPeriodicReviewTasks,
+      approvalMatrix: updatedApprovalMatrix,
+      approval_matrix: updatedApprovalMatrixAlt,
+      distributionLocations: updatedLocations,
+      copyRequests: updatedCopyRequests,
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         actionType: 'MASTER_DEPT_UPDATED',
         actor: state.currentUser?.name || 'DCC Officer',
-        details: `Updated department ${deptId}`,
+        details: `Updated department ${oldCode} to ${newCode} with cascading relational propagation`,
         timestamp: new Date().toISOString()
       }, ...(state.actionLog || [])]
     };
-  }),
+  });
+  return true;
+} catch (err) {
+  console.error('updateDepartment error:', err);
+  throw err;
+}
+},
 
   // --- 2.1 Department Dependency Pre-check & Deactivation ---
   checkDepartmentDependencies: (targetDeptId) => {
@@ -6876,8 +7705,10 @@ const useStore = create(persist((set, get) => ({
       persistedState.darHistory = [];
     }
 
-    // Eradicate legacy 'DCC' department code in persisted tasks, copies, and user state
+    // Eradicate legacy 'DCC' department code and migrate task departments to owner department
     if (persistedState.tasks && Array.isArray(persistedState.tasks)) {
+      const persistedDars = persistedState.dars || [];
+      const persistedDocs = persistedState.documents || [];
       persistedState.tasks = persistedState.tasks.map(t => {
         if (!t) return t;
         let updated = { ...t };
@@ -6888,6 +7719,28 @@ const useStore = create(persist((set, get) => ({
         if (updated.assignedToDept === 'DCC') updated.assignedToDept = 'DC';
         if (updated.destinationDept === 'DCC') updated.destinationDept = 'DC';
         if (updated.currentHandlerDepartment === 'DCC') updated.currentHandlerDepartment = 'DC';
+
+        // Data Migration: Ensure task.department is strictly bound to document/DAR owner department
+        const docCode = updated.doc_code || updated.docCode || updated.document_code || '';
+        const docId = updated.docId || updated.doc_id;
+        const matchedDoc = persistedDocs.find(d => 
+          (docId && String(d.id) === String(docId)) ||
+          (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+        );
+        const matchedDar = persistedDars.find(d => String(d.id) === String(updated.darId));
+        let ownerDept = matchedDar?.department || matchedDoc?.department;
+        if (!ownerDept) {
+          if (String(docCode).includes('-PD-') || String(updated.title).includes('-PD-') || String(updated.darId).includes('-PD-')) {
+            ownerDept = 'PD';
+          }
+        }
+        if (ownerDept) {
+          const cleanDept = ownerDept === 'DCC' ? 'DC' : ownerDept;
+          updated.department = cleanDept;
+          updated.target_department = cleanDept;
+          updated.owner_dept = cleanDept;
+          updated.currentHandlerDepartment = cleanDept;
+        }
         return updated;
       });
     }
@@ -6907,9 +7760,13 @@ const useStore = create(persist((set, get) => ({
   },
   onRehydrateStorage: () => (state) => {
     if (state && state.tasks && Array.isArray(state.tasks)) {
-      let hasGhost = false;
+      let hasChange = false;
+      const safeDars = state.dars || [];
+      const safeDocs = state.documents || [];
       const cleaned = state.tasks.map(t => {
         if (!t) return t;
+        let updated = { ...t };
+        let changed = false;
         if (
           t.target_department === 'DCC' ||
           t.targetDepartment === 'DCC' ||
@@ -6919,21 +7776,83 @@ const useStore = create(persist((set, get) => ({
           t.destinationDept === 'DCC' ||
           t.currentHandlerDepartment === 'DCC'
         ) {
-          hasGhost = true;
-          return {
-            ...t,
-            target_department: t.target_department === 'DCC' ? 'DC' : t.target_department,
-            targetDepartment: t.targetDepartment === 'DCC' ? 'DC' : t.targetDepartment,
-            department: t.department === 'DCC' ? 'DC' : t.department,
-            dept: t.dept === 'DCC' ? 'DC' : t.dept,
-            assignedToDept: t.assignedToDept === 'DCC' ? 'DC' : t.assignedToDept,
-            destinationDept: t.destinationDept === 'DCC' ? 'DC' : t.destinationDept,
-            currentHandlerDepartment: t.currentHandlerDepartment === 'DCC' ? 'DC' : t.currentHandlerDepartment
-          };
+          changed = true;
+          updated.target_department = t.target_department === 'DCC' ? 'DC' : t.target_department;
+          updated.targetDepartment = t.targetDepartment === 'DCC' ? 'DC' : t.targetDepartment;
+          updated.department = t.department === 'DCC' ? 'DC' : t.department;
+          updated.dept = t.dept === 'DCC' ? 'DC' : t.dept;
+          updated.assignedToDept = t.assignedToDept === 'DCC' ? 'DC' : t.assignedToDept;
+          updated.destinationDept = t.destinationDept === 'DCC' ? 'DC' : t.destinationDept;
+          updated.currentHandlerDepartment = t.currentHandlerDepartment === 'DCC' ? 'DC' : t.currentHandlerDepartment;
         }
-        return t;
+
+        // Fix task department scoping (e.g. PD tasks like DAR-2026-002 / SOP-PD-01)
+        const docCode = updated.doc_code || updated.docCode || updated.document_code || '';
+        const docId = updated.docId || updated.doc_id;
+        const matchedDoc = safeDocs.find(d => 
+          (docId && String(d.id) === String(docId)) ||
+          (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+        );
+        const matchedDar = safeDars.find(d => String(d.id) === String(updated.darId));
+        let ownerDept = matchedDar?.department || matchedDoc?.department;
+        if (!ownerDept) {
+          if (String(docCode).includes('-PD-') || String(updated.title).includes('-PD-') || String(updated.darId).includes('-PD-')) {
+            ownerDept = 'PD';
+          }
+        }
+        
+        const isDccTask = isDccExclusiveTask(updated) || isDccOperationalTask(updated);
+        const isReceipt = isReceiptTask(updated);
+        if (isDccTask) {
+          if (updated.department !== 'DC' || updated.target_department !== 'DC' || updated.targetRole !== 'DCC_ADMIN') {
+            changed = true;
+            updated.department = 'DC';
+            updated.target_department = 'DC';
+            updated.targetDepartment = 'DC';
+            updated.targetRole = 'DCC_ADMIN';
+            updated.target_role = 'DCC_ADMIN';
+            updated.assignedToRole = 'DCC_ADMIN';
+          }
+        } else if (isReceipt) {
+          const safeCopies = state.controlledCopyInstances || state.documentControlledCopies || [];
+          const targetCopyId = String(updated.copy_id || updated.copyId || updated.instanceId || '');
+          const matchedCopy = safeCopies.find(i => String(i.id) === targetCopyId);
+
+          const cleanRecipientDept = resolveReceiptTaskDepartment(updated, matchedCopy);
+
+          if (
+            updated.department !== cleanRecipientDept ||
+            updated.target_department !== cleanRecipientDept ||
+            updated.destinationDept !== cleanRecipientDept ||
+            updated.assignedToDept !== cleanRecipientDept
+          ) {
+            changed = true;
+            updated.department = cleanRecipientDept;
+            updated.target_department = cleanRecipientDept;
+            updated.targetDepartment = cleanRecipientDept;
+            updated.destinationDept = cleanRecipientDept;
+            updated.destination_dept = cleanRecipientDept;
+            updated.recipientDepartment = cleanRecipientDept;
+            updated.recipient_department = cleanRecipientDept;
+            updated.currentHandlerDepartment = cleanRecipientDept;
+            updated.assignedToDept = cleanRecipientDept;
+            updated.dept_code = cleanRecipientDept;
+          }
+        } else if (ownerDept) {
+          const cleanDept = ownerDept === 'DCC' ? 'DC' : ownerDept;
+          if (updated.department !== cleanDept || updated.target_department !== cleanDept) {
+            changed = true;
+            updated.department = cleanDept;
+            updated.target_department = cleanDept;
+            updated.owner_dept = cleanDept;
+            updated.currentHandlerDepartment = cleanDept;
+          }
+        }
+
+        if (changed) hasChange = true;
+        return updated;
       });
-      if (hasGhost) {
+      if (hasChange) {
         useStore.setState({ tasks: cleaned });
       }
     }
@@ -6970,11 +7889,49 @@ const useStore = create(persist((set, get) => ({
   })
 }));
 
-// Auto-cleanup legacy local storage cache
+// Auto-cleanup legacy local storage cache and heal stale tasks in storage
 if (typeof window !== 'undefined' && window.localStorage) {
   try {
     localStorage.removeItem('qms-storage-uat-v6');
-  } catch (e) {
+  } catch {
+    // Ignore in non-browser or sandbox environments
+  }
+
+  try {
+    const storageKey = 'qms-storage-uat-v7';
+    const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    if (persisted && persisted.state && Array.isArray(persisted.state.tasks)) {
+      let migrated = false;
+      persisted.state.tasks = persisted.state.tasks.map(t => {
+        if (isReceiptTask(t)) {
+          const loc = t.location || t.locationName || t.location_name || '';
+          const text = `${t.title || ''} ${t.description || ''} ${loc}`;
+          if (text.includes('EN Office') || text.includes('EN-') || text.includes('(EN)')) {
+            if (t.department !== 'EN') {
+              migrated = true;
+              return {
+                ...t,
+                department: 'EN',
+                target_department: 'EN',
+                targetDepartment: 'EN',
+                destinationDept: 'EN',
+                destination_dept: 'EN',
+                recipientDepartment: 'EN',
+                recipient_department: 'EN',
+                currentHandlerDepartment: 'EN',
+                assignedToDept: 'EN',
+                dept_code: 'EN'
+              };
+            }
+          }
+        }
+        return t;
+      });
+      if (migrated) {
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+  } catch {
     // Ignore in non-browser or sandbox environments
   }
 }

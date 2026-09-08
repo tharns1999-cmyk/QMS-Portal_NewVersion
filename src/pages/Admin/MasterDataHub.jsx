@@ -323,28 +323,6 @@ const MasterDataHub = () => {
     };
   }, []);
 
-  // If unauthorized, render Access Denied Card
-  if (!isAdmin) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-none max-w-md w-full text-center space-y-4">
-          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
-            <ShieldAlert size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-[#1E1E1E]">การเข้าถึงถูกปฏิเสธ (Access Denied)</h2>
-          <p className="text-sm text-[#666666]">
-            ระบบสงวนสิทธิ์การเข้าใช้งานศูนย์ข้อมูลหลัก (Master Data Management Hub) ให้เฉพาะเจ้าหน้าที่ควบคุมเอกสาร (DCC Admin) หรือ Super Admin เท่านั้น
-          </p>
-          <button
-            onClick={() => navigate('/portal')}
-            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition-colors"
-          >
-            กลับสู่หน้าหลัก (Portal Home)
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // --- TAB 1 HANDLERS (Users) ---
   const filteredUsers = (masterUsers || []).filter(u => {
@@ -497,51 +475,120 @@ const MasterDataHub = () => {
 
   const handleOpenDeptModal = (dept = null) => {
     if (dept) {
-      setEditingDept(dept);
+      const deptCode = dept.id || dept.code || dept.deptCode || '';
+      const nameTh = dept.nameTh || dept.name || dept.name_th || '';
+      const nameEn = dept.nameEn || dept.name_en || '';
+      setEditingDept({
+        ...dept,
+        id: deptCode,
+        code: deptCode,
+        deptCode: deptCode,
+        oldCode: deptCode
+      });
       setDeptFormData({
-        id: dept.id,
-        nameTh: dept.nameTh || dept.name || '',
-        nameEn: dept.nameEn || '',
+        id: deptCode,
+        code: deptCode,
+        deptCode: deptCode,
+        nameTh: nameTh,
+        name: nameTh,
+        name_th: nameTh,
+        nameEn: nameEn,
+        name_en: nameEn,
         headUserId: dept.headUserId || ''
       });
     } else {
       setEditingDept(null);
       setDeptFormData({
         id: '',
+        code: '',
+        deptCode: '',
         nameTh: '',
+        name: '',
+        name_th: '',
         nameEn: '',
+        name_en: '',
         headUserId: ''
       });
     }
     setIsDeptModalOpen(true);
   };
 
+  const handleCloseDeptModal = () => {
+    setIsDeptModalOpen(false);
+    setEditingDept(null);
+    setDeptFormData({
+      id: '',
+      code: '',
+      deptCode: '',
+      nameTh: '',
+      name: '',
+      name_th: '',
+      nameEn: '',
+      name_en: '',
+      headUserId: ''
+    });
+  };
+
   const handleSaveDept = (e) => {
-    e.preventDefault();
-    if (!deptFormData.id.trim() || !deptFormData.nameTh.trim()) {
-      toast.error('กรุณากรอกรหัสแผนกและชื่อภาษาไทย');
-      return;
-    }
-
-    const headUser = (masterUsers || []).find(u => u.id === deptFormData.headUserId);
-    const payload = {
-      ...deptFormData,
-      id: deptFormData.id.toUpperCase(),
-      name: deptFormData.nameTh,
-      headName: headUser ? headUser.name : (editingDept?.headName || 'ยังไม่ได้กำหนด')
-    };
-
+    if (e && e.preventDefault) e.preventDefault();
     try {
+      const currentDeptId = (editingDept?.id || editingDept?.code || editingDept?.deptCode || editingDept?.oldCode || '').toString().trim().toUpperCase();
+      const newCode = (deptFormData.id || deptFormData.code || deptFormData.deptCode || '').toString().trim().toUpperCase();
+      const rawNameTh = (deptFormData.nameTh || deptFormData.name || deptFormData.name_th || '').toString().trim();
+
+      if (!newCode || !rawNameTh) {
+        toast.error('กรุณากรอกรหัสแผนกและชื่อภาษาไทย');
+        return;
+      }
+
+      // Safe access to departments list (harmonized across all store aliases)
+      const departments = (masterDepartments && masterDepartments.length > 0)
+        ? masterDepartments
+        : ((storeDepts && storeDepts.length > 0) ? storeDepts : (departmentsList || []));
+
+      // ตรวจสอบซ้ำเฉพาะกรณีที่รหัสไม่ตรงกับตัวมันเอง (Exclude ตัวเองออกเสมอ)
+      const isDuplicate = departments.some(d => {
+        const existingId = (d.id || d.code || d.deptCode || '').toString().trim().toUpperCase();
+        return existingId === newCode && existingId !== currentDeptId;
+      });
+
+      if (isDuplicate) {
+        // แจ้งเตือนว่ารหัสซ้ำกับแผนกอื่น
+        toast.error(`รหัสแผนก ${newCode} มีอยู่ในระบบแล้ว`);
+        return;
+      }
+
+      const headUser = (masterUsers || []).find(u => u.id === deptFormData.headUserId);
+      const headName = headUser ? headUser.name : (editingDept?.headName || editingDept?.manager || 'ยังไม่ได้กำหนด');
+
+      const payload = {
+        ...deptFormData,
+        id: newCode,
+        code: newCode,
+        deptCode: newCode,
+        name: rawNameTh,
+        nameTh: rawNameTh,
+        name_th: rawNameTh,
+        nameEn: (deptFormData.nameEn || deptFormData.name_en || '').toString().trim(),
+        name_en: (deptFormData.nameEn || deptFormData.name_en || '').toString().trim(),
+        headUserId: deptFormData.headUserId || '',
+        headName: headName,
+        manager: headName
+      };
+
       if (editingDept) {
-        updateDepartment(editingDept.id, payload);
+        const targetId = editingDept.oldCode || editingDept.id || editingDept.code;
+        updateDepartment(targetId, payload);
         toast.success(`อัปเดตแผนก "${payload.id}" เรียบร้อยแล้ว`);
       } else {
         addDepartment(payload);
         toast.success(`เพิ่มแผนก "${payload.id}" เรียบร้อยแล้ว`);
       }
-      setIsDeptModalOpen(false);
+
+      handleCloseDeptModal();
     } catch (err) {
-      toast.error(err.message || 'เกิดข้อผิดพลาด');
+      console.error('handleSaveDept error:', err);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลแผนก');
     }
   };
 
@@ -912,6 +959,29 @@ const MasterDataHub = () => {
       </span>
     );
   };
+
+  // If unauthorized, render Access Denied Card
+  if (!isAdmin) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-none max-w-md w-full text-center space-y-4">
+          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
+            <ShieldAlert size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-[#1E1E1E]">การเข้าถึงถูกปฏิเสธ (Access Denied)</h2>
+          <p className="text-sm text-[#666666]">
+            ระบบสงวนสิทธิ์การเข้าใช้งานศูนย์ข้อมูลหลัก (Master Data Management Hub) ให้เฉพาะเจ้าหน้าที่ควบคุมเอกสาร (DCC Admin) หรือ Super Admin เท่านั้น
+          </p>
+          <button
+            onClick={() => navigate('/portal')}
+            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition-colors"
+          >
+            กลับสู่หน้าหลัก (Portal Home)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
@@ -2482,7 +2552,7 @@ const MasterDataHub = () => {
                 {editingDept ? 'แก้ไขข้อมูลแผนก' : 'เพิ่มแผนกใหม่'}
               </h3>
               <button 
-                onClick={() => setIsDeptModalOpen(false)} 
+                onClick={handleCloseDeptModal} 
                 className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                 title="ปิดหน้าต่าง"
               >
@@ -2496,11 +2566,10 @@ const MasterDataHub = () => {
                 <input
                   type="text"
                   required
-                  disabled={Boolean(editingDept)}
-                  value={deptFormData.id}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase() })}
+                  value={deptFormData.id || deptFormData.code || ''}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase(), code: e.target.value.toUpperCase(), deptCode: e.target.value.toUpperCase() })}
                   placeholder="เช่น PD, QA, QC, WH, EN..."
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
+                  className="w-full px-3 py-2 bg-white border border-[#E5E5E5] rounded-xl font-mono uppercase focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all"
                 />
               </div>
 
@@ -2509,8 +2578,8 @@ const MasterDataHub = () => {
                 <input
                   type="text"
                   required
-                  value={deptFormData.nameTh}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value })}
+                  value={deptFormData.nameTh || deptFormData.name || ''}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value, name: e.target.value, name_th: e.target.value })}
                   placeholder="เช่น ฝ่ายผลิต"
                   className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                 />
@@ -2520,8 +2589,8 @@ const MasterDataHub = () => {
                 <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาอังกฤษ:</label>
                 <input
                   type="text"
-                  value={deptFormData.nameEn}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value })}
+                  value={deptFormData.nameEn || deptFormData.name_en || ''}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value, name_en: e.target.value })}
                   placeholder="เช่น Production Department"
                   className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                 />
@@ -2530,7 +2599,7 @@ const MasterDataHub = () => {
               <div>
                 <label className="font-bold text-slate-700 block mb-1">หัวหน้าแผนก / ผู้มีอำนาจลงนามประจำแผนก:</label>
                 <select
-                  value={deptFormData.headUserId}
+                  value={deptFormData.headUserId || ''}
                   onChange={(e) => setDeptFormData({ ...deptFormData, headUserId: e.target.value })}
                   className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                 >
@@ -2544,7 +2613,7 @@ const MasterDataHub = () => {
               <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsDeptModalOpen(false)}
+                  onClick={handleCloseDeptModal}
                   className="btn-secondary text-xs"
                 >
                   ยกเลิก

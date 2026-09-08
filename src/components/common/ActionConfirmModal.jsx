@@ -114,43 +114,43 @@ const ActionConfirmModal = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 sm:p-6">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ type: "spring", stiffness: 450, damping: 30 }}
-            className="bg-white rounded-xl w-full max-w-2xl sm:max-w-3xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-stone-200 flex flex-col max-h-[90vh] overflow-hidden"
+            className="bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-2xl sm:max-w-3xl shadow-floating border border-dream-subtle flex flex-col max-h-[90vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className={`px-8 pt-8 pb-5 border-b border-stone-100 flex items-center justify-between bg-white`}>
+            <div className="px-8 pt-7 pb-5 border-b border-dream-subtle flex items-center justify-between bg-white/90 backdrop-blur-sm">
               <div className="flex items-center gap-4 min-w-0">
-                <div className={`flex items-center justify-center w-12 h-12 bg-[#f9f8f6] rounded-xl border border-stone-200 shrink-0 ${styles.iconColor}`}>
+                <div className={`flex items-center justify-center w-12 h-12 bg-dream-canvas rounded-2xl border border-dream-subtle shrink-0 ${styles.iconColor}`}>
                   {styles.icon}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-bold text-[#2d2d2d] tracking-tight truncate">{title}</h2>
-                  <p className="text-sm text-stone-500 font-medium mt-1">กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน</p>
+                  <h2 className="text-xl sm:text-2xl font-bold text-dream-primary tracking-tight truncate">{title}</h2>
+                  <p className="text-sm text-dream-secondary font-medium mt-1">กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน</p>
                 </div>
               </div>
               <button 
                 onClick={onClose}
-                className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors shrink-0 focus:ring-2 focus:ring-[#da7756]/20 outline-none"
+                className="text-dream-muted hover:text-dream-primary hover:bg-dream-canvas p-2.5 rounded-xl transition-all shrink-0 focus:ring-2 focus:ring-indigo-100 outline-none"
                 disabled={isLoading}
                 title="ปิดหน้าต่าง"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
 
             {/* Content */}
-            <div className="p-8 overflow-y-auto max-h-[75vh] flex-1 bg-[#f9f8f6] space-y-6 scrollbar-thin">
-              <div className="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100 w-full max-w-full overflow-hidden shadow-sm">
+            <div className="p-8 overflow-y-auto max-h-[75vh] flex-1 bg-dream-canvas/50 space-y-6 scrollbar-thin">
+              <div className="bg-white rounded-2xl border border-dream-subtle divide-y divide-dream-subtle w-full max-w-full overflow-hidden shadow-sm">
                 {summaryData.map((item, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-start p-4 sm:p-5 gap-2 sm:gap-4 hover:bg-stone-50 transition-colors min-w-0">
-                    <span className="text-sm font-bold text-stone-500 uppercase tracking-wider w-36 sm:w-48 shrink-0">{item.label}</span>
-                    <div className="text-sm sm:text-base font-medium text-[#2d2d2d] break-all break-words min-w-0 [overflow-wrap:anywhere] flex-1 leading-relaxed">
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-start p-4 sm:p-5 gap-2 sm:gap-4 hover:bg-[#F9F9FD] transition-colors min-w-0">
+                    <span className="text-sm font-semibold text-dream-secondary uppercase tracking-wider w-36 sm:w-48 shrink-0">{item.label}</span>
+                    <div className="text-sm sm:text-base font-medium text-dream-primary break-all break-words min-w-0 [overflow-wrap:anywhere] flex-1 leading-relaxed">
                       {item.value !== undefined && item.value !== null && item.value !== '' ? item.value : '-'}
                     </div>
                   </div>
@@ -158,16 +158,16 @@ const ActionConfirmModal = ({
               </div>
 
               {requireTypeToConfirm && (
-                <div className="mt-4 bg-white p-5 rounded-xl border border-stone-200 space-y-3 shadow-sm">
-                  <label className="block text-sm font-bold text-[#a94442]">
-                    นี่เป็นการดำเนินการสำคัญ กรุณาพิมพ์ <strong className="select-all bg-[#f5e6e6] px-2 py-0.5 rounded border border-[#a94442]/30 font-mono text-sm text-[#a94442]">CONFIRM</strong> เพื่อยืนยัน:
+                <div className="mt-4 bg-white p-5 rounded-2xl border border-rose-200/70 bg-rose-50/20 space-y-3 shadow-sm">
+                  <label className="block text-sm font-bold text-rose-700">
+                    นี่เป็นการดำเนินการสำคัญ กรุณาพิมพ์ <strong className="select-all bg-rose-100/70 px-2 py-0.5 rounded-md border border-rose-200 font-mono text-sm text-rose-800">CONFIRM</strong> เพื่อยืนยัน:
                   </label>
                   <input
                     type="text"
                     value={typedConfirmation}
                     onChange={(e) => setTypedConfirmation(e.target.value)}
                     placeholder="พิมพ์ CONFIRM"
-                    className="w-full px-4 py-3 text-sm border border-stone-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#a94442]/10 focus:border-[#a94442] transition-all font-mono uppercase bg-white text-[#2d2d2d]"
+                    className="w-full px-4 py-3 text-sm border border-dream-subtle rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400 transition-all font-mono uppercase bg-white text-dream-primary"
                     disabled={isLoading}
                   />
                 </div>
@@ -175,11 +175,11 @@ const ActionConfirmModal = ({
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-5 border-t border-stone-100 flex justify-end gap-4 bg-white shrink-0">
+            <div className="px-8 py-5 border-t border-dream-subtle flex justify-end gap-3 bg-white/90 backdrop-blur-sm shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-3 text-sm font-bold text-stone-600 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl transition-all focus:ring-4 focus:ring-stone-200 outline-none"
+                className="px-5 py-2.5 text-sm font-semibold text-dream-primary bg-white hover:bg-dream-canvas border border-dream-subtle rounded-xl transition-all focus:ring-2 focus:ring-indigo-100 outline-none"
                 disabled={isLoading || isSuccess}
               >
                 {cancelText || 'ยกเลิก / กลับไปแก้ไข'}
@@ -188,8 +188,8 @@ const ActionConfirmModal = ({
                 type="button"
                 onClick={handleConfirmClick}
                 disabled={isConfirmDisabled}
-                className={`text-sm font-bold px-6 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[150px] ${
-                  isConfirmDisabled ? 'opacity-50 cursor-not-allowed bg-stone-100 text-stone-400 border border-stone-200' : styles.btn
+                className={`text-sm font-semibold px-6 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[150px] shadow-sm hover:shadow-dream hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.99] ${
+                  isConfirmDisabled ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none hover:translate-y-0 hover:shadow-none' : styles.btn
                 }`}
               >
                 <AnimatePresence mode="wait" initial={false}>
@@ -201,7 +201,7 @@ const ActionConfirmModal = ({
                       exit={{ opacity: 0, scale: 0.8 }}
                       transition={{ duration: 0.2 }}
                     >
-                      <CheckCircle className="w-6 h-6 text-white" />
+                      <CheckCircle className="w-5 h-5 text-white" />
                     </motion.div>
                   ) : isLoading ? (
                     <motion.div
@@ -211,7 +211,7 @@ const ActionConfirmModal = ({
                       exit={{ opacity: 0, y: -5 }}
                       className="flex items-center gap-2 text-white"
                     >
-                      <Loader2 className="animate-spin h-5 w-5 text-current" strokeWidth={2} />
+                      <Loader2 className="animate-spin h-4 w-4 text-current" strokeWidth={2} />
                       กำลังประมวลผล...
                     </motion.div>
                   ) : (

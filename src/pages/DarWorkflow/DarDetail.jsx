@@ -1,11 +1,27 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { FileText, ChevronLeft, CheckCircle, AlertCircle, Activity, Sparkles } from 'lucide-react';
+import { 
+  FileText, 
+  ChevronLeft, 
+  CheckCircle, 
+  AlertCircle, 
+  Activity, 
+  Sparkles,
+  Download,
+  ExternalLink,
+  Calendar,
+  Clock,
+  Building2,
+  Layers,
+  CheckCircle2
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 import DARComments from '../../components/workflow/DARComments';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { getDarReason, getDarDetail, getDarDocInfo, isDarDraft, isDarRequester } from '../../utils/darHelper';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
+import { UniversalWatermarkService, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
 
 const DarDetail = () => {
   const { id } = useParams();
@@ -44,57 +60,103 @@ const DarDetail = () => {
     );
   }
 
-  const isAdmin = currentUser.isDcc || currentUser.role === 'DCC_ADMIN' || currentUser.id === 'u5' || currentUser.id === 'U001';
+  const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
 
   let workflow = null;
   if (isAdmin && dar) {
-    const requester = masterUsers.find(u => u.id === dar.requesterId);
+    const requester = masterUsers?.find(u => u.id === dar.requesterId);
     const revObj = resolveReviewer(dar.requesterId, dar.department, masterUsers, reviewUsers, dar.docType);
     const revId = revObj?.id || revObj;
-    const reviewer = masterUsers.find(u => u.id === revId);
+    const reviewer = masterUsers?.find(u => u.id === revId);
     
     const appObj = revId ? resolveApprover(dar.requesterId, revId, dar.department, masterUsers, approveUsers, dar.docType) : null;
     const appId = appObj?.id || appObj;
-    const approver = masterUsers.find(u => u.id === appId);
+    const approver = masterUsers?.find(u => u.id === appId);
 
     workflow = { requester, reviewer, approver };
   }
 
+  // Handle PDF Download / Preview via UniversalWatermarkService
+  const handleDownloadAttachment = async () => {
+    try {
+      const toastId = toast.loading('กำลังสร้างไฟล์ PDF เอกสารแนบ...');
+      const targetDoc = documents?.find(d => d.id === dar.docId || d.id === dar.docIdRef) || {
+        id: dar.docId || dar.id,
+        title: docInfo.docCode || dar.title,
+        name: dar.title,
+        doc_code: docInfo.docCode,
+        rev: docInfo.docRev || '01',
+        status: dar.status || 'EFFECTIVE'
+      };
+      const watermarkConfig = resolveWatermarkConfig(targetDoc, {
+        currentUser,
+        isHistoricalRev: false
+      });
+      await UniversalWatermarkService.generateAndDownloadPdf(targetDoc, watermarkConfig, {
+        userName: currentUser?.name || 'User',
+        userDept: currentUser?.department || 'General'
+      });
+      toast.dismiss(toastId);
+      toast.success('ดาวน์โหลดไฟล์เอกสารแนบสำเร็จ');
+    } catch (err) {
+      console.error(err);
+      toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร');
+    }
+  };
+
+  const fileName = dar.file || `${docInfo.docCode || dar.title || 'Document'}.pdf`;
+  const fileSize = dar.fileSize || '2.4 MB';
+  const nextRev = String(parseInt(docInfo.docRev || '0', 10) + 1).padStart(2, '0');
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-4 w-full max-w-full overflow-hidden">
+    <div className="space-y-6 max-w-7xl mx-auto pb-6 w-full max-w-full overflow-hidden">
+      {/* Top Bar: Title & Inspector CTA */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="action-icon-btn text-slate-600 hover:text-[#0D99FF]">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+            title="ย้อนกลับ"
+          >
             <ChevronLeft size={20} />
           </button>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-[#0D99FF] text-lg">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono font-bold text-[#0D99FF] text-lg tracking-tight">
                 {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
               </span>
-              <span className="badge-system">{dar.type}</span>
+              <span className={`px-2.5 py-0.5 rounded-md text-xs font-bold uppercase ${
+                dar.type === 'OBSOLETE'
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                  : dar.type === 'REVISION'
+                    ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                    : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+              }`}>
+                {dar.type === 'NEW' ? 'ขอจัดทำใหม่' : dar.type === 'REVISION' ? 'ขอแก้ไข' : dar.type === 'OBSOLETE' ? 'ขอยกเลิก' : dar.type}
+              </span>
               {(dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_')) && (
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                   ฉบับร่าง (Draft)
                 </span>
               )}
             </div>
-            <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">{dar.title}</h2>
+            <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight mt-0.5">{dar.title}</h2>
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => setIsInspectorOpen(true)}
-          className="btn-primary flex items-center gap-2 text-xs font-bold self-start sm:self-auto"
+          className="btn-primary flex items-center gap-2 text-xs font-bold self-start sm:self-auto shadow-xs"
         >
           <Sparkles size={15} /> ตรวจสอบคำร้องครบ 6 มิติ (Inspector)
         </button>
       </div>
 
+      {/* Admin Workflow Integrity Tracker */}
       {isAdmin && workflow && (
-        <div className="card-surface p-6">
-          <h3 className="font-bold text-xs text-indigo-900 border-b border-indigo-50 pb-2 mb-4 flex items-center gap-2 uppercase tracking-wider">
+        <div className="card-surface p-5 sm:p-6 shadow-xs border border-slate-200/90 rounded-2xl">
+          <h3 className="font-bold text-xs text-indigo-900 border-b border-indigo-50 pb-2.5 mb-4 flex items-center gap-2 uppercase tracking-wider">
             <Activity className="text-[#0D99FF]" size={16} /> ติดตามสายการอนุมัติ (Workflow Integrity Tracker)
           </h3>
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 relative">
@@ -106,7 +168,7 @@ const DarDetail = () => {
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
                   <span className="text-xs font-bold text-[#666666] uppercase tracking-wider">ผู้ร้องขอ (Requester)</span>
                </div>
-               <p className="font-bold text-[#1E1E1E] text-sm text-center">{workflow.requester?.name || dar.requesterId}</p>
+               <p className="font-bold text-[#1E1E1E] text-sm text-center truncate w-full">{workflow.requester?.name || dar.requesterId}</p>
                <p className="text-xs text-slate-400 mt-0.5">ระดับตำแหน่ง: {workflow.requester?.level || '?'}</p>
              </div>
 
@@ -116,7 +178,7 @@ const DarDetail = () => {
                   <div className={`w-2.5 h-2.5 rounded-full ${dar.status === 'DRAFT' || dar.status === 'RETURNED_FOR_REVISION' || dar.status === 'CANCELLED' ? 'bg-slate-300' : dar.status === 'UNDER_REVIEW' ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
                   <span className="text-xs font-bold text-[#666666] uppercase tracking-wider">ผู้ทบทวน (Reviewer)</span>
                </div>
-               <p className="font-bold text-[#1E1E1E] text-sm text-center">{workflow.reviewer?.name || 'รอคำนวณ'}</p>
+               <p className="font-bold text-[#1E1E1E] text-sm text-center truncate w-full">{workflow.reviewer?.name || 'รอคำนวณ'}</p>
                <p className="text-xs text-slate-400 mt-0.5">ระดับตำแหน่ง: {workflow.reviewer?.level || '?'}</p>
              </div>
 
@@ -126,15 +188,16 @@ const DarDetail = () => {
                   <div className={`w-2.5 h-2.5 rounded-full ${dar.status === 'PENDING_APPROVAL' ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.5)]' : dar.status === 'WAITING_EFFECTIVE' || dar.status === 'APPROVED_WAITING_EFFECTIVE' || dar.status === 'WAITING_ACKNOWLEDGEMENT' || dar.status === 'EFFECTIVE' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`}></div>
                   <span className="text-xs font-bold text-[#666666] uppercase tracking-wider">ผู้อนุมัติ (Approver)</span>
                </div>
-               <p className="font-bold text-[#1E1E1E] text-sm text-center">{workflow.approver?.name || 'รอคำนวณ'}</p>
+               <p className="font-bold text-[#1E1E1E] text-sm text-center truncate w-full">{workflow.approver?.name || 'รอคำนวณ'}</p>
                <p className="text-xs text-slate-400 mt-0.5">ระดับตำแหน่ง: {workflow.approver?.level || '?'}</p>
              </div>
           </div>
         </div>
       )}
 
+      {/* Cancelled Alert Banner */}
       {dar.status === 'CANCELLED' && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-4 flex items-center gap-3">
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 flex items-center gap-3 shadow-2xs">
           <AlertCircle className="text-rose-500 shrink-0" size={24} />
           <div>
             <p className="font-bold text-xs">คำร้องถูกยกเลิก (CANCELLED)</p>
@@ -143,92 +206,315 @@ const DarDetail = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Data & PDF */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="card-surface p-6">
-            <h3 className="font-bold text-sm text-[#1E293B] uppercase tracking-wider border-b border-[#F1F5F9] pb-3 mb-4">ข้อมูลคำขอดำเนินการเอกสาร (DAR Details)</h3>
-            <div className="grid grid-cols-2 gap-y-3.5 gap-x-6 text-sm min-w-0">
-              <div className="col-span-2 min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">ชื่อเอกสาร:</span> <span className="font-bold text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">{dar.title}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">รหัสเอกสาร:</span> <span className="font-mono font-bold text-[#007BE5] break-all break-words min-w-0 [overflow-wrap:anywhere]">{docInfo.docCode}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">Revision:</span> <span className="font-mono font-bold text-[#1E293B]">
-                {dar.type === 'REVISION' ? `${docInfo.docRev} ➡️ ${String(parseInt(docInfo.docRev || 0, 10) + 1).padStart(2, '0')}` : docInfo.docRev}
-              </span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">หมวดหมู่เอกสาร:</span> <span className="font-medium text-[#1E293B]">{docInfo.docType}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">ประเภทคำร้อง:</span> <span className="font-bold text-[#1E293B]">{dar.type}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">แผนก (Dept):</span> <span className="font-bold text-[#1E293B] font-mono">{dar.department}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">สถานะ:</span> <span className={`font-bold ${dar.status === 'CANCELLED' ? 'text-rose-600' : 'text-[#0D99FF]'}`}>{dar.status}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">วันที่ยื่นคำขอ:</span> <span className="font-mono text-[#1E293B]">{dar.date}</span></div>
-              <div className="min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">วันที่มีผลบังคับใช้:</span> <span className="font-mono text-[#1E293B]">{dar.effectiveDate || '-'}</span></div>
-              <div className="col-span-2 min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">การแจกจ่าย (Dist.):</span> <span className="font-medium text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">
-                {dar.distributions?.length > 0 
-                  ? dar.distributions.map(d => d.locationName ? `${d.departmentId} (${d.copyNo ? `Copy ${d.copyNo}: ` : ''}${d.locationName})` : (d.departmentId || d.dept)).join(', ') 
-                  : (dar.distributionMode === 'ALL' ? 'ทุกแผนก (All Departments)' : (dar.distributedDepts?.join(', ') || '-'))}
-              </span></div>
-              <div className="col-span-2 min-w-0"><span className="text-[#64748B] font-medium w-36 inline-block shrink-0">การรับทราบ (Ack):</span> <span className="font-bold text-[#1E293B]">{dar.ackRequirement === 'REQUIRED' ? 'ต้องกดรับทราบ' : 'ไม่ต้องรับทราบ'}</span></div>
-              
-              <div className="col-span-2 mt-3 pt-3 border-t border-[#F1F5F9] min-w-0">
-                <h4 className="text-xs font-bold text-[#64748B] mb-2.5 uppercase tracking-wider">ผู้รับผิดชอบตามขั้นตอน (Workflow Actors)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2.5 gap-x-6 text-sm">
-                  <div className="min-w-0"><span className="text-[#64748B] font-medium w-32 inline-block shrink-0">ผู้ร้องขอ (Request):</span> <span className="font-medium text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">{dar.requesterName || getActor('Created') || '-'}</span></div>
-                  <div className="min-w-0"><span className="text-[#64748B] font-medium w-32 inline-block shrink-0">ผู้ทบทวน (Review):</span> <span className="font-medium text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">{getActor('Reviewed')}</span></div>
-                  <div className="min-w-0"><span className="text-[#64748B] font-medium w-32 inline-block shrink-0">ผู้อนุมัติ (Approve):</span> <span className="font-medium text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">{getActor('Approved')}</span></div>
-                  {dar.ackRequirement === 'REQUIRED' && (
-                    <div className="min-w-0"><span className="text-[#64748B] font-medium w-32 inline-block shrink-0">รับทราบ (Ack):</span> <span className="font-medium text-[#1E293B] break-all break-words min-w-0 [overflow-wrap:anywhere]">{getActor('Acknowledged')}</span></div>
-                  )}
+      {/* Phase 3: Two-Column Responsive Split Grid (7 cols / 5 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* LEFT COLUMN: DAR Core Information (7 cols) */}
+        <div className="lg:col-span-7 space-y-5">
+          
+          {/* Card 1: Master Metadata & Workflow Actors */}
+          <div className="card-surface p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-5">
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100 mb-3.5">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText size={15} className="text-[#0D99FF]" /> ข้อมูลคำขอดำเนินการเอกสาร (DAR Master Record)
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  dar.status === 'EFFECTIVE' || dar.status === 'COMPLETED'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : dar.status === 'CANCELLED'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-blue-50 text-[#0D99FF] border border-blue-200'
+                }`}>
+                  {dar.status}
+                </span>
+              </div>
+
+              {/* Top Details Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 text-xs">
+                <div className="col-span-2 sm:col-span-3">
+                  <p className="text-slate-400 font-medium">ชื่อเอกสาร (Document Name)</p>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5 leading-snug break-words">
+                    {dar.title}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">รหัสเอกสาร</p>
+                  <p className="text-sm font-mono font-bold text-[#0D99FF] mt-0.5">
+                    {docInfo.docCode}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">ฉบับที่ (Revision)</p>
+                  <div className="mt-0.5">
+                    {dar.type === 'REVISION' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-xs font-mono font-bold">
+                        Rev.{docInfo.docRev} ➡️ Rev.{nextRev}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-mono font-bold">
+                        Rev.{docInfo.docRev}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">หมวดหมู่เอกสาร</p>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1">
+                    <Layers size={13} className="text-slate-400 shrink-0" />
+                    <span>{docInfo.docType}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">แผนกเจ้าของ (Dept)</p>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1 font-mono">
+                    <Building2 size={13} className="text-slate-400 shrink-0" />
+                    <span>{dar.department}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">วันที่ยื่นคำขอ</p>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1 font-mono">
+                    <Calendar size={13} className="text-slate-400 shrink-0" />
+                    <span>{dar.date}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">วันที่มีผลบังคับใช้</p>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 mt-1 font-mono">
+                    <Calendar size={13} className="text-slate-400 shrink-0" />
+                    <span>{dar.effectiveDate || '-'}</span>
+                  </div>
                 </div>
               </div>
-              
-              <div className="col-span-2 mt-3 pt-3 border-t border-[#F1F5F9] min-w-0">
-                <span className="text-[#64748B] block mb-1.5 font-bold text-xs uppercase">{getDarReason(dar).title}</span> 
-                <p className="font-medium text-[#1E293B] bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0] break-all break-words min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed">{getDarReason(dar).value}</p>
+            </div>
+
+            {/* Workflow Actors Sub-Grid */}
+            <div className="pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-600" />
+                ผู้รับผิดชอบตามขั้นตอน (Workflow Signatories)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                {/* 1. Requester */}
+                <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">1. ผู้ร้องขอ (Requester)</span>
+                    <p className="font-bold text-slate-800 mt-1 truncate">
+                      {dar.requesterName || getActor('Created') || '-'}
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-medium mt-1 inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> ยื่นคำร้องแล้ว
+                  </span>
+                </div>
+
+                {/* 2. Reviewer */}
+                <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">2. ผู้ทบทวน (Reviewer)</span>
+                    <p className="font-bold text-slate-800 mt-1 truncate">
+                      {getActor('Reviewed') || workflow?.reviewer?.name || '-'}
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-slate-600 font-medium mt-1 inline-flex items-center gap-1">
+                    <Clock size={10} className="text-[#0D99FF]" /> {getActor('Reviewed') !== '-' ? 'ทบทวนแล้ว' : 'รอการทบทวน'}
+                  </span>
+                </div>
+
+                {/* 3. Approver */}
+                <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">3. ผู้อนุมัติ (Approver)</span>
+                    <p className="font-bold text-slate-800 mt-1 truncate">
+                      {getActor('Approved') || workflow?.approver?.name || '-'}
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-slate-600 font-medium mt-1 inline-flex items-center gap-1">
+                    <Clock size={10} className="text-[#0D99FF]" /> {getActor('Approved') !== '-' ? 'อนุมัติแล้ว' : 'รอการอนุมัติ'}
+                  </span>
+                </div>
+
+                {/* 4. Ack */}
+                <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3 shadow-2xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase">4. การรับทราบ (Ack)</span>
+                    <p className="font-bold text-slate-800 mt-1 truncate">
+                      {getActor('Acknowledged') !== '-' ? getActor('Acknowledged') : (dar.ackRequirement === 'REQUIRED' ? 'ต้องกดรับทราบ' : 'ไม่ต้องรับทราบ')}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-medium mt-1 inline-flex items-center gap-1 ${
+                    dar.ackRequirement === 'REQUIRED' ? 'text-amber-700' : 'text-slate-500'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${dar.ackRequirement === 'REQUIRED' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                    {dar.ackRequirement === 'REQUIRED' ? 'Required (บังคับ)' : 'Optional'}
+                  </span>
+                </div>
               </div>
-              <div className="col-span-2 min-w-0">
-                <span className="text-[#64748B] block mb-1.5 font-bold text-xs uppercase">{getDarDetail(dar).title}</span> 
-                <p className="font-medium text-[#1E293B] bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0] break-all break-words min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed">{getDarDetail(dar).value}</p>
+            </div>
+
+            {/* Distribution Sub-Section */}
+            <div className="pt-4 border-t border-slate-100">
+              <span className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider block">
+                การแจกจ่ายสำเนาควบคุม (Controlled Copy Distribution)
+              </span>
+              <div className="flex flex-wrap gap-1.5 mt-1 max-h-24 overflow-y-auto">
+                {dar.distributions?.length > 0 ? (
+                  dar.distributions.map((d, i) => (
+                    <span key={i} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+                      {d.departmentId} {d.locationName ? `· ${d.locationName}` : ''} {d.copyNo ? `(Copy ${d.copyNo})` : ''}
+                    </span>
+                  ))
+                ) : dar.distributionMode === 'ALL' ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200">
+                    ทุกแผนกในองค์กร (All Departments)
+                  </span>
+                ) : dar.distributedDepts?.length > 0 ? (
+                  dar.distributedDepts.map((d, i) => (
+                    <span key={i} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200">
+                      {d}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-slate-400 text-xs italic">
+                    ไม่มีรายการระบุการแจกจ่ายทางกายภาพ (Paperless)
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          
-          <div className="card-surface p-6 h-96 flex flex-col">
-            <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2.5 mb-4">เอกสารแนบ (PDF Preview)</h3>
-            <div className="flex-1 bg-[#F5F5F5] flex items-center justify-center rounded-xl border border-[#E5E5E5]">
-              <div className="text-center text-slate-400">
-                <FileText className="mx-auto mb-2 opacity-50" size={40} strokeWidth={1.5}/>
-                <p className="text-xs font-mono">{dar.file || `${dar.title}.pdf`}</p>
+
+          {/* Card 2: Change Description & Rationale Bento Sub-Boxes */}
+          <div className="card-surface p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+            <h3 className="font-bold text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles size={14} className="text-[#0D99FF]" /> เนื้อหาการเปลี่ยนแปลง (Change Description & Rationale)
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Box 1: เหตุผลในการร้องขอ/แก้ไข */}
+              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4.5 transition-all shadow-2xs flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <FileText size={13} className="text-amber-600" />
+                    {getDarReason(dar).title}
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words pl-0.5">
+                    {getDarReason(dar).value}
+                  </p>
+                </div>
+              </div>
+
+              {/* Box 2: รายละเอียดการเปลี่ยนแปลง */}
+              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4.5 transition-all shadow-2xs flex flex-col justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-[#0D99FF]" />
+                    {getDarDetail(dar).title}
+                  </h4>
+                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words pl-0.5">
+                    {getDarDetail(dar).value}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Phase 1: Compact Attachment Pill (Replaces the large 384px preview box) */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-center justify-between gap-3 hover:border-slate-300 transition-all">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                <FileText size={20} strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs sm:text-sm font-bold text-slate-800 truncate font-mono" title={fileName}>
+                    {fileName}
+                  </p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                    PDF
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                  เอกสารแนบประกอบคำร้อง DAR · {fileSize}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleDownloadAttachment}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+                title="ดาวน์โหลดไฟล์ PDF"
+              >
+                <Download size={13} strokeWidth={2} className="text-slate-600" />
+                <span className="hidden sm:inline">ดาวน์โหลด</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadAttachment}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0D99FF] hover:bg-[#0088EE] active:scale-95 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
+                title="เปิดดูไฟล์เอกสาร"
+              >
+                <ExternalLink size={13} strokeWidth={2} />
+                <span>เปิดดูไฟล์</span>
+              </button>
+            </div>
+          </div>
+
         </div>
 
-        {/* Right Column: Timeline & Comments */}
-        <div className="space-y-6">
-          <div className="card-surface p-6 max-h-[400px] overflow-y-auto">
-            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2.5 mb-4">ประวัติการดำเนินการ (Workflow Timeline)</h3>
+        {/* RIGHT COLUMN: Audit Activity & Conversation Panel (5 cols) */}
+        <div className="lg:col-span-5 space-y-5">
+          
+          {/* Top: Audit Activity Workflow Timeline */}
+          <div className="card-surface p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-xs max-h-[300px] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur-xs z-10">
+              <div className="flex items-center gap-2">
+                <Activity size={15} className="text-[#0D99FF]" />
+                <h3 className="font-bold text-xs sm:text-sm text-slate-800 uppercase tracking-wider">
+                  ประวัติการดำเนินการ (Activity Log)
+                </h3>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
+                {myTimeline.length} รายการ
+              </span>
+            </div>
+
             <div className="space-y-4">
               {myTimeline.map((item) => (
-                <div key={item.id} className="relative pl-6 border-l-2 border-[#E5F4FF] last:border-0 pb-2">
+                <div key={item.id} className="relative pl-6 border-l-2 border-[#E5F4FF] last:border-0 pb-1">
                   <div className="absolute -left-[9px] top-0 bg-white p-0.5 rounded-full">
-                    <CheckCircle className="text-[#0D99FF]" size={16} />
+                    <CheckCircle className="text-[#0D99FF]" size={15} />
                   </div>
                   <div>
-                    <div className="flex justify-between items-start mb-0.5">
-                      <p className="font-bold text-[#1E1E1E] text-sm">{item.action}</p>
-                      <p className="text-xs text-slate-400 font-mono">{item.date}</p>
+                    <div className="flex justify-between items-start mb-0.5 gap-2">
+                      <p className="font-bold text-[#1E1E1E] text-xs sm:text-sm truncate">{item.action}</p>
+                      <p className="text-[10px] text-slate-400 font-mono shrink-0">{item.date}</p>
                     </div>
-                    <p className="text-xs text-[#666666]">โดย: {item.user}</p>
-                    {item.comment && !item.isChat && <p className="text-sm text-slate-700 mt-1.5 bg-[#F5F5F5] p-2.5 rounded-xl border border-slate-100 leading-relaxed">{item.comment}</p>}
+                    <p className="text-xs text-[#666666]">โดย: <span className="font-medium text-slate-800">{item.user}</span></p>
+                    {item.comment && !item.isChat && (
+                      <p className="text-xs text-slate-700 mt-1.5 bg-[#F8FAFC] p-2.5 rounded-xl border border-slate-200/80 leading-relaxed break-words">
+                        {item.comment}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
+              {myTimeline.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-6">ไม่มีบันทึกการดำเนินการเพิ่มเติม</p>
+              )}
             </div>
           </div>
 
-          {/* Chat Comments */}
-          <DARComments darId={dar.id} requesterId={dar.requesterId} />
+          {/* Bottom: Retained & Scoped Comments Chat Widget */}
+          <DARComments darId={dar.id} requesterId={dar.requesterId} dar={dar} />
+
         </div>
+
       </div>
 
+      {/* 6-Dimension Inspector Modal */}
       <DarReviewModal
         isOpen={isInspectorOpen}
         onClose={() => setIsInspectorOpen(false)}
@@ -241,3 +527,4 @@ const DarDetail = () => {
 };
 
 export default DarDetail;
+

@@ -18,8 +18,7 @@ import {
   History,
   FolderOpen,
   Archive,
-  Flame,
-  PackageCheck
+  Flame
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
@@ -40,9 +39,9 @@ const ControlledCopyRegister = () => {
     issueControlledCopy, 
     dispatchControlledCopy,
     reportCcDamagedLost, 
-    completeRecallChecklist,
-    recordCopyRecalled,
-    destroyControlledCopy,
+    completeRecallChecklist: _completeRecallChecklist,
+    recordCopyRecalled: _recordCopyRecalled,
+    destroyControlledCopy: _destroyControlledCopy,
     toggleCopyRecallReceived,
     copyDispositionRecords,
     documents,

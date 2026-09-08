@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
@@ -23,7 +23,6 @@ import {
   CheckCircle2,
   RotateCcw,
   Edit3,
-  ChevronDown,
   Layers,
   ShieldCheck,
   Clock,
@@ -210,41 +209,29 @@ const Library = () => {
     return (userDeptsArr || []).some(u => deptMatches(u, d));
   };
 
-  const isOwnerDept = (doc) => {
+  const isOwnerDept = useCallback((doc) => {
     const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept;
     return isSameDept(userDistinctDepts, docDept);
-  };
+  }, [userDistinctDepts]);
 
-  const isDistributedToUser = (doc) => {
-    // If own department owns it, it belongs in "เอกสารในแผนกฉัน"
+  const hasDistributedCopyToUserDept = useCallback((doc) => {
+    // 🛡️ Strict Cross-Department Distribution Rule: Exclude own department documents
     if (isOwnerDept(doc)) return false;
+    const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept;
+    if (currentUser?.department && docDept === currentUser.department) return false;
 
-    const scope = doc.access_control?.scope || doc.access_scope || 'GENERAL';
-
-    // 1. Has physical controlled copy assigned to user's department
-    const hasPhysicalCopy = 
-      (doc.distributions || []).some(d => isSameDept(userDistinctDepts, d.departmentId || d.department || d.dept)) ||
-      (doc.target_depts || []).some(d => isSameDept(userDistinctDepts, d)) ||
-      (controlledCopyInstances || documentControlledCopies || []).some(c => 
-        (String(c.docId || c.doc_id) === String(doc.id) || c.doc_code === doc.title || c.docTitle === doc.title) &&
-        isSameDept(userDistinctDepts, c.holder_dept || c.department) &&
-        ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status)
-      );
-
-    // 2. Targeted scope with user's dept in authorized_depts
-    const isSharedTarget = scope === 'TARGETED' && (
-      (doc.access_control?.authorized_depts || []).some(d => isSameDept(userDistinctDepts, d)) ||
-      (doc.target_depts || []).some(d => isSameDept(userDistinctDepts, d))
-    );
-
-    // 3. Restricted scope with user explicitly authorized or qualifying level
-    const isSharedRestricted = scope === 'RESTRICTED' && (
-      (doc.access_control?.authorized_users || []).includes(currentUser?.id) ||
-      (doc.access_control?.min_access_level && currentUser?.level >= doc.access_control.min_access_level)
-    );
-
-    return Boolean(hasPhysicalCopy || isSharedTarget || isSharedRestricted);
-  };
+    // กรองแสดงเอกสาร (จากแผนกอื่น) ที่มีการจัดสรรสำเนาควบคุมมาตั้งไว้ที่แผนกของผู้ใช้งาน
+    const hasDistDept = (doc.distributed_depts || []).some(d => isSameDept(userDistinctDepts, d));
+    const hasDistObj = (doc.distributions || []).some(d => isSameDept(userDistinctDepts, d.departmentId || d.department || d.dept));
+    const hasControlledCopy = (controlledCopyInstances || documentControlledCopies || []).some(c => {
+      const matchDoc = String(c.docId || c.doc_id) === String(doc.id) || 
+                       c.doc_code === doc.title || 
+                       c.docTitle === doc.title ||
+                       c.doc_code === doc.document_code;
+      return matchDoc && isSameDept(userDistinctDepts, c.holder_dept || c.department) && ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status);
+    });
+    return Boolean(hasDistDept || hasDistObj || hasControlledCopy);
+  }, [isOwnerDept, userDistinctDepts, currentUser?.department, controlledCopyInstances, documentControlledCopies]);
 
   // Status Normalization Helper for Universal Tab Filtering
   const matchesStatusTab = (docStatus, selectedTab, doc = null) => {
@@ -281,53 +268,58 @@ const Library = () => {
   // ดึงสิทธิ์ DCC
   const isDcc = isDccUser;
 
-  // ขั้นตอนที่ 1: กรองตาม Scope แท็บหลัก (ห้ามดักกรอง status ตรงนี้เด็ดขาด!)
+  // ขั้นตอนที่ 1: กรองตาม Scope แท็บหลัก (Data Segregation เด็ดขาด)
   const baseDocs = useMemo(() => {
     return (documents || []).filter((doc) => {
-      const docScope = (doc.access_control?.scope || doc.access_scope || doc.scope || 'GENERAL').toUpperCase();
-      const activeScopeTab = activeTab; // Map to the tab currently selected in the UI
-
-      if (activeScopeTab === TAB_GENERAL || activeScopeTab === 'general') {
-        // แท็บ 1: เอกสารทั่วไป (DCC Admin มองเห็นทุกฉบับ 100% เพื่อทำหน้าที่ Master Custodian, ผู้ใช้ทั่วไปเห็นเฉพาะ GENERAL/PUBLIC)
-        return isDcc || docScope === 'GENERAL' || docScope === 'PUBLIC';
+      if (activeTab === TAB_GENERAL || activeTab === 'general') {
+        // แท็บ 1: เอกสารทั่วไป
+        // แสดงเฉพาะเอกสารจากแผนกอื่นที่ผู้ใช้มีสิทธิ์เข้าถึง (General, Targeted Dept, ระบุตัวบุคคล)
+        // Condition: doc.department !== currentUser.department AND userHasAccess(doc, currentUser)
+        return !isOwnerDept(doc) && hasDocumentAccess(doc, currentUser);
       }
-      if (activeScopeTab === TAB_MY_DEPT || activeScopeTab === 'dept') {
-        // แท็บ 2: เอกสารในแผนกฉัน (ห้ามมี DCC Bypass: แสดงเฉพาะเอกสารของแผนกที่ผู้ใช้สังกัดเท่านั้น)
+      if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
+        // แท็บ 2: เอกสารในแผนกฉัน
+        // แสดงเฉพาะเอกสารที่แผนกเจ้าของคือแผนกเดียวกับผู้ใช้งาน
         return isOwnerDept(doc);
       }
-      if (activeScopeTab === TAB_DISTRIBUTED || activeScopeTab === 'dist') {
-        // แท็บ 3: เอกสารที่ได้รับการแจกจ่าย (ห้ามมี DCC Bypass: แสดงเฉพาะเอกสารที่แจกจ่ายมายังแผนกหรือตนเองเท่านั้น)
-        const distList = (doc.distributed_depts || []).map((d) => String(d).toUpperCase());
-        return distList.some(d => isSameDept(userDistinctDepts, d)) || isDistributedToUser(doc);
+      if (activeTab === TAB_DISTRIBUTED || activeTab === 'dist') {
+        // แท็บ 3: เอกสารที่ได้รับการแจกจ่าย
+        // แสดงเฉพาะเอกสารจากแผนกอื่นที่มีการจัดสรรสำเนาควบคุมมาตั้งไว้ที่แผนกของผู้ใช้งาน (ไม่รวมเอกสารที่แผนกตัวเองเป็นเจ้าของเด็ดขาด)
+        return !isOwnerDept(doc) && hasDistributedCopyToUserDept(doc) && hasDocumentAccess(doc, currentUser);
       }
       return true;
     });
-  }, [documents, activeTab, isDcc, userDistinctDepts, isOwnerDept, isDistributedToUser]);
+  }, [documents, activeTab, userDistinctDepts, isOwnerDept, hasDistributedCopyToUserDept, currentUser]);
 
   // Compute Counts for All Tabs
-  // We can just use the fast filtering logic to get raw counts for badges
   const accessibleDocs = useMemo(() => {
     return (documents || []).filter(d => hasDocumentAccess(d, currentUser));
   }, [documents, currentUser]);
 
-  const generalDocsCount = accessibleDocs.filter(d => {
-    const scope = (d.access_control?.scope || d.access_scope || d.scope || 'GENERAL').toUpperCase();
-    return isDcc || scope === 'GENERAL' || scope === 'PUBLIC';
-  }).length;
-  const myDeptDocsCount = accessibleDocs.filter(d => isOwnerDept(d)).length;
-  const distributedDocsCount = accessibleDocs.filter(d => {
-    const distList = (d.distributed_depts || []).map((dept) => String(dept).toUpperCase());
-    return distList.some(dept => isSameDept(userDistinctDepts, dept)) || isDistributedToUser(d);
-  }).length;
+  // Tab 1: เอกสารทั่วไป (Active docs จากแผนกอื่น)
+  const generalDocsCount = accessibleDocs.filter(d => 
+    !isOwnerDept(d) && matchesStatusTab(d.status, 'EFFECTIVE', d)
+  ).length;
+
+  // Tab 2: เอกสารในแผนกฉัน (Strict Requirement: นับเฉพาะเอกสารที่มีสถานะ ACTIVE เท่านั้น ห้ามนับรวมเอกสารตกรุ่นหรือยกเลิก)
+  const myDeptDocsCount = accessibleDocs.filter(d => 
+    isOwnerDept(d) && matchesStatusTab(d.status, 'EFFECTIVE', d)
+  ).length;
+
+  // Tab 3: เอกสารที่ได้รับการแจกจ่าย (Active docs จากแผนกอื่น ที่แจกจ่ายมายังแผนกผู้ใช้)
+  const distributedDocsCount = accessibleDocs.filter(d => 
+    !isOwnerDept(d) && hasDistributedCopyToUserDept(d) && matchesStatusTab(d.status, 'EFFECTIVE', d)
+  ).length;
+
   const tabFilteredDocs = baseDocs;
 
-  // Compute counts per department for Quick-Pill badges in "เอกสารในแผนกฉัน"
+  // Compute counts per department for Quick-Pill badges in "เอกสารในแผนกฉัน" (นับเฉพาะ ACTIVE เช่นกัน)
   const deptCounts = useMemo(() => {
     const counts = {};
     userDistinctDepts.forEach(dept => {
       counts[dept] = accessibleDocs.filter(d => {
         const docDept = d.owner_dept || d.department || d.dept_code || d.dept;
-        return isOwnerDept(d) && deptMatches(docDept, dept);
+        return isOwnerDept(d) && deptMatches(docDept, dept) && matchesStatusTab(d.status, 'EFFECTIVE', d);
       }).length;
     });
     return counts;
@@ -335,12 +327,15 @@ const Library = () => {
 
   const filteredDocs = useMemo(() => {
     const rawList = baseDocs.filter((doc) => {
-      // 1. กรองตามสถานะ (มีผลบังคับใช้ / ตกรุ่น / ยกเลิก / ทั้งหมด)
-      if (!matchesStatusTab(doc.status, filterStatus, doc)) return false;
+      // 1. กรองตามสถานะ:
+      // - ในแท็บ "เอกสารในแผนกฉัน" กรองตาม Sub-tabs (EFFECTIVE, SUPERSEDED, OBSOLETE, ALL)
+      // - ในแท็บ "เอกสารทั่วไป" และ "เอกสารที่ได้รับการแจกจ่าย" ห้ามแสดง Sub-tabs และล็อกแสดงเฉพาะเอกสารที่มีผลบังคับใช้ (EFFECTIVE / ACTIVE)
+      const effectiveStatusFilter = (activeTab === TAB_MY_DEPT || activeTab === 'dept') ? filterStatus : 'EFFECTIVE';
+      if (!matchesStatusTab(doc.status, effectiveStatusFilter, doc)) return false;
 
       // 2. กรองตามประเภทเอกสาร
       if (filterType && filterType !== 'ALL') {
-        const docType = (doc.doc_type || doc.type || '').toUpperCase();
+        const docType = (doc.doc_type || doc.type || (doc.title || '').split('-')[0] || '').toUpperCase();
         if (docType !== filterType.toUpperCase()) return false;
       }
 
@@ -367,11 +362,11 @@ const Library = () => {
       }
 
       // 5. กรองตามระดับความลับและวันที่และมาตรฐาน
-      if (filterAccessScope) {
+      if (filterAccessScope && filterAccessScope !== 'ALL') {
         const scope = doc.access_control?.scope || doc.access_scope || 'GENERAL';
         if (scope !== filterAccessScope) return false;
       }
-      if (filterStandard) {
+      if (filterStandard && filterStandard !== 'ALL') {
         const stds = doc.relatedStandards || doc.related_standards || [];
         if (!stds.includes(filterStandard)) return false;
       }
@@ -383,7 +378,8 @@ const Library = () => {
     });
 
     // การันตี 100%: ในแท็บ "มีผลบังคับใช้ (Active)" 1 รหัสเอกสาร ต้องปรากฏเพียง 1 แถวเท่านั้น (เลือก Revision ล่าสุด)
-    if (filterStatus === 'EFFECTIVE') {
+    const currentStatusScope = (activeTab === TAB_MY_DEPT || activeTab === 'dept') ? filterStatus : 'EFFECTIVE';
+    if (currentStatusScope === 'EFFECTIVE') {
       const activeByCode = new Map();
       rawList.forEach(doc => {
         const code = (doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title || String(doc.id)).trim().toUpperCase();
@@ -494,53 +490,213 @@ const Library = () => {
   const availableStandards = [...new Set(accessibleDocs.flatMap(doc => doc.relatedStandards || doc.related_standards || []))].filter(Boolean).sort();
 
   const handleExport = () => {
-    const docsToExport = isDccUser ? filteredDocs : (documents || []).filter(d => isOwnerDept(d) && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE'));
-    if (docsToExport.length === 0) return alert('ไม่มีข้อมูลสำหรับส่งออก');
-    
-    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    csvContent += "No.,Doc No.,Title,Type,Owner Dept,Rev.,Effective Date,Requester,Reviewer,Approver,Ack,Distribution,Status\n";
+    const docsToExport = filteredDocs;
+    if (!docsToExport || docsToExport.length === 0) {
+      toast.error('ไม่มีข้อมูลเอกสารสำหรับส่งออก');
+      return;
+    }
 
-    docsToExport.forEach((doc, index) => {
-      const dar = (dars || []).find(d => d.id === doc.darId);
-      const req = dar ? getRequesterName(dar, masterUsers) : '-';
-      const rev = dar ? getReviewerName(dar, timeline) : '-';
-      const app = dar ? getApproverName(dar, timeline) : '-';
-      const ack = dar ? getAckNames(dar, timeline) : '-';
-      const dist = (doc.distributions || []).map(d => d.departmentId || d.department).join('; ') || '-';
-      
-      const row = [
+    const formatDt = (dateInput) => {
+      if (!dateInput || dateInput === '-') return '-';
+      try {
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) {
+          const match = String(dateInput).match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (match) return `${match[3]}/${match[2]}/${match[1]} 09:00`;
+          return String(dateInput);
+        }
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${mins}`;
+      } catch {
+        return String(dateInput);
+      }
+    };
+
+    const headers = [
+      'ลำดับ (No.)',
+      'รหัสเอกสาร (Doc Code)',
+      'ชื่อเอกสาร (Document Title)',
+      'ประเภทเอกสาร (Type)',
+      'แผนกเจ้าของ (Owner Dept)',
+      'ฉบับที่ (Rev.)',
+      'วันที่มีผลบังคับใช้ (Effective Date)',
+      'สถานะ (Status)',
+      'ระดับความลับ (Access Scope)',
+      'เลขที่คำร้อง (DAR Reference)',
+      'ประเภทคำร้อง (DAR Type)',
+      'ผู้ร้องขอ (Requester Name)',
+      'วันเวลาที่ร้องขอ (Requester Timestamp)',
+      'ผู้ทบทวน (Reviewer Name)',
+      'วันเวลาที่ทบทวน (Reviewer Timestamp)',
+      'ผู้อนุมัติ (Approver Name)',
+      'วันเวลาที่อนุมัติ (Approver Timestamp)',
+      'ผู้รับทราบ (Acknowledger Names)',
+      'วันเวลาที่รับทราบ (Acknowledger Timestamp)',
+      'จำนวนจุดแจกจ่ายสำเนา (Copies Count)',
+      'รายการจุดแจกจ่ายสำเนา (Distribution Points)',
+      'เหตุผลในการร้องขอ/แก้ไข (DAR Reason)',
+      'รายละเอียดการเปลี่ยนแปลง (DAR Change Details)'
+    ];
+
+    const rows = docsToExport.map((doc, index) => {
+      const docCode = (doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title || String(doc.id)).trim();
+      const docTitle = doc.name || doc.docName || doc.title || 'Document';
+      const docType = doc.docType || doc.doc_type || (docCode ? docCode.split('-')[0] : 'SOP');
+      const dept = normalizeDeptCode(doc.department || doc.dept || doc.owner_dept) || '-';
+      const rev = String(doc.rev || doc.revision || '00').padStart(2, '0');
+      const effDate = doc.effectiveDate || doc.effective_date || '-';
+      const status = doc.status || 'EFFECTIVE';
+      const scope = doc.access_control?.scope || doc.access_scope || 'GENERAL';
+
+      // Find matching DAR & workflow
+      const workflow = resolveDocWorkflow(doc);
+      const dar = workflow.dar || (dars || []).find(d => 
+        String(d.id) === String(doc.darId) ||
+        (d.doc_code && d.doc_code === docCode) ||
+        (d.docId && String(d.docId) === String(doc.id))
+      );
+
+      // Extract workflow timestamps from timeline
+      const darId = dar?.id;
+      const darTimeline = darId ? (timeline || []).filter(t => t.darId === darId) : [];
+
+      const reqTl = darTimeline.find(t => t.action === 'Created' || t.action === 'SUBMIT' || t.action === 'Resubmitted');
+      const reqName = workflow.req !== '-' ? workflow.req : (dar ? getRequesterName(dar, masterUsers) : '-');
+      const reqTime = formatDt(reqTl?.date || reqTl?.timestamp || dar?.createdAt || dar?.requestDate || dar?.request_date);
+
+      const revTl = darTimeline.slice().reverse().find(t => t.action === 'Reviewed' || t.action === 'REVIEW');
+      const revName = workflow.rev !== '-' ? workflow.rev : (dar ? getReviewerName(dar, timeline) : '-');
+      const revTime = formatDt(revTl?.date || revTl?.timestamp || dar?.reviewedAt || dar?.reviewDate);
+
+      const appTl = darTimeline.slice().reverse().find(t => t.action === 'Approved' || t.action === 'APPROVE');
+      const appName = workflow.app !== '-' ? workflow.app : (dar ? getApproverName(dar, timeline) : '-');
+      const appTime = formatDt(appTl?.date || appTl?.timestamp || dar?.approvedAt || dar?.approveDate);
+
+      const ackTls = darTimeline.filter(t => t.action === 'Acknowledged' || t.action === 'ACKNOWLEDGE' || t.action === 'Ack');
+      const ackNames = dar ? getAckNames(dar, timeline) : '-';
+      const ackTime = ackTls.length > 0 ? formatDt(ackTls[ackTls.length - 1]?.date || ackTls[ackTls.length - 1]?.timestamp) : '-';
+
+      // Physical controlled copies and distribution points
+      const docDistList = (doc.distributions || []);
+      const physicalCopies = (controlledCopyInstances || documentControlledCopies || []).filter(c => 
+        (String(c.docId || c.doc_id) === String(doc.id) || c.doc_code === docCode || c.docTitle === doc.title) &&
+        ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status)
+      );
+      const totalCopiesCount = Math.max(docDistList.length, physicalCopies.length);
+      const distDetails = physicalCopies.length > 0 
+        ? physicalCopies.map(c => `[Copy ${c.copy_no || c.ccNumber || '01'}] ${c.holder_dept || c.department} - ${c.location || c.locationName || c.station_name || 'Station'}`).join('; ')
+        : (docDistList.map(d => `${d.departmentId || d.department} (${d.location || 'Station'})`).join('; ') || '-');
+
+      const darReason = dar ? (dar.requestReason || dar.changeReason || dar.reason || '-') : '-';
+      const darDetail = dar ? (dar.changeSummary || dar.description || dar.changeDetails || dar.requestDetail || '-') : '-';
+      const darNo = dar ? (dar.dar_no || dar.id || '-') : '-';
+      const darType = dar ? (dar.type || dar.request_type || '-') : '-';
+
+      const escapeCell = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
+
+      return [
         index + 1,
-        `"${doc.title || ''}"`,
-        `"${doc.name || ''}"`,
-        `"${(doc.title || '').split('-')[0] || ''}"`,
-        `"${doc.department || ''}"`,
-        `"${doc.rev || '00'}"`,
-        `"${doc.effectiveDate || ''}"`,
-        `"${req}"`,
-        `"${rev}"`,
-        `"${app}"`,
-        `"${ack}"`,
-        `"${dist}"`,
-        `"${doc.status || 'EFFECTIVE'}"`
+        escapeCell(docCode),
+        escapeCell(docTitle),
+        escapeCell(docType),
+        escapeCell(dept),
+        escapeCell(rev),
+        escapeCell(effDate),
+        escapeCell(status),
+        escapeCell(scope),
+        escapeCell(darNo),
+        escapeCell(darType),
+        escapeCell(reqName),
+        escapeCell(reqTime),
+        escapeCell(revName),
+        escapeCell(revTime),
+        escapeCell(appName),
+        escapeCell(appTime),
+        escapeCell(ackNames),
+        escapeCell(ackTime),
+        totalCopiesCount,
+        escapeCell(distDetails),
+        escapeCell(darReason),
+        escapeCell(darDetail)
       ].join(',');
-      csvContent += row + "\n";
     });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `qms_document_library_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `QMS_Deep_Export_${activeTab}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('ส่งออกข้อมูลเอกสารเชิงลึก (Deep Export CSV) เรียบร้อยแล้ว');
   };
 
   const handleDownloadUncontrolled = async (doc, e, openInTab = false) => {
-    e.stopPropagation();
-    const toastId = toast.loading(openInTab ? 'กำลังสร้างไฟล์ PDF และเตรียมเปิดพรีวิว...' : 'กำลังสร้างไฟล์ PDF และประทับลายน้ำ...');
+    if (e) e.stopPropagation();
+    const docCode = doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title || 'Document';
+    const docType = (doc.docType || doc.doc_type || doc.type || docCode.split('-')[0] || '').toUpperCase();
+    const isForm = docType === 'FM' || docType === 'FORM';
+
+    if (isForm) {
+      // ยกเว้นประเภทเอกสาร FM (แบบฟอร์ม): ห้ามประทับลายน้ำใดๆ เพื่อให้ผู้ใช้นำไปปรินต์ใช้งานได้
+      const toastId = toast.loading(openInTab ? 'กำลังเตรียมเปิดแบบฟอร์ม...' : 'กำลังดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)...');
+      try {
+        if (doc.file_url || doc.fileUrl) {
+          const fileUrl = doc.file_url || doc.fileUrl;
+          const link = document.createElement('a');
+          link.href = fileUrl;
+          link.target = openInTab ? '_blank' : '_self';
+          link.download = `${docCode}_BLANK_FORM.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          await UniversalWatermarkService.downloadCleanPdf(
+            doc,
+            {
+              userName: currentUser?.name || 'User',
+              userDept: currentUser?.department || currentUser?.dept || 'User Station',
+              reason: 'Blank Form Template / Direct Use',
+              location: currentUser?.department || currentUser?.dept || 'User Station',
+              docCode
+            },
+            openInTab
+          );
+        }
+
+        toast.dismiss(toastId);
+        toast.success(openInTab ? `เปิดแบบฟอร์ม ${docCode} เรียบร้อยแล้ว` : `ดาวน์โหลดแบบฟอร์ม ${docCode} (ไม่มีลายน้ำ) สำเร็จ`);
+
+        if (logAction) {
+          logAction({
+            action: 'DOWNLOAD_BLANK_FORM_PDF',
+            docId: doc.id,
+            docTitle: doc.title,
+            watermarkType: 'NONE_BLANK_FORM',
+            user: currentUser?.name,
+            dept: currentUser?.department
+          });
+        }
+      } catch (error) {
+        console.error('Download form error:', error);
+        toast.dismiss(toastId);
+        toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดแบบฟอร์ม');
+      }
+      return;
+    }
+
+    // เอกสารทั่วไป (เช่น WI, SOP, MN): ส่ง Payload/Flag ระบุว่าเป็นการโหลดแบบ UNCONTROLLED COPY
+    const toastId = toast.loading(openInTab ? 'กำลังสร้างไฟล์ PDF และเตรียมเปิดพรีวิว...' : 'กำลังสร้างไฟล์ PDF และประทับลายน้ำ (UNCONTROLLED COPY)...');
     try {
       const watermarkConfig = resolveWatermarkConfig(doc, { currentUser });
-      const watermarkType = watermarkConfig.watermarkType || watermarkConfig.type || WATERMARK_TYPES.UNCONTROLLED_COPY;
+      const watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
       
       await UniversalWatermarkService.downloadWatermarkedPdf(
         doc,
@@ -550,16 +706,19 @@ const Library = () => {
           userDept: currentUser?.department || currentUser?.dept || 'User Station',
           reason: 'General Download / Print',
           location: currentUser?.department || currentUser?.dept || 'User Station',
-          ...watermarkConfig.metadata
+          ...watermarkConfig.metadata,
+          watermarkType: 'UNCONTROLLED_COPY',
+          downloadMode: 'UNCONTROLLED_COPY',
+          isUncontrolledCopy: true
         },
         openInTab
       );
 
       toast.dismiss(toastId);
       if (openInTab) {
-        toast.success(`เปิดเอกสาร ${doc.title} ในแท็บใหม่เรียบร้อยแล้ว`);
+        toast.success(`เปิดเอกสาร ${doc.title || docCode} ในแท็บใหม่เรียบร้อยแล้ว`);
       } else {
-        toast.success(`ดาวน์โหลดเอกสาร ${doc.title} เรียบร้อยแล้ว`);
+        toast.success(`ดาวน์โหลดเอกสาร ${doc.title || docCode} (UNCONTROLLED COPY) สำเร็จ`);
       }
 
       if (logAction) {
@@ -567,7 +726,8 @@ const Library = () => {
           action: 'DOWNLOAD_WATERMARK_PDF',
           docId: doc.id,
           docTitle: doc.title,
-          watermarkType,
+          watermarkType: 'UNCONTROLLED_COPY',
+          downloadMode: 'UNCONTROLLED_COPY',
           user: currentUser?.name,
           dept: currentUser?.department
         });
@@ -705,18 +865,6 @@ const Library = () => {
     }
   };
 
-  const handleOpenFullViewer = (doc, e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    if (doc.file_url || doc.fileUrl) {
-      window.open(doc.file_url || doc.fileUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      window.open(`/viewer/${doc.document_code || doc.doc_code || doc.id}`, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   const handleOpenDetailModal = (doc, e) => {
     if (e) {
       e.preventDefault();
@@ -762,6 +910,8 @@ const Library = () => {
     setActiveTab(tab);
     if (tab === TAB_MY_DEPT || tab === 'dept') {
       setMyDeptSubFilter(primaryDept);
+    } else {
+      setFilterStatus('EFFECTIVE');
     }
   };
 
@@ -910,20 +1060,21 @@ const Library = () => {
     return { count, uniqueDepts, deptStr, tooltip };
   };
 
-  const renderLifecycleBadge = (primaryDoc, revisionsList, isObsoleteTab) => {
+  const renderLifecycleBadge = (primaryDoc, revisionsList, isObsoleteTab, isSupersededTab) => {
     const docCode = (primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.code || primaryDoc.docCode || primaryDoc.title || String(primaryDoc.id)).trim().toUpperCase();
 
     // Check if any revision of this document is currently active/effective in the system
-    const activeRev = (documents || []).find(d => {
+    // SKIP this check if we are explicitly inside the SUPERSEDED or OBSOLETE tab context
+    const activeRev = (!isObsoleteTab && !isSupersededTab) ? (documents || []).find(d => {
       const c = (d.document_code || d.doc_code || d.code || d.docCode || d.title || String(d.id)).trim().toUpperCase();
       return c === docCode && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE');
-    });
+    }) : null;
 
     const isPrimaryActive = primaryDoc.status === 'EFFECTIVE' || primaryDoc.status === 'ACTIVE';
     const hasActiveVersion = Boolean(isPrimaryActive || activeRev);
 
     const isObsolete = (primaryDoc.status === 'OBSOLETE' || primaryDoc.is_obsolete || isObsoleteTab) && !hasActiveVersion;
-    const isSuperseded = (primaryDoc.status === 'SUPERSEDED' || primaryDoc.status === 'SUPERSEDED_ARCHIVED' || primaryDoc.is_superseded) && !hasActiveVersion;
+    const isSuperseded = (primaryDoc.status === 'SUPERSEDED' || primaryDoc.status === 'SUPERSEDED_ARCHIVED' || primaryDoc.is_superseded || isSupersededTab) && !hasActiveVersion;
 
     if (hasActiveVersion) {
       return (
@@ -968,8 +1119,12 @@ const Library = () => {
               <th className="w-[80px] min-w-[80px] py-3 px-3 text-center select-none bg-[#F8FAFC]">การจัดการ</th>
               <th className="w-[30%] min-w-[220px] py-3 px-3.5 select-none bg-[#F8FAFC]">รหัสและชื่อเอกสาร</th>
               <th className="w-[15%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">แผนกและสิทธิ์</th>
-              <th className="w-[15%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">ฉบับและวันบังคับใช้</th>
-              <th className="w-[20%] min-w-[160px] py-3 px-3.5 select-none bg-[#F8FAFC]">สายอนุมัติและสำเนา</th>
+              <th className="w-[15%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">
+                {filterStatus === 'SUPERSEDED' ? 'จำนวนฉบับตกรุ่น' : 'ฉบับและวันบังคับใช้'}
+              </th>
+              <th className="w-[20%] min-w-[160px] py-3 px-3.5 select-none bg-[#F8FAFC]">
+                {filterStatus === 'SUPERSEDED' ? 'สายอนุมัติและสถานะเรียกคืน' : 'สายอนุมัติและสำเนา'}
+              </th>
               <th className="w-[15%] min-w-[140px] py-3 px-3.5 select-none bg-[#F8FAFC]">สถานะเอกสาร</th>
             </tr>
           </thead>
@@ -996,10 +1151,31 @@ const Library = () => {
               });
 
               const activeRevisionsList = revisionsList.length > 0 ? revisionsList : [primaryDoc];
-              const hasHistory = activeRevisionsList.length > 1;
-              const historicalCount = activeRevisionsList.filter(d => String(d.id) !== String(primaryDoc.id)).length;
               const isExpanded = expandedGroups.has(docCodeUpper) || expandedGroups.has(docCode);
               const isObsoleteTab = filterStatus === 'OBSOLETE';
+              const isSupersededTab = filterStatus === 'SUPERSEDED';
+
+              // Cumulative superseded revisions list for metric transformation
+              const supersededDocsList = (documents || []).filter(d => {
+                const c = (d.document_code || d.doc_code || d.code || d.docCode || d.title || String(d.id)).trim().toUpperCase();
+                if (c !== docCodeUpper) return false;
+                const st = (d.status || '').toUpperCase();
+                return st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(d.is_superseded);
+              }).sort((a, b) => {
+                const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+                const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
+                return revA - revB;
+              });
+
+              const effectiveSupersededDocs = supersededDocsList.length > 0 
+                ? supersededDocsList 
+                : (isGroup && item.docs ? item.docs : [primaryDoc]);
+
+              const supersededCount = effectiveSupersededDocs.length;
+              const supersededRevTags = effectiveSupersededDocs.map(d => {
+                const r = String(d.rev || d.revision || '00').padStart(2, '0');
+                return `R${r}`;
+              });
 
               // Workflow and Distribution
               const workflow = resolveDocWorkflow(primaryDoc);
@@ -1024,52 +1200,26 @@ const Library = () => {
                     } ${isMenuOpen ? 'relative z-10 bg-[#F8FAFC]' : ''}`}
                     onClick={() => setPreviewDoc(primaryDoc)}
                   >
-                    {/* 1. เครื่องมือและการจัดการ (Actions & Expand - 80px) */}
+                    {/* 1. เครื่องมือและการจัดการ (Actions - 80px) */}
                     <td className={`px-2.5 py-3 whitespace-nowrap text-xs text-center ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1.5 dropdown-action-dock">
-                        {/* ปุ่มลูกศรกางดูฉบับย่อย */}
-                        <button
-                          type="button"
-                          title={isExpanded ? 'ยุบรายการประวัติ' : 'คลี่ดูประวัติฉบับย่อยทั้งหมด'}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleGroupExpand(docCodeUpper);
-                          }}
-                          className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
-                            isExpanded
-                              ? 'bg-blue-50 border-blue-300 text-blue-600 shadow-2xs'
-                              : hasHistory
-                                ? 'border-[#E2E8F0] bg-white text-[#475569] hover:border-blue-400 hover:text-blue-600 hover:bg-[#F0F7FF]'
-                                : 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed'
-                          }`}
-                          disabled={!hasHistory}
-                        >
-                          <ChevronDown
-                            size={14}
-                            className={`transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-600' : ''}`}
-                          />
-                        </button>
-
-                        {/* ปุ่มดูรายละเอียดด่วน (Quick View) */}
-                        <button
-                          type="button"
-                          title="เปิดดูตัวอย่างเอกสาร"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDetailModal(primaryDoc);
-                          }}
-                          className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
-                        >
-                          <Eye size={14} />
-                        </button>
-
                         {/* ปุ่มดาวน์โหลดด่วน (Quick Download) */}
                         <button
                           type="button"
-                          title={isDccUser ? 'ดาวน์โหลด Master Document (DCC)' : 'ดาวน์โหลดสำเนาไม่ควบคุม (Uncontrolled Copy)'}
+                          title={(() => {
+                            const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
+                            const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
+                            if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
+                            if (isDccUser) return 'ดาวน์โหลด Master Document (DCC)';
+                            return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
+                          })()}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (isDccUser) {
+                            const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
+                            const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
+                            if (dt === 'FM' || dt === 'FORM') {
+                              handleDownloadUncontrolled(primaryDoc, e, false);
+                            } else if (isDccUser) {
                               handleDownloadMaster(primaryDoc, e);
                             } else {
                               handleDownloadUncontrolled(primaryDoc, e, false);
@@ -1106,28 +1256,6 @@ const Library = () => {
                               isMenuOpen ? 'block' : 'hidden'
                             }`}
                           >
-                            {/* กลุ่มที่ 1: การดูเอกสาร */}
-                            <div className="py-1">
-                              <button
-                                type="button"
-                                title="เปิดดู PDF ตัวจริงในแท็บใหม่ (Open in New Tab)"
-                                onClick={(e) => { setOpenMenuDocId(null); handleOpenFullViewer(primaryDoc, e); }}
-                                className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#F0F7FF] hover:text-[#0D99FF] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                              >
-                                <ExternalLink className="text-[#0D99FF] shrink-0" size={14} />
-                                <span>เปิดดูในแท็บใหม่ (Full Viewer)</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                title="ดูรายละเอียดและประวัติ DAR"
-                                onClick={(e) => { setOpenMenuDocId(null); handleOpenDetailModal(primaryDoc, e); }}
-                                className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#F0F7FF] hover:text-[#0D99FF] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                              >
-                                <FileText className="text-[#64748B] group-hover:text-[#0D99FF] shrink-0" size={14} />
-                                <span>ดูรายละเอียดและประวัติ DAR</span>
-                              </button>
-                            </div>
 
                             {/* กลุ่มที่ 2: ฟังก์ชัน DCC */}
                             {isDccUser && (
@@ -1286,28 +1414,100 @@ const Library = () => {
                       </div>
                     </td>
 
-                    {/* 4. ฉบับและวันบังคับใช้ (Revision & Effective Date - 15%) */}
+                    {/* 4. ฉบับและวันบังคับใช้ หรือ จำนวนฉบับตกรุ่น (15%) */}
                     <td className="py-3 px-3.5 align-middle">
-                      <div className="flex flex-col items-start gap-0.5">
-                        <span className="font-mono font-bold text-sm text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                          Rev.{revFormatted}
-                        </span>
-                        <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่มีผลบังคับใช้">
-                          {effDateDisplay}
-                        </span>
-                      </div>
+                      {isSupersededTab ? (
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
+                            <Clock size={12} className="text-[#D97706] shrink-0" />
+                            <span className="font-bold">{supersededCount} ฉบับตกรุ่น</span>
+                            <span className="font-mono text-[11px] text-[#B45309] bg-[#FEF3C7] px-1.5 py-0.5 rounded border border-[#FDE68A]">
+                              ({supersededRevTags.join(', ')})
+                            </span>
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-500">
+                            ประวัติตกรุ่นสะสม
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-start gap-0.5">
+                          <span className="font-mono font-bold text-sm text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                            Rev.{revFormatted}
+                          </span>
+                          <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่มีผลบังคับใช้">
+                            {effDateDisplay}
+                          </span>
+                        </div>
+                      )}
                     </td>
 
-                    {/* 5. สายอนุมัติและสำเนา (Workflow & Copies - 20%) */}
+                    {/* 5. สายอนุมัติและสำเนา หรือ สรุปสถานะการเรียกคืน (20%) */}
                     <td className="py-3 px-3.5 align-middle">
                       <div className="flex flex-col items-start gap-1">
-                        <span 
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                          title={distSummary.tooltip}
-                        >
-                          <Share2 size={12} className="text-blue-500 shrink-0" />
-                          <span>{distSummary.count > 0 ? `${distSummary.count} จุดแจกจ่าย` : 'สำเนาดิจิทัล'}</span>
-                        </span>
+                        {isSupersededTab ? (
+                          (() => {
+                            const allSupersededRevNums = new Set(
+                              effectiveSupersededDocs.map(d => parseInt(String(d.rev || d.revision || '0').replace(/\D/g, ''), 10))
+                            );
+                            const relatedCopies = (controlledCopyInstances || documentControlledCopies || []).filter(copy => {
+                              const matchDoc = String(copy.docId || copy.doc_id) === String(primaryDoc.id) ||
+                                               copy.doc_code === docCode ||
+                                               copy.docTitle === primaryDoc.title;
+                              const cRev = parseInt(String(copy.rev || copy.doc_version || copy.revision || '0').replace(/\D/g, ''), 10);
+                              return matchDoc && allSupersededRevNums.has(cRev);
+                            });
+
+                            const pendingRecall = relatedCopies.filter(c => 
+                              ['SUPERSEDED_PENDING_RECALL', 'PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'OBSOLETE_PENDING_RECALL', 'RECALLED'].includes(c.status)
+                            );
+                            const completedRecall = relatedCopies.filter(c => 
+                              ['DESTROYED', 'RECALLED_DESTROYED', 'ARCHIVED_OBSOLETE', 'RECALLED_OBSOLETE', 'DISPOSED'].includes(c.status)
+                            );
+
+                            if (relatedCopies.length === 0) {
+                              return (
+                                <span 
+                                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200"
+                                  title="เอกสารฉบับนี้ไม่มีสำเนาควบคุมทางกายภาพค้างเรียกคืน"
+                                >
+                                  <ShieldCheck size={12} className="text-slate-400 shrink-0" />
+                                  <span>ไม่มีสำเนาค้างเรียกคืน</span>
+                                </span>
+                              );
+                            }
+
+                            if (pendingRecall.length > 0) {
+                              return (
+                                <span 
+                                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs"
+                                  title={`มีสำเนาควบคุมรอเรียกคืน/ทำลาย ${pendingRecall.length} จาก ${relatedCopies.length} เล่ม`}
+                                >
+                                  <RotateCcw size={12} className="text-amber-500 shrink-0" />
+                                  <span>รอเรียกคืน {pendingRecall.length}/{relatedCopies.length} เล่ม</span>
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <span 
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                                title={`เรียกคืนและทำลายสำเนาครบถ้วนแล้ว (${completedRecall.length} เล่ม)`}
+                              >
+                                <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+                                <span>เรียกคืน/ทำลายครบ ({completedRecall.length} เล่ม)</span>
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                            title={distSummary.tooltip}
+                          >
+                            <Share2 size={12} className="text-blue-500 shrink-0" />
+                            <span>{distSummary.count > 0 ? `${distSummary.count} จุดแจกจ่าย` : 'สำเนาดิจิทัล'}</span>
+                          </span>
+                        )}
+
                         <div 
                           className="text-xs text-slate-600 truncate max-w-[190px]"
                           title={`ผู้ขอ: ${workflow.req} | ผู้ทบทวน: ${workflow.rev} | ผู้อนุมัติ: ${workflow.app}`}
@@ -1320,21 +1520,7 @@ const Library = () => {
                     {/* 6. สถานะเอกสาร (Master Lifecycle Status - 15%) */}
                     <td className="py-3 px-3.5 align-middle">
                       <div className="flex flex-col items-start gap-1.5">
-                        {renderLifecycleBadge(primaryDoc, activeRevisionsList, isObsoleteTab)}
-                        {historicalCount > 0 && (
-                          <button
-                            type="button"
-                            title="คลิกเพื่อคลี่ดูประวัติฉบับย่อย"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleGroupExpand(docCodeUpper);
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 hover:text-blue-600 transition-colors cursor-pointer select-none"
-                          >
-                            <Layers size={11} className="text-slate-500" />
-                            <span>ประวัติ {historicalCount} ฉบับ</span>
-                          </button>
-                        )}
+                        {renderLifecycleBadge(primaryDoc, activeRevisionsList, isObsoleteTab, isSupersededTab)}
                       </div>
                     </td>
                   </tr>
@@ -1388,7 +1574,11 @@ const Library = () => {
                                   const isSubObsolete = subDoc.status === 'OBSOLETE' || subDoc.is_obsolete;
 
                                   return (
-                                    <tr key={subDoc.id || `${docCode}-${subRevNum}`} className="hover:bg-[#F0F7FF]/50 transition-colors">
+                                    <tr 
+                                      key={subDoc.id || `${docCode}-${subRevNum}`} 
+                                      className="hover:bg-[#F0F7FF]/60 transition-colors cursor-pointer"
+                                      onClick={() => setPreviewDoc(subDoc)}
+                                    >
                                       <td className="py-2.5 px-3.5 font-mono font-bold text-[#1E293B]">
                                         <span className="bg-[#F1F5F9] text-[#334155] px-2 py-0.5 rounded border border-[#CBD5E1]">
                                           Rev.{subRevNum}
@@ -1415,16 +1605,8 @@ const Library = () => {
                                           </span>
                                         )}
                                       </td>
-                                      <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
+                                      <td className="py-2.5 px-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex items-center justify-center gap-1">
-                                          <button
-                                            type="button"
-                                            title="เปิดดูรายละเอียดและประวัติ DAR"
-                                            onClick={(e) => handleOpenDetailModal(subDoc, e)}
-                                            className="p-1.5 rounded border border-[#CBD5E1] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
-                                          >
-                                            <Eye size={13} />
-                                          </button>
                                           <button
                                             type="button"
                                             title="เปิดดูในแท็บใหม่ (Full Viewer)"
@@ -1435,9 +1617,19 @@ const Library = () => {
                                           </button>
                                           <button
                                             type="button"
-                                            title={isDccUser ? 'ดาวน์โหลด Master PDF' : 'ดาวน์โหลด Uncontrolled PDF'}
+                                            title={(() => {
+                                              const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
+                                              const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
+                                              if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
+                                              if (isDccUser) return 'ดาวน์โหลด Master PDF';
+                                              return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
+                                            })()}
                                             onClick={(e) => {
-                                              if (isDccUser) {
+                                              const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
+                                              const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
+                                              if (dt === 'FM' || dt === 'FORM') {
+                                                handleDownloadUncontrolled(subDoc, e, false);
+                                              } else if (isDccUser) {
                                                 handleDownloadMaster(subDoc, e);
                                               } else {
                                                 handleDownloadUncontrolled(subDoc, e, false);
@@ -1722,46 +1914,72 @@ const Library = () => {
           </div>
         )}
 
-        {/* แถวที่ 2: Universal Status Tabs + Summary Counter */}
-        <div className="pt-2 border-t border-[#F1F5F9] flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#F1F5F9] p-1 rounded-xl">
-            {[
-              { id: 'EFFECTIVE', label: '✓ มีผลบังคับใช้ (Active)' },
-              { id: 'SUPERSEDED', label: '⏳ ฉบับเดิมตกรุ่น (Superseded)' },
-              { id: 'OBSOLETE', label: '🚫 ยกเลิกการใช้งาน (Obsolete)' },
-              { id: 'ALL', label: 'ทั้งหมด (All Records)' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : tab.id)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  (filterStatus === tab.id) || (tab.id === 'ALL' && filterStatus === '')
-                    ? 'bg-white text-[#1E293B] shadow-xs font-bold'
-                    : 'text-[#64748B] hover:text-[#1E293B]'
-                }`}
-              >
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
+        {/* แถวที่ 2: Universal Status Tabs (เฉพาะในเมนู "เอกสารในแผนกฉัน" เท่านั้น) */}
+        {(activeTab === TAB_MY_DEPT || activeTab === 'dept') ? (
+          <div className="pt-2 border-t border-[#F1F5F9] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 bg-[#F1F5F9] p-1 rounded-xl">
+              {[
+                { id: 'EFFECTIVE', label: '✓ มีผลบังคับใช้ (Active)' },
+                { id: 'SUPERSEDED', label: '⏳ ฉบับเดิมตกรุ่น (Superseded)' },
+                { id: 'OBSOLETE', label: '🚫 ยกเลิกการใช้งาน (Obsolete)' },
+                { id: 'ALL', label: 'ทั้งหมด (All Records)' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : tab.id)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    (filterStatus === tab.id) || (tab.id === 'ALL' && filterStatus === '')
+                      ? 'bg-white text-[#1E293B] shadow-xs font-bold'
+                      : 'text-[#64748B] hover:text-[#1E293B]'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
 
-          <div className="flex items-center gap-3 text-xs text-[#64748B]">
-            {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || filterAccessScope !== '' || (filterStatus !== 'EFFECTIVE' && filterStatus !== '') || ((activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && myDeptSubFilter !== primaryDept) ? (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-[#EF4444] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <RotateCcw size={12} />
-                <span>ล้างตัวกรองทั้งหมด</span>
-              </button>
-            ) : null}
-            <span className="font-mono">
-              แสดงผล <strong className="text-[#1E293B] font-bold">{isGroupedView ? `${groupedDocs.length} รหัสเอกสาร (${filteredDocs.length} ฉบับ)` : `${filteredDocs.length} รายการ`}</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
-            </span>
+            <div className="flex items-center gap-3 text-xs text-[#64748B]">
+              {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || filterAccessScope !== '' || (filterStatus !== 'EFFECTIVE' && filterStatus !== '') || ((activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && myDeptSubFilter !== primaryDept) ? (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-[#EF4444] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw size={12} />
+                  <span>ล้างตัวกรองทั้งหมด</span>
+                </button>
+              ) : null}
+              <span className="font-mono">
+                แสดงผล <strong className="text-[#1E293B] font-bold">{isGroupedView ? `${groupedDocs.length} รหัสเอกสาร (${filteredDocs.length} ฉบับ)` : `${filteredDocs.length} รายการ`}</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
+              </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between gap-3 text-xs text-[#64748B]">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9]">
+                <CheckCircle2 size={13} />
+                <span>เฉพาะเอกสารที่มีผลบังคับใช้ (Active Documents Only)</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || (filterAccessScope !== '' && filterAccessScope !== 'ALL') ? (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-[#EF4444] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw size={12} />
+                  <span>ล้างตัวกรองทั้งหมด</span>
+                </button>
+              ) : null}
+              <span className="font-mono">
+                แสดงผล <strong className="text-[#1E293B] font-bold">{filteredDocs.length} รายการ</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {renderFlatTable()}
@@ -1772,7 +1990,9 @@ const Library = () => {
           isOpen={!!previewDoc}
           onClose={() => setPreviewDoc(null)}
           document={previewDoc}
-          onOpenViewer={(d) => navigate(`/viewer/${d.id}/${d.rev}`)}
+          filterStatus={filterStatus}
+          activeTab={activeTab}
+          onOpenViewer={(d) => navigate(`/viewer/${d.id}/${d.rev || d.revision || '01'}`)}
         />
       )}
 

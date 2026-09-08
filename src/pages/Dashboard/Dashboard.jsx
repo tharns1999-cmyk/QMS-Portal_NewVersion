@@ -8,7 +8,7 @@ import {
   Sparkles, Printer
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
-import { isActionableTask } from '../../utils/taskFilter';
+import { isActionableTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';
 import { isDarDraft, isDarRequester } from '../../utils/darHelper';
 
 const Dashboard = () => {
@@ -36,6 +36,7 @@ const Dashboard = () => {
   // 1. Calculate Stats (Split into Group 1 and Group 2)
   const isMyTask = (t) => {
     if (!t) return false;
+    if (isLevel6Plus(currentUser) && isReceiptTask(t)) return false;
     return isActionableTask(t, currentUser) || t.assigneeId === currentUser?.id;
   };
 

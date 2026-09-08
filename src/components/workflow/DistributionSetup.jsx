@@ -504,6 +504,27 @@ const DistributionSetup = ({
     ).length;
   };
 
+  const filteredDeptList = useMemo(() => {
+    let list = availableDeptsList;
+    if (showActiveOnly) {
+      list = list.filter(dept => getDeptAllocatedCount(dept.id) > 0);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(dept => {
+        const normDept = normalizeDepartmentId(dept.id);
+        if ((dept.name || '').toLowerCase().includes(q) || normDept.toLowerCase().includes(q)) return true;
+        const stations = getDepartmentStations(normDept, distributionLocations);
+        return stations.some(s => (s.name || s.station_name || '').toLowerCase().includes(q));
+      });
+    }
+    return list;
+  }, [availableDeptsList, showActiveOnly, searchQuery, distributionLocations]);
+
+  const activeDeptCount = useMemo(() =>
+    availableDeptsList.filter(dept => getDeptAllocatedCount(dept.id) > 0).length,
+  [availableDeptsList]);
+
   // ==========================================
   // RENDER: FORM DISTRIBUTION VIEW (FM TYPE)
   // ==========================================
@@ -710,28 +731,6 @@ const DistributionSetup = ({
   // ==========================================
   // RENDER: HIGH-DENSITY INLINE MATRIX TABLE (NON-FM)
   // ==========================================
-
-  // Filtered rows (computed here, after early return guard, using state set above)
-  const filteredDeptList = useMemo(() => {
-    let list = availableDeptsList;
-    if (showActiveOnly) {
-      list = list.filter(dept => getDeptAllocatedCount(dept.id) > 0);
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(dept => {
-        const normDept = normalizeDepartmentId(dept.id);
-        if ((dept.name || '').toLowerCase().includes(q) || normDept.toLowerCase().includes(q)) return true;
-        const stations = getDepartmentStations(normDept, distributionLocations);
-        return stations.some(s => (s.name || s.station_name || '').toLowerCase().includes(q));
-      });
-    }
-    return list;
-  }, [availableDeptsList, showActiveOnly, searchQuery, distributionLocations]);
-
-  const activeDeptCount = useMemo(() =>
-    availableDeptsList.filter(dept => getDeptAllocatedCount(dept.id) > 0).length,
-  [availableDeptsList]);
 
   return (
     <div className="bg-white border border-slate-200/80 rounded-3xl p-4 sm:p-5 space-y-3 w-full shadow-sm transition-all">

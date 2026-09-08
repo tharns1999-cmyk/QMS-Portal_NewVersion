@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
-import { isActionableTask } from '../../utils/taskFilter';
+import { isActionableTask, isDccAdmin as checkDccAdmin } from '../../utils/taskFilter';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -59,7 +59,7 @@ const Sidebar = () => {
   );
 
   const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'DCC_STAFF');
-  const isDccAdmin = Boolean(currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.isDcc);
+  const isDccAdmin = checkDccAdmin(currentUser);
   const isAdmin = isDccAdmin;
 
   // Task Counts Calculations
@@ -76,19 +76,27 @@ const Sidebar = () => {
     <NavLink 
       to={to} 
       className={({ isActive }) => 
-        `group relative flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[#0D99FF] ${
+        `group relative flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 ${
           isActive 
-            ? 'bg-[#E5F4FF] text-[#0D99FF] font-medium shadow-none border border-transparent' 
-            : 'text-[#444444] font-medium hover:text-[#1E1E1E] hover:bg-[#F5F5F5] border border-transparent'
+            ? 'bg-dream-lavender/60 text-dream-primary font-semibold shadow-xs' 
+            : 'text-dream-secondary font-medium hover:text-dream-primary hover:bg-dream-surface-soft'
         }`
       }
     >
       {({ isActive }) => (
         <>
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Subtle Active Indicator Bar */}
+          {isActive && (
+            <span 
+              aria-hidden="true"
+              className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)] transition-all" 
+            />
+          )}
+
+          <div className="flex items-center gap-3 min-w-0 flex-1 pl-1">
             <IconComponent 
-              className={`w-4.5 h-4.5 shrink-0 transition-colors duration-150 ${
-                isActive ? 'text-[#0D99FF]' : 'text-[#666666] group-hover:text-[#444444]'
+              className={`w-4.5 h-4.5 shrink-0 transition-colors duration-200 ${
+                isActive ? 'text-indigo-600' : 'text-dream-muted group-hover:text-dream-secondary'
               }`} 
               strokeWidth={isActive ? 2 : 1.75} 
             />
@@ -97,10 +105,10 @@ const Sidebar = () => {
 
           {badgeCount > 0 && (
             <span 
-              className={`ml-2 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md shrink-0 transition-transform group-hover:scale-105 ${
+              className={`ml-2 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
                 isActive 
-                  ? 'bg-[#0D99FF] text-white shadow-none' 
-                  : 'bg-[#E5E5E5] text-[#666666]'
+                  ? 'bg-white/90 text-indigo-700 border border-indigo-200/60 shadow-2xs' 
+                  : 'bg-dream-surface-soft text-dream-muted border border-dream-subtle'
               }`}
             >
               {badgeCount}
@@ -112,28 +120,28 @@ const Sidebar = () => {
   );
 
   return (
-    <aside className="w-64 sm:w-[270px] h-full bg-white border-r border-[#E5E5E5] flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30">
+    <aside className="w-64 sm:w-[270px] h-full bg-dream-surface border-r border-dream-subtle flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30 shadow-none">
       {/* ================= TOP SECTION: Brand Header & Notifications ================= */}
       <div className="space-y-3.5 shrink-0">
         {/* Brand Header */}
         <div 
           onClick={() => navigate('/portal')}
-          className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-100/80 transition-all duration-150 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          className="flex items-center gap-3 p-2 rounded-xl hover:bg-dream-surface-soft transition-all duration-200 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           title="ไปยังหน้าหลักพอร์ทัล"
         >
-          <div className="w-9 h-9 rounded-lg bg-[#1E1E1E] text-white flex items-center justify-center font-bold text-lg shadow-none shrink-0 group-hover:scale-105 transition-transform">
+          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-dream shrink-0 group-hover:scale-105 transition-transform">
             Q
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-[16px] font-black text-slate-900 tracking-tight leading-tight truncate">
+              <h1 className="text-[16px] font-black text-dream-primary tracking-tight leading-tight truncate">
                 QMS
               </h1>
-              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] rounded shrink-0 uppercase tracking-wider">
+              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-dream-lavender text-indigo-700 border border-indigo-200/60 rounded shrink-0 uppercase tracking-wider">
                 Enterprise
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium tracking-tight truncate mt-0.5">
+            <p className="text-[11px] text-dream-muted font-medium tracking-tight truncate mt-0.5">
               Document Control
             </p>
           </div>
@@ -143,7 +151,7 @@ const Sidebar = () => {
         <NotificationPopover />
       </div>
 
-      <div className="my-3 border-b border-slate-200/80" />
+      <div className="my-3 border-b border-dream-subtle" />
 
       {/* ================= CENTER SECTION: Navigation Links ================= */}
       <nav className="flex-1 overflow-y-auto space-y-1 pr-1.5 -mr-1.5 custom-scrollbar">
@@ -151,9 +159,9 @@ const Sidebar = () => {
         
         {isDcc && (
           <>
-            <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-dream-muted uppercase tracking-wider flex items-center justify-between">
               <span>ระบบควบคุมเอกสาร</span>
-              <span className="text-[9.5px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">DCC</span>
+              <span className="text-[9.5px] font-mono font-bold text-dream-secondary bg-dream-surface-soft px-1.5 py-0.5 rounded border border-dream-subtle">DCC</span>
             </div>
             
             <NavItem to="/dcc/dashboard" icon={Library} label="แดชบอร์ดภาพรวม" />
@@ -181,7 +189,7 @@ const Sidebar = () => {
             {isDccUser && (
               <NavItem to="/dcc/controlled-copy" icon={Copy} label="ทะเบียนสำเนาควบคุม" badgeCount={ccTaskCount} />
             )}
-            <NavItem to="/dcc/external-docs" icon={Globe} label="เอกสารภายนอก" />
+            <NavItem to="/dcc/external-docs" icon={Globe} label="คลังเอกสารภายนอก" />
             <NavItem to="/dcc/periodic-reviews" icon={Calendar} label="การทบทวนตามรอบ" />
 
             {/* Quick Reset & Seed Mock Data Buttons for DCC */}
@@ -226,24 +234,24 @@ const Sidebar = () => {
       </nav>
 
       {/* ================= BOTTOM SECTION: User Profile & Role Switcher ================= */}
-      <div className="pt-4 border-t border-[#E5E5E5] shrink-0">
-        <div className="p-3 bg-white border border-[#E5E5E5] rounded-xl space-y-3 shadow-none">
+      <div className="pt-4 border-t border-dream-subtle shrink-0">
+        <div className="p-3 bg-dream-surface-soft/80 border border-dream-subtle rounded-xl space-y-3 shadow-dream">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#F5F5F5] text-[#1E1E1E] flex items-center justify-center font-bold text-sm border border-[#E5E5E5] shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-dream-lavender text-dream-primary flex items-center justify-center font-bold text-sm border border-indigo-100 shrink-0">
               {currentUser?.name?.charAt(0) || 'U'}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1.5">
-                <p className="text-xs font-semibold text-[#1E1E1E] leading-snug truncate tracking-tight">
+                <p className="text-xs font-semibold text-dream-primary leading-snug truncate tracking-tight">
                   {currentUser?.name}
                 </p>
                 {currentUser?.isDcc && (
-                  <span className="px-1.5 py-0.2 text-[9px] font-medium font-mono bg-[#E5F4FF] text-[#0D99FF] rounded border border-[#B8E1FF] shrink-0 uppercase tracking-wider">
+                  <span className="px-1.5 py-0.2 text-[9px] font-medium font-mono bg-dream-blue text-indigo-700 rounded border border-indigo-200/50 shrink-0 uppercase tracking-wider">
                     DCC
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 font-mono">
+              <p className="text-[11px] text-dream-muted font-medium truncate mt-0.5 font-mono">
                 {currentUser?.position || currentUser?.department || 'Staff'} • L{currentUser?.level || 1}
               </p>
             </div>
@@ -251,7 +259,7 @@ const Sidebar = () => {
 
           <div className="relative">
             <select 
-              className="w-full h-8 px-2.5 text-xs font-medium text-[#1E1E1E] bg-white border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D99FF]/20 focus:border-[#0D99FF] transition-all cursor-pointer leading-normal shadow-none"
+              className="w-full h-8 px-2.5 text-xs font-medium text-dream-primary bg-white border border-dream-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all cursor-pointer leading-normal shadow-none"
               value={currentUser?.id || ''}
               onChange={(e) => setCurrentUser(e.target.value)}
               title="สลับผู้ใช้งาน / บทบาทจำลอง"
