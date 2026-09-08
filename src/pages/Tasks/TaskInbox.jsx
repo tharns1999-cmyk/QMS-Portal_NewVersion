@@ -28,11 +28,12 @@ import {
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
+import ExternalDocFormModal from '../ExternalDocs/ExternalDocFormModal';
 import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfirmHardcopyReceiptModal';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';
+import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment } from '../../utils/taskFilter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date Formatter (null-safe)
@@ -261,12 +262,21 @@ export const resolveTaskDepartment = (task, storeContext) => {
 
   let dept = matchedDar?.department || matchedDoc?.department || matchedExtDoc?.department;
   if (!dept) {
-    if (String(docCode).includes('-PD-') || String(task.title).includes('-PD-') || String(task.darId).includes('-PD-')) {
-      dept = 'PD';
-    } else if (task.department && task.department !== 'DCC') {
+    if (task.department && task.department !== 'DCC') {
       dept = task.department;
+    } else if (task.dept && task.dept !== 'DCC') {
+      dept = task.dept;
     } else {
       dept = task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.holder_dept || '';
+    }
+
+    if (!dept) {
+      // Dynamic pattern extraction from document/DAR code e.g. "SOP-QA-001", "DAR-PD-2026", "FM-QC-002"
+      const codeStr = String(docCode || task.darId || task.title || '');
+      const match = codeStr.match(/(?:^|[A-Za-z]+-)([A-Za-z0-9]{2,10})-(?:\d|[A-Za-z0-9]+)/);
+      if (match && match[1]) {
+        dept = match[1].toUpperCase();
+      }
     }
   }
   return dept === 'DCC' ? 'DC' : dept;
@@ -481,7 +491,7 @@ export const resolveDarIdentifier = (task, matchedDar) => {
 // Helper: Task Type Badge & Action Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 export const getTaskTypeBadgeConfig = (normType, task) => {
-  if (normType === 'REVIEW' || normType === 'EXT_REVIEW') {
+  if (normType === 'REVIEW' || normType === 'EXT_REVIEW' || normType === 'EXTERNAL_REVIEW') {
     return {
       label: 'ทบทวนคำร้อง (Review)',
       actionLabel: 'พิจารณาตรวจทาน',
@@ -489,7 +499,7 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
       badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
     };
   }
-  if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
+  if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'EXTERNAL_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
     return {
       label: 'อนุมัติคำร้อง (Approve)',
       actionLabel: 'พิจารณาอนุมัติ',
@@ -503,6 +513,14 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
       actionLabel: 'รับทราบเอกสาร',
       icon: <Bell size={13} className="text-sky-600" />,
       badgeClass: 'bg-sky-50 text-sky-700 border-sky-200'
+    };
+  }
+  if (normType === 'EXTERNAL_REVISE') {
+    return {
+      label: 'แก้ไขคำร้องเอกสารภายนอก (Revise)',
+      actionLabel: 'แก้ไขและส่งคำร้องอีกครั้ง',
+      icon: <FileEdit size={13} className="text-rose-600" />,
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200'
     };
   }
   if (normType === 'REVISE') {
@@ -783,16 +801,46 @@ const getSLABadge = (task, mockDateOffset) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper 7: Normalize Task Category for Filtering and Tabs (Pure Utility Function)
+// ─────────────────────────────────────────────────────────────────────────────
+export function normalizeTaskCategory(task) {
+  if (!task) return '';
+  const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
+  if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW' || rawType === 'EXTERNAL_REVIEW') return 'REVIEW';
+  if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'EXTERNAL_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL') return 'APPROVE';
+  if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
+  if (rawType === 'REVISE' || rawType === 'EXTERNAL_REVISE' || rawType === 'EXT_REVISE') return 'REVISE';
+  if (
+    rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+    task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
+    rawType === 'CONFIRM_RECEIPT' ||
+    rawType === 'RECEIPT' ||
+    task.category === 'RECEIPT' ||
+    task.id?.includes('doc-') ||
+    task.id?.includes('task-receipt-') ||
+    task.title?.includes('ตรวจรับเล่ม') ||
+    task.title?.includes('ตรวจรับเอกสาร')
+  ) return 'RECEIPT';
+  if (rawType === 'DCC_DISTRIBUTE' || rawType === 'DCC_ISSUE') return 'DCC_DISTRIBUTE';
+  if (rawType === 'DCC_RECALL' || rawType === 'DCC_RECALL_WITH_CHECKLIST' || rawType === 'RECALL' || rawType === 'RECALL_HARDCOPY' || rawType === 'OBSOLETE_RECALL' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') return 'DCC_RECALL';
+  if (rawType.startsWith('DCC_')) return 'DCC_ACTION';
+  return rawType;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Task Inbox Component
 // ─────────────────────────────────────────────────────────────────────────────
 const TaskInbox = () => {
   const navigate = useNavigate();
-  const { currentUser, tasks, dars, documents, externalDocuments, controlledCopyInstances, documentControlledCopies, mockDateOffset, checkSLA, masterDepartments, masterUsers } = useStore();
+  const { currentUser, tasks, dars, documents, externalDocuments, externalRequests, controlledCopyInstances, documentControlledCopies, mockDateOffset, checkSLA, masterDepartments, masterUsers } = useStore();
   const [activeTab, setActiveTab] = useState('ALL');
   const [originFilter, setOriginFilter] = useState('ALL'); // 'ALL' | 'INTERNAL' | 'EXTERNAL'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
+  const [editingExternalDoc, setEditingExternalDoc] = useState(null);
+  const [resubmitTaskId, setResubmitTaskId] = useState(null);
+  const [isExternalDocModalOpen, setIsExternalDocModalOpen] = useState(false);
 
   useEffect(() => {
     if (checkSLA) checkSLA();
@@ -830,84 +878,89 @@ const TaskInbox = () => {
     return raw === 'DCC' ? 'DC' : raw;
   }, [currentUser]);
 
-  const [deptFilter, setDeptFilter] = useState(() => {
-    return primaryDept || 'DC';
-  });
+  const [deptFilter, setDeptFilter] = useState('ALL');
 
   useEffect(() => {
-    if (primaryDept) {
-      setDeptFilter(primaryDept);
+    setDeptFilter('ALL');
+  }, [currentUser?.id]);
+
+  const resolveTaskDept = useCallback((task) => {
+    if (!task) return '';
+    const isReceipt = isReceiptTask(task) || normalizeTaskCategory(task) === 'RECEIPT';
+    if (isReceipt) {
+      return resolveReceiptTaskDepartment(task, null) || resolveTaskDepartment(task, storeContext) || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.department || '';
     }
-  }, [currentUser?.id, currentUser?.department, currentUser?.primary_department, primaryDept]);
+    return resolveTaskDepartment(task, storeContext) || task.department || task.dept || task.target_department || task.targetDepartment || task.destinationDept || '';
+  }, [storeContext]);
+
+  const isTaskMatchingDept = useCallback((task, targetDept) => {
+    if (!targetDept || targetDept === 'ALL') {
+      return true;
+    }
+    const tDept = resolveTaskDept(task);
+    return isSameDepartment(tDept, targetDept);
+  }, [resolveTaskDept]);
 
   // Master Task Filtering: Distribution & Recall tasks are strictly exclusive to DCC Admin.
-  // Receipt tasks are strictly hidden for Level 6+ executives.
+  // Receipt tasks are strictly hidden for Level 6+ executives and pooled for all Level < 6 department members.
   // Strict Department Isolation: Non-DCC users see ONLY tasks matching their department or directly assigned to them.
   const userTasks = useMemo(() => {
     return (tasks || [])
       .filter(t => isActionableTask(t, currentUser))
       .filter(t => dccAdmin || !isDccExclusiveTask(t))
-      .filter(t => !(isLevel6Executive && normalizeTaskCategory(t) === 'RECEIPT'))
+      .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
       .filter(t => {
         if (dccAdmin) return true;
-        const tDept = resolveTaskDepartment(t, storeContext) || t.department || t.target_department || t.targetDepartment || t.destinationDept || '';
+
+        // 🛡️ Phase 1 & 3: Department Pool / Shared Task for Physical Controlled Copy Receipt
+        // All staff in the destination department with Level < 6 can view and act on receipt tasks
+        const isReceipt = isReceiptTask(t) || normalizeTaskCategory(t) === 'RECEIPT';
+        if (isReceipt) {
+          if (isLevel6Executive || isLevel6Plus(currentUser)) return false;
+          const tDept = resolveTaskDept(t);
+          return userDepts.some(uDept => isSameDepartment(uDept, tDept)) || 
+            isSameDepartment(currentUser?.department, tDept) || 
+            isSameDepartment(currentUser?.primary_department, tDept) ||
+            userMatchesDepartment(currentUser, tDept);
+        }
+
         const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
-        const isAssignee = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name));
+        const isAssignee = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || t.assigneeName === currentUser?.name));
+        if (taskAssigneeId) {
+          return isAssignee;
+        }
+        const tDept = resolveTaskDept(t);
         const isDeptMatch = userDepts.some(uDept => isSameDepartment(uDept, tDept)) || 
           isSameDepartment(currentUser?.department, tDept) || 
           isSameDepartment(currentUser?.primary_department, tDept);
-        return isAssignee || isDeptMatch;
+        return isDeptMatch;
       });
-  }, [tasks, currentUser, dccAdmin, isLevel6Executive, userDepts, storeContext]);
+  }, [tasks, currentUser, dccAdmin, isLevel6Executive, userDepts, resolveTaskDept]);
 
   const availableDepts = useMemo(() => {
     if (!dccAdmin) {
-      // 🛡️ Phase 2: Strict Department Isolation - Non-DCC users see ONLY the departments they actually belong to
-      return userDepts.filter(Boolean);
+      // 🛡️ Phase 2: Strict Department Isolation - Non-DCC users see affiliated departments plus any directly assigned task's department
+      const deptsFromAssignedTasks = (userTasks || [])
+        .filter(t => {
+          const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
+          return Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || t.assigneeName === currentUser?.name));
+        })
+        .map(t => resolveTaskDept(t))
+        .filter(Boolean);
+      return Array.from(new Set([...userDepts, ...deptsFromAssignedTasks])).filter(Boolean);
     }
-    const deptsFromTasks = (userTasks || []).map(t => resolveTaskDepartment(t, storeContext)).filter(Boolean);
+    const deptsFromTasks = (userTasks || []).map(t => resolveTaskDept(t)).filter(Boolean);
     const combined = Array.from(new Set([...userDepts, ...deptsFromTasks]));
     return combined.filter(Boolean);
-  }, [dccAdmin, userDepts, userTasks, storeContext]);
+  }, [dccAdmin, userDepts, userTasks, resolveTaskDept, currentUser]);
 
-  const normalizeTaskCategory = (task) => {
-    const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
-    if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW') return 'REVIEW';
-    if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL') return 'APPROVE';
-    if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
-    if (rawType === 'REVISE') return 'REVISE';
-    if (
-      rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-      task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-      rawType === 'CONFIRM_RECEIPT' ||
-      rawType === 'RECEIPT' ||
-      task.category === 'RECEIPT' ||
-      task.id?.includes('doc-') ||
-      task.id?.includes('task-receipt-') ||
-      task.title?.includes('ตรวจรับเล่ม') ||
-      task.title?.includes('ตรวจรับเอกสาร')
-    ) return 'RECEIPT';
-    if (rawType === 'DCC_DISTRIBUTE' || rawType === 'DCC_ISSUE') return 'DCC_DISTRIBUTE';
-    if (rawType === 'DCC_RECALL' || rawType === 'DCC_RECALL_WITH_CHECKLIST' || rawType === 'RECALL' || rawType === 'RECALL_HARDCOPY' || rawType === 'OBSOLETE_RECALL' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') return 'DCC_RECALL';
-    if (rawType.startsWith('DCC_')) return 'DCC_ACTION';
-    return rawType;
-  };
-
-  const getFilteredTasks = () => {
+  const filteredTasks = useMemo(() => {
     let filtered = userTasks;
     if (originFilter !== 'ALL') {
       filtered = filtered.filter(t => getTaskOrigin(t) === originFilter);
     }
     if (deptFilter !== 'ALL') {
-      filtered = filtered.filter(t => {
-        let tDept = resolveTaskDepartment(t, storeContext);
-        const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
-        if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
-          if (tDept && !isSameDepartment(tDept, deptFilter)) return false;
-          return true;
-        }
-        return isSameDepartment(tDept, deptFilter);
-      });
+      filtered = filtered.filter(t => isTaskMatchingDept(t, deptFilter));
     }
     if (activeTab !== 'ALL') {
       filtered = filtered.filter(t => normalizeTaskCategory(t) === activeTab);
@@ -924,19 +977,21 @@ const TaskInbox = () => {
       });
     }
     return filtered;
-  };
+  }, [userTasks, originFilter, deptFilter, activeTab, searchTerm, storeContext, isTaskMatchingDept]);
 
   const originCounts = useMemo(() => {
     const isActionRequired = (t) => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED';
-    const actionable = userTasks.filter(isActionRequired);
+    let actionable = userTasks.filter(isActionRequired);
+    if (deptFilter !== 'ALL') {
+      actionable = actionable.filter(t => isTaskMatchingDept(t, deptFilter));
+    }
     return {
       ALL: actionable.length,
       INTERNAL: actionable.filter(t => getTaskOrigin(t) === 'INTERNAL').length,
       EXTERNAL: actionable.filter(t => getTaskOrigin(t) === 'EXTERNAL').length,
     };
-  }, [userTasks]);
+  }, [userTasks, deptFilter, isTaskMatchingDept]);
 
-  const filteredTasks = useMemo(() => getFilteredTasks(), [userTasks, originFilter, deptFilter, activeTab, searchTerm, storeContext]);
   const pagination = useTablePagination(filteredTasks, 10);
 
   const getTaskCount = useCallback((tabId) => {
@@ -945,9 +1000,12 @@ const TaskInbox = () => {
     if (originFilter !== 'ALL') {
       base = base.filter(t => getTaskOrigin(t) === originFilter);
     }
+    if (deptFilter !== 'ALL') {
+      base = base.filter(t => isTaskMatchingDept(t, deptFilter));
+    }
     if (tabId === 'ALL') return base.length;
     return base.filter(t => normalizeTaskCategory(t) === tabId).length;
-  }, [userTasks, originFilter]);
+  }, [userTasks, originFilter, deptFilter, isTaskMatchingDept]);
 
   const tabs = useMemo(() => {
     const baseTabs = dccAdmin ? [
@@ -974,21 +1032,39 @@ const TaskInbox = () => {
 
   const handleTaskClick = (task) => {
     const normType = (task.type || task.taskType || '').toUpperCase();
-    if (task.referenceType === 'EXTERNAL_DOC') {
-      setSelectedExtTask(task);
-      return;
-    }
     const isReceipt =
       normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
       task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
       normType === 'CONFIRM_RECEIPT' ||
       normType === 'RECEIPT' ||
       task.category === 'RECEIPT' ||
+      task.actionType === 'RECEIPT' ||
       task.id?.includes('task-receipt-') ||
       task.title?.includes('ตรวจรับเล่ม') ||
+      task.title?.includes('ตรวจรับสำเนา') ||
       task.title?.includes('ตรวจรับเอกสาร');
+
     if (isReceipt) {
-      navigate(`/tasks/confirm-receipt/${task.id}`);
+      setSelectedReceiptTask(task);
+      return;
+    }
+
+    if (task.referenceType === 'EXTERNAL_DOC' || task.origin === 'EXTERNAL') {
+      // 🛡️ Phase 2: If task is EXTERNAL_REVISE, open ExternalDocFormModal in Resubmit mode
+      if (normType === 'EXTERNAL_REVISE' || normType === 'REVISE') {
+        const extDoc = (externalDocuments || []).find(d => d.id === task.referenceId || d.id === task.docId || (task.docCode && d.edCode === task.docCode)) ||
+                       (externalRequests || []).find(r => r.id === task.referenceId || r.requestId === task.referenceId || r.docId === task.referenceId || r.externalDocId === task.referenceId || (task.docCode && r.edCode === task.docCode));
+        if (extDoc) {
+          setEditingExternalDoc({
+            ...extDoc,
+            returnReason: task.returnReason || task.rejectReason || extDoc.returnReason
+          });
+          setResubmitTaskId(task.id);
+          setIsExternalDocModalOpen(true);
+          return;
+        }
+      }
+      setSelectedExtTask(task);
       return;
     }
     if (normType === 'CC_REPLACEMENT_APPROVAL') {
@@ -998,7 +1074,7 @@ const TaskInbox = () => {
     if (normType === 'REVIEW' || normType === 'EXT_REVIEW') navigate(`/tasks/review/${task.id}`);
     else if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL') navigate(`/tasks/approve/${task.id}`);
     else if (normType === 'ACK' || normType === 'ACKNOWLEDGE') navigate(`/tasks/ack/${task.id}`);
-    else if (normType === 'REVISE') navigate(`/tasks/revise/${task.darId || task.referenceId || task.id}`);
+    else if (normType === 'REVISE' || normType === 'DAR_REVISE' || normType === 'RETURNED_FOR_REVISION') navigate(`/tasks/revise/${task.id || task.darId || task.referenceId}`);
     else if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
       const targetTab = (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') ? 'DISPATCHED_TRACKING' : 'PENDING_ISSUE';
       navigate(`/controlled-copy?tab=${targetTab}`);
@@ -1112,35 +1188,25 @@ const TaskInbox = () => {
             <span className="text-slate-500 font-bold shrink-0 flex items-center gap-1.5 mr-1">
               <Building2 size={14} className="text-indigo-600" /> แผนก:
             </span>
-            {(dccAdmin || availableDepts.length > 1) && (
-              <button
-                onClick={() => setDeptFilter('ALL')}
-                className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
-                  deptFilter === 'ALL'
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-                }`}
-              >
-                {dccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${userTasks.length})` : `📁 ทุกแผนกที่สังกัด (${userTasks.length})`}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setDeptFilter('ALL')}
+              className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                deptFilter === 'ALL'
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              {dccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${userTasks.length})` : `📁 ทุกแผนกที่สังกัด (${userTasks.length})`}
+            </button>
             {availableDepts.map(dept => {
-              // Mirror getFilteredTasks() logic exactly so pill counts match actual filtered list
-              const deptCount = userTasks.filter(t => {
-                let tDept = resolveTaskDepartment(t, storeContext);
-                const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
-                if (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) {
-                  // Directly-assigned tasks: only count if dept also matches (or task has no dept)
-                  if (tDept && !isSameDepartment(tDept, dept)) return false;
-                  return true;
-                }
-                return isSameDepartment(tDept, dept);
-              }).length;
-              const isPrimary = (currentUser?.primary_department || currentUser?.department) === dept;
+              const deptCount = userTasks.filter(t => isTaskMatchingDept(t, dept)).length;
+              const isPrimary = isSameDepartment(primaryDept, dept);
               const isSelected = deptFilter === dept;
               return (
                 <button
                   key={dept}
+                  type="button"
                   onClick={() => setDeptFilter(dept)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                     isSelected
@@ -1327,6 +1393,16 @@ const TaskInbox = () => {
                       </span>
                     )}
 
+                    {/* 🛡️ Return Reason Alert Banner for EXTERNAL_REVISE / REVISE */}
+                    {(task.returnReason || task.rejectReason) && (
+                      <div className="w-full flex items-start gap-2 text-xs bg-rose-50 text-rose-800 border border-rose-200/80 px-3 py-2 rounded-lg font-medium mt-1">
+                        <AlertCircle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold">เหตุผลที่ส่งกลับแก้ไข:</span> {task.returnReason || task.rejectReason}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Mobile Action indicator */}
                     <div className="sm:hidden ml-auto flex items-center text-indigo-600 font-bold text-[11px] gap-0.5">
                       <span>{badgeConfig.actionLabel}</span>
@@ -1366,6 +1442,18 @@ const TaskInbox = () => {
             isOpen={!!selectedReceiptTask}
             onClose={() => setSelectedReceiptTask(null)}
             task={selectedReceiptTask}
+          />
+        )}
+        {isExternalDocModalOpen && (
+          <ExternalDocFormModal
+            isOpen={isExternalDocModalOpen}
+            onClose={() => {
+              setIsExternalDocModalOpen(false);
+              setEditingExternalDoc(null);
+              setResubmitTaskId(null);
+            }}
+            documentToEdit={editingExternalDoc}
+            resubmitTaskId={resubmitTaskId}
           />
         )}
       </AnimatePresence>

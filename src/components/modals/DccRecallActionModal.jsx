@@ -102,14 +102,14 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
 
         {/* Header */}
-        <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="min-w-0">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Archive className="text-indigo-600" size={18} />
@@ -130,7 +130,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
         </div>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs flex-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
 
           {/* Impact summary strip */}
           <div className="bg-amber-50/60 border border-amber-200/70 rounded-2xl p-3.5 flex items-center justify-between gap-3">
@@ -360,7 +360,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <div className="text-xs text-slate-500">
             ตรวจรับแล้ว{' '}
             <strong className={`font-mono font-bold ${allCollected ? 'text-emerald-600' : 'text-slate-900'}`}>

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
-import { userMatchesDepartment } from '../../utils/taskFilter';
+import { userMatchesDepartment, isLevel6Plus } from '../../utils/taskFilter';
 
 const TaskConfirmHardcopyReceipt = () => {
   const { id } = useParams();
@@ -65,11 +65,16 @@ const TaskConfirmHardcopyReceipt = () => {
   const dispatchedAt = copy?.dispatched_at || task.createdAt;
   const dispatchedBy = copy?.dispatched_by || 'เจ้าหน้าที่ DC';
 
-  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'QMR' || currentUser?.isQmr || currentUser?.id === 'u5';
-  const isAuthorized = isWildcardUser || !dept || userMatchesDepartment(currentUser, dept);
+  const isLevel6 = isLevel6Plus(currentUser);
+  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
+  const isAuthorized = !isLevel6 && (isWildcardUser || !dept || userMatchesDepartment(currentUser, dept));
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isLevel6) {
+      toast.error('ผู้บริหารระดับสูง (Level 6 ขึ้นไป) ไม่มีหน้าที่ตรวจรับสำเนาควบคุมหน้างาน');
+      return;
+    }
     if (!isAuthorized) {
       toast.error(`คุณไม่มีสิทธิ์ตรวจรับเอกสารของแผนก ${dept}`);
       return;

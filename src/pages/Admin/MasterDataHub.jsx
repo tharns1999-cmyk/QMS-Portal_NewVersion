@@ -2265,26 +2265,28 @@ const MasterDataHub = () => {
 
       {/* ================= USER MODAL ================= */}
       {isUserModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingUser ? 'แก้ไขข้อมูลผู้ใช้งาน' : 'เพิ่มผู้ใช้งานใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsUserModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveUser} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSaveUser} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ชื่อ-นามสกุล <span className="text-rose-500">*</span>:</label>
                 <input
@@ -2519,108 +2521,113 @@ const MasterDataHub = () => {
                 </div>
               )}
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsUserModalOpen(false)}
-                  className="btn-secondary text-xs"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs"
-                >
-                  บันทึกข้อมูล
-                </button>
-              </div>
-            </form>
+                </div>
+
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsUserModalOpen(false)}
+                    className="btn-secondary text-xs cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs cursor-pointer"
+                  >
+                    บันทึกข้อมูล
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= DEPARTMENT MODAL ================= */}
       {isDeptModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-md overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingDept ? 'แก้ไขข้อมูลแผนก' : 'เพิ่มแผนกใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={handleCloseDeptModal} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveDept} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">รหัสแผนก (Dept Code) <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={deptFormData.id || deptFormData.code || ''}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase(), code: e.target.value.toUpperCase(), deptCode: e.target.value.toUpperCase() })}
-                  placeholder="เช่น PD, QA, QC, WH, EN..."
-                  className="w-full px-3 py-2 bg-white border border-[#E5E5E5] rounded-xl font-mono uppercase focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all"
-                />
+            <form onSubmit={handleSaveDept} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">รหัสแผนก (Dept Code) <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={deptFormData.id || deptFormData.code || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase(), code: e.target.value.toUpperCase(), deptCode: e.target.value.toUpperCase() })}
+                    placeholder="เช่น PD, QA, QC, WH, EN..."
+                    className="w-full px-3 py-2 bg-white border border-[#E5E5E5] rounded-xl font-mono uppercase focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาไทย <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={deptFormData.nameTh || deptFormData.name || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value, name: e.target.value, name_th: e.target.value })}
+                    placeholder="เช่น ฝ่ายผลิต"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาอังกฤษ:</label>
+                  <input
+                    type="text"
+                    value={deptFormData.nameEn || deptFormData.name_en || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value, name_en: e.target.value })}
+                    placeholder="เช่น Production Department"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">หัวหน้าแผนก / ผู้มีอำนาจลงนามประจำแผนก:</label>
+                  <select
+                    value={deptFormData.headUserId || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, headUserId: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  >
+                    <option value="">-- เลือกหัวหน้าแผนก --</option>
+                    {(masterUsers || []).map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.department})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาไทย <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={deptFormData.nameTh || deptFormData.name || ''}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value, name: e.target.value, name_th: e.target.value })}
-                  placeholder="เช่น ฝ่ายผลิต"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาอังกฤษ:</label>
-                <input
-                  type="text"
-                  value={deptFormData.nameEn || deptFormData.name_en || ''}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value, name_en: e.target.value })}
-                  placeholder="เช่น Production Department"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">หัวหน้าแผนก / ผู้มีอำนาจลงนามประจำแผนก:</label>
-                <select
-                  value={deptFormData.headUserId || ''}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, headUserId: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                >
-                  <option value="">-- เลือกหัวหน้าแผนก --</option>
-                  {(masterUsers || []).map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.department})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={handleCloseDeptModal}
-                  className="btn-secondary text-xs"
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกแผนก
                 </button>
@@ -2632,14 +2639,14 @@ const MasterDataHub = () => {
 
       {/* ================= SMART DEPARTMENT DEACTIVATION MODAL ================= */}
       {deactivatingDept && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E5E5E5] w-full max-w-xl overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
             {/* Header */}
-            <div className="px-6 py-4 bg-amber-500 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-amber-500 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white">
                   <AlertTriangle size={18} />
@@ -2654,15 +2661,16 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => { setDeactivatingDept(null); setDeactivationCheckResult(null); }}
-                className="p-1.5 text-amber-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-amber-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-5 text-xs">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               {/* Warning Banner */}
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900">
                 <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
@@ -2797,11 +2805,12 @@ const MasterDataHub = () => {
               )}
 
               {/* Modal Footer */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              </div>
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => { setDeactivatingDept(null); setDeactivationCheckResult(null); }}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   ยกเลิก (Cancel)
                 </button>
@@ -2832,138 +2841,140 @@ const MasterDataHub = () => {
                   )}
                 </button>
               </div>
-            </div>
           </motion.div>
         </div>
       )}
 
       {/* ================= DOCUMENT TYPE MODAL ================= */}
       {isTypeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingType ? 'แก้ไขประเภทเอกสาร' : 'เพิ่มประเภทเอกสารใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsTypeModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveType} className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveType} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">รหัสประเภท (Type Code) <span className="text-rose-500">*</span>:</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={Boolean(editingType)}
+                      value={typeFormData.code}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, code: e.target.value.toUpperCase() })}
+                      placeholder="เช่น SOP, WI, FM..."
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">รูปแบบรหัส (Pattern):</label>
+                    <input
+                      type="text"
+                      value={typeFormData.namingPattern}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, namingPattern: e.target.value })}
+                      placeholder="{Type}-{Dept}-{##}"
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">รหัสประเภท (Type Code) <span className="text-rose-500">*</span>:</label>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อประเภทภาษาไทย <span className="text-rose-500">*</span>:</label>
                   <input
                     type="text"
                     required
-                    disabled={Boolean(editingType)}
-                    value={typeFormData.code}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, code: e.target.value.toUpperCase() })}
-                    placeholder="เช่น SOP, WI, FM..."
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">รูปแบบรหัส (Pattern):</label>
-                  <input
-                    type="text"
-                    value={typeFormData.namingPattern}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, namingPattern: e.target.value })}
-                    placeholder="{Type}-{Dept}-{##}"
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อประเภทภาษาไทย <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={typeFormData.nameTh}
-                  onChange={(e) => setTypeFormData({ ...typeFormData, nameTh: e.target.value })}
-                  placeholder="เช่น ระเบียบปฏิบัติงาน"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">หมวดหมู่เอกสาร & สิทธิ์ DAR (Category & DAR Scope) <span className="text-rose-500">*</span>:</label>
-                <select
-                  value={typeFormData.category || 'INTERNAL'}
-                  onChange={(e) => {
-                    const cat = e.target.value;
-                    setTypeFormData({
-                      ...typeFormData,
-                      category: cat,
-                      allowDar: cat === 'INTERNAL'
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-medium"
-                >
-                  <option value="INTERNAL">เอกสารภายใน (Internal - รองรับการสร้างและเปิดคำร้อง DAR)</option>
-                  <option value="EXTERNAL">เอกสารภายนอก (External - ควบคุมผ่านโมดูล ED ไม่ผ่าน DAR)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">รอบเวลาทบทวน (เดือน):</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={typeFormData.reviewCycleMonths}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, reviewCycleMonths: parseInt(e.target.value) || 12 })}
+                    value={typeFormData.nameTh}
+                    onChange={(e) => setTypeFormData({ ...typeFormData, nameTh: e.target.value })}
+                    placeholder="เช่น ระเบียบปฏิบัติงาน"
                     className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                   />
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">อายุจัดเก็บ (ปี):</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={typeFormData.retentionPeriodYears}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, retentionPeriodYears: parseInt(e.target.value) || 3 })}
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                  />
-                </div>
-              </div>
 
-              <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={typeFormData.is_form_type}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, is_form_type: e.target.checked })}
-                    className="w-4 h-4 text-[#0D99FF] rounded"
-                  />
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">หมวดหมู่เอกสาร & สิทธิ์ DAR (Category & DAR Scope) <span className="text-rose-500">*</span>:</label>
+                  <select
+                    value={typeFormData.category || 'INTERNAL'}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      setTypeFormData({
+                        ...typeFormData,
+                        category: cat,
+                        allowDar: cat === 'INTERNAL'
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-medium"
+                  >
+                    <option value="INTERNAL">เอกสารภายใน (Internal - รองรับการสร้างและเปิดคำร้อง DAR)</option>
+                    <option value="EXTERNAL">เอกสารภายนอก (External - ควบคุมผ่านโมดูล ED ไม่ผ่าน DAR)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <span className="font-bold text-slate-800">เป็นแบบฟอร์มเปล่า (Blank Form Type)</span>
-                    <p className="text-xs text-slate-400">ใช้กฎ Form Clean Bypass ไม่ประทับลายน้ำเมื่ออยู่ในสถานะบังคับใช้</p>
+                    <label className="font-bold text-slate-700 block mb-1">รอบเวลาทบทวน (เดือน):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={typeFormData.reviewCycleMonths}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, reviewCycleMonths: parseInt(e.target.value) || 12 })}
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                    />
                   </div>
-                </label>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">อายุจัดเก็บ (ปี):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={typeFormData.retentionPeriodYears}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, retentionPeriodYears: parseInt(e.target.value) || 3 })}
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={typeFormData.is_form_type}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, is_form_type: e.target.checked })}
+                      className="w-4 h-4 text-[#0D99FF] rounded"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-800">เป็นแบบฟอร์มเปล่า (Blank Form Type)</span>
+                      <p className="text-xs text-slate-400">ใช้กฎ Form Clean Bypass ไม่ประทับลายน้ำเมื่ออยู่ในสถานะบังคับใช้</p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsTypeModalOpen(false)}
-                  className="btn-secondary text-xs"
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกประเภทเอกสาร
                 </button>
@@ -2975,100 +2986,103 @@ const MasterDataHub = () => {
 
       {/* ================= LOCATION MODAL ================= */}
       {isLocModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-md overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingLoc ? 'แก้ไขจุดใช้งานหน้างาน' : 'เพิ่มจุดใช้งานใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsLocModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveLoc} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">สังกัดแผนก <span className="text-rose-500">*</span>:</label>
-                <select
-                  value={locFormData.departmentId}
-                  onChange={(e) => setLocFormData({ ...locFormData, departmentId: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                >
-                  {departmentsList.map(d => (
-                    <option key={d.id} value={d.id}>{d.id} - {d.nameTh || d.name}</option>
-                  ))}
-                </select>
-              </div>
+            <form onSubmit={handleSaveLoc} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">สังกัดแผนก <span className="text-rose-500">*</span>:</label>
+                  <select
+                    value={locFormData.departmentId}
+                    onChange={(e) => setLocFormData({ ...locFormData, departmentId: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  >
+                    {departmentsList.map(d => (
+                      <option key={d.id} value={d.id}>{d.id} - {d.nameTh || d.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">รหัสจุดใช้งาน (Location ID/Code):</label>
-                <input
-                  type="text"
-                  disabled={Boolean(editingLoc)}
-                  value={locFormData.id}
-                  onChange={(e) => setLocFormData({ ...locFormData, id: e.target.value, code: e.target.value })}
-                  placeholder="เช่น PD-L5 (เว้นว่างเพื่อสร้างอัตโนมัติ)"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อจุดใช้งาน/สถานีปฏิบัติงาน <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={locFormData.name}
-                  onChange={(e) => setLocFormData({ ...locFormData, name: e.target.value })}
-                  placeholder="เช่น Line 5 - Baking Area 2"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">คำอธิบายพื้นที่:</label>
-                <textarea
-                  value={locFormData.description}
-                  onChange={(e) => setLocFormData({ ...locFormData, description: e.target.value })}
-                  rows={2}
-                  placeholder="รายละเอียดจุดติดตั้งเอกสารฉบับควบคุม..."
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl resize-none"
-                />
-              </div>
-
-              <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">รหัสจุดใช้งาน (Location ID/Code):</label>
                   <input
-                    type="checkbox"
-                    checked={locFormData.isMasterOffice}
-                    onChange={(e) => setLocFormData({ ...locFormData, isMasterOffice: e.target.checked })}
-                    className="w-4 h-4 text-[#0D99FF] rounded"
+                    type="text"
+                    disabled={Boolean(editingLoc)}
+                    value={locFormData.id}
+                    onChange={(e) => setLocFormData({ ...locFormData, id: e.target.value, code: e.target.value })}
+                    placeholder="เช่น PD-L5 (เว้นว่างเพื่อสร้างอัตโนมัติ)"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
                   />
-                  <div>
-                    <span className="font-bold text-slate-800">เป็นจุดคุมงานหลัก (Master Station)</span>
-                    <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 ประจำแผนก</p>
-                  </div>
-                </label>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อจุดใช้งาน/สถานีปฏิบัติงาน <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={locFormData.name}
+                    onChange={(e) => setLocFormData({ ...locFormData, name: e.target.value })}
+                    placeholder="เช่น Line 5 - Baking Area 2"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">คำอธิบายพื้นที่:</label>
+                  <textarea
+                    value={locFormData.description}
+                    onChange={(e) => setLocFormData({ ...locFormData, description: e.target.value })}
+                    rows={2}
+                    placeholder="รายละเอียดจุดติดตั้งเอกสารฉบับควบคุม..."
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl resize-none"
+                  />
+                </div>
+
+                <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={locFormData.isMasterOffice}
+                      onChange={(e) => setLocFormData({ ...locFormData, isMasterOffice: e.target.checked })}
+                      className="w-4 h-4 text-[#0D99FF] rounded"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-800">เป็นจุดคุมงานหลัก (Master Station)</span>
+                      <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 ประจำแผนก</p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsLocModalOpen(false)}
-                  className="btn-secondary text-xs"
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกจุดใช้งาน
                 </button>
@@ -3080,28 +3094,28 @@ const MasterDataHub = () => {
 
       {/* ================= CLEAN SLATE CONFIRMATION MODAL ================= */}
       {isCleanSlateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-[#E5E5E5] shadow-none space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3 text-rose-600">
                 <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
                   <RotateCcw size={24} className="text-rose-600" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-[#1E1E1E]">ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</h3>
-                  <p className="text-xs text-[#666666] font-normal">Factory Reset Transaction Data for E2E Testing</p>
+                  <h3 className="font-bold text-base text-slate-900">ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</h3>
+                  <p className="text-xs text-slate-500 font-normal">Factory Reset Transaction Data for E2E Testing</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCleanSlateModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-[#F5F5F5] transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 text-xs text-slate-600 leading-relaxed">
               <p>
                 การดำเนินการนี้จะ <strong>ลบข้อมูลจำลองเชิงธุรกรรม (Transaction Data) ทั้งหมด</strong> เพื่อให้ระบบกลับสู่สภาพเริ่มต้นที่สะอาด (Clean Slate) สำหรับการทดสอบ Workflow ตั้งแต่ต้น:
               </p>
@@ -3133,11 +3147,11 @@ const MasterDataHub = () => {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsCleanSlateModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-[#1E1E1E] hover:bg-[#F5F5F5] rounded-xl transition-colors"
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 ยกเลิก (Cancel)
               </button>
@@ -3148,7 +3162,7 @@ const MasterDataHub = () => {
                   setIsCleanSlateModalOpen(false);
                   toast.success('ล้างข้อมูลธุรกรรมทั้งหมดเรียบร้อยแล้ว ระบบพร้อมสำหรับการทดสอบ Clean Slate');
                 }}
-                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-sm shadow-rose-600/30 flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw size={14} />
                 <span>ยืนยันล้างข้อมูล (Confirm Reset)</span>
@@ -3160,14 +3174,14 @@ const MasterDataHub = () => {
       {/* ================= USER SIGNATURE PROFILE MODAL ================= */}
       {/* ================= USER SIGNATURE ASSET MODAL (Draw, Upload, Font) ================= */}
       {isSignatureModalOpen && selectedUserForSignature && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E2E8F0] w-full max-w-xl overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
             {/* Header */}
-            <div className="px-6 py-4.5 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-[#0D99FF]/20 rounded-xl text-[#0D99FF]">
                   <PenTool size={18} />
@@ -3182,6 +3196,7 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsSignatureModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -3190,7 +3205,8 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveSignatureProfile} className="p-6 space-y-5 text-xs">
+            <form onSubmit={handleSaveSignatureProfile} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               {/* User Identity Banner */}
               <div className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-center justify-between">
                 <div>
@@ -3427,38 +3443,39 @@ const MasterDataHub = () => {
                   </div>
                 </div>
               </div>
+            </div>
 
               {/* Actions */}
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSignatureModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Save size={14} />
-                  <span>บันทึกสินทรัพย์ลายเซ็น</span>
-                </button>
-              </div>
-            </form>
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsSignatureModalOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Save size={14} />
+                    <span>บันทึกสินทรัพย์ลายเซ็น</span>
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= DIGITAL STAMP SIMULATOR MODAL ================= */}
       {isStampSimulatorModalOpen && stampSimulatorUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
                   <ShieldCheck size={18} />
@@ -3473,6 +3490,7 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsStampSimulatorModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -3481,7 +3499,7 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <div className="p-6 space-y-5 text-xs">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               {/* Role Selector */}
               <div>
                 <label className="font-bold text-slate-700 block mb-1.5">เลือกลำดับขั้นตอนการลงนามใน DAR Workflow:</label>
@@ -3552,16 +3570,16 @@ const MasterDataHub = () => {
                   ตราประทับอิเล็กทรอนิกส์นี้ผ่านการรับรองตามมาตรฐาน <strong>21 CFR Part 11 Subpart B</strong> และสามารถตรวจสอบความถูกต้องย้อนกลับได้ 100%
                 </span>
               </div>
+            </div>
 
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsStampSimulatorModalOpen(false)}
-                  className="btn-primary text-xs px-5 cursor-pointer"
-                >
-                  ปิดหน้าต่าง (Close)
-                </button>
-              </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsStampSimulatorModalOpen(false)}
+                className="btn-primary text-xs px-5 cursor-pointer"
+              >
+                ปิดหน้าต่าง (Close)
+              </button>
             </div>
           </motion.div>
         </div>
@@ -3569,13 +3587,13 @@ const MasterDataHub = () => {
 
       {/* ================= APPROVAL MATRIX EDIT MODAL ================= */}
       {isMatrixModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-[#0D99FF]/20 rounded-xl text-[#0D99FF]">
                   <Sliders size={18} />
@@ -3590,6 +3608,7 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsMatrixModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -3598,7 +3617,8 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveMatrixEntry} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSaveMatrixEntry} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ประเภทเอกสาร (Document Type):</label>
                 <div className="flex items-center gap-2.5 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
@@ -3698,46 +3718,55 @@ const MasterDataHub = () => {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsMatrixModalOpen(false)}
-                  className="btn-secondary text-xs cursor-pointer"
-                >
-                  ยกเลิก (Cancel)
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs cursor-pointer shadow-xs"
-                >
-                  บันทึกการเปลี่ยนแปลง
-                </button>
-              </div>
-            </form>
+                </div>
+
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsMatrixModalOpen(false)}
+                    className="btn-secondary text-xs cursor-pointer"
+                  >
+                    ยกเลิก (Cancel)
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs cursor-pointer shadow-xs"
+                  >
+                    บันทึกการเปลี่ยนแปลง
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= ORPHAN PROTECTION MODAL ================= */}
       {orphanWarningModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full border border-rose-200 shadow-none space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <ShieldAlert size={28} />
-              <h3 className="font-bold text-base text-[#1E1E1E]">ไม่สามารถลบจุดใช้งานได้ (Orphan Protection)</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-rose-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-white border-b border-rose-100 flex items-center gap-3 text-rose-600 shrink-0">
+              <ShieldAlert size={24} />
+              <h3 className="font-bold text-base text-slate-900">ไม่สามารถลบจุดใช้งานได้ (Orphan Protection)</h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed break-words">
-              {orphanWarningModal.message}
-            </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-              💡 <strong>คำแนะนำด้านความปลอดภัย:</strong> หากไม่ต้องการใช้งานสถานีนี้ ให้คลิกเปลี่ยนสถานะเป็น <strong>Inactive</strong> แทนการลบข้อมูลถาวร
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              <p className="text-xs text-slate-600 leading-relaxed break-words">
+                {orphanWarningModal.message}
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                💡 <strong>คำแนะนำด้านความปลอดภัย:</strong> หากไม่ต้องการใช้งานสถานีนี้ ให้คลิกเปลี่ยนสถานะเป็น <strong>Inactive</strong> แทนการลบข้อมูลถาวร
+              </div>
             </div>
-            <button
-              onClick={() => setOrphanWarningModal({ isOpen: false, message: '' })}
-              className="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition-colors"
-            >
-              รับทราบ (Close)
-            </button>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setOrphanWarningModal({ isOpen: false, message: '' })}
+                className="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                รับทราบ (Close)
+              </button>
+            </div>
           </div>
         </div>
       )}

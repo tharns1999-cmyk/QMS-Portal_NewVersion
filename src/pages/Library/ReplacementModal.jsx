@@ -10,7 +10,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
 
   if (!isOpen || !instance) return null;
 
-  const currentIssue = parseInt((instance.issue_no || instance.issueNumber || '1').replace(/\D/g, ''), 10) || 1;
+  const currentIssue = parseInt(String(instance.issue_no || instance.issueNumber || '1').replace(/\D/g, ''), 10) || 1;
   const nextIssueNo = String(currentIssue + 1).padStart(2, '0');
   const trimmedReason = reasonText.trim();
   const isReasonValid = trimmedReason.length > 0;
@@ -25,9 +25,12 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
     setIsSubmitting(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 300));
-      onClose(true, reasonType, trimmedReason);
-    } catch {
-      toast.error('เกิดข้อผิดพลาดในการทำรายการ');
+      if (onClose) {
+        await onClose(true, reasonType, trimmedReason);
+      }
+    } catch (err) {
+      console.error('[ReplacementModal] Submission failed:', err);
+      toast.error(err?.message || 'เกิดข้อผิดพลาดในการทำรายการ');
     } finally {
       setIsSubmitting(false);
     }
@@ -42,7 +45,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-md transition-opacity duration-200 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -56,17 +59,17 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.96, opacity: 0, y: 16 }}
             transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl shadow-slate-900/15 border border-slate-100 overflow-hidden flex flex-col z-10 my-auto"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
           >
             {/* Header */}
-            <div className="px-6 pt-6 pb-4 border-b border-slate-100/80 flex items-center justify-between shrink-0 bg-white">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shadow-sm shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600 shadow-2xs shrink-0">
                   <AlertTriangle size={22} strokeWidth={2.2} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                    <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">
                       แจ้งเอกสารชำรุด/สูญหาย
                     </h2>
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
@@ -80,7 +83,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
               </div>
               <button 
                 onClick={() => !isSubmitting && onClose()}
-                className="p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all outline-none"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all outline-none cursor-pointer"
                 disabled={isSubmitting}
                 title="ปิดหน้าต่าง"
               >
@@ -89,7 +92,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+            <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar bg-white">
               {/* Sleek Passport Context Card */}
               <div className="bg-slate-50/70 border border-slate-200/60 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -241,12 +244,12 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
             </div>
 
             {/* Action Buttons Footer */}
-            <div className="bg-white border-t border-slate-100 px-6 py-4 flex items-center justify-end gap-3 rounded-b-3xl shrink-0">
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3 shrink-0">
               <button 
                 type="button"
                 onClick={() => onClose()}
                 disabled={isSubmitting}
-                className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all outline-none"
+                className="btn-secondary text-sm font-semibold px-5 py-2.5 rounded-xl border border-slate-300 transition-colors outline-none cursor-pointer"
               >
                 ยกเลิก (Cancel)
               </button>
@@ -254,7 +257,7 @@ const ReplacementModal = ({ isOpen, onClose, instance }) => {
                 type="submit"
                 form="replacement-form"
                 disabled={isSubmitting || !isReasonValid}
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-md shadow-amber-500/25 active:scale-[0.98] rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none outline-none flex items-center gap-2"
+                className="btn-primary bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed outline-none flex items-center gap-2 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>กำลังดำเนินการ...</>

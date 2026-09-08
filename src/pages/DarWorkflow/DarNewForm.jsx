@@ -3,17 +3,13 @@ import { useNavigate, useSearchParams, useParams, useLocation } from 'react-rout
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
 import { 
-  Upload, 
   FileText, 
   User, 
-  Calendar, 
   X, 
   ShieldAlert, 
   ChevronLeft, 
-  ShieldCheck, 
-  Building2, 
   UploadCloud, 
-  CheckCircle2 
+  Settings
 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
@@ -39,14 +35,50 @@ const DarNewForm = () => {
 
   const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
   const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
-  const { currentUser, addDar, saveDarDraft, deleteDar, dars, darRequests, documents, masterUsers, reviewUsers, approveUsers, documentTypes, simulatedDate } = useStore();
+  const { 
+    currentUser, 
+    addDar, 
+    saveDarDraft, 
+    deleteDar, 
+    dars, 
+    darRequests, 
+    documents, 
+    masterUsers, 
+    reviewUsers, 
+    approveUsers, 
+    documentTypes, 
+    departments,
+    masterDepartments,
+    simulatedDate 
+  } = useStore();
   
-  const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
+  const availableDepartments = useMemo(() => {
+    return masterDepartments || departments || [];
+  }, [masterDepartments, departments]);
+
+  const activeDocumentTypes = useMemo(() => {
+    return (documentTypes || []).filter(t => 
+      t && 
+      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && 
+      t.allowDar !== false && 
+      t.category !== 'EXTERNAL' && 
+      t.code !== 'ED' && 
+      t.id !== 'ED'
+    );
+  }, [documentTypes]);
+
+  const initialDocType = useMemo(() => {
+    const pType = params?.docType;
+    if (pType && pType !== 'document' && pType !== 'create') {
+      return pType.toUpperCase();
+    }
+    return '';
+  }, [params?.docType]);
 
   const initialFormState = {
     id: '',
     darNo: '',
-    docType: '',
+    docType: initialDocType,
     docIdInput: '',
     docCode: '',
     title: '',
@@ -256,14 +288,14 @@ const DarNewForm = () => {
   }, [currentUser, formData.docType, masterUsers, reviewUsers, approveUsers]);
 
   const getPreviewCode = () => {
-    if (!formData.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
-    const dept = currentUser.department || 'PD';
-    const selectedTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
+    if (!formData?.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
+    const dept = currentUser?.department || formData?.department || 'PD';
+    const selectedTypeObj = (documentTypes || []).find(t => t && (t.code || t.id) === formData.docType);
     const pattern = selectedTypeObj?.namingPattern || `${formData.docType}-{Dept}-{###}`;
-    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, documents, dars);
-    const seqFormatted = formatDocumentRunningNumber(nextSeq);
+    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, documents || [], dars || []);
+    const seqFormatted = formatDocumentRunningNumber(nextSeq || 1);
     
-    if (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}')) {
+    if (pattern && (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}'))) {
       return pattern
         .replace('{Type}', formData.docType)
         .replace('{Dept}', dept)
@@ -397,7 +429,7 @@ const DarNewForm = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-5xl mx-auto space-y-4 pb-8 w-full px-4 sm:px-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center shadow-xs">
@@ -700,8 +732,8 @@ const DarNewForm = () => {
         <DocumentAccessControlSelector
           value={formData.access_control}
           onChange={(access_control) => setFormData({ ...formData, access_control })}
-          ownerDept={currentUser?.department || 'PD'}
-          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
+          ownerDept={currentUser?.department || formData?.department || 'PD'}
+          masterDepartments={availableDepartments}
           masterUsers={masterUsers || []}
           workflowParticipants={workflowParticipants || []}
         />
@@ -711,11 +743,11 @@ const DarNewForm = () => {
           <FormDistributionSetup
             accessScope={formData.access_control?.scope || formData.accessScope}
             accessControl={formData.access_control}
-            ownerDept={currentUser?.department || 'PD'}
+            ownerDept={currentUser?.department || formData?.department || 'PD'}
             distributionMode={formData.formDistributionMode || 'SPECIFIC_DEPTS'}
             selectedDepts={formData.distributedDepartments || []}
             authorizedDepts={formData.access_control?.authorized_depts || []}
-            allDepartments={useStore.getState().masterDepartments || useStore.getState().departments || []}
+            allDepartments={availableDepartments}
             onChangeMode={(mode) => {
               setFormData(prev => ({ ...prev, formDistributionMode: mode }));
             }}
@@ -729,7 +761,7 @@ const DarNewForm = () => {
           />
         ) : (
           <DistributionSetup 
-            ownerDept={currentUser?.department || 'PD'}
+            ownerDept={currentUser?.department || formData?.department || 'PD'}
             distributions={formData.distributions || []}
             onChange={(distributions) => setFormData({ ...formData, distributions })}
             documentType={formData.docType}
@@ -851,7 +883,7 @@ const DarNewForm = () => {
               {
                 label: 'ระดับชั้นความลับและการเข้าถึง',
                 value: (() => {
-                  const scopeMeta = ACCESS_SCOPE_METADATA[formData.access_control?.scope || 'GENERAL'];
+                  const scopeMeta = ACCESS_SCOPE_METADATA[formData.access_control?.scope || 'GENERAL'] || ACCESS_SCOPE_METADATA.GENERAL || { label: 'ทั่วไป (General)', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                   return (
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
@@ -886,7 +918,7 @@ const DarNewForm = () => {
               {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
                 value: (() => {
-                  const allocs = calculateCopyAllocations(currentUser?.department || 'PD', formData.distributions || []);
+                  const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
                   return (
                     <div className="space-y-1.5 pt-0.5">
                       <div className="flex flex-wrap gap-1.5">

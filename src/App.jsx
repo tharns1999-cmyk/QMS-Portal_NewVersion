@@ -33,6 +33,8 @@ const ActionLog = lazy(() => import('./pages/Admin/ActionLog'));
 const MasterDataHub = lazy(() => import('./pages/Admin/MasterDataHub'));
 const ControlledCopyRegister = lazy(() => import('./pages/ControlledCopy/ControlledCopyRegister'));
 const ExternalDocsList = lazy(() => import('./pages/ExternalDocs/ExternalDocsList'));
+const MyExternalRequests = lazy(() => import('./pages/ExternalDocs/MyExternalRequests'));
+const ExternalRequestDetail = lazy(() => import('./pages/ExternalDocs/ExternalRequestDetail'));
 
 // DCC Tasks
 const TaskInbox = lazy(() => import('./pages/Tasks/TaskInbox'));
@@ -103,8 +105,10 @@ function App() {
 
             <Route path="dar/new" element={withSuspense(DarSelection)} />
             <Route path="dar/new/document" element={withSuspense(DarNewForm)} />
+            <Route path="dar/new/create" element={withSuspense(DarNewForm)} />
             <Route path="dar/new/revision" element={withSuspense(DarRevisionForm)} />
             <Route path="dar/new/obsolete" element={withSuspense(DarObsoleteForm)} />
+            <Route path="dar/new/:docType" element={withSuspense(DarNewForm)} />
             <Route path="dar/list" element={withSuspense(DarList)} />
             <Route path="dar/:id" element={withSuspense(DarDetail)} />
 
@@ -127,6 +131,10 @@ function App() {
 
             <Route path="controlled-copy" element={<ProtectedRoute requireDcc deniedToastMessage="คุณไม่มีสิทธิ์เข้าถึงศูนย์ควบคุมงาน DCC">{withSuspense(ControlledCopyRegister)}</ProtectedRoute>} />
             <Route path="external-docs" element={withSuspense(ExternalDocsList)} />
+            <Route path="external/my-requests" element={withSuspense(MyExternalRequests)} />
+            <Route path="external/requests/:id" element={withSuspense(ExternalRequestDetail)} />
+            <Route path="external/my-requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
+            <Route path="external-docs/my-requests" element={<Navigate to="/dcc/external/my-requests" replace />} />
             {/* Master List Registry Deprecation Fallback Redirects -> Document Library */}
             <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
             <Route path="registry" element={<Navigate to="/dcc/library" replace />} />
@@ -143,8 +151,10 @@ function App() {
           <Route path="dashboard" element={<AliasRedirect to="/dcc/dashboard" />} />
           <Route path="dar/new" element={<AliasRedirect to="/dcc/dar/new" />} />
           <Route path="dar/new/document" element={<AliasRedirect to="/dcc/dar/new/document" />} />
+          <Route path="dar/new/create" element={<AliasRedirect to="/dcc/dar/new/document" />} />
           <Route path="dar/new/revision" element={<AliasRedirect to="/dcc/dar/new/revision" />} />
           <Route path="dar/new/obsolete" element={<AliasRedirect to="/dcc/dar/new/obsolete" />} />
+          <Route path="dar/new/:docType" element={<AliasRedirect to="/dcc/dar/new/:docType" />} />
           <Route path="dar/list" element={<AliasRedirect to="/dcc/dar/list" />} />
           <Route path="dar/:id" element={<AliasRedirect to="/dcc/dar/:id" />} />
 
@@ -168,6 +178,10 @@ function App() {
 
           <Route path="controlled-copy" element={<Navigate to="/dcc/controlled-copy" replace />} />
           <Route path="external-docs" element={<Navigate to="/dcc/external-docs" replace />} />
+          <Route path="external/my-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
+          <Route path="external/requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
+          <Route path="external/my-requests/:id" element={<AliasRedirect to="/dcc/external/requests/:id" />} />
+          <Route path="external-docs/my-requests" element={<Navigate to="/dcc/external/my-requests" replace />} />
           {/* Master List Registry Deprecation Fallbacks -> Document Library */}
           <Route path="master-list" element={<Navigate to="/dcc/library" replace />} />
           <Route path="registry" element={<Navigate to="/dcc/library" replace />} />

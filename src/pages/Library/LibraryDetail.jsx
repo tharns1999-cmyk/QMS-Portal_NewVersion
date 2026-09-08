@@ -155,33 +155,30 @@ const LibraryDetail = () => {
 
   const handleDownloadUncontrolled = async () => {
     try {
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595.28, 841.89]);
-      const { height } = page.getSize();
-      page.drawText(`Document: ${doc.title} - ${doc.name}`, { x: 50, y: height - 50, size: 14 });
-      page.drawText(`Revision: ${doc.rev}`, { x: 50, y: height - 70, size: 12 });
-      page.drawText(`Department: ${doc.department}`, { x: 50, y: height - 90, size: 12 });
-      page.drawText(`Effective Date: ${doc.effectiveDate || '-'}`, { x: 50, y: height - 110, size: 12 });
-      
-      const rawBytes = await pdfDoc.save();
-      const watermarkedBytes = await UniversalWatermarkService.stampPdf(rawBytes, WATERMARK_TYPES.UNCONTROLLED_COPY, {
-        docCode: doc.title,
-        docVersion: doc.rev,
-        docType: doc.title.split('-')[0],
-        status: doc.status,
-        userName: currentUser.name,
-        userDept: currentUser.department || currentUser.dept || 'PD',
-        scope: 'INTERNAL'
-      });
+      const isForm = UniversalWatermarkService.isBlankFormBypass(doc);
+      if (isForm) {
+        await UniversalWatermarkService.downloadCleanPdf(doc, {
+          userName: currentUser.name,
+          userDept: currentUser.department || currentUser.dept || 'PD',
+          docCode: doc.title
+        });
+        toast.success(`ดาวน์โหลดแบบฟอร์ม ${doc.title} (ไม่มีลายน้ำ) สำเร็จ`);
+        return;
+      }
 
-      const blob = new Blob([watermarkedBytes], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${doc.title}_UNCONTROLLED.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      
+      await UniversalWatermarkService.downloadWatermarkedPdf(
+        doc,
+        WATERMARK_TYPES.UNCONTROLLED_COPY,
+        {
+          docCode: doc.title,
+          docTitle: doc.name,
+          docVersion: doc.rev,
+          userName: currentUser.name,
+          userDept: currentUser.department || currentUser.dept || 'PD',
+          isRestricted: doc.access_control?.scope === 'RESTRICTED' || doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED'
+        }
+      );
+
       toast.success('ดาวน์โหลดเอกสาร (Uncontrolled Copy) สำเร็จ');
     } catch (err) {
       console.error(err);
@@ -459,18 +456,19 @@ const LibraryDetail = () => {
 
       {/* DAR Details Modal */}
       {selectedDar && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden shadow-none border border-[#E5E5E5]">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-[#F5F5F5]/80">
-              <h3 className="font-bold text-[#1E1E1E] text-sm">รายละเอียดใบคำขอ (Historical DAR: {selectedDar.id})</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+              <h3 className="font-bold text-slate-900 text-base">รายละเอียดใบคำขอ (Historical DAR: {selectedDar.id})</h3>
               <button 
                 onClick={() => setSelectedDar(null)} 
-                className="action-icon-btn text-slate-400 hover:text-slate-600"
+                className="action-icon-btn text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 p-1.5 transition-colors"
+                title="ปิดหน้าต่าง"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto space-y-3.5 text-xs">
+            <div className="p-6 overflow-y-auto space-y-4 text-xs flex-1 custom-scrollbar">
               <div className="grid grid-cols-2 gap-y-3 gap-x-6">
                 <div><span className="text-slate-400 block text-xs">รหัสคำขอ:</span> <span className="font-mono font-bold text-[#0D99FF]">{selectedDar.id}</span></div>
                 <div><span className="text-slate-400 block text-xs">ประเภทคำขอ:</span> <span className="font-bold text-slate-800">{selectedDar.type}</span></div>
@@ -492,15 +490,15 @@ const LibraryDetail = () => {
                 <div className="col-span-2"><span className="text-slate-400 block text-xs">สถานะ:</span> <span className={`font-bold ${selectedDar.status === 'CANCELLED' ? 'text-rose-600' : 'text-[#0D99FF]'}`}>{selectedDar.status}</span></div>
               </div>
               <div className="border-t border-slate-100 pt-3 min-w-0">
-                <span className="text-[#666666] block text-xs mb-1 font-bold">{getDarReason(selectedDar).title}</span>
-                <p className="font-medium text-slate-800 bg-[#F5F5F5] p-2.5 rounded-lg border border-[#E5E5E5] whitespace-pre-wrap leading-relaxed min-w-0 break-words break-all [overflow-wrap:anywhere]">{getDarReason(selectedDar).value}</p>
+                <span className="text-slate-600 block text-xs mb-1 font-bold">{getDarReason(selectedDar).title}</span>
+                <p className="font-medium text-slate-800 bg-slate-50 p-3 rounded-lg border border-slate-200 whitespace-pre-wrap leading-relaxed min-w-0 break-words break-all [overflow-wrap:anywhere]">{getDarReason(selectedDar).value}</p>
               </div>
               <div className="min-w-0">
-                <span className="text-[#666666] block text-xs mb-1 font-bold">{getDarDetail(selectedDar).title}</span>
-                <p className="font-medium text-slate-800 bg-[#F5F5F5] p-2.5 rounded-lg border border-[#E5E5E5] whitespace-pre-wrap leading-relaxed min-w-0 break-words break-all [overflow-wrap:anywhere]">{getDarDetail(selectedDar).value}</p>
+                <span className="text-slate-600 block text-xs mb-1 font-bold">{getDarDetail(selectedDar).title}</span>
+                <p className="font-medium text-slate-800 bg-slate-50 p-3 rounded-lg border border-slate-200 whitespace-pre-wrap leading-relaxed min-w-0 break-words break-all [overflow-wrap:anywhere]">{getDarDetail(selectedDar).value}</p>
               </div>
             </div>
-            <div className="p-4 border-t border-slate-100 bg-[#F5F5F5]/80 flex justify-end">
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end shrink-0">
               <Button 
                 variant="secondary"
                 onClick={() => setSelectedDar(null)}
@@ -518,10 +516,18 @@ const LibraryDetail = () => {
         isOpen={!!replacementInstance} 
         onClose={(success, type, reason) => {
           if (success && type && reason) {
-            reportCcDamagedLost(replacementInstance.id, type, reason);
-            toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
+            try {
+              reportCcDamagedLost(replacementInstance.id, type, reason);
+              toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
+              setReplacementInstance(null);
+            } catch (err) {
+              console.error('[LibraryDetail] reportCcDamagedLost failed:', err);
+              toast.error(err?.message || 'เกิดข้อผิดพลาดในการทำรายการ');
+              throw err;
+            }
+          } else {
+            setReplacementInstance(null);
           }
-          setReplacementInstance(null);
         }} 
         instance={replacementInstance}
         documentId={doc.id}

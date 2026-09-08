@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
   FileText, 
@@ -28,6 +29,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import ExternalDocFormModal from './ExternalDocFormModal';
 import ExternalDocPreviewModal from './ExternalDocPreviewModal';
+import ExternalDocDetailModal from './ExternalDocDetailModal';
 import ExternalDocHistoryModal from './ExternalDocHistoryModal';
 import ExternalDocObsoleteModal from './ExternalDocObsoleteModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
@@ -35,16 +37,45 @@ import UniversalWatermarkService, { WATERMARK_TYPES } from '../../services/Unive
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 
 // Main Category Tab Constants (Level 1)
 const TAB_GENERAL = 'GENERAL';
 const TAB_MY_DEPT = 'MY_DEPT';
 const TAB_DISTRIBUTED = 'DISTRIBUTED';
 
+// Official Lifecycle Statuses for Master External Document Library (ISO 9001:2015 Clause 7.5.3.2)
+export const OFFICIAL_LIFECYCLE_STATUSES = [
+  'ACTIVE',
+  'EFFECTIVE',
+  'SUPERSEDED',
+  'SUPERSEDED_ARCHIVED',
+  'OBSOLETE',
+  'OBSOLETE_ARCHIVED'
+];
+
+export const isOfficialLifecycleDoc = (doc) => {
+  if (!doc) return false;
+  const status = String(doc.status || '').toUpperCase();
+  if (
+    status.includes('REJECT') ||
+    status.startsWith('PENDING') ||
+    status.includes('REVISE') ||
+    status === 'DRAFT'
+  ) {
+    return false;
+  }
+  if (doc.is_obsolete || doc.is_superseded) return true;
+  return OFFICIAL_LIFECYCLE_STATUSES.includes(status);
+};
+
 const ExternalDocsList = () => {
+  const navigate = useNavigate();
   const { 
     externalDocuments, 
+    externalRequests,
     currentUser, 
+    tasks,
     logExternalDownload, 
     masterDepartments, 
     departments: storeDepts,
@@ -68,8 +99,13 @@ const ExternalDocsList = () => {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [docToPreview, setDocToPreview] = useState(null);
 
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [docToDetail, setDocToDetail] = useState(null);
+
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [docToHistory, setDocToHistory] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [selectedHistoryDocCode, setSelectedHistoryDocCode] = useState(null);
   
   const [isObsoleteModalOpen, setIsObsoleteModalOpen] = useState(false);
   const [docToObsolete, setDocToObsolete] = useState(null);
@@ -84,12 +120,39 @@ const ExternalDocsList = () => {
   // Row-level 3-dot action menu
   const [openMenuDocId, setOpenMenuDocId] = useState(null);
 
-  const isAdmin = Boolean(currentUser?.role === 'DCC_ADMIN' || currentUser?.isDcc || currentUser?.id === 'U001');
+  const isDccAdmin = Boolean(
+    currentUser?.role === 'DCC' || 
+    currentUser?.role === 'DCC_ADMIN' || 
+    currentUser?.isDccAdmin || 
+    currentUser?.isDcc || 
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.id === 'U001'
+  );
+  const isAdmin = isDccAdmin;
   const uDept = currentUser?.department || currentUser?.dept || 'QA';
 
   const availableDepts = useMemo(() => {
     return (masterDepartments || storeDepts || []).filter(d => typeof d === 'string' || d.status !== 'INACTIVE');
   }, [masterDepartments, storeDepts]);
+
+  const myReviseCount = useMemo(() => {
+    const reviseDocIds = new Set();
+    (tasks || []).forEach(t => {
+      if (
+        (t.type === 'EXTERNAL_REVISE' || t.taskType === 'EXTERNAL_REVISE') &&
+        (t.assigneeId === currentUser?.id || t.requesterId === currentUser?.id) &&
+        t.status === 'PENDING'
+      ) {
+        reviseDocIds.add(t.referenceId || t.docId || t.id);
+      }
+    });
+    (externalRequests || []).forEach(r => {
+      if (r.requesterId === currentUser?.id && r.status === 'REVISE_REQUESTED') {
+        reviseDocIds.add(r.docId || r.externalDocId || r.requestId || r.id);
+      }
+    });
+    return reviseDocIds.size;
+  }, [tasks, externalRequests, currentUser]);
 
   // Close dropdown on outside click or Escape
   useEffect(() => {
@@ -166,28 +229,6 @@ const ExternalDocsList = () => {
     };
   };
 
-  // 1. Accessibility & Confidentiality Filter
-  const accessibleDocs = useMemo(() => {
-    return (externalDocuments || []).filter(doc => {
-      if (isAdmin) return true;
-
-      const isOwner = doc.ownerId === currentUser?.id;
-      const isReviewer = doc.reviewerId === currentUser?.id;
-      const isApprover = doc.approverId === currentUser?.id;
-      const isAck = doc.acknowledgees?.includes(currentUser?.id);
-      const isInvolved = isOwner || isReviewer || isApprover || isAck;
-
-      if (doc.accessScope === 'General' || !doc.accessScope) return true;
-      if (doc.accessScope === 'Department') {
-        return isInvolved || (doc.accessDepartments && doc.accessDepartments.includes(uDept)) || doc.department === uDept;
-      }
-      if (doc.accessScope === 'Restricted') {
-        return isInvolved || (doc.accessUsers && doc.accessUsers.includes(currentUser?.id));
-      }
-      return false;
-    });
-  }, [externalDocuments, isAdmin, currentUser, uDept]);
-
   // Department normalization & matching helpers
   const normalizeDept = (d) => {
     if (!d) return '';
@@ -195,13 +236,22 @@ const ExternalDocsList = () => {
     return typeof val === 'string' ? val.trim().toUpperCase() : '';
   };
 
-  const userDept = normalizeDept(
-    currentUser?.primary_department ||
-    currentUser?.department ||
-    currentUser?.dept ||
-    currentUser?.dept_code ||
-    'QA'
-  );
+  const getUserDepartments = (user) => {
+    if (!user) return [];
+    const depts = [];
+    if (user.department) depts.push(user.department);
+    if (user.primary_department) depts.push(user.primary_department);
+    if (user.dept) depts.push(user.dept);
+    if (user.dept_code) depts.push(user.dept_code);
+    if (Array.isArray(user.departments)) depts.push(...user.departments);
+    if (Array.isArray(user.secondaryDepartments)) depts.push(...user.secondaryDepartments);
+    if (Array.isArray(user.depts)) depts.push(...user.depts);
+    if (Array.isArray(user.affiliated_departments)) depts.push(...user.affiliated_departments);
+    return [...new Set(depts.filter(Boolean))];
+  };
+
+  const userDepts = useMemo(() => getUserDepartments(currentUser), [currentUser]);
+  const userDept = userDepts[0] || normalizeDept(currentUser?.department) || 'QA';
 
   const deptMatches = (d1, d2) => {
     const s1 = normalizeDept(d1);
@@ -212,114 +262,325 @@ const ExternalDocsList = () => {
     return false;
   };
 
+  const getDocCode = (doc) => {
+    if (!doc) return '';
+    return (
+      doc.documentCode ||
+      doc.edCode ||
+      doc.doc_code ||
+      doc.docCode ||
+      doc.docNo ||
+      doc.id ||
+      ''
+    );
+  };
+
   const isOwnerDept = (doc) => {
+    if (!doc) return false;
     const docDept = doc.department || doc.dept || doc.owner_dept;
-    return deptMatches(docDept, userDept);
+    return userDepts.includes(docDept) || userDepts.some(ud => deptMatches(ud, docDept));
+  };
+
+  const canManageDoc = (doc) => {
+    if (!doc) return false;
+    const isOwner = isOwnerDept(doc);
+    const isActive = doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE';
+    return (isOwner || isDccAdmin) && isActive;
   };
 
   const isGeneralDoc = (doc) => {
+    const scope = (
+      doc.accessScope ||
+      doc.access_scope ||
+      doc.distributionScope ||
+      doc.distribution_scope ||
+      doc.scope ||
+      ''
+    ).toString().trim().toUpperCase();
+
     return (
-      doc.distributionScope === 'ALL' ||
-      doc.distribution_scope === 'ALL' ||
-      doc.scope === 'ALL' ||
-      doc.accessScope === 'General' ||
-      doc.accessScope === 'GENERAL' ||
-      doc.access_scope === 'GENERAL'
+      scope === 'GENERAL' ||
+      scope === 'ALL' ||
+      doc.accessScope === 'ทั่วไป' ||
+      doc.distributionScope === 'ทั่วไป'
     );
   };
 
   const hasDistributedCopyToUserDept = (doc) => {
     if (isOwnerDept(doc)) return false; // Strict: exclude own department
     
-    // 1. Array of distributed dept codes
-    const inDistDepts = (doc.distributed_depts || []).some(d => deptMatches(d, userDept));
+    // 1. Array of distributed dept codes / allowedDepartments
+    const allowedDepts = doc.allowedDepartments || doc.allowed_departments || doc.distributed_depts || [];
+    const inDistDepts = (allowedDepts || []).some(d => userDepts.some(ud => deptMatches(d, ud)));
+
     // 2. Array of distribution objects
-    const inDistObjs = (doc.distributions || []).some(d => deptMatches(d.departmentId || d.department || d.dept, userDept));
+    const inDistObjs = (doc.distributions || []).some(d => userDepts.some(ud => deptMatches(d.departmentId || d.department || d.dept, ud)));
+
     // 3. Access departments
-    const inAccessDepts = (doc.accessDepartments || []).some(d => deptMatches(d, userDept));
-    // 4. Physical controlled copies in store
+    const inAccessDepts = (doc.accessDepartments || []).some(d => userDepts.some(ud => deptMatches(d, ud)));
+
+    // 4. Restricted user check (currentUser.id in allowedUsers or accessUsers)
+    const allowedUsersList = doc.allowedUsers || doc.allowed_users || doc.accessUsers || [];
+    const isUserAllowed = Boolean(currentUser?.id && allowedUsersList.includes(currentUser.id));
+
+    // 5. Physical controlled copies in store
     const hasControlledCopy = (controlledCopyInstances || documentControlledCopies || []).some(c => {
       const matchDoc = String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id) === String(doc.id) ||
                        c.doc_code === doc.edCode ||
                        c.doc_code === doc.id ||
                        c.docTitle === doc.title;
-      return matchDoc && deptMatches(c.holder_dept || c.department, userDept) && ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status);
+      return matchDoc && userDepts.some(ud => deptMatches(c.holder_dept || c.department, ud)) && ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status);
     });
 
-    return Boolean(inDistDepts || inDistObjs || inAccessDepts || hasControlledCopy);
+    return Boolean(inDistDepts || inDistObjs || inAccessDepts || isUserAllowed || hasControlledCopy);
   };
 
-  // Phase 2: Level 1 Main Category Data Routing
-  const categoryDocs = useMemo(() => {
-    return accessibleDocs.filter(doc => {
-      if (activeMainTab === TAB_GENERAL) {
-        // 1. เอกสารทั่วไป: doc.distributionScope === 'ALL'
-        return isGeneralDoc(doc);
+  // Master Document Source (Official Lifecycle Records: ACTIVE, SUPERSEDED, OBSOLETE)
+  const allExternalDocs = useMemo(() => {
+    return (externalDocuments || []).filter(doc => isOfficialLifecycleDoc(doc));
+  }, [externalDocuments]);
+
+  // Accessibility & Confidentiality Filter for General User Access Check
+  const accessibleDocs = useMemo(() => {
+    return allExternalDocs.filter(doc => {
+      if (isAdmin || isDccAdmin) return true;
+
+      const isOwner = Boolean(currentUser?.id && doc?.ownerId === currentUser.id);
+      const isReviewer = Boolean(currentUser?.id && doc?.reviewerId === currentUser.id);
+      const isApprover = Boolean(currentUser?.id && doc?.approverId === currentUser.id);
+      const isAck = Boolean(currentUser?.id && Array.isArray(doc?.acknowledgees) && doc.acknowledgees.includes(currentUser.id));
+      const isInvolved = isOwner || isReviewer || isApprover || isAck;
+
+      const scope = (doc?.accessScope || doc?.access_scope || doc?.distributionScope || doc?.distribution_scope || doc?.scope || '').toString().trim().toUpperCase();
+      if (scope === 'GENERAL' || scope === 'ALL' || doc?.accessScope === 'ทั่วไป' || !doc?.accessScope) return true;
+
+      if (scope === 'DEPARTMENT' || doc?.accessScope === 'Department') {
+        const allowedDepts = doc?.allowedDepartments || doc?.allowed_departments || doc?.accessDepartments || [];
+        const inAllowedDept = (allowedDepts || []).some(d => userDepts.some(ud => deptMatches(d, ud)));
+        return isInvolved || inAllowedDept || isOwnerDept(doc);
       }
+      if (scope === 'RESTRICTED' || doc?.accessScope === 'Restricted') {
+        const allowedUsers = Array.isArray(doc?.allowedUsers) ? doc.allowedUsers : (Array.isArray(doc?.allowed_users) ? doc.allowed_users : (Array.isArray(doc?.accessUsers) ? doc.accessUsers : []));
+        return isInvolved || Boolean(currentUser?.id && allowedUsers.includes(currentUser.id));
+      }
+      return false;
+    });
+  }, [allExternalDocs, isAdmin, isDccAdmin, currentUser, userDepts]);
+
+  // ─────────────────────────────────────────────────────────────
+  // Master Document Status Resolution (ISO 9001 Clause 7.5.3.2)
+  // Maps every unique documentCode to its document-level Master Status:
+  // - OBSOLETE: if latest revision is OBSOLETE, or if document code is obsoleted
+  // - ACTIVE: if it has an active/effective revision (and not obsolete)
+  // - SUPERSEDED: if it has superseded revisions and is neither active nor obsolete
+  // ─────────────────────────────────────────────────────────────
+  const docMasterMap = useMemo(() => {
+    const map = new Map();
+    (allExternalDocs || []).forEach(doc => {
+      const code = getDocCode(doc);
+      if (!code) return;
+      if (!map.has(code)) {
+        map.set(code, []);
+      }
+      map.get(code).push(doc);
+    });
+
+    const statusMap = new Map();
+
+    map.forEach((docs, code) => {
+      // Sort revisions descending
+      const sorted = [...docs].sort((a, b) => {
+        const revA = parseInt(String(a.rev || a.sourceVersion || a.edition || '0').replace(/\D/g, ''), 10) || 0;
+        const revB = parseInt(String(b.rev || b.sourceVersion || b.edition || '0').replace(/\D/g, ''), 10) || 0;
+        if (revB !== revA) return revB - revA;
+        const dateA = new Date(a.effectiveDate || a.supersededAt || a.supersededDate || a.obsoleteDate || a.createdAt || 0);
+        const dateB = new Date(b.effectiveDate || b.supersededAt || b.supersededDate || b.obsoleteDate || b.createdAt || 0);
+        return dateB - dateA;
+      });
+
+      const topDoc = sorted[0];
+      const hasActive = sorted.some(d => 
+        (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && 
+        !d.is_superseded && 
+        !d.is_obsolete && 
+        d.status !== 'SUPERSEDED' && 
+        d.status !== 'OBSOLETE'
+      );
+      const isTopObsolete = topDoc.status === 'OBSOLETE' || topDoc.status === 'OBSOLETE_ARCHIVED' || topDoc.is_obsolete;
+      const hasAnyObsolete = sorted.some(d => d.status === 'OBSOLETE' || d.status === 'OBSOLETE_ARCHIVED' || d.is_obsolete);
+
+      let masterStatus = 'ACTIVE';
+      if (isTopObsolete || (hasAnyObsolete && !hasActive)) {
+        masterStatus = 'OBSOLETE';
+      } else if (hasActive) {
+        masterStatus = 'ACTIVE';
+      } else if (sorted.some(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded)) {
+        masterStatus = 'SUPERSEDED';
+      } else {
+        masterStatus = topDoc.status || 'ACTIVE';
+      }
+
+      // Representative doc for display: active doc if active, obsolete doc if obsolete, else topDoc
+      let representativeDoc = topDoc;
+      if (masterStatus === 'ACTIVE') {
+        representativeDoc = sorted.find(d => (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded && !d.is_obsolete && d.status !== 'SUPERSEDED' && d.status !== 'OBSOLETE') || topDoc;
+      } else if (masterStatus === 'OBSOLETE') {
+        representativeDoc = sorted.find(d => d.status === 'OBSOLETE' || d.status === 'OBSOLETE_ARCHIVED' || d.is_obsolete) || topDoc;
+      }
+
+      statusMap.set(code, {
+        code,
+        masterStatus,
+        docs: sorted,
+        topDoc,
+        representativeDoc,
+        groupCount: sorted.length
+      });
+    });
+
+    return statusMap;
+  }, [allExternalDocs]);
+
+  // Phase 1, 2 & 3: Level 1 Main Category Data Routing & Tab Partitioning Rules
+  const categoryDocs = useMemo(() => {
+    return allExternalDocs.filter(doc => {
+      const docCode = getDocCode(doc);
+      const masterInfo = docMasterMap.get(docCode);
+      const masterStatus = masterInfo?.masterStatus || doc.status || 'ACTIVE';
+      const isActive = masterStatus === 'ACTIVE';
+      const isGeneral = isGeneralDoc(doc);
+      const isMyDept = isOwnerDept(doc);
+
       if (activeMainTab === TAB_MY_DEPT) {
-        // 2. เอกสารในแผนกฉัน: doc.department === currentUser.department
-        return isOwnerDept(doc);
+        // แท็บ 1: "เอกสารในแผนกฉัน (My Department Docs)"
+        // เงื่อนไข: userDepts.includes(doc.department)
+        return isMyDept;
+      }
+      if (activeMainTab === TAB_GENERAL) {
+        // แท็บ 2: "เอกสารทั่วไป (General Docs)"
+        // เงื่อนไข: !userDepts.includes(doc.department) && (doc.accessScope || '').toUpperCase() === 'GENERAL' && masterStatus === 'ACTIVE'
+        return !isMyDept && isGeneral && isActive;
       }
       if (activeMainTab === TAB_DISTRIBUTED) {
-        // 3. เอกสารที่ได้รับการแจกจ่าย: doc.department !== currentUser.department และมีการแจกจ่ายสำเนามาที่แผนกผู้ใช้
-        return !isOwnerDept(doc) && hasDistributedCopyToUserDept(doc);
+        // แท็บ 3: "เอกสารที่ได้รับการแจกจ่าย (Distributed Docs)"
+        // เงื่อนไข: !userDepts.includes(doc.department) && (doc.accessScope || '').toUpperCase() !== 'GENERAL' && masterStatus === 'ACTIVE' && (isDeptAllowed || isUserAllowed || hasCopyInDept)
+        return !isMyDept && !isGeneral && isActive && hasDistributedCopyToUserDept(doc);
       }
       return true;
     });
-  }, [accessibleDocs, activeMainTab, userDept, controlledCopyInstances, documentControlledCopies]);
+  }, [allExternalDocs, docMasterMap, activeMainTab, userDepts, controlledCopyInstances, documentControlledCopies]);
 
-  // Main Category Tab Badge Counters (Active documents per tab)
-  const generalDocsCount = useMemo(() => {
-    return accessibleDocs.filter(d => isGeneralDoc(d) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE')).length;
-  }, [accessibleDocs]);
+  // Phase 2 & 3: Synchronized Scope Tab Counters (Effective-Only Unique Document Code Counts)
+  const countMyDept = useMemo(() => {
+    let count = 0;
+    docMasterMap.forEach(info => {
+      if (info.masterStatus === 'ACTIVE' && isOwnerDept(info.representativeDoc)) {
+        count++;
+      }
+    });
+    return count;
+  }, [docMasterMap, userDepts]);
 
-  const myDeptDocsCount = useMemo(() => {
-    return accessibleDocs.filter(d => isOwnerDept(d) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE')).length;
-  }, [accessibleDocs, userDept]);
+  const countGeneral = useMemo(() => {
+    let count = 0;
+    docMasterMap.forEach(info => {
+      if (info.masterStatus === 'ACTIVE' && !isOwnerDept(info.representativeDoc) && isGeneralDoc(info.representativeDoc)) {
+        count++;
+      }
+    });
+    return count;
+  }, [docMasterMap, userDepts]);
 
-  const distributedDocsCount = useMemo(() => {
-    return accessibleDocs.filter(d => !isOwnerDept(d) && hasDistributedCopyToUserDept(d) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE')).length;
-  }, [accessibleDocs, userDept, controlledCopyInstances, documentControlledCopies]);
+  const countDistributed = useMemo(() => {
+    let count = 0;
+    docMasterMap.forEach(info => {
+      if (info.masterStatus === 'ACTIVE' && !isOwnerDept(info.representativeDoc) && !isGeneralDoc(info.representativeDoc) && hasDistributedCopyToUserDept(info.representativeDoc)) {
+        count++;
+      }
+    });
+    return count;
+  }, [docMasterMap, userDepts, controlledCopyInstances, documentControlledCopies]);
 
-  // Phase 3: Level 2 Compact Status Pill Badge Counts (Scoped to selected Main Tab)
+  const myDeptDocsCount = countMyDept;
+  const generalDocsCount = countGeneral;
+  const distributedDocsCount = countDistributed;
+
+  // Phase 3: Level 2 Compact Status Pill Badge Counts (Scoped to selected Main Tab by Unique Document Code)
   const statusCounts = useMemo(() => {
-    const active = categoryDocs.filter(d => d.status === 'ACTIVE' || d.status === 'EFFECTIVE').length;
-    const superseded = categoryDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded).length;
-    const obsolete = categoryDocs.filter(d => d.status === 'OBSOLETE' || d.status === 'OBSOLETE_ARCHIVED' || d.is_obsolete).length;
-    const total = categoryDocs.length;
+    const categoryDocCodes = new Set();
+    categoryDocs.forEach(d => {
+      const code = getDocCode(d);
+      if (code) categoryDocCodes.add(code);
+    });
+
+    let active = 0;
+    let superseded = 0;
+    let obsolete = 0;
+
+    categoryDocCodes.forEach(code => {
+      const info = docMasterMap.get(code);
+      const status = info?.masterStatus || 'ACTIVE';
+      if (status === 'ACTIVE') {
+        active++;
+      } else if (status === 'SUPERSEDED') {
+        superseded++;
+      } else if (status === 'OBSOLETE') {
+        obsolete++;
+      }
+    });
+
+    const total = active + superseded + obsolete;
     return { active, superseded, obsolete, total };
-  }, [categoryDocs]);
+  }, [categoryDocs, docMasterMap]);
 
   // Global metrics stats for notifications & test compatibility
   const stats = useMemo(() => {
-    const total = accessibleDocs.length;
-    const active = accessibleDocs.filter(d => d.status === 'ACTIVE' || d.status === 'EFFECTIVE').length;
-    const superseded = accessibleDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded).length;
-    const obsolete = accessibleDocs.filter(d => d.status === 'OBSOLETE' || d.status === 'OBSOLETE_ARCHIVED' || d.is_obsolete).length;
-    const pending = accessibleDocs.filter(d => (d.status || '').startsWith('PENDING_')).length;
+    let active = 0;
+    let superseded = 0;
+    let obsolete = 0;
+
+    docMasterMap.forEach(info => {
+      if (info.masterStatus === 'ACTIVE') active++;
+      else if (info.masterStatus === 'SUPERSEDED') superseded++;
+      else if (info.masterStatus === 'OBSOLETE') obsolete++;
+    });
+
+    const total = active + superseded + obsolete;
+    const pending = 0; // External document library never contains pending/in-flight requests
     const dueSoon = accessibleDocs.filter(d => {
       const v = getValidityInfo(d);
       return v.status === 'DUE_SOON' || v.status === 'OVERDUE';
     }).length;
 
     return { total, active, superseded, obsolete, pending, dueSoon };
-  }, [accessibleDocs]);
+  }, [docMasterMap, accessibleDocs]);
 
   // Filtered Docs for Data Grid (Scoped to Category + Status + Toolbar Filters)
   const filteredDocs = useMemo(() => {
     return categoryDocs.filter(doc => {
-      // 4-Status Segmented Pill Filter
-      if (statusFilter === 'ACTIVE') {
-        const isActive = doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE';
-        if (!isActive) return false;
-      } else if (statusFilter === 'SUPERSEDED') {
-        const isSuperseded = doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.is_superseded;
-        if (!isSuperseded) return false;
-      } else if (statusFilter === 'OBSOLETE') {
-        const isObsolete = doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED' || doc.is_obsolete;
-        if (!isObsolete) return false;
+      // Golden Rule: Filter out any non-lifecycle documents
+      if (!isOfficialLifecycleDoc(doc)) return false;
+
+      const docCode = getDocCode(doc);
+      const masterInfo = docMasterMap.get(docCode);
+      const docMasterStatus = masterInfo?.masterStatus || doc.status || 'ACTIVE';
+
+      // Part 3 ISO Enforcement: Lock background filter to ACTIVE when on GENERAL or DISTRIBUTED tabs
+      if (activeMainTab !== TAB_MY_DEPT) {
+        if (docMasterStatus !== 'ACTIVE') return false;
+      } else {
+        // 4-Status Segmented Pill Filter for MY_DEPT based on Master Document Status
+        if (statusFilter === 'ACTIVE') {
+          if (docMasterStatus !== 'ACTIVE') return false;
+        } else if (statusFilter === 'SUPERSEDED') {
+          // Rule: Never include obsolete documents in Superseded
+          if (docMasterStatus !== 'SUPERSEDED') return false;
+        } else if (statusFilter === 'OBSOLETE') {
+          if (docMasterStatus !== 'OBSOLETE') return false;
+        } else if (statusFilter === 'ALL') {
+          if (!isOfficialLifecycleDoc(doc)) return false;
+        }
       }
-      // 'ALL' shows all records in category
 
       // Dept Filter
       if (deptFilter !== 'ALL' && !deptMatches(doc.department || doc.dept, deptFilter)) return false;
@@ -333,22 +594,76 @@ const ExternalDocsList = () => {
         const code = (doc.edCode || doc.doc_code || doc.docNo || doc.id || '').toLowerCase();
         const title = (doc.title || '').toLowerCase();
         const titleTh = (doc.titleTh || '').toLowerCase();
-        const source = (doc.source || '').toLowerCase();
+        const source = (doc.issuer || doc.officialIssuer || doc.source || '').toLowerCase();
         const ver = (doc.sourceVersion || doc.edition || '').toLowerCase();
         return code.includes(term) || title.includes(term) || titleTh.includes(term) || source.includes(term) || ver.includes(term);
       }
 
       return true;
     });
-  }, [categoryDocs, statusFilter, deptFilter, scopeFilter, searchTerm]);
+  }, [categoryDocs, docMasterMap, activeMainTab, statusFilter, deptFilter, scopeFilter, searchTerm]);
+
+  // Phase 1 Table Grouping by Document Code (Enforce unique document-level grouping across all views)
+  const isGroupedView = statusFilter === 'SUPERSEDED' || statusFilter === 'OBSOLETE';
+
+  const displayDocs = useMemo(() => {
+    // Group filteredDocs by documentCode
+    const groups = new Map();
+    filteredDocs.forEach(doc => {
+      const code = getDocCode(doc) || doc.id;
+      if (!groups.has(code)) {
+        groups.set(code, []);
+      }
+      groups.get(code).push(doc);
+    });
+
+    const groupedList = [];
+    groups.forEach((docsInGroup, code) => {
+      const masterInfo = docMasterMap.get(code);
+      const masterStatus = masterInfo?.masterStatus || docsInGroup[0]?.status || 'ACTIVE';
+
+      // Sort docs in this group descending by revision or date
+      const sorted = [...docsInGroup].sort((a, b) => {
+        const revA = parseInt(String(a.rev || a.sourceVersion || a.edition || '0').replace(/\D/g, ''), 10) || 0;
+        const revB = parseInt(String(b.rev || b.sourceVersion || b.edition || '0').replace(/\D/g, ''), 10) || 0;
+        if (revB !== revA) return revB - revA;
+        const dateA = new Date(a.supersededAt || a.supersededDate || a.obsoleteDate || a.effectiveDate || 0);
+        const dateB = new Date(b.supersededAt || b.supersededDate || b.obsoleteDate || b.effectiveDate || 0);
+        return dateB - dateA;
+      });
+
+      // For ACTIVE, representative is the active doc (or top sorted)
+      // For OBSOLETE, representative is the obsolete doc (or top sorted)
+      let repDoc = sorted[0];
+      if (masterStatus === 'ACTIVE') {
+        repDoc = sorted.find(d => (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded && !d.is_obsolete && d.status !== 'SUPERSEDED' && d.status !== 'OBSOLETE') || sorted[0];
+      } else if (masterStatus === 'OBSOLETE') {
+        repDoc = sorted.find(d => d.status === 'OBSOLETE' || d.status === 'OBSOLETE_ARCHIVED' || d.is_obsolete) || sorted[0];
+      }
+
+      const latestDate = repDoc.supersededAt || repDoc.supersededDate || repDoc.obsoleteDate || repDoc.effectiveDate || repDoc.createdAt;
+
+      groupedList.push({
+        ...repDoc,
+        _isGrouped: isGroupedView,
+        _docCode: code,
+        _groupCount: sorted.length,
+        _groupedDocs: sorted,
+        _latestDate: latestDate,
+        status: repDoc.status || masterStatus
+      });
+    });
+
+    return groupedList;
+  }, [filteredDocs, docMasterMap, isGroupedView]);
 
   // Universal Pagination Engine
-  const pagination = useTablePagination(filteredDocs, 10);
+  const pagination = useTablePagination(displayDocs, 10);
 
-  // Active documents pool for Header Action Selectors
+  // Active documents pool for Header Action Selectors (Strictly My Department documents or DCC)
   const selectableActiveDocs = useMemo(() => {
-    return accessibleDocs.filter(d => d.status === 'ACTIVE' || d.status === 'EFFECTIVE');
-  }, [accessibleDocs]);
+    return accessibleDocs.filter(d => (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && (isOwnerDept(d) || isDccAdmin));
+  }, [accessibleDocs, userDepts, isDccAdmin]);
 
   const filteredSelectableDocs = useMemo(() => {
     if (!selectorSearch.trim()) return selectableActiveDocs;
@@ -363,31 +678,61 @@ const ExternalDocsList = () => {
 
   // Action Handlers
   const handleRegisterNew = () => {
+    setOpenMenuDocId(null);
+    setSelectModalMode(null);
+    setIsDetailOpen(false);
+    setIsPreviewOpen(false);
+    setIsHistoryOpen(false);
+    setIsHistoryModalOpen(false);
+    setIsObsoleteModalOpen(false);
     setDocToEdit(null);
     setIsModalOpen(true);
   };
 
   const handleRevise = (doc) => {
+    if (!doc) return;
     setOpenMenuDocId(null);
-    setDocToEdit(doc);
+    setSelectModalMode(null);
+    setIsDetailOpen(false);
+    setIsPreviewOpen(false);
+    setIsHistoryOpen(false);
+    setIsHistoryModalOpen(false);
+    setIsObsoleteModalOpen(false);
+    setDocToEdit({ ...doc });
     setIsModalOpen(true);
+  };
+
+  const handleOpenDetail = (doc) => {
+    setOpenMenuDocId(null);
+    setDocToDetail(doc ? { ...doc } : null);
+    setIsDetailOpen(true);
   };
 
   const handlePreview = (doc) => {
     setOpenMenuDocId(null);
-    setDocToPreview(doc);
+    setDocToPreview(doc ? { ...doc } : null);
     setIsPreviewOpen(true);
   };
 
   const handleObsolete = (doc) => {
+    if (!doc) return;
     setOpenMenuDocId(null);
-    setDocToObsolete(doc);
+    setSelectModalMode(null);
+    setIsDetailOpen(false);
+    setIsPreviewOpen(false);
+    setIsHistoryOpen(false);
+    setIsHistoryModalOpen(false);
+    setIsModalOpen(false);
+    setDocToObsolete({ ...doc });
     setIsObsoleteModalOpen(true);
   };
 
   const handleHistory = (doc) => {
     setOpenMenuDocId(null);
+    const code = getDocCode(doc);
+    setSelectedHistoryDocCode(code);
     setDocToHistory(doc);
+    setIsHistoryModalOpen(true);
     setIsHistoryOpen(true);
   };
 
@@ -415,13 +760,12 @@ const ExternalDocsList = () => {
     setOpenMenuDocId(null);
 
     const isObsolete = doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED' || doc.is_obsolete;
-    let watermarkPreset = WATERMARK_TYPES.UNCONTROLLED_COPY;
-
-    if (isObsolete) {
-      watermarkPreset = WATERMARK_TYPES.OBSOLETE;
-    } else if (doc.accessScope === 'Restricted') {
-      watermarkPreset = WATERMARK_TYPES.STRICTLY_CONFIDENTIAL;
-    }
+    const isSuperseded = doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.is_superseded;
+    const watermarkPreset = isObsolete 
+      ? WATERMARK_TYPES.OBSOLETE 
+      : isSuperseded 
+        ? WATERMARK_TYPES.SUPERSEDED 
+        : WATERMARK_TYPES.UNCONTROLLED_COPY;
 
     const docCode = doc.edCode || doc.doc_code || doc.docNo || doc.id || 'ED-DOC-001';
     const toastId = toast.loading(`กำลังประทับลายน้ำเอกสารภายนอก ${docCode}...`);
@@ -433,15 +777,21 @@ const ExternalDocsList = () => {
           title: docCode,
           name: doc.title,
           docTitle: doc.title,
+          status: isObsolete ? 'OBSOLETE' : (isSuperseded ? 'SUPERSEDED' : (doc.status || 'ACTIVE')),
+          isExternal: true,
           ...doc
         },
         watermarkPreset,
         {
           userName: currentUser?.name || 'User',
           userDept: uDept,
-          reason: 'External Document Download / Print',
+          reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print'),
           location: uDept,
-          watermarkType: watermarkPreset
+          watermarkType: watermarkPreset,
+          isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
+          accessScope: doc.accessScope,
+          supersededByRev: doc.supersededByRev || 'Latest',
+          obsoleteDate: doc.obsoleteDate || doc.supersededAt || '-'
         },
         false
       );
@@ -470,7 +820,7 @@ const ExternalDocsList = () => {
         escape(code),
         escape(doc.title),
         escape(doc.titleTh || '-'),
-        escape(doc.source || '-'),
+        escape(doc.issuer || doc.officialIssuer || doc.source || '-'),
         escape(doc.rev || doc.sourceVersion || '01'),
         escape(doc.department || '-'),
         escape(doc.accessScope || 'General'),
@@ -630,6 +980,24 @@ const ExternalDocsList = () => {
             <Archive size={15} className="text-[#DC2626]" />
             <span>ยกเลิกการใช้งาน</span>
           </button>
+
+          <div className="h-6 w-px bg-slate-200 mx-0.5 hidden sm:block" />
+
+          {/* Action 4: คำร้องเอกสารภายนอกของฉัน */}
+          <button
+            type="button"
+            onClick={() => navigate('/dcc/external/my-requests')}
+            className="h-10 px-3.5 text-xs sm:text-sm font-semibold bg-white text-[#0D99FF] border border-[#B8E1FF] hover:bg-[#E5F4FF] rounded-xl shadow-2xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+            title="ติดตามสถานะคำร้องเอกสารภายนอกของฉัน"
+          >
+            <FileText size={15} className="text-[#0D99FF]" />
+            <span>คำร้องของฉัน</span>
+            {myReviseCount > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#EF4444] text-white rounded-full">
+                {myReviseCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -788,46 +1156,69 @@ const ExternalDocsList = () => {
             </div>
           </div>
 
-          {/* แถวที่ 2: Compact Segmented Pill Control (ครอบ Container รองรับจอเล็ก / iPad ด้วย overflow-x-auto & flex-wrap) */}
-          <div className="pt-2.5 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            {/* Responsive Scrollable & Wrap Capsule Pill Container */}
-            <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide py-0.5">
-              <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
-                {[
-                  { id: 'ACTIVE', label: '✓ มีผลบังคับใช้ (Active)', count: statusCounts.active },
-                  { id: 'SUPERSEDED', label: '⏳ ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
-                  { id: 'OBSOLETE', label: '🚫 ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
-                  { id: 'ALL', label: 'ทั้งหมด (All Records)', count: statusCounts.total },
-                ].map((tab) => (
+          {/* แถวที่ 2: Compact Segmented Pill Control (แสดงเฉพาะเมื่อเลือกแท็บ 'เอกสารในแผนกฉัน' ตามมาตรฐาน ISO) */}
+          {activeMainTab === TAB_MY_DEPT ? (
+            <div className="pt-2.5 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              {/* Responsive Scrollable & Wrap Capsule Pill Container */}
+              <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide py-0.5">
+                <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
+                  {[
+                    { id: 'ACTIVE', label: '✓ มีผลบังคับใช้ (Active)', count: statusCounts.active },
+                    { id: 'SUPERSEDED', label: '⏳ ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
+                    { id: 'OBSOLETE', label: '🚫 ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
+                    { id: 'ALL', label: 'ทั้งหมด (All Records)', count: statusCounts.total },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setStatusFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                        statusFilter === tab.id
+                          ? 'bg-white text-[#0D99FF] shadow-2xs font-bold border border-slate-200/70'
+                          : 'text-[#64748B] hover:text-[#1E293B] hover:bg-white/60 border border-transparent'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold ${
+                        statusFilter === tab.id
+                          ? 'bg-[#E5F4FF] text-[#0D99FF]'
+                          : 'bg-[#CBD5E1]/60 text-[#475569]'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-[#64748B] shrink-0">
+                {(deptFilter !== 'ALL' || scopeFilter !== 'ALL' || searchTerm || statusFilter !== 'ACTIVE') && (
                   <button
-                    key={tab.id}
                     type="button"
-                    onClick={() => setStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                      statusFilter === tab.id
-                        ? 'bg-white text-[#0D99FF] shadow-2xs font-bold border border-slate-200/70'
-                        : 'text-[#64748B] hover:text-[#1E293B] hover:bg-white/60 border border-transparent'
-                    }`}
+                    onClick={() => {
+                      setStatusFilter('ACTIVE');
+                      setDeptFilter('ALL');
+                      setScopeFilter('ALL');
+                      setSearchTerm('');
+                    }}
+                    className="text-[#EF4444] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
                   >
-                    <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold ${
-                      statusFilter === tab.id
-                        ? 'bg-[#E5F4FF] text-[#0D99FF]'
-                        : 'bg-[#CBD5E1]/60 text-[#475569]'
-                    }`}>
-                      {tab.count}
-                    </span>
+                    <FilterX size={13} />
+                    <span>ล้างตัวกรองทั้งหมด</span>
                   </button>
-                ))}
+                )}
+                <span className="font-mono">
+                  แสดงผล <strong className="text-[#1E293B] font-bold">{pagination.totalItems}</strong> จาก {statusCounts.total} รายการ {isGroupedView && `(รวม ${filteredDocs.length} ฉบับย้อนหลัง)`}
+                </span>
               </div>
             </div>
-
-            <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-[#64748B] shrink-0">
-              {(deptFilter !== 'ALL' || scopeFilter !== 'ALL' || searchTerm || statusFilter !== 'ACTIVE') && (
+          ) : (
+            /* สำหรับแท็บ 'เอกสารทั่วไป' และ 'เอกสารที่ได้รับการแจกจ่าย' - ซ่อนแถบแท็บย่อยวงจรชีวิตออกไปโดยสิ้นเชิง */
+            (deptFilter !== 'ALL' || scopeFilter !== 'ALL' || searchTerm) ? (
+              <div className="pt-2.5 border-t border-[#F1F5F9] flex items-center justify-between text-xs text-[#64748B]">
                 <button
                   type="button"
                   onClick={() => {
-                    setStatusFilter('ACTIVE');
                     setDeptFilter('ALL');
                     setScopeFilter('ALL');
                     setSearchTerm('');
@@ -837,21 +1228,23 @@ const ExternalDocsList = () => {
                   <FilterX size={13} />
                   <span>ล้างตัวกรองทั้งหมด</span>
                 </button>
-              )}
-              <span className="font-mono">
-                แสดงผล <strong className="text-[#1E293B] font-bold">{filteredDocs.length}</strong> จาก {categoryDocs.length} รายการ
-              </span>
-            </div>
-          </div>
+                <span className="font-mono">
+                  แสดงผล <strong className="text-[#1E293B] font-bold">{filteredDocs.length}</strong> จาก {categoryDocs.length} รายการ (เฉพาะฉบับมีผลบังคับใช้)
+                </span>
+              </div>
+            ) : null
+          )}
         </div>
 
         {/* Bento Data Grid Table */}
-        <div className="w-full flex-1 overflow-y-auto overflow-x-auto min-h-0 scrollbar-thin">
+        <div className="w-full flex-1 overflow-y-auto overflow-x-auto min-h-[320px] pb-6 scrollbar-thin">
           <table className="w-full text-left text-sm table-auto min-w-full border-collapse">
             <thead className="bg-[#F8FAFC] text-[#374151] font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] sticky top-0 z-20 whitespace-nowrap backdrop-blur-xs shadow-xs">
               <tr>
-                <th className="w-[85px] min-w-[85px] py-3 px-3 text-center select-none bg-[#F8FAFC]">การจัดการ</th>
-                <th className="w-[32%] min-w-[240px] py-3 px-3.5 select-none bg-[#F8FAFC]">รหัสและชื่อเอกสาร</th>
+                {statusFilter !== 'OBSOLETE' && (
+                  <th className="w-[85px] min-w-[85px] py-3 px-3 text-center select-none bg-[#F8FAFC]">การจัดการ</th>
+                )}
+                <th className={`${statusFilter === 'OBSOLETE' ? 'w-[36%]' : 'w-[32%]'} min-w-[240px] py-3 px-3.5 select-none bg-[#F8FAFC]`}>รหัสและชื่อเอกสาร</th>
                 <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">แผนกและสิทธิ์</th>
                 <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">ฉบับและวันบังคับใช้</th>
                 <th className="w-[18%] min-w-[150px] py-3 px-3.5 select-none bg-[#F8FAFC]">รอบทบทวนและความถูกต้อง</th>
@@ -866,137 +1259,173 @@ const ExternalDocsList = () => {
                   const isActive = doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE';
                   const isMenuOpen = openMenuDocId === doc.id;
 
+                  const totalRows = pagination.paginatedData.length;
+                  const isLastRow = idx === totalRows - 1;
+                  const isFewRows = totalRows < 3;
+                  const isNearBottom = idx >= Math.max(0, totalRows - 2);
+                  const isDropup = isLastRow || isFewRows || isNearBottom;
+
                   return (
                     <tr 
                       key={doc.id || `${edCode}-${idx}`}
                       className={`hover:bg-[#F8FAFC] transition-colors duration-150 cursor-pointer group ${
-                        isMenuOpen ? 'relative z-10 bg-[#F8FAFC]' : ''
-                      }`}
-                      onClick={() => handlePreview(doc)}
+                        isMenuOpen ? 'relative z-50 bg-[#F8FAFC]' : 'relative'
+                      } ${doc._isGrouped ? (statusFilter === 'SUPERSEDED' ? 'border-l-4 border-l-amber-400 bg-amber-50/15 hover:bg-amber-50/30' : 'border-l-4 border-l-slate-400 bg-slate-50/30 hover:bg-slate-100/40') : ''}`}
+                      onClick={() => {
+                        if (doc._isGrouped || isGroupedView) {
+                          handleHistory(doc);
+                        } else {
+                          handleOpenDetail(doc);
+                        }
+                      }}
                     >
                       {/* 1. เครื่องมือและการจัดการ (Action Dock with direct buttons + 3-dot dropdown) */}
-                      <td className="px-2.5 py-3 whitespace-nowrap text-xs text-center relative z-1" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1 ed-action-dock">
-                          {/* Quick Preview Button */}
-                          <button
-                            type="button"
-                            onClick={() => handlePreview(doc)}
-                            className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
-                            title="ดูตัวอย่างเอกสาร"
-                          >
-                            <Eye size={14} />
-                          </button>
-
-                          {/* Quick Watermarked Download Button */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleDownload(doc, e)}
-                            className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#10B981] hover:border-[#10B981] hover:bg-emerald-50 transition-colors cursor-pointer"
-                            title="ดาวน์โหลด PDF พร้อมลายน้ำ (Watermarked PDF)"
-                          >
-                            <Download size={14} />
-                          </button>
-
-                          {/* 3-Dot More Options Dropdown */}
-                          <div className="relative">
+                      {statusFilter !== 'OBSOLETE' && (
+                        <td className={`px-2.5 py-3 whitespace-nowrap text-xs text-center ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1 ed-action-dock">
+                            {/* Quick View Details / History Button */}
                             <button
                               type="button"
-                              aria-label="เมนูเพิ่มเติม"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuDocId(isMenuOpen ? null : doc.id);
+                              onClick={() => {
+                                if (doc._isGrouped || isGroupedView) {
+                                  handleHistory(doc);
+                                } else {
+                                  handleOpenDetail(doc);
+                                }
                               }}
-                              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                                isMenuOpen
-                                  ? 'bg-[#0D99FF] text-white border-[#0D99FF] shadow-xs'
-                                  : 'border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]'
-                              }`}
-                              title="เมนูการจัดการเพิ่มเติม (Row-Level Actions)"
+                              className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
+                              title={doc._isGrouped ? "ดูประวัติเอกสารย้อนหลัง (View Revision History)" : "ดูข้อมูลเอกสาร (View Details)"}
                             >
-                              <MoreHorizontal size={14} />
+                              <Eye size={14} />
                             </button>
 
-                            {/* Dropdown Menu Popup */}
-                            {isMenuOpen && (
-                              <div 
-                                className="absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-lg z-50 py-1.5 text-left ed-dropdown-menu divide-y divide-slate-100"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePreview(doc)}
-                                    className="w-full px-3.5 py-2 text-xs text-[#1E293B] hover:bg-[#F8FAFC] flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
-                                  >
-                                    <Eye size={14} className="text-[#0D99FF]" />
-                                    <span>ดูตัวอย่างเอกสาร</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleDownload(doc, e)}
-                                    className="w-full px-3.5 py-2 text-xs text-[#1E293B] hover:bg-[#F8FAFC] flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
-                                  >
-                                    <Download size={14} className="text-[#10B981]" />
-                                    <span>ดาวน์โหลด PDF (มีลายน้ำ)</span>
-                                  </button>
-                                </div>
+                            {/* Quick Watermarked Download Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleDownload(doc, e)}
+                              className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#10B981] hover:border-[#10B981] hover:bg-emerald-50 transition-colors cursor-pointer"
+                              title="ดาวน์โหลด PDF พร้อมลายน้ำ (Watermarked PDF)"
+                            >
+                              <Download size={14} />
+                            </button>
 
-                                {isActive && (
+                            {/* 3-Dot More Options Dropdown */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                aria-label="เมนูเพิ่มเติม"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuDocId(isMenuOpen ? null : doc.id);
+                                }}
+                                className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                                  isMenuOpen
+                                    ? 'bg-[#0D99FF] text-white border-[#0D99FF] shadow-xs'
+                                    : 'border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]'
+                                }`}
+                                title="เมนูการจัดการเพิ่มเติม (Row-Level Actions)"
+                              >
+                                <MoreHorizontal size={14} />
+                              </button>
+
+                              {/* Dropdown Menu Popup (Dropup / Smart Placement Support) */}
+                              {isMenuOpen && (
+                                <div 
+                                  className={`absolute left-0 ${
+                                    isDropup ? 'bottom-full mb-2' : 'top-full mt-2'
+                                  } w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 py-1.5 text-left ed-dropdown-menu divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Group 1: Core View Actions */}
                                   <div className="py-1">
+                                    {/* 1. ดูข้อมูลเอกสาร (View Details) */}
                                     <button
                                       type="button"
-                                      onClick={() => handleRequestPhysicalCopy(doc)}
-                                      className="w-full px-3.5 py-2 text-xs text-[#1E293B] hover:bg-[#F8FAFC] flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
-                                      title="ขอสำเนาควบคุมหน้างาน (Request Physical Copy)"
+                                      onClick={() => handleOpenDetail(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-[#0D99FF] hover:bg-[#F0F7FF] flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                     >
-                                      <Layers size={14} className="text-indigo-600" />
-                                      <span>ขอสำเนาควบคุมหน้างาน</span>
+                                      <FileText size={15} className="text-[#0D99FF] group-hover/item:scale-110 transition-transform" />
+                                      <span>ดูข้อมูลเอกสาร (View Details)</span>
+                                    </button>
+
+                                    {/* 2. เปิดอ่านไฟล์ PDF (View PDF) */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePreview(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <Eye size={15} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <span>เปิดอ่านไฟล์ PDF (View PDF)</span>
                                     </button>
                                   </div>
-                                )}
 
-                                {/* Row-Level Core Actions: อัปเดตฉบับใหม่ / ขอยกเลิกเอกสาร */}
-                                {isAdmin && (
+                                  {/* Group 2: Lifecycle Actions (Revise & Obsolete) - เฉพาะเอกสารในแผนกตนเอง หรือ DCC เท่านั้น */}
+                                  {canManageDoc(doc) && (
+                                    <div className="py-1">
+                                      {/* 3. อัปเดตฉบับใหม่ (Create Revision) */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRevise(doc)}
+                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                        title="แก้ไขหรือทบทวนเวอร์ชันใหม่"
+                                      >
+                                        <RotateCw size={15} className="text-amber-600 group-hover/item:rotate-45 transition-transform" />
+                                        <span>อัปเดตฉบับใหม่ (Create Revision)</span>
+                                      </button>
+
+                                      {/* 4. ยื่นขอยกเลิกใช้งาน (Request Obsolete) */}
+                                      {isActive && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleObsolete(doc)}
+                                          className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                          title="ยื่นขอยกเลิกเอกสาร"
+                                        >
+                                          <Archive size={15} className="text-rose-600 group-hover/item:scale-110 transition-transform" />
+                                          <span>ยื่นขอยกเลิกใช้งาน (Request Obsolete)</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Group 3: Controlled Copies & Download Actions */}
                                   <div className="py-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRevise(doc)}
-                                      className="w-full px-3.5 py-2 text-xs text-[#D97706] hover:bg-[#FFFBEB] flex items-center gap-2.5 transition-colors font-semibold cursor-pointer"
-                                      title="แก้ไขหรือทบทวนเวอร์ชันใหม่"
-                                    >
-                                      <RotateCw size={14} className="text-[#D97706]" />
-                                      <span>อัปเดตฉบับใหม่ (Next Rev)</span>
-                                    </button>
-
                                     {isActive && (
                                       <button
                                         type="button"
-                                        onClick={() => handleObsolete(doc)}
-                                        className="w-full px-3.5 py-2 text-xs text-[#DC2626] hover:bg-[#FEF2F2] flex items-center gap-2.5 transition-colors font-semibold cursor-pointer"
-                                        title="ขอยกเลิกเอกสาร"
+                                        onClick={() => handleRequestPhysicalCopy(doc)}
+                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                        title="ขอสำเนาควบคุมหน้างาน (Request Physical Copy)"
                                       >
-                                        <Archive size={14} className="text-[#DC2626]" />
-                                        <span>ขอยกเลิกการใช้งาน (Obsolete)</span>
+                                        <Layers size={15} className="text-indigo-600 group-hover/item:scale-110 transition-transform" />
+                                        <span>ขอสำเนาควบคุมหน้างาน</span>
                                       </button>
                                     )}
-                                  </div>
-                                )}
 
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleHistory(doc)}
-                                    className="w-full px-3.5 py-2 text-xs text-[#64748B] hover:bg-[#F8FAFC] flex items-center gap-2.5 transition-colors font-medium cursor-pointer"
-                                  >
-                                    <History size={14} />
-                                    <span>ประวัติเอกสารและการแก้ไข</span>
-                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDownload(doc, e)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <Download size={15} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <span>ดาวน์โหลด PDF (มีลายน้ำ)</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleHistory(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <History size={15} className="text-slate-400 group-hover/item:scale-110 transition-transform" />
+                                      <span>ประวัติเอกสารและการแก้ไข</span>
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
+                      )}
 
                       {/* 2. รหัสและชื่อเอกสาร (Document Identity) */}
                       <td className="py-3 px-3.5 align-middle">
@@ -1008,9 +1437,23 @@ const ExternalDocsList = () => {
                             <span className="bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded text-xs font-mono font-bold border border-[#E2E8F0]">
                               ED
                             </span>
-                            <span className="text-[11px] text-[#64748B] font-mono font-medium">
-                              Rev.{doc.rev || doc.sourceVersion || '01'}
-                            </span>
+                            {doc._isGrouped ? (
+                              statusFilter === 'SUPERSEDED' ? (
+                                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-300/80 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs">
+                                  <Clock size={11} className="text-amber-600" />
+                                  <span>{doc._groupCount} ฉบับตกรุ่น</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs">
+                                  <Archive size={11} className="text-slate-500" />
+                                  <span>{doc._groupCount} ฉบับยกเลิก</span>
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[11px] text-[#64748B] font-mono font-medium">
+                                Rev.{doc.rev || doc.sourceVersion || '01'}
+                              </span>
+                            )}
                           </div>
                           <div 
                             className="font-medium text-[#1E293B] text-sm leading-relaxed truncate max-w-md group-hover:text-[#0D99FF] transition-colors" 
@@ -1026,7 +1469,7 @@ const ExternalDocsList = () => {
                           <div className="flex items-center gap-2 mt-0.5 text-xs text-[#64748B] font-medium flex-wrap">
                             <span className="inline-flex items-center gap-1">
                               <Building2 size={12} className="text-slate-400" />
-                              {doc.source || 'หน่วยงานภายนอก'}
+                              {doc.issuer || doc.officialIssuer || doc.source || 'หน่วยงานภายนอก'}
                             </span>
                             {doc.category && (
                               <>
@@ -1059,37 +1502,69 @@ const ExternalDocsList = () => {
                           <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                             Rev.{doc.rev || doc.sourceVersion || '01'}
                           </span>
-                          <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่มีผลบังคับใช้">
-                            {doc.effectiveDate || '-'}
+                          <span className="font-mono text-xs text-slate-500 mt-1" title={doc._isGrouped ? "วันที่ปลดระวาง/ยกเลิกล่าสุด" : "วันที่มีผลบังคับใช้"}>
+                            {doc._isGrouped 
+                              ? `${statusFilter === 'SUPERSEDED' ? 'ปลดระวางล่าสุด: ' : 'ยกเลิกล่าสุด: '}${doc._latestDate ? String(doc._latestDate).split('T')[0] : (doc.effectiveDate || '-')}`
+                              : (doc.effectiveDate || '-')}
                           </span>
                         </div>
                       </td>
 
                       {/* 5. รอบทบทวนและความถูกต้อง */}
                       <td className="py-3 px-3.5 align-middle">
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="text-xs text-slate-700 font-medium">
-                            ทุก {doc.reviewCycleMonths || 12} เดือน
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${validity.colorClass}`}>
-                            {validity.status === 'OVERDUE' && <AlertTriangle size={11} />}
-                            {validity.status === 'DUE_SOON' && <Clock size={11} />}
-                            {validity.status === 'NORMAL' && <CheckCircle size={11} />}
-                            {validity.label}
-                          </span>
-                        </div>
+                        {doc._isGrouped ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-xs text-slate-700 font-medium">
+                              คลังประวัติเอกสาร
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                              <Archive size={11} className="text-slate-500" />
+                              <span>เก็บถาวรในคลังประวัติ</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-xs text-slate-700 font-medium">
+                              ทุก {doc.reviewCycleMonths || 12} เดือน
+                            </span>
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${validity.colorClass}`}>
+                              {validity.status === 'OVERDUE' && <AlertTriangle size={11} />}
+                              {validity.status === 'DUE_SOON' && <Clock size={11} />}
+                              {validity.status === 'NORMAL' && <CheckCircle size={11} />}
+                              {validity.label}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* 6. สถานะเอกสาร */}
                       <td className="py-3 px-3.5 align-middle text-center whitespace-nowrap">
-                        {getStatusBadge(doc)}
+                        {doc._isGrouped ? (
+                          statusFilter === 'SUPERSEDED' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                              <Clock size={12} />
+                              <span>ฉบับตกรุ่น</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
+                              <Archive size={12} />
+                              <span>ยกเลิกถาวร</span>
+                            </span>
+                          )
+                        ) : (
+                          getStatusBadge(doc)
+                        )}
                       </td>
                     </tr>
                   );
-                })
+                }).concat(
+                  <tr key="table-safety-spacer" aria-hidden="true" className="h-4 border-none pointer-events-none select-none">
+                    <td colSpan={statusFilter === 'OBSOLETE' ? 5 : 6} className="p-0 h-4 border-none" />
+                  </tr>
+                )
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-14 text-center text-[#888888]">
+                  <td colSpan={statusFilter === 'OBSOLETE' ? 5 : 6} className="px-6 py-14 text-center text-[#888888]">
                     <AlertCircle size={36} className="mx-auto mb-2 text-[#CCCCCC]" strokeWidth={1.5} />
                     <p className="font-bold text-xs text-[#1E293B]">ไม่พบเอกสารในหมวดหมู่นี้</p>
                     <p className="text-xs text-[#888888] mt-0.5">
@@ -1117,23 +1592,23 @@ const ExternalDocsList = () => {
       {/* ───────────────────────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {selectModalMode && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectModalMode(null)}
-              className="fixed inset-0 bg-stone-900/30 backdrop-blur-xs"
+              className="fixed inset-0"
             />
             <motion.div 
               initial={{ scale: 0.96, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.96, opacity: 0, y: 15 }}
               transition={{ type: "spring", stiffness: 320, damping: 30 }}
-              className="relative bg-white border border-[#E2E8F0] w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh] rounded-2xl shadow-xl z-10 my-auto"
+              className="relative bg-white border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] rounded-2xl shadow-2xl z-10 my-auto animate-in fade-in zoom-in-95 duration-150"
             >
               {/* Modal Header */}
-              <div className="px-6 py-4.5 border-b border-[#E2E8F0] flex items-center justify-between bg-[#F8FAFC]">
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl ${
                     selectModalMode === 'UPDATE' ? 'bg-amber-100 text-[#D97706]' : 'bg-rose-100 text-[#DC2626]'
@@ -1176,7 +1651,7 @@ const ExternalDocsList = () => {
               </div>
 
               {/* Documents List */}
-              <div className="p-4 overflow-y-auto max-h-[50vh] space-y-2 divide-y divide-slate-100">
+              <div className="p-4 overflow-y-auto flex-1 space-y-2 divide-y divide-slate-100 custom-scrollbar">
                 {filteredSelectableDocs.length > 0 ? (
                   filteredSelectableDocs.map(doc => {
                     const code = doc.edCode || doc.doc_code || doc.id;
@@ -1233,13 +1708,13 @@ const ExternalDocsList = () => {
               </div>
 
               {/* Modal Footer */}
-              <div className="px-6 py-3 border-t border-[#E2E8F0] bg-[#F8FAFC] flex justify-end">
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end shrink-0">
                 <button
                   type="button"
                   onClick={() => setSelectModalMode(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                  className="btn-secondary text-sm font-semibold px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  ปิด
+                  ปิด (Close)
                 </button>
               </div>
             </motion.div>
@@ -1250,14 +1725,38 @@ const ExternalDocsList = () => {
       {/* ───────────────────────────────────────────────────────────────────────────── */}
       {/* 5. Connected Workflows & Operations Modals */}
       {/* ───────────────────────────────────────────────────────────────────────────── */}
-      <ExternalDocFormModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setDocToEdit(null);
-        }}
-        documentToEdit={docToEdit}
-      />
+      <ErrorBoundary
+        fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-red-200 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 mx-auto flex items-center justify-center mb-3">
+                <AlertCircle size={24} />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 mb-1">เกิดข้อผิดพลาดในการแสดงแบบฟอร์มเอกสาร</h3>
+              <p className="text-xs text-slate-500 mb-4">ระบบป้องกันหน้าจอขาวอัตโนมัติ กรุณาลองใหม่อีกครั้ง</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setDocToEdit(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <ExternalDocFormModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setDocToEdit(null);
+          }}
+          documentToEdit={docToEdit}
+        />
+      </ErrorBoundary>
 
       <ExternalDocPreviewModal
         isOpen={isPreviewOpen}
@@ -1268,13 +1767,44 @@ const ExternalDocsList = () => {
         document={docToPreview}
       />
 
-      <ExternalDocHistoryModal
-        isOpen={isHistoryOpen}
+      <ExternalDocDetailModal
+        isOpen={isDetailOpen}
         onClose={() => {
+          setIsDetailOpen(false);
+          setDocToDetail(null);
+        }}
+        document={docToDetail}
+        onOpenViewer={(d) => {
+          setIsDetailOpen(false);
+          handlePreview(d || docToDetail);
+        }}
+        onOpenRevise={(d) => {
+          setIsDetailOpen(false);
+          handleRevise(d || docToDetail);
+        }}
+        onOpenObsolete={(d) => {
+          setIsDetailOpen(false);
+          handleObsolete(d || docToDetail);
+        }}
+      />
+
+      <ExternalDocHistoryModal
+        isOpen={isHistoryModalOpen || isHistoryOpen}
+        onClose={() => {
+          setIsHistoryModalOpen(false);
           setIsHistoryOpen(false);
+          setSelectedHistoryDocCode(null);
           setDocToHistory(null);
         }}
+        docCode={selectedHistoryDocCode}
         document={docToHistory}
+        onViewActiveDoc={(activeDoc) => {
+          setIsHistoryModalOpen(false);
+          setIsHistoryOpen(false);
+          setSelectedHistoryDocCode(null);
+          setDocToHistory(null);
+          handleOpenDetail(activeDoc);
+        }}
       />
 
       <ExternalDocObsoleteModal

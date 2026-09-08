@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, AlertTriangle, XCircle, FileText, ArrowRight, X, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
 /**
  * @typedef {Object} SummaryItem
@@ -36,27 +37,35 @@ const ActionConfirmModal = ({
 }) => {
   const [typedConfirmation, setTypedConfirmation] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Reset typed confirmation when modal opens
+  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setTypedConfirmation('');
       setIsSuccess(false);
+      setIsSubmitting(false);
     }
   }, [isOpen]);
 
-  const handleConfirmClick = () => {
-    setIsSuccess(true);
-    setTimeout(async () => {
-      try {
-        if (onConfirm) {
-          await onConfirm();
-        }
-      } catch (err) {
-        console.error('ActionConfirmModal onConfirm error:', err);
-        setIsSuccess(false);
+  const handleConfirmClick = async () => {
+    if (isSubmitting || isSuccess) return;
+    setIsSubmitting(true);
+    try {
+      if (onConfirm) {
+        await onConfirm();
       }
-    }, 800);
+      setIsSuccess(true);
+      // Brief success flash then close
+      setTimeout(() => {
+        if (onClose) onClose();
+      }, 600);
+    } catch (err) {
+      console.error('ActionConfirmModal onConfirm error:', err);
+      toast.error(err?.message || 'เกิดข้อผิดพลาด ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStyles = () => {
@@ -109,56 +118,82 @@ const ActionConfirmModal = ({
 
   const styles = getStyles();
   const isTypeConfirmed = !requireTypeToConfirm || typedConfirmation === 'CONFIRM';
-  const isConfirmDisabled = isLoading || !isTypeConfirmed || isSuccess;
+  const isConfirmDisabled = isLoading || isSubmitting || !isTypeConfirmed || isSuccess;
+
+  const renderItemValue = (item) => {
+    if (item.value === undefined || item.value === null || item.value === '') return '-';
+
+    // If string represents a revision transition (e.g. Rev.00 ➔ Rev.01 or 00 -> 01)
+    if (typeof item.value === 'string' && (item.value.includes('➔') || item.value.includes('->') || item.value.includes('→'))) {
+      const parts = item.value.split(/\s*(?:➔|->|→)\s*/);
+      if (parts.length === 2) {
+        const fromRev = parts[0].trim();
+        const toRev = parts[1].trim();
+        return (
+          <div className="flex items-center gap-2 font-mono text-sm font-bold">
+            <span className="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md border border-slate-200">
+              {fromRev.startsWith('Rev') ? fromRev : `Rev.${fromRev}`}
+            </span>
+            <span className="text-slate-400 font-sans">➔</span>
+            <span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200 font-bold">
+              {toRev.startsWith('Rev') ? toRev : `Rev.${toRev}`}
+            </span>
+          </div>
+        );
+      }
+    }
+
+    return item.value;
+  };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           <motion.div 
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ type: "spring", stiffness: 450, damping: 30 }}
-            className="bg-white/95 backdrop-blur-md rounded-3xl w-full max-w-2xl sm:max-w-3xl shadow-floating border border-dream-subtle flex flex-col max-h-[90vh] overflow-hidden"
+            className="relative w-full max-w-xl sm:max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-8 pt-7 pb-5 border-b border-dream-subtle flex items-center justify-between bg-white/90 backdrop-blur-sm">
-              <div className="flex items-center gap-4 min-w-0">
-                <div className={`flex items-center justify-center w-12 h-12 bg-dream-canvas rounded-2xl border border-dream-subtle shrink-0 ${styles.iconColor}`}>
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className={`flex items-center justify-center w-11 h-11 bg-slate-100 rounded-xl border border-slate-200 shrink-0 ${styles.iconColor}`}>
                   {styles.icon}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-bold text-dream-primary tracking-tight truncate">{title}</h2>
-                  <p className="text-sm text-dream-secondary font-medium mt-1">กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน</p>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate">{title}</h2>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน</p>
                 </div>
               </div>
               <button 
                 onClick={onClose}
-                className="text-dream-muted hover:text-dream-primary hover:bg-dream-canvas p-2.5 rounded-xl transition-all shrink-0 focus:ring-2 focus:ring-indigo-100 outline-none"
+                className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 rounded-xl transition-all shrink-0 focus:ring-2 focus:ring-blue-100 outline-none"
                 disabled={isLoading}
                 title="ปิดหน้าต่าง"
               >
-                <X size={22} />
+                <X size={20} />
               </button>
             </div>
 
             {/* Content */}
-            <div className="p-8 overflow-y-auto max-h-[75vh] flex-1 bg-dream-canvas/50 space-y-6 scrollbar-thin">
-              <div className="bg-white rounded-2xl border border-dream-subtle divide-y divide-dream-subtle w-full max-w-full overflow-hidden shadow-sm">
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50 space-y-6 custom-scrollbar">
+              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-200 w-full max-w-full overflow-hidden shadow-xs">
                 {summaryData.map((item, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-start p-4 sm:p-5 gap-2 sm:gap-4 hover:bg-[#F9F9FD] transition-colors min-w-0">
-                    <span className="text-sm font-semibold text-dream-secondary uppercase tracking-wider w-36 sm:w-48 shrink-0">{item.label}</span>
-                    <div className="text-sm sm:text-base font-medium text-dream-primary break-all break-words min-w-0 [overflow-wrap:anywhere] flex-1 leading-relaxed">
-                      {item.value !== undefined && item.value !== null && item.value !== '' ? item.value : '-'}
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-start p-4 sm:p-5 gap-2 sm:gap-4 hover:bg-slate-50/80 transition-colors min-w-0">
+                    <span className="text-sm font-semibold text-slate-600 uppercase tracking-wider w-36 sm:w-48 shrink-0">{item.label}</span>
+                    <div className="text-sm sm:text-base font-medium text-slate-900 break-all break-words min-w-0 [overflow-wrap:anywhere] flex-1 leading-relaxed">
+                      {renderItemValue(item)}
                     </div>
                   </div>
                 ))}
               </div>
 
               {requireTypeToConfirm && (
-                <div className="mt-4 bg-white p-5 rounded-2xl border border-rose-200/70 bg-rose-50/20 space-y-3 shadow-sm">
+                <div className="mt-4 bg-white p-5 rounded-xl border border-rose-200/80 bg-rose-50/20 space-y-3 shadow-xs">
                   <label className="block text-sm font-bold text-rose-700">
                     นี่เป็นการดำเนินการสำคัญ กรุณาพิมพ์ <strong className="select-all bg-rose-100/70 px-2 py-0.5 rounded-md border border-rose-200 font-mono text-sm text-rose-800">CONFIRM</strong> เพื่อยืนยัน:
                   </label>
@@ -167,7 +202,7 @@ const ActionConfirmModal = ({
                     value={typedConfirmation}
                     onChange={(e) => setTypedConfirmation(e.target.value)}
                     placeholder="พิมพ์ CONFIRM"
-                    className="w-full px-4 py-3 text-sm border border-dream-subtle rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400 transition-all font-mono uppercase bg-white text-dream-primary"
+                    className="w-full px-4 py-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400 transition-all font-mono uppercase bg-white text-slate-900"
                     disabled={isLoading}
                   />
                 </div>
@@ -175,11 +210,11 @@ const ActionConfirmModal = ({
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-5 border-t border-dream-subtle flex justify-end gap-3 bg-white/90 backdrop-blur-sm shrink-0">
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 bg-slate-50 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 text-sm font-semibold text-dream-primary bg-white hover:bg-dream-canvas border border-dream-subtle rounded-xl transition-all focus:ring-2 focus:ring-indigo-100 outline-none"
+                className="px-5 py-2.5 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition-all focus:ring-2 focus:ring-blue-100 outline-none"
                 disabled={isLoading || isSuccess}
               >
                 {cancelText || 'ยกเลิก / กลับไปแก้ไข'}
@@ -188,8 +223,8 @@ const ActionConfirmModal = ({
                 type="button"
                 onClick={handleConfirmClick}
                 disabled={isConfirmDisabled}
-                className={`text-sm font-semibold px-6 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[150px] shadow-sm hover:shadow-dream hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.99] ${
-                  isConfirmDisabled ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none hover:translate-y-0 hover:shadow-none' : styles.btn
+                className={`text-sm font-semibold px-6 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 min-w-[150px] shadow-xs active:scale-[0.99] ${
+                  isConfirmDisabled ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none' : styles.btn
                 }`}
               >
                 <AnimatePresence mode="wait" initial={false}>
@@ -203,7 +238,7 @@ const ActionConfirmModal = ({
                     >
                       <CheckCircle className="w-5 h-5 text-white" />
                     </motion.div>
-                  ) : isLoading ? (
+                  ) : (isLoading || isSubmitting) ? (
                     <motion.div
                       key="loading"
                       initial={{ opacity: 0, y: 5 }}

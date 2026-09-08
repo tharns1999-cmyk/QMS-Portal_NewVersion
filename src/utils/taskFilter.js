@@ -128,12 +128,23 @@ export const getUserLevelNumber = (user) => {
 };
 
 export const isLevel6Plus = (user) => {
+  if (!user) return false;
+  const role = String(user.role || '').toUpperCase();
+  const pos = String(user.position || '').toUpperCase();
+  if (role === 'EXECUTIVE' || role === 'MANAGING_DIRECTOR' || role === 'BOARD' || user.isExecutive) {
+    return true;
+  }
+  if (pos.includes('MANAGING DIRECTOR') || pos.includes('GENERAL MANAGER') || pos.includes('EXECUTIVE') || pos.includes('DIRECTOR') || pos.includes('QMR/BOARD') || pos.includes('BOARD')) {
+    return true;
+  }
   return getUserLevelNumber(user) >= 6;
 };
 
 export const isLevel1To5 = (user) => {
+  if (!user) return false;
+  if (isLevel6Plus(user)) return false;
   const lvl = getUserLevelNumber(user);
-  return lvl >= 1 && lvl <= 5;
+  return lvl >= 1 && lvl < 6;
 };
 
 export const isReceiptTask = (task) => {
@@ -198,24 +209,44 @@ export const isActionableTask = (task, currentUser) => {
       return false;
     }
 
-    const taskDept = task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.currentHandlerDepartment || task.department || task.holder_dept || '';
-    const isDeptMatch = userDepts.some(uDept => isSameDepartment(uDept, taskDept));
+    const taskDept = task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.recipientDepartment || task.recipient_department || task.assignedToDept || task.currentHandlerDepartment || task.department || task.holder_dept || '';
+    const isDeptMatch = userMatchesDepartment(currentUser, taskDept) || userDepts.some(uDept => isSameDepartment(uDept, taskDept));
     const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
     const isAssigneeMatch = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || task.assigneeName === currentUser?.name));
     return isDeptMatch || isAssigneeMatch;
   }
 
-  // 5. Direct user assignment (for department workflow tasks like Review/Approve):
-  const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
-  if (taskAssigneeId && (taskAssigneeId === currentUser?.id || task.assigneeName === currentUser?.name)) {
-    return true;
+  // 🛡️ Separation of Duties: Requester must NEVER review or approve their own submission
+  const isRequester = Boolean(
+    (task.requesterId && (task.requesterId === currentUser?.id || task.requesterId === currentUser?.empId)) ||
+    (task.requesterName && task.requesterName === currentUser?.name)
+  );
+  const isReviewOrApprove = [
+    'REVIEW', 'DAR_REVIEW', 'EXT_REVIEW', 'EXTERNAL_REVIEW',
+    'APPROVE', 'DAR_APPROVE', 'APPROVAL', 'EXT_APPROVAL', 'EXTERNAL_APPROVAL'
+  ].includes(normType);
+
+  if (isRequester && isReviewOrApprove) {
+    return false;
   }
 
-  // 6. Department Workflow Tasks (Review / Approve / Revise / Ack):
+  // 5. Direct user assignment (for person-specific workflow tasks):
+  // When a task specifies an Assignee ID for an individual user, it MUST ONLY be actionable by that specific user.
+  const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
+  if (taskAssigneeId) {
+    return Boolean(
+      taskAssigneeId === currentUser?.id || 
+      taskAssigneeId === currentUser?.empId || 
+      task.assigneeName === currentUser?.name
+    );
+  }
+
+  // 6. Department Workflow Tasks (Review / Approve / Revise / Ack) without specific assignee (Pooled):
   // Must match department AND user's level must meet required approval level
   const isDeptReviewOrApprove = [
-    'REVIEW', 'DAR_REVIEW', 'EXT_REVIEW', 'APPROVE', 'DAR_APPROVE', 'APPROVAL', 'EXT_APPROVAL',
-    'REVISE', 'ACK', 'ACKNOWLEDGE'
+    'REVIEW', 'DAR_REVIEW', 'EXT_REVIEW', 'EXTERNAL_REVIEW', 
+    'APPROVE', 'DAR_APPROVE', 'APPROVAL', 'EXT_APPROVAL', 'EXTERNAL_APPROVAL',
+    'REVISE', 'EXTERNAL_REVISE', 'ACK', 'ACKNOWLEDGE'
   ].includes(normType);
 
   if (isDeptReviewOrApprove) {

@@ -953,12 +953,12 @@ const DocumentDetailModal = ({
   return (
     <ErrorBoundary>
       <AnimatePresence>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           <motion.div
             initial={{ scale: 0.96, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.96, opacity: 0 }}
-            className="bg-white border border-[#E5E5E5] rounded-2xl shadow-[0_24px_50px_rgba(0,0,0,0.15)] max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh] my-8"
+            className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
           >
             {/* Header: Crisp Bento Titlebar */}
             <div className="px-6 pt-6 pb-4 bg-white border-b border-[#E5E5E5] flex items-center justify-between shrink-0">
@@ -2082,10 +2082,18 @@ const DocumentDetailModal = ({
           isOpen={!!selectedReplacementCopy}
           onClose={(success, type, reason) => {
             if (success && type && reason) {
-              reportCcDamagedLost(selectedReplacementCopy.id, type, reason);
-              toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
+              try {
+                reportCcDamagedLost(selectedReplacementCopy.id, type, reason);
+                toast.success('ยื่นคำร้องขอสำเนาทดแทนเรียบร้อยแล้ว กรุณารอเจ้าหน้าที่ DCC จัดพิมพ์และส่งมอบ');
+                setSelectedReplacementCopy(null);
+              } catch (err) {
+                console.error('[DocumentDetailModal] reportCcDamagedLost failed:', err);
+                toast.error(err?.message || 'เกิดข้อผิดพลาดในการทำรายการ');
+                throw err;
+              }
+            } else {
+              setSelectedReplacementCopy(null);
             }
-            setSelectedReplacementCopy(null);
           }}
           instance={selectedReplacementCopy}
         />

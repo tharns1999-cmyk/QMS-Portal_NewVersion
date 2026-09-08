@@ -1787,114 +1787,121 @@ const ControlledCopyRegister = () => {
       {/* ========================================================================= */}
       <AnimatePresence>
         {issueModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl ring-1 ring-slate-900/10 border border-slate-200 w-full max-w-lg sm:max-w-xl overflow-hidden"
+              className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
             >
               {/* Header */}
-              <div className="px-6 py-4.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex justify-between items-center border-b border-indigo-900/50">
+              <div className="px-6 py-4 bg-white text-slate-900 flex justify-between items-center border-b border-slate-200 shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                     <PlusCircle size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-base sm:text-lg text-white">
+                    <h3 className="font-bold text-base text-slate-900">
                       ออกสำเนาควบคุมใหม่ (Issue Controlled Copy)
                     </h3>
-                    <p className="text-xs text-slate-300 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       เลือกเอกสาร แผนก และจุดใช้งานที่ต้องการพิมพ์สำเนา
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setIssueModalOpen(false)} className="text-slate-300 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors" title="ปิดหน้าต่าง">
-                  <X size={20} />
+                <button 
+                  type="button"
+                  onClick={() => setIssueModalOpen(false)} 
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer" 
+                  title="ปิดหน้าต่าง"
+                >
+                  <X size={18} />
                 </button>
               </div>
 
-              <form onSubmit={handleIssueSubmit} className="p-6 space-y-4 text-sm bg-slate-50/40">
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700">
-                    เลือกรหัสเอกสาร (เฉพาะเอกสารที่มีผลบังคับใช้) <span className="text-rose-500">*</span>:
-                  </label>
-                  <select
-                    value={issueDoc}
-                    onChange={(e) => setIssueDoc(e.target.value)}
-                    required
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-medium"
-                  >
-                    <option value="">-- กรุณาเลือกเอกสาร --</option>
-                    {(documents || []).filter(d => d.status === 'EFFECTIVE').map(d => (
-                      <option key={d.id} value={d.title}>
-                        {d.title} : {d.name} (Rev.{d.rev})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700">
-                    แผนกผู้รับสำเนา <span className="text-rose-500">*</span>:
-                  </label>
-                  <select
-                    value={issueDept}
-                    onChange={(e) => {
-                      setIssueDept(e.target.value);
-                      setIssueLocation('');
-                    }}
-                    required
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-medium"
-                  >
-                    <option value="">-- เลือกแผนกผู้รับ --</option>
-                    {(masterDepartments || storeDepts || []).filter(d => typeof d === 'string' || d.status !== 'INACTIVE').map(d => {
-                      const code = typeof d === 'string' ? d : d.id;
-                      const name = typeof d === 'string' ? d : (d.nameTh || d.name);
-                      return <option key={code} value={code}>{code} - {name}</option>;
-                    })}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700">
-                    จุดใช้งานปลายทาง (Location / Line) <span className="text-rose-500">*</span>:
-                  </label>
-                  {availableIssueStations.length > 0 ? (
+              <form onSubmit={handleIssueSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm bg-slate-50/40">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                      เลือกรหัสเอกสาร (เฉพาะเอกสารที่มีผลบังคับใช้) <span className="text-rose-500">*</span>:
+                    </label>
                     <select
-                      value={issueLocation}
-                      onChange={(e) => setIssueLocation(e.target.value)}
+                      value={issueDoc}
+                      onChange={(e) => setIssueDoc(e.target.value)}
                       required
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-medium"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none font-medium"
                     >
-                      <option value="">-- เลือกจุดใช้งาน --</option>
-                      {availableIssueStations.map(s => (
-                        <option key={s.id} value={s.name}>{s.name} ({s.code || s.id})</option>
+                      <option value="">-- กรุณาเลือกเอกสาร --</option>
+                      {(documents || []).filter(d => d.status === 'EFFECTIVE').map(d => (
+                        <option key={d.id} value={d.title}>
+                          {d.title} : {d.name} (Rev.{d.rev})
+                        </option>
                       ))}
                     </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={issueLocation}
-                      onChange={(e) => setIssueLocation(e.target.value)}
-                      placeholder="เช่น Line 1 Mixing, QA Lab Binder"
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                      แผนกผู้รับสำเนา <span className="text-rose-500">*</span>:
+                    </label>
+                    <select
+                      value={issueDept}
+                      onChange={(e) => {
+                        setIssueDept(e.target.value);
+                        setIssueLocation('');
+                      }}
                       required
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-medium"
-                    />
-                  )}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none font-medium"
+                    >
+                      <option value="">-- เลือกแผนกผู้รับ --</option>
+                      {(masterDepartments || storeDepts || []).filter(d => typeof d === 'string' || d.status !== 'INACTIVE').map(d => {
+                        const code = typeof d === 'string' ? d : d.id;
+                        const name = typeof d === 'string' ? d : (d.nameTh || d.name);
+                        return <option key={code} value={code}>{code} - {name}</option>;
+                      })}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                      จุดใช้งานปลายทาง (Location / Line) <span className="text-rose-500">*</span>:
+                    </label>
+                    {availableIssueStations.length > 0 ? (
+                      <select
+                        value={issueLocation}
+                        onChange={(e) => setIssueLocation(e.target.value)}
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none font-medium"
+                      >
+                        <option value="">-- เลือกจุดใช้งาน --</option>
+                        {availableIssueStations.map(s => (
+                          <option key={s.id} value={s.name}>{s.name} ({s.code || s.id})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={issueLocation}
+                        onChange={(e) => setIssueLocation(e.target.value)}
+                        placeholder="เช่น Line 1 Mixing, QA Lab Binder"
+                        required
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none font-medium"
+                      />
+                    )}
+                  </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-200/80 flex justify-end gap-3">
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
                   <button
                     type="button"
                     onClick={() => setIssueModalOpen(false)}
-                    className="bg-white hover:bg-slate-100 text-slate-700 font-medium text-sm px-4 py-2.5 rounded-xl border border-slate-300 shadow-xs transition-colors"
+                    className="bg-white hover:bg-slate-100 text-slate-700 font-medium text-sm px-4 py-2 rounded-xl border border-slate-300 shadow-xs transition-colors cursor-pointer"
                   >
                     ยกเลิก / ปิดหน้าต่าง
                   </button>
                   <button
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm shadow-indigo-200 transition-all flex items-center gap-2"
+                    className="bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
                   >
                     <PlusCircle size={16} /> ยืนยันการออกสำเนาควบคุม
                   </button>
@@ -1910,107 +1917,114 @@ const ControlledCopyRegister = () => {
       {/* ========================================================================= */}
       <AnimatePresence>
         {reportModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl ring-1 ring-slate-900/10 border border-slate-200 w-full max-w-lg sm:max-w-xl overflow-hidden"
+              className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
             >
               {/* Header */}
-              <div className="px-6 py-4.5 bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white flex justify-between items-center border-b border-rose-900/50">
+              <div className="px-6 py-4 bg-white text-slate-900 flex justify-between items-center border-b border-slate-200 shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-300">
+                  <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
                     <AlertTriangle size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-base sm:text-lg text-white">
+                    <h3 className="font-bold text-base text-slate-900">
                       รายงานเอกสารชำรุด / สูญหาย (Report Damaged/Lost)
                     </h3>
-                    <p className="text-xs text-slate-300 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       บันทึกเหตุผลความจำเป็นเพื่อขออนุมัติออกเล่มทดแทน
                     </p>
                   </div>
                 </div>
-                <button onClick={() => setReportModalOpen(false)} className="text-slate-300 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors" title="ปิดหน้าต่าง">
-                  <X size={20} />
+                <button 
+                  type="button"
+                  onClick={() => setReportModalOpen(false)} 
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer" 
+                  title="ปิดหน้าต่าง"
+                >
+                  <X size={18} />
                 </button>
               </div>
 
-              <form onSubmit={handleReportSubmit} className="p-6 space-y-4 text-sm bg-slate-50/40">
-                <div className="bg-slate-50/80 border border-slate-200/70 p-4 rounded-xl space-y-2 text-xs sm:text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 font-semibold">รหัสเอกสาร:</span>
-                    <strong className="font-mono text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100/80">{selectedInstance?.doc_code || selectedInstance?.docTitle}</strong>
+              <form onSubmit={handleReportSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm bg-slate-50/40">
+                  <div className="bg-slate-50/80 border border-slate-200/70 p-4 rounded-xl space-y-2 text-xs sm:text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-600 font-semibold">รหัสเอกสาร:</span>
+                      <strong className="font-mono text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100/80">{selectedInstance?.doc_code || selectedInstance?.docTitle}</strong>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-600 font-semibold">หมายเลขสำเนา:</span>
+                      <strong className="font-mono text-slate-900">Copy {selectedInstance?.copy_no || selectedInstance?.ccNumber}</strong>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-600 font-semibold">จุดใช้งาน:</span>
+                      <strong className="text-slate-900">{selectedInstance?.location || selectedInstance?.locationName}</strong>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 font-semibold">หมายเลขสำเนา:</span>
-                    <strong className="font-mono text-slate-900">Copy {selectedInstance?.copy_no || selectedInstance?.ccNumber}</strong>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 font-semibold">จุดใช้งาน:</span>
-                    <strong className="text-slate-900">{selectedInstance?.location || selectedInstance?.locationName}</strong>
-                  </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700">
-                    ประเภทรายงาน <span className="text-rose-500">*</span>:
-                  </label>
-                  <div className="flex gap-3">
-                    <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium p-3 rounded-xl border transition-all flex-1 ${
-                      reportType === 'DAMAGED' ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 text-rose-950 font-bold' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        value="DAMAGED"
-                        checked={reportType === 'DAMAGED'}
-                        onChange={(e) => setReportType(e.target.value)}
-                        className="text-rose-600 focus:ring-rose-500 w-4 h-4"
-                      />
-                      <span>เอกสารชำรุด (Damaged)</span>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                      ประเภทรายงาน <span className="text-rose-500">*</span>:
                     </label>
-                    <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium p-3 rounded-xl border transition-all flex-1 ${
-                      reportType === 'LOST' ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 text-rose-950 font-bold' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        value="LOST"
-                        checked={reportType === 'LOST'}
-                        onChange={(e) => setReportType(e.target.value)}
-                        className="text-rose-600 focus:ring-rose-500 w-4 h-4"
-                      />
-                      <span>เอกสารสูญหาย (Lost)</span>
+                    <div className="flex gap-3">
+                      <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium p-3 rounded-xl border transition-all flex-1 ${
+                        reportType === 'DAMAGED' ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 text-rose-950 font-bold' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}>
+                        <input
+                          type="radio"
+                          value="DAMAGED"
+                          checked={reportType === 'DAMAGED'}
+                          onChange={(e) => setReportType(e.target.value)}
+                          className="text-rose-600 focus:ring-rose-500 w-4 h-4"
+                        />
+                        <span>เอกสารชำรุด (Damaged)</span>
+                      </label>
+                      <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium p-3 rounded-xl border transition-all flex-1 ${
+                        reportType === 'LOST' ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 text-rose-950 font-bold' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}>
+                        <input
+                          type="radio"
+                          value="LOST"
+                          checked={reportType === 'LOST'}
+                          onChange={(e) => setReportType(e.target.value)}
+                          className="text-rose-600 focus:ring-rose-500 w-4 h-4"
+                        />
+                        <span>เอกสารสูญหาย (Lost)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                      สาเหตุและความจำเป็น <span className="text-rose-500">*</span>:
                     </label>
+                    <textarea
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      required
+                      placeholder="ระบุสาเหตุที่ชำรุดหรือสูญหาย พร้อมความจำเป็นในการขอออกเล่มทดแทน..."
+                      rows={3}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-rose-600 focus:ring-4 focus:ring-rose-500/10 transition-all outline-none resize-none font-medium"
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700">
-                    สาเหตุและความจำเป็น <span className="text-rose-500">*</span>:
-                  </label>
-                  <textarea
-                    value={reportReason}
-                    onChange={(e) => setReportReason(e.target.value)}
-                    required
-                    placeholder="ระบุสาเหตุที่ชำรุดหรือสูญหาย พร้อมความจำเป็นในการขอออกเล่มทดแทน..."
-                    rows={3}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-rose-600 focus:ring-4 focus:ring-rose-500/10 transition-all outline-none resize-none font-medium"
-                  />
-                </div>
-
-                <div className="pt-4 border-t border-slate-200/80 flex justify-end gap-3">
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
                   <button
                     type="button"
                     onClick={() => setReportModalOpen(false)}
-                    className="bg-white hover:bg-slate-100 text-slate-700 font-medium text-sm px-4 py-2.5 rounded-xl border border-slate-300 shadow-xs transition-colors"
+                    className="bg-white hover:bg-slate-100 text-slate-700 font-medium text-sm px-4 py-2 rounded-xl border border-slate-300 shadow-xs transition-colors cursor-pointer"
                   >
                     ยกเลิก / ปิดหน้าต่าง
                   </button>
                   <button
                     type="submit"
                     disabled={!reportReason.trim()}
-                    className="bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-sm shadow-rose-200 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-xs transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <AlertTriangle size={16} /> บันทึกรายงาน
                   </button>

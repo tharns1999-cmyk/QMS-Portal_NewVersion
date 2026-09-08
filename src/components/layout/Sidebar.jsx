@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import {
   Library, 
   Copy, 
   Globe, 
+  FileText,
   History, 
   Bell, 
   Calendar, 
@@ -29,7 +30,7 @@ const Sidebar = () => {
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
     masterUsers, setCurrentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData
+    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, externalRequests, externalDocuments
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -72,14 +73,33 @@ const Sidebar = () => {
     return (inst.status === 'PENDING_RECEIPT' || inst.status === 'PENDING_ISSUE' || inst.status === 'DISPATCHED_PENDING_RECEIPT' || inst.status === 'REPLACEMENT_REQUESTED' || inst.status === 'PENDING_RECALL' || isRecall);
   }).length;
 
+  const myExternalReviseCount = useMemo(() => {
+    const reviseDocIds = new Set();
+    (tasks || []).forEach(t => {
+      if (
+        (t.type === 'EXTERNAL_REVISE' || t.taskType === 'EXTERNAL_REVISE') &&
+        (t.assigneeId === currentUser?.id || t.requesterId === currentUser?.id) &&
+        t.status === 'PENDING'
+      ) {
+        reviseDocIds.add(t.referenceId || t.docId || t.id);
+      }
+    });
+    (externalRequests || []).forEach(r => {
+      if (r.requesterId === currentUser?.id && r.status === 'REVISE_REQUESTED') {
+        reviseDocIds.add(r.docId || r.externalDocId || r.requestId || r.id);
+      }
+    });
+    return reviseDocIds.size;
+  }, [tasks, externalRequests, currentUser]);
+
   const NavItem = ({ to, icon: IconComponent, label, badgeCount }) => (
     <NavLink 
       to={to} 
       className={({ isActive }) => 
-        `group relative flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 ${
+        `group relative flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 ${
           isActive 
-            ? 'bg-dream-lavender/60 text-dream-primary font-semibold shadow-xs' 
-            : 'text-dream-secondary font-medium hover:text-dream-primary hover:bg-dream-surface-soft'
+            ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs' 
+            : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
         }`
       }
     >
@@ -89,14 +109,14 @@ const Sidebar = () => {
           {isActive && (
             <span 
               aria-hidden="true"
-              className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)] transition-all" 
+              className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-blue-600 transition-all" 
             />
           )}
 
           <div className="flex items-center gap-3 min-w-0 flex-1 pl-1">
             <IconComponent 
               className={`w-4.5 h-4.5 shrink-0 transition-colors duration-200 ${
-                isActive ? 'text-indigo-600' : 'text-dream-muted group-hover:text-dream-secondary'
+                isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
               }`} 
               strokeWidth={isActive ? 2 : 1.75} 
             />
@@ -107,8 +127,8 @@ const Sidebar = () => {
             <span 
               className={`ml-2 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
                 isActive 
-                  ? 'bg-white/90 text-indigo-700 border border-indigo-200/60 shadow-2xs' 
-                  : 'bg-dream-surface-soft text-dream-muted border border-dream-subtle'
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                  : 'bg-slate-100 text-slate-500 border border-slate-200'
               }`}
             >
               {badgeCount}
@@ -120,38 +140,38 @@ const Sidebar = () => {
   );
 
   return (
-    <aside className="w-64 sm:w-[270px] h-full bg-dream-surface border-r border-dream-subtle flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30 shadow-none">
+    <aside className="w-64 sm:w-[270px] h-full bg-white border-r border-slate-200 flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30 shadow-none">
       {/* ================= TOP SECTION: Brand Header & Notifications ================= */}
       <div className="space-y-3.5 shrink-0">
         {/* Brand Header */}
         <div 
           onClick={() => navigate('/portal')}
-          className="flex items-center gap-3 p-2 rounded-xl hover:bg-dream-surface-soft transition-all duration-200 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+          className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-all duration-200 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
           title="ไปยังหน้าหลักพอร์ทัล"
         >
-          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-dream shrink-0 group-hover:scale-105 transition-transform">
+          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0 group-hover:scale-105 transition-transform">
             Q
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-[16px] font-black text-dream-primary tracking-tight leading-tight truncate">
+              <h1 className="text-[16px] font-black text-slate-900 tracking-tight leading-tight truncate">
                 QMS
               </h1>
-              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-dream-lavender text-indigo-700 border border-indigo-200/60 rounded shrink-0 uppercase tracking-wider">
+              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded shrink-0 uppercase tracking-wider">
                 Enterprise
               </span>
             </div>
-            <p className="text-[11px] text-dream-muted font-medium tracking-tight truncate mt-0.5">
+            <p className="text-[11px] text-slate-500 font-medium tracking-tight truncate mt-0.5">
               Document Control
             </p>
           </div>
         </div>
 
-        {/* Notifications Quick Bar (Figma UI3 Floating Panel) */}
+        {/* Notifications Quick Bar */}
         <NotificationPopover />
       </div>
 
-      <div className="my-3 border-b border-dream-subtle" />
+      <div className="my-3 border-b border-slate-200" />
 
       {/* ================= CENTER SECTION: Navigation Links ================= */}
       <nav className="flex-1 overflow-y-auto space-y-1 pr-1.5 -mr-1.5 custom-scrollbar">
@@ -159,9 +179,9 @@ const Sidebar = () => {
         
         {isDcc && (
           <>
-            <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-dream-muted uppercase tracking-wider flex items-center justify-between">
+            <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>ระบบควบคุมเอกสาร</span>
-              <span className="text-[9.5px] font-mono font-bold text-dream-secondary bg-dream-surface-soft px-1.5 py-0.5 rounded border border-dream-subtle">DCC</span>
+              <span className="text-[9.5px] font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">DCC</span>
             </div>
             
             <NavItem to="/dcc/dashboard" icon={Library} label="แดชบอร์ดภาพรวม" />
@@ -190,6 +210,7 @@ const Sidebar = () => {
               <NavItem to="/dcc/controlled-copy" icon={Copy} label="ทะเบียนสำเนาควบคุม" badgeCount={ccTaskCount} />
             )}
             <NavItem to="/dcc/external-docs" icon={Globe} label="คลังเอกสารภายนอก" />
+            <NavItem to="/dcc/external/my-requests" icon={FileText} label="คำร้องเอกสารภายนอกของฉัน" badgeCount={myExternalReviseCount} />
             <NavItem to="/dcc/periodic-reviews" icon={Calendar} label="การทบทวนตามรอบ" />
 
             {/* Quick Reset & Seed Mock Data Buttons for DCC */}
@@ -234,24 +255,24 @@ const Sidebar = () => {
       </nav>
 
       {/* ================= BOTTOM SECTION: User Profile & Role Switcher ================= */}
-      <div className="pt-4 border-t border-dream-subtle shrink-0">
-        <div className="p-3 bg-dream-surface-soft/80 border border-dream-subtle rounded-xl space-y-3 shadow-dream">
+      <div className="pt-4 border-t border-slate-200 shrink-0">
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-dream-lavender text-dream-primary flex items-center justify-center font-bold text-sm border border-indigo-100 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200 shrink-0">
               {currentUser?.name?.charAt(0) || 'U'}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1.5">
-                <p className="text-xs font-semibold text-dream-primary leading-snug truncate tracking-tight">
+                <p className="text-xs font-semibold text-slate-900 leading-snug truncate tracking-tight">
                   {currentUser?.name}
                 </p>
                 {currentUser?.isDcc && (
-                  <span className="px-1.5 py-0.2 text-[9px] font-medium font-mono bg-dream-blue text-indigo-700 rounded border border-indigo-200/50 shrink-0 uppercase tracking-wider">
+                  <span className="px-1.5 py-0.2 text-[9px] font-semibold font-mono bg-blue-50 text-blue-700 rounded border border-blue-200 shrink-0 uppercase tracking-wider">
                     DCC
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-dream-muted font-medium truncate mt-0.5 font-mono">
+              <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5 font-mono">
                 {currentUser?.position || currentUser?.department || 'Staff'} • L{currentUser?.level || 1}
               </p>
             </div>
@@ -259,7 +280,7 @@ const Sidebar = () => {
 
           <div className="relative">
             <select 
-              className="w-full h-8 px-2.5 text-xs font-medium text-dream-primary bg-white border border-dream-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all cursor-pointer leading-normal shadow-none"
+              className="w-full h-8 px-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer leading-normal shadow-none"
               value={currentUser?.id || ''}
               onChange={(e) => setCurrentUser(e.target.value)}
               title="สลับผู้ใช้งาน / บทบาทจำลอง"
@@ -276,28 +297,28 @@ const Sidebar = () => {
 
       {/* ================= CLEAN SLATE RESET MODAL ================= */}
       {isCleanSlateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs">
-          <div className="bg-[#fbfbfa] rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-150">
-            <div className="px-6 pt-6 pb-4 border-b border-slate-200 bg-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200/80 shrink-0">
                   <Trash2 size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-lg tracking-tight leading-snug">ล้างข้อมูลจำลองเพื่อเริ่มต้นใหม่</h3>
+                  <h3 className="font-bold text-slate-900 text-base tracking-tight leading-snug">ล้างข้อมูลจำลองเพื่อเริ่มต้นใหม่</h3>
                   <p className="text-xs text-slate-500 mt-0.5">รีเซ็ตข้อมูลธุรกรรมเพื่อการทดสอบระบบใหม่</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCleanSlateOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs text-slate-600 leading-relaxed">
+            <div className="p-6 space-y-4 text-xs text-slate-600 leading-relaxed flex-1 overflow-y-auto">
               <p className="text-sm text-slate-800 font-medium">
                 การดำเนินการนี้จะ <strong>ลบข้อมูลจำลองเชิงธุรกรรมทั้งหมด</strong> เพื่อให้ระบบกลับสู่สภาพเริ่มต้นสำหรับการทดสอบตั้งแต่ต้น:
               </p>
@@ -330,7 +351,7 @@ const Sidebar = () => {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsCleanSlateOpen(false)}

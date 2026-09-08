@@ -175,18 +175,18 @@ const DarReviewModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 10 }}
         transition={{ duration: 0.2 }}
-        className="bg-white border border-[#E5E5E5] rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.1)] w-full max-w-4xl overflow-hidden my-6 flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 my-auto animate-in fade-in zoom-in-95 duration-150"
       >
         {/* ========================================================================= */}
         {/* Header & Status Strip */}
         {/* ========================================================================= */}
-        <div className="bg-[#FAFAFA] border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between shrink-0">
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0D99FF] flex items-center justify-center border border-blue-100 shrink-0">
               <FileCheck2 size={20} />

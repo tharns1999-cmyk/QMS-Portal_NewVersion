@@ -36,7 +36,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const darRef = doc.obsolete_dar_id || doc.obsolete_dar_no || doc.dar_id || doc.dar_no || doc.darId || doc.darNo || 'DAR-OBSOLETE';
     return [
       'เอกสารยกเลิก - ห้ามนำไปปฏิบัติงาน (CANCELLED DOCUMENT)',
-      `Doc: ${docCode} | Rev: Rev.${docRev}`,
+      `Doc: ${docCode} | Rev.${docRev}`,
       `Obsolete DAR Ref: ${darRef} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];
@@ -52,7 +52,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const nextRev = doc.superseded_by_rev || options.supersededByRev || doc.nextVersion || 'Latest';
     return [
       'เอกสารฉบับเดิมตกรุ่น - ใช้อ้างอิงประวัติเท่านั้น (SUPERSEDED REVISION)',
-      `Doc: ${docCode} | Rev: Rev.${docRev}`,
+      `Doc: ${docCode} | Rev.${docRev}`,
       `Superseded By: Rev.${nextRev} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];
@@ -68,17 +68,31 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const copyInfo = options.copyInfo || {};
     return [
       'OFFICIAL CONTROLLED COPY — DO NOT DUPLICATE',
-      `Doc: ${docCode} | Rev: Rev.${docRev}`,
+      `Doc: ${docCode} | Rev.${docRev}`,
       `Copy: ${copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || 'Copy 01'} | Station: ${copyInfo.station_name || copyInfo.location || copyInfo.locationName || 'Master'}`,
       `Issued Date: ${nowStr} | Issuer: ${userStr}`,
     ];
   }
 
   // 📄 4. กรณีเอกสารใช้งานทั่วไป (UNCONTROLLED COPY)
+  const docTitle = doc?.docTitle || doc?.docName || doc?.name || (doc?.title !== docCode ? doc?.title : '') || options?.docTitle || '';
+  const titlePart = docTitle ? ` | Title: ${docTitle}` : '';
+  const isRestricted = Boolean(
+    doc?.accessScope === 'Restricted' || 
+    doc?.access_scope === 'Restricted' || 
+    doc?.accessScope === 'RESTRICTED' || 
+    doc?.access_scope === 'RESTRICTED' ||
+    doc?.isRestricted ||
+    options?.isRestricted
+  );
+  const restrictedSuffix = isRestricted ? ' [RESTRICTED ACCESS]' : '';
+  const userDept = options.currentUser?.department || options.currentUser?.dept || options.userDept || doc?.department || 'HQ';
+  const userName = options.currentUser?.name || options.currentUser?.username || options.userName || 'Authorized User';
+
   return [
-    'FOR REFERENCE ONLY (INTERNAL USE)',
-    `Doc: ${docCode} | Ver: Rev.${docRev}`,
-    `Printed Date: ${nowStr} | User: ${userStr}`,
+    `Doc: ${docCode}${titlePart} | Rev.${docRev}${restrictedSuffix}`,
+    `Downloaded By: ${userName} (${userDept}) | Date: ${nowStr}`,
+    '*UNCONTROLLED COPY - FOR REFERENCE ONLY - DO NOT DUPLICATE*'
   ];
 };
 

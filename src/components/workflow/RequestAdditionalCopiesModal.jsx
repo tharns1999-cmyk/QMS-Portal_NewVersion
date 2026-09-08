@@ -222,16 +222,16 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 8 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.96, opacity: 0, y: 8 }}
           transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="bg-white rounded-3xl border border-slate-100 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.15)] w-full max-w-3xl lg:max-w-4xl my-6 overflow-hidden flex flex-col max-h-[90vh]"
+          className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
         >
           {/* Header */}
-          <div className="px-6 sm:px-8 pt-7 pb-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
                 <PlusCircle size={22} strokeWidth={2.2} />
@@ -524,7 +524,7 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
           </div>
 
           {/* Sticky Floating Footer */}
-          <div className="px-6 sm:px-8 py-4 bg-white/95 backdrop-blur-sm border-t border-slate-100 flex items-center justify-between shrink-0">
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
             <div className="text-xs sm:text-sm text-slate-500 flex items-center gap-2">
               <Sparkles size={16} className="text-indigo-500 shrink-0" />
               <span>

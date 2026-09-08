@@ -15,13 +15,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
 
   const handleDownload = async () => {
     const isObsolete = doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED';
-    let watermarkPreset = WATERMARK_TYPES.UNCONTROLLED_COPY;
-
-    if (isObsolete) {
-      watermarkPreset = WATERMARK_TYPES.OBSOLETE;
-    } else if (doc.accessScope === 'Restricted') {
-      watermarkPreset = WATERMARK_TYPES.STRICTLY_CONFIDENTIAL;
-    }
+    const watermarkPreset = isObsolete ? WATERMARK_TYPES.OBSOLETE : WATERMARK_TYPES.UNCONTROLLED_COPY;
 
     const toastId = toast.loading(`กำลังประทับลายน้ำเอกสาร ${docCode}...`);
 
@@ -58,7 +52,9 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           isExternal: true,
           is_external: true,
           doc_type: 'ED',
-          docType: 'ED'
+          docType: 'ED',
+          isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
+          accessScope: doc.accessScope
         }
       );
 
@@ -77,14 +73,14 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
         {/* Backdrop */}
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm"
+          className="fixed inset-0"
         />
         
         <motion.div 
@@ -92,19 +88,19 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 15 }}
           transition={{ type: "spring", stiffness: 320, damping: 30 }}
-          className="relative bg-white border border-stone-200/50 w-full max-w-4xl overflow-hidden flex flex-col h-[88vh] rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] z-10 my-auto"
+          className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
         >
-          {/* Header: Claude Aesthetic (White/Flat) */}
-          <div className="bg-white px-8 pt-8 pb-4 flex justify-between items-center shrink-0 border-b border-stone-100">
-            <div className="flex items-center gap-4 min-w-0 pr-2">
-              <div className="w-12 h-12 rounded-xl bg-[#f9f8f6] text-[#da7756] border border-stone-200 flex items-center justify-center shrink-0">
-                <FileText size={24} />
+          {/* Header */}
+          <div className="bg-white px-6 py-4 flex justify-between items-center shrink-0 border-b border-slate-200">
+            <div className="flex items-center gap-3.5 min-w-0 pr-2">
+              <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
+                <FileText size={22} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-[#2d2d2d] text-xl sm:text-2xl font-bold tracking-tight">{docCode}</h2>
+                  <h2 className="text-slate-900 text-lg sm:text-xl font-bold tracking-tight">{docCode}</h2>
                   <span className="bg-[#f9f8f6] text-[#da7756] border border-stone-200 px-2 py-0.5 rounded-md text-xs font-mono font-bold">
-                    Rev.{doc.rev || '01'}
+                    Rev.{doc.rev || '00'}
                   </span>
                   {doc.accessScope === 'Restricted' && (
                     <span className="bg-[#f5e6e6] text-[#a94442] border border-[#e5cdcd] px-2 py-0.5 rounded-md text-xs font-bold flex items-center gap-1">

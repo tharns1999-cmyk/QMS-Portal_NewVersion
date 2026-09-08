@@ -168,13 +168,47 @@ const DarRevisionForm = () => {
 
   const selectedDoc = (effectiveDocs || []).find(d => d.id === formData.docId) || (documents || []).find(d => d.id === formData.docId);
 
-  // Active Controlled Copies in Circulation for the selected document
+  const getDocCurrentRevision = (doc) => {
+    if (!doc) return '01';
+    const r = doc.currentRevision || doc.rev || doc.doc_version || doc.revision || doc.version;
+    if (!r) return '01';
+    const digits = String(r).replace(/\D/g, '');
+    return digits ? digits.padStart(2, '0') : String(r).trim();
+  };
+
+  const getCopyRevision = (copy) => {
+    if (!copy) return '';
+    const r = copy.rev || copy.doc_version || copy.revision || copy.docRev || copy.currentRevision || copy.version;
+    if (!r) return '';
+    const digits = String(r).replace(/\D/g, '');
+    return digits ? digits.padStart(2, '0') : String(r).trim();
+  };
+
+  const normCopyNo = (c, defaultNum = 1) => {
+    const raw = c.copy_no || c.copyNo || c.ccNumber || '';
+    if (!raw) return String(defaultNum).padStart(2, '0');
+    const digits = String(raw).replace(/\D/g, '');
+    return digits ? digits.padStart(2, '0') : String(raw).trim();
+  };
+
+  const calculateNextRev = (currentRev) => {
+    const digits = String(currentRev || '').replace(/\D/g, '');
+    const revNum = parseInt(digits, 10);
+    if (isNaN(revNum)) return '01';
+    return String(revNum + 1).padStart(2, '0');
+  };
+
+  // Active Controlled Copies in Circulation for the selected document (Strictly Current Revision)
   const activeCopiesInCirculation = useMemo(() => {
     if (!selectedDoc) return [];
+    const docRev = getDocCurrentRevision(selectedDoc);
     const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
       ? controlledCopyInstances
       : (documentControlledCopies || []);
-    return allCopies.filter(c => {
+    
+    // 1. Filter matching document, active status, and current revision (discard old history e.g. Rev.01)
+    const filtered = allCopies.filter(c => {
+      if (!c) return false;
       const isDocMatch = 
         (c.docCode && (c.docCode === selectedDoc.code || c.docCode === selectedDoc.title)) ||
         (c.documentId && String(c.documentId) === String(selectedDoc.id)) ||
@@ -183,16 +217,42 @@ const DarRevisionForm = () => {
         (c.document_code && (c.document_code === selectedDoc.code || c.document_code === selectedDoc.title)) ||
         (c.docId && String(c.docId) === String(selectedDoc.id)) ||
         (c.doc_id && String(c.doc_id) === String(selectedDoc.id));
+      if (!isDocMatch) return false;
+
+      // Must be currently active in circulation (not recalled, superseded, void, or destroyed)
       const isActive = c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT';
-      return isDocMatch && isActive;
+      const isNotRecalled = c.status !== 'RECALLED' && c.status !== 'OBSOLETE' && c.status !== 'SUPERSEDED' && c.status !== 'DESTROYED' && c.status !== 'VOID' && c.status !== 'SUPERSEDED_ARCHIVED' && c.status !== 'OBSOLETE_ARCHIVED' && c.status !== 'DAMAGED_VOID' && c.status !== 'LOST_VOID';
+      if (!isActive || !isNotRecalled) return false;
+
+      // Filter only copies of the current document revision (e.g. Rev.02); discard old history (e.g. Rev.01)
+      const copyRev = getCopyRevision(c);
+      if (copyRev && copyRev !== docRev) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // 2. Deduplicate by unique copy number
+    const copyMap = new Map();
+    filtered.forEach((c, idx) => {
+      const copyNo = normCopyNo(c, idx + 1);
+      if (!copyMap.has(copyNo)) {
+        copyMap.set(copyNo, {
+          ...c,
+          normalizedCopyNo: copyNo,
+          normalizedRev: docRev
+        });
+      }
+    });
+
+    // 3. Sort numerically by copy number
+    return Array.from(copyMap.values()).sort((a, b) => {
+      const numA = parseInt(a.normalizedCopyNo, 10) || 0;
+      const numB = parseInt(b.normalizedCopyNo, 10) || 0;
+      return numA - numB;
     });
   }, [selectedDoc, controlledCopyInstances, documentControlledCopies]);
-
-  const calculateNextRev = (currentRev) => {
-    const revNum = parseInt(currentRev, 10);
-    if (isNaN(revNum)) return '01';
-    return String(revNum + 1).padStart(2, '0');
-  };
 
   const handleDocSelect = (doc) => {
     const initialAc = doc.access_control || {
@@ -202,41 +262,70 @@ const DarRevisionForm = () => {
       min_access_level: 4
     };
 
-    // Distribution Matrix Mutation: Pull existing active copies as default
-    let initialDistributions = doc.distributions && doc.distributions.length > 0
-      ? JSON.parse(JSON.stringify(doc.distributions))
-      : [];
+    const docRev = getDocCurrentRevision(doc);
+    const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
+      ? controlledCopyInstances
+      : (documentControlledCopies || []);
+    
+    // Filter active copies strictly for this document's current revision (Rev.02)
+    const docCopies = allCopies.filter(c => {
+      if (!c) return false;
+      const isDocMatch = 
+        (c.docCode && (c.docCode === doc.code || c.docCode === doc.title)) ||
+        (c.documentId && String(c.documentId) === String(doc.id)) ||
+        (c.doc_code && (c.doc_code === doc.code || c.doc_code === doc.title)) ||
+        (c.docTitle && (c.docTitle === doc.code || c.docTitle === doc.title)) ||
+        (c.document_code && (c.document_code === doc.code || c.document_code === doc.title)) ||
+        (c.docId && String(c.docId) === String(doc.id)) ||
+        (c.doc_id && String(c.doc_id) === String(doc.id));
+      if (!isDocMatch) return false;
 
-    if (initialDistributions.length === 0) {
-      const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
-        ? controlledCopyInstances
-        : (documentControlledCopies || []);
-      const docCopies = allCopies.filter(c => {
-        const isDocMatch = 
-          (c.docCode && (c.docCode === doc.code || c.docCode === doc.title)) ||
-          (c.documentId && String(c.documentId) === String(doc.id)) ||
-          (c.doc_code && (c.doc_code === doc.code || c.doc_code === doc.title)) ||
-          (c.docTitle && (c.docTitle === doc.code || c.docTitle === doc.title)) ||
-          (c.document_code && (c.document_code === doc.code || c.document_code === doc.title)) ||
-          (c.docId && String(c.docId) === String(doc.id)) ||
-          (c.doc_id && String(c.doc_id) === String(doc.id));
-        return isDocMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT');
-      });
-      if (docCopies.length > 0) {
-        initialDistributions = docCopies.map((c, idx) => ({
-          id: c.locationId || c.station_id || `loc-${idx}`,
-          locationId: c.locationId || c.station_id || `${c.holder_dept || c.department}-LOC-${idx + 1}`,
-          locationName: c.location || c.locationName || c.station_name || `${c.holder_dept || c.department} Station`,
-          station_id: c.locationId || c.station_id || `${c.holder_dept || c.department}-LOC-${idx + 1}`,
-          station_name: c.location || c.locationName || c.station_name || `${c.holder_dept || c.department} Station`,
-          departmentId: c.holder_dept || c.department || 'PD',
-          department: c.holder_dept || c.department || 'PD',
-          dept: c.holder_dept || c.department || 'PD',
-          dept_code: c.holder_dept || c.department || 'PD',
-          copyNo: c.copy_no || c.copyNo || String(idx + 1).padStart(2, '0'),
-          isMaster: !!c.is_master || !!c.isMaster
-        }));
+      const isActive = c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT';
+      const isNotRecalled = c.status !== 'RECALLED' && c.status !== 'OBSOLETE' && c.status !== 'SUPERSEDED' && c.status !== 'DESTROYED' && c.status !== 'VOID' && c.status !== 'SUPERSEDED_ARCHIVED' && c.status !== 'OBSOLETE_ARCHIVED';
+      if (!isActive || !isNotRecalled) return false;
+
+      const copyRev = getCopyRevision(c);
+      if (copyRev && copyRev !== docRev) return false;
+      return true;
+    });
+
+    const copyMap = new Map();
+    docCopies.forEach((c, idx) => {
+      const copyNo = normCopyNo(c, idx + 1);
+      if (!copyMap.has(copyNo)) {
+        copyMap.set(copyNo, c);
       }
+    });
+    const uniqueDocCopies = Array.from(copyMap.values()).sort((a, b) => {
+      const numA = parseInt(normCopyNo(a, 0), 10) || 0;
+      const numB = parseInt(normCopyNo(b, 0), 10) || 0;
+      return numA - numB;
+    });
+
+    let initialDistributions = [];
+    if (uniqueDocCopies.length > 0) {
+      // 1-to-1 distribution point mapping directly from active copies of Rev.02
+      initialDistributions = uniqueDocCopies.map((c, idx) => {
+        const copyNo = normCopyNo(c, idx + 1);
+        const dept = c.holder_dept || c.department || c.dept || doc.department || 'PD';
+        const locName = c.location || c.locationName || c.station_name || `${dept} Station`;
+        const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
+        return {
+          id: c.locationId || c.station_id || `loc-${idx}`,
+          locationId: locId,
+          locationName: locName,
+          station_id: locId,
+          station_name: locName,
+          departmentId: dept,
+          department: dept,
+          dept: dept,
+          dept_code: dept,
+          copyNo: copyNo,
+          isMaster: copyNo === '01' || !!c.is_master || !!c.isMaster
+        };
+      });
+    } else if (doc.distributions && doc.distributions.length > 0) {
+      initialDistributions = JSON.parse(JSON.stringify(doc.distributions));
     }
 
     setFormData(prev => ({
@@ -291,6 +380,43 @@ const DarRevisionForm = () => {
       }
     }
   }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId]);
+
+  // Auto-align initial distributions 1-to-1 with active copies of Rev.02 if distributions are empty
+  const lastAlignedDocIdRef = useRef(null);
+  useEffect(() => {
+    if (!selectedDoc) return;
+    if (targetDraftId || location.state?.draftData) return;
+    if (lastAlignedDocIdRef.current === selectedDoc.id) return;
+
+    if (!formData.distributions || formData.distributions.length === 0) {
+      if (activeCopiesInCirculation && activeCopiesInCirculation.length > 0) {
+        const alignedDists = activeCopiesInCirculation.map((c, idx) => {
+          const copyNo = c.normalizedCopyNo || normCopyNo(c, idx + 1);
+          const dept = c.holder_dept || c.department || c.dept || selectedDoc.department || 'PD';
+          const locName = c.location || c.locationName || c.station_name || `${dept} Station`;
+          const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
+          return {
+            id: c.locationId || c.station_id || `loc-${idx}`,
+            locationId: locId,
+            locationName: locName,
+            station_id: locId,
+            station_name: locName,
+            departmentId: dept,
+            department: dept,
+            dept: dept,
+            dept_code: dept,
+            copyNo: copyNo,
+            isMaster: copyNo === '01' || !!c.is_master || !!c.isMaster
+          };
+        });
+        setFormData(prev => ({
+          ...prev,
+          distributions: alignedDists
+        }));
+      }
+    }
+    lastAlignedDocIdRef.current = selectedDoc.id;
+  }, [selectedDoc, activeCopiesInCirculation, formData.distributions, targetDraftId, location.state?.draftData]);
 
 
   /**
@@ -828,9 +954,9 @@ const DarRevisionForm = () => {
                   ฉบับปรับปรุง (Revision)
                 </label>
                 <div className="h-10.5 px-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs font-mono font-bold text-[#0D99FF] flex items-center justify-between select-none">
-                  <span className="text-slate-500">Rev.{selectedDoc?.rev || '00'}</span>
+                  <span className="text-slate-500">Rev.{selectedDoc ? getDocCurrentRevision(selectedDoc) : '00'}</span>
                   <span className="text-slate-400 font-sans">➔</span>
-                  <span className="text-emerald-600 font-bold">Rev.{calculateNextRev(selectedDoc?.rev || '00')}</span>
+                  <span className="text-emerald-600 font-bold">Rev.{selectedDoc ? calculateNextRev(getDocCurrentRevision(selectedDoc)) : '01'}</span>
                 </div>
               </div>
 
@@ -869,29 +995,32 @@ const DarRevisionForm = () => {
                           <th className="py-2.5 px-3">หมายเลขสำเนา (Copy No.)</th>
                           <th className="py-2.5 px-3">แผนกผู้ถือครอง (Department)</th>
                           <th className="py-2.5 px-3">จุดใช้งานจริง (Location)</th>
-                          <th className="py-2.5 px-3 text-center">Rev ปัจจุบัน</th>
+                          <th className="py-2.5 px-3 text-center">REV ปัจจุบัน</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9] bg-white">
-                        {activeCopiesInCirculation.map((c, idx) => (
-                          <tr key={c.id || idx} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-3 font-mono font-bold text-[#0D99FF]">
-                              Copy {c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0')}
-                            </td>
-                            <td className="py-2.5 px-3 font-semibold text-[#1E293B]">
-                              <span className="inline-flex items-center gap-1">
-                                <Building size={12} className="text-slate-400" />
-                                {c.holder_dept || c.department || c.dept || '-'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-[#334155]">
-                              {c.location || c.locationName || c.station_name || c.holder_name || `${c.holder_dept || c.department || 'PD'} Station`}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-600">
-                              Rev.{c.rev || c.doc_version || c.revision || selectedDoc?.rev || '00'}
-                            </td>
-                          </tr>
-                        ))}
+                        {activeCopiesInCirculation.map((c, idx) => {
+                          const docRev = getDocCurrentRevision(selectedDoc);
+                          return (
+                            <tr key={c.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3 font-mono font-bold text-[#0D99FF]">
+                                Copy {c.normalizedCopyNo || c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0')}
+                              </td>
+                              <td className="py-2.5 px-3 font-semibold text-[#1E293B]">
+                                <span className="inline-flex items-center gap-1">
+                                  <Building size={12} className="text-slate-400" />
+                                  {c.holder_dept || c.department || c.dept || '-'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-[#334155]">
+                                {c.location || c.locationName || c.station_name || c.holder_name || `${c.holder_dept || c.department || 'PD'} Station`}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-600">
+                                Rev.{c.normalizedRev || docRev}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1118,7 +1247,7 @@ const DarRevisionForm = () => {
                 </div>
               </div>
               <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-white text-slate-600 border border-slate-200 shadow-2xs">
-                {selectedDoc.title} Rev.{selectedDoc.rev || '00'} ➔ Rev.{calculateNextRev(selectedDoc.rev)}
+                {selectedDoc.title} Rev.{getDocCurrentRevision(selectedDoc)} ➔ Rev.{calculateNextRev(getDocCurrentRevision(selectedDoc))}
               </span>
             </div>
 
@@ -1134,7 +1263,7 @@ const DarRevisionForm = () => {
                         <RotateCcw size={14} strokeWidth={2.2} />
                       </div>
                       <span className="text-xs font-bold text-amber-950">
-                        เรียกคืนสำเนาฉบับเดิม (Rev.{selectedDoc.rev || '00'})
+                        เรียกคืนสำเนาฉบับเดิม (Rev.{getDocCurrentRevision(selectedDoc)})
                       </span>
                     </div>
                     <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-amber-100/90 text-amber-800 border border-amber-200">
@@ -1150,7 +1279,7 @@ const DarRevisionForm = () => {
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {activeCopiesInCirculation.length > 0 ? (
                       activeCopiesInCirculation.map((c, idx) => {
-                        const copyNum = c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0');
+                        const copyNum = c.normalizedCopyNo || c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0');
                         const dept = c.holder_dept || c.department || c.dept || '-';
                         const loc = c.location || c.locationName || c.station_name || `${dept} Station`;
                         return (
@@ -1168,7 +1297,7 @@ const DarRevisionForm = () => {
                               </span>
                             </div>
                             <span className="text-[10px] font-mono text-amber-700 font-semibold shrink-0">
-                              Rev.{c.rev || c.doc_version || selectedDoc.rev || '00'}
+                              Rev.{c.normalizedRev || getDocCurrentRevision(selectedDoc)}
                             </span>
                           </div>
                         );
@@ -1197,7 +1326,7 @@ const DarRevisionForm = () => {
                         <Printer size={14} strokeWidth={2.2} />
                       </div>
                       <span className="text-xs font-bold text-emerald-950">
-                        จัดพิมพ์และแจกจ่ายฉบับใหม่ (Rev.{calculateNextRev(selectedDoc.rev)})
+                        จัดพิมพ์และแจกจ่ายฉบับใหม่ (Rev.{calculateNextRev(getDocCurrentRevision(selectedDoc))})
                       </span>
                     </div>
                     <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-emerald-100/90 text-emerald-800 border border-emerald-200">
