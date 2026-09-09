@@ -61,37 +61,106 @@ export const hasDocumentAccess = (doc, user) => {
   if (!doc) return false;
   if (!user) return false;
 
-  // 1. Super/DCC Admin Bypass
+  // Helper to match user ID or Employee ID safely
+  const userMatchesId = (targetId) => {
+    if (!targetId) return false;
+    const targetStr = String(targetId).trim().toLowerCase();
+    const userIdStr = user.id ? String(user.id).trim().toLowerCase() : '';
+    const userEmpIdStr = user.empId ? String(user.empId).trim().toLowerCase() : '';
+    return targetStr === userIdStr || (userEmpIdStr && targetStr === userEmpIdStr);
+  };
+
+  // 1. Super/DCC Admin Bypass (Always has full access)
   if (
     user.role === 'DCC_ADMIN' ||
     user.role === 'SUPER_ADMIN' ||
     user.isDcc ||
-    user.isSuperAdmin
+    user.isSuperAdmin ||
+    (user.permissions && (user.permissions.includes('DCC_ADMIN') || user.permissions.includes('ADMIN')))
   ) {
     return true;
   }
 
-  // 2. Document Owner / Author / Requester Bypass
-  const isCreatorOrOwner =
-    doc.requesterId === user.id ||
-    doc.ownerId === user.id ||
-    doc.created_by === user.id ||
-    doc.author_id === user.id;
+  // 2. Auto-Whitelisting for Workflow Participants (Immune to Restricted Scope settings):
+  // 2.1 Requester / Document Creator / Owner / Author
+  const requesterIds = [
+    doc.created_by,
+    doc.createdBy,
+    doc.requester_id,
+    doc.requesterId,
+    doc.ownerId,
+    doc.owner_id,
+    doc.author_id,
+    doc.authorId,
+    doc.requester?.id,
+    doc.requester?.empId
+  ].filter(Boolean);
 
-  if (isCreatorOrOwner) {
+  if (requesterIds.some(userMatchesId)) {
     return true;
   }
 
-  const userDepts = user.depts || (user.department ? [user.department] : []);
-  const docDept = doc.owner_dept || doc.department || doc.dept;
-  const isSameDept = (dept) =>
-    Boolean(dept) &&
-    userDepts.some(
+  // 2.2 Reviewer(s) in Workflow (Individual or Steps)
+  const reviewerIds = [];
+  if (doc.reviewerId) reviewerIds.push(doc.reviewerId);
+  if (doc.reviewer_id) reviewerIds.push(doc.reviewer_id);
+  if (doc.reviewer?.id) reviewerIds.push(doc.reviewer.id);
+  if (doc.reviewer?.empId) reviewerIds.push(doc.reviewer.empId);
+  if (Array.isArray(doc.reviewers)) {
+    doc.reviewers.forEach(r => reviewerIds.push(typeof r === 'object' ? r?.id || r?.userId || r?.empId : r));
+  }
+  if (Array.isArray(doc.workflow?.review_steps)) {
+    doc.workflow.review_steps.forEach(s => reviewerIds.push(typeof s === 'object' ? s?.id || s?.userId || s?.assigneeId || s?.empId : s));
+  }
+  if (Array.isArray(doc.workflow?.reviewers)) {
+    doc.workflow.reviewers.forEach(r => reviewerIds.push(typeof r === 'object' ? r?.id || r?.userId || r?.empId : r));
+  }
+
+  if (reviewerIds.filter(Boolean).some(userMatchesId)) {
+    return true;
+  }
+
+  // 2.3 Approver(s) in Workflow (Individual or Steps)
+  const approverIds = [];
+  if (doc.approverId) approverIds.push(doc.approverId);
+  if (doc.approver_id) approverIds.push(doc.approver_id);
+  if (doc.approver?.id) approverIds.push(doc.approver.id);
+  if (doc.approver?.empId) approverIds.push(doc.approver.empId);
+  if (Array.isArray(doc.approvers)) {
+    doc.approvers.forEach(a => approverIds.push(typeof a === 'object' ? a?.id || a?.userId || a?.empId : a));
+  }
+  if (Array.isArray(doc.workflow?.approve_steps)) {
+    doc.workflow.approve_steps.forEach(s => approverIds.push(typeof s === 'object' ? s?.id || s?.userId || s?.assigneeId || s?.empId : s));
+  }
+  if (Array.isArray(doc.workflow?.approvers)) {
+    doc.workflow.approvers.forEach(a => approverIds.push(typeof a === 'object' ? a?.id || a?.userId || a?.empId : a));
+  }
+
+  if (approverIds.filter(Boolean).some(userMatchesId)) {
+    return true;
+  }
+
+  const rawUserDepts = [
+    user.primary_department,
+    user.department,
+    user.dept,
+    user.dept_code,
+    ...(Array.isArray(user.departments) ? user.departments : []),
+    ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
+    ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
+    ...(Array.isArray(user.depts) ? user.depts : [])
+  ];
+  const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
+  const docDept = (doc.owner_dept || doc.department || doc.dept || '').toString().trim().toUpperCase();
+  const isSameDept = (dept) => {
+    if (!dept) return false;
+    const cleanDept = String(dept).trim().toUpperCase();
+    return userDepts.some(
       (u) =>
-        u === dept ||
-        (u === 'QA' && dept === 'QA/QC') ||
-        (u === 'QA/QC' && dept === 'QA')
+        u === cleanDept ||
+        ((u === 'QA' || u === 'QA/QC' || u === 'QAQC') && (cleanDept === 'QA' || cleanDept === 'QA/QC' || cleanDept === 'QAQC'))
     );
+  };
 
   // 3. Resolve Scope
   const accessControl = doc.access_control || { scope: doc.access_scope || 'GENERAL' };
@@ -160,18 +229,30 @@ export const canManageControlledCopy = (copy, user) => {
   }
 
   // 2. Department Custodianship Check
-  const copyDept = copy.holder_dept || copy.department || copy.departmentId || copy.dept_code || copy.target_department;
-  const userDept = user.department || user.dept;
-  const userDepts = user.depts || (userDept ? [userDept] : []);
+  const copyDept = (copy.holder_dept || copy.department || copy.departmentId || copy.dept_code || copy.target_department || '').toString().trim().toUpperCase();
+  const rawUserDepts = [
+    user.primary_department,
+    user.department,
+    user.dept,
+    user.dept_code,
+    ...(Array.isArray(user.departments) ? user.departments : []),
+    ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
+    ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
+    ...(Array.isArray(user.depts) ? user.depts : [])
+  ];
+  const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
 
   if (!copyDept) return false;
 
   return userDepts.some(
     (d) =>
-      Boolean(d) &&
-      (d.toUpperCase() === copyDept.toUpperCase() ||
-        (d === 'QA' && copyDept === 'QA/QC') ||
-        (d === 'QA/QC' && copyDept === 'QA'))
+      d === copyDept ||
+      ((d === 'QA' || d === 'QA/QC' || d === 'QAQC') && (copyDept === 'QA' || copyDept === 'QA/QC' || copyDept === 'QAQC'))
   );
 };
+
+/**
+ * Alias for hasDocumentAccess to support canUserAccessDocument naming convention
+ */
+export const canUserAccessDocument = hasDocumentAccess;
 

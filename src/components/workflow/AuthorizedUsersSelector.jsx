@@ -3,32 +3,31 @@ import {
   Search, 
   X, 
   Check, 
-  User, 
-  Users, 
-  Building2, 
-  Award, 
-  UserCheck, 
-  UserX, 
-  RotateCcw,
-  Sparkles
+  Plus, 
+  Lock,
+  RotateCcw
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * Department color mapping for consistent avatars & badges
+ * Department color mapping for avatars
  */
 const DEPT_COLORS = {
-  QA: { bg: 'bg-blue-100 text-blue-800 border-blue-200', avatar: 'bg-blue-600 text-white' },
-  PD: { bg: 'bg-amber-100 text-amber-800 border-amber-200', avatar: 'bg-amber-600 text-white' },
-  EN: { bg: 'bg-purple-100 text-purple-800 border-purple-200', avatar: 'bg-purple-600 text-white' },
-  WH: { bg: 'bg-emerald-100 text-emerald-800 border-emerald-200', avatar: 'bg-emerald-600 text-white' },
-  FIN: { bg: 'bg-teal-100 text-teal-800 border-teal-200', avatar: 'bg-teal-600 text-white' },
-  EXEC: { bg: 'bg-slate-100 text-slate-800 border-slate-300', avatar: 'bg-slate-800 text-white' },
-  MGMT: { bg: 'bg-indigo-100 text-indigo-800 border-indigo-200', avatar: 'bg-indigo-600 text-white' },
-  MKT: { bg: 'bg-rose-100 text-rose-800 border-rose-200', avatar: 'bg-rose-600 text-white' },
-  HR: { bg: 'bg-cyan-100 text-cyan-800 border-cyan-200', avatar: 'bg-cyan-600 text-white' },
-  IT: { bg: 'bg-violet-100 text-violet-800 border-violet-200', avatar: 'bg-violet-600 text-white' },
-  DEFAULT: { bg: 'bg-slate-100 text-slate-700 border-slate-200', avatar: 'bg-slate-600 text-white' }
+  QA: { avatar: 'bg-blue-600 text-white' },
+  'QA/QC': { avatar: 'bg-blue-600 text-white' },
+  PD: { avatar: 'bg-amber-600 text-white' },
+  EN: { avatar: 'bg-purple-600 text-white' },
+  WH: { avatar: 'bg-emerald-600 text-white' },
+  DC: { avatar: 'bg-sky-600 text-white' },
+  FIN: { avatar: 'bg-teal-600 text-white' },
+  EXEC: { avatar: 'bg-zinc-900 text-white' },
+  MGMT: { avatar: 'bg-indigo-600 text-white' },
+  MKT: { avatar: 'bg-rose-600 text-white' },
+  HR: { avatar: 'bg-cyan-600 text-white' },
+  'HR&GA': { avatar: 'bg-cyan-600 text-white' },
+  HSE: { avatar: 'bg-emerald-600 text-white' },
+  PC: { avatar: 'bg-purple-600 text-white' },
+  ST: { avatar: 'bg-slate-600 text-white' },
+  DEFAULT: { avatar: 'bg-slate-700 text-white' }
 };
 
 const getDeptTheme = (dept) => DEPT_COLORS[dept] || DEPT_COLORS.DEFAULT;
@@ -43,344 +42,348 @@ const getInitials = (name = '') => {
 };
 
 /**
- * AuthorizedUsersSelector Component
- * 
- * Enterprise Multi-Select User Picker with Instant Search, Department Chips, and Selected Tags Tray.
- * 
- * @param {Object} props
- * @param {string[]} props.selectedUserIds - Array of user IDs (e.g. ['U001', 'U002'])
- * @param {Function} props.onChange - Callback with new array of user IDs
- * @param {Array} props.users - List of available masterUsers
+ * AuthorizedUsersSelector Component (Compact Linear / Vercel Combobox Style)
  */
 const AuthorizedUsersSelector = ({
   selectedUserIds = [],
   onChange,
-  users = []
+  users = [],
+  minLevel = null,
+  onMinLevelChange = null,
+  onToggleUser = null,
+  onRemoveUser = null,
+  workflowParticipants = []
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDeptFilter, setActiveDeptFilter] = useState('ALL');
 
-  // List of active users
+  const safeSelectedIds = useMemo(() => {
+    return Array.isArray(selectedUserIds) ? selectedUserIds : [];
+  }, [selectedUserIds]);
+
   const activeUsers = useMemo(() => {
-    return (users || []).filter(u => u.status === 'ACTIVE' || u.status === 'Active' || !u.status);
+    return (users || []).filter(u => u && (u.status === 'ACTIVE' || u.status === 'Active' || !u.status));
   }, [users]);
 
-  // Selected user objects
-  const selectedUsers = useMemo(() => {
-    return selectedUserIds
-      .map(id => activeUsers.find(u => u.id === id))
-      .filter(Boolean);
-  }, [selectedUserIds, activeUsers]);
+  const normalizedParticipants = useMemo(() => {
+    if (!Array.isArray(workflowParticipants)) return [];
+    return workflowParticipants.map(item => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        const found = (users || []).find(u => u && (u.id === item || u.empId === item));
+        return {
+          id: item,
+          empId: found?.empId,
+          name: found ? found.name : item,
+          department: found?.primary_department || found?.department || found?.dept || 'QMS',
+          roleTitle: 'ผู้ร่วมสายงาน (Auto)'
+        };
+      }
+      const found = (users || []).find(u => u && (u.id === item.id || (item.empId && u.empId === item.empId)));
+      let roleTitle = item.roleTitle;
+      if (!roleTitle) {
+        if (item.role === 'REQUESTER') roleTitle = 'ผู้จัดทำ (Requester)';
+        else if (item.role === 'REVIEWER') roleTitle = 'ผู้ทบทวน (Reviewer)';
+        else if (item.role === 'APPROVER') roleTitle = 'ผู้อนุมัติ (Approver)';
+        else roleTitle = 'ผู้ร่วมสายงาน (Auto)';
+      }
+      return {
+        id: item.id,
+        empId: item.empId || found?.empId,
+        name: item.name || found?.name || item.id,
+        department: item.department || found?.primary_department || found?.department || found?.dept || 'QMS',
+        role: item.role,
+        roleTitle
+      };
+    }).filter(Boolean);
+  }, [workflowParticipants, users]);
 
-  // Unique departments for filter chips
+  const participantIdsSet = useMemo(() => {
+    const set = new Set();
+    (normalizedParticipants || []).forEach(p => {
+      if (p?.id) set.add(p.id);
+      if (p?.empId) set.add(p.empId);
+    });
+    return set;
+  }, [normalizedParticipants]);
+
+  const selectedUsers = useMemo(() => {
+    return (safeSelectedIds || [])
+      .map(id => (activeUsers || []).find(u => u && (u.id === id || u.empId === id)))
+      .filter(Boolean);
+  }, [safeSelectedIds, activeUsers]);
+
   const departmentsList = useMemo(() => {
     const depts = new Set();
-    activeUsers.forEach(u => {
+    (activeUsers || []).forEach(u => {
+      if (!u) return;
       if (u.department) depts.add(u.department);
       if (u.dept) depts.add(u.dept);
-      if (Array.isArray(u.depts)) u.depts.forEach(d => depts.add(d));
+      if (u.primary_department) depts.add(u.primary_department);
+      if (Array.isArray(u.depts)) u.depts.forEach(d => d && depts.add(d));
+      if (Array.isArray(u.affiliated_departments)) u.affiliated_departments.forEach(d => d && depts.add(d));
     });
     return Array.from(depts).filter(Boolean).sort();
   }, [activeUsers]);
 
-  // Filtered candidate users list
   const filteredUsers = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const query = (searchTerm || '').trim().toLowerCase();
 
-    return activeUsers.filter(user => {
-      // 1. Department Filter
+    return (activeUsers || []).filter(user => {
+      if (!user) return false;
       if (activeDeptFilter !== 'ALL') {
-        const userDepts = user.depts || (user.department ? [user.department] : [user.dept]);
-        const matchDept = userDepts.some(d => d === activeDeptFilter);
+        const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : [user.dept]));
+        const matchDept = (userDepts || []).some(d => d === activeDeptFilter);
         if (!matchDept) return false;
       }
 
-      // 2. Search Query Matching (Name, EmpId, ID, Dept, Position)
       if (!query) return true;
 
       const nameMatch = (user.name || '').toLowerCase().includes(query);
       const idMatch = (user.id || '').toLowerCase().includes(query);
       const empIdMatch = (user.empId || '').toLowerCase().includes(query);
       const posMatch = (user.position || '').toLowerCase().includes(query);
-      const deptMatch = (user.department || user.dept || '').toLowerCase().includes(query);
+      const deptMatch = (user.primary_department || user.department || user.dept || '').toLowerCase().includes(query);
 
       return nameMatch || idMatch || empIdMatch || posMatch || deptMatch;
     });
   }, [activeUsers, activeDeptFilter, searchTerm]);
 
-  // Toggle single user
-  const handleToggleUser = (userId) => {
-    const next = selectedUserIds.includes(userId)
-      ? selectedUserIds.filter(id => id !== userId)
-      : [...selectedUserIds, userId];
-    onChange(next);
+  const handleToggle = (userId) => {
+    if (onToggleUser) {
+      onToggleUser(userId);
+      return;
+    }
+    const next = safeSelectedIds.includes(userId)
+      ? safeSelectedIds.filter(id => id !== userId)
+      : [...safeSelectedIds, userId];
+    if (onChange) onChange(next);
   };
 
-  // Remove single user
-  const handleRemoveUser = (userId, e) => {
-    if (e) e.stopPropagation();
-    onChange(selectedUserIds.filter(id => id !== userId));
+  const handleRemove = (userId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (onRemoveUser) {
+      onRemoveUser(userId);
+    }
+    const next = safeSelectedIds.filter(id => id !== userId);
+    if (onChange) onChange(next);
   };
 
-  // Clear all selected users
   const handleClearAll = () => {
-    onChange([]);
+    if (onChange) onChange([]);
   };
-
-  // Select all in current filter
-  const handleSelectAllInView = () => {
-    const filteredIds = filteredUsers.map(u => u.id);
-    const newSelection = Array.from(new Set([...selectedUserIds, ...filteredIds]));
-    onChange(newSelection);
-  };
-
-  // Deselect all in current filter
-  const handleDeselectAllInView = () => {
-    const filteredIdsSet = new Set(filteredUsers.map(u => u.id));
-    const newSelection = selectedUserIds.filter(id => !filteredIdsSet.has(id));
-    onChange(newSelection);
-  };
-
-  const isAllInViewSelected = filteredUsers.length > 0 && filteredUsers.every(u => selectedUserIds.includes(u.id));
 
   return (
-    <div className="space-y-4">
-      {/* ========================================================================= */}
-      {/* 1. Selected Tags Tray (สรุปรายชื่อผู้ได้รับอนุญาตพิเศษที่เลือกไว้) */}
-      {/* ========================================================================= */}
-      <div className="bg-white border border-[#E5E5E5] rounded-xl p-3.5 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <UserCheck size={16} className="text-[#0D99FF]" />
-            <span className="text-xs font-bold text-[#1E1E1E]">
-              ผู้ได้รับอนุญาตพิเศษที่เลือกไว้
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]">
-              {selectedUsers.length} คน
+    <div className="space-y-3 select-none">
+      {/* 1. Optional Min Level row if provided */}
+      {minLevel !== null && minLevel !== undefined && (
+        <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+          <label htmlFor="min-access-level-select" className="text-xs font-semibold text-slate-800 shrink-0">
+            ระดับตำแหน่งขั้นต่ำที่อนุญาต (Minimum Position Level):
+          </label>
+          <select
+            id="min-access-level-select"
+            aria-label="ระดับสิทธิ์ขั้นต่ำ"
+            value={minLevel}
+            onChange={(e) => onMinLevelChange && onMinLevelChange(Number(e.target.value))}
+            className="h-8 px-2 bg-white text-xs text-slate-800 border border-slate-200 rounded-md focus:outline-none cursor-pointer flex-1 max-w-xs"
+          >
+            <option value={4}>Level 4: หัวหน้างานขึ้นไป (Supervisor L4+)</option>
+            <option value={1}>Level 1: ทุกคนในองค์กร (All Staff)</option>
+            <option value={3}>Level 3: เจ้าหน้าที่อาวุโสขึ้นไป (Senior Staff L3+)</option>
+            <option value={5}>Level 5: ผู้ช่วยผู้จัดการขึ้นไป (Asst. Manager L5+)</option>
+            <option value={6}>Level 6: ผู้จัดการฝ่ายขึ้นไป (Dept. Manager L6+)</option>
+            <option value={7}>Level 7: ผู้บริหารระดับสูง (Directors & Executives)</option>
+          </select>
+        </div>
+      )}
+
+      {/* 2. Auto-Authorized Workflow Strip */}
+      {normalizedParticipants.length > 0 && (
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-slate-700">
+            <Lock size={12} className="text-slate-500 shrink-0" />
+            <span className="font-semibold text-xs text-slate-900">สิทธิ์เข้าถึงอัตโนมัติตามสายอนุมัติ (Auto-Authorized):</span>
+            <span className="text-[11px] text-slate-500 hidden md:inline">
+              บุคคลในสายการจัดทำ ทบทวน และอนุมัติจะได้รับสิทธิ์เข้าถึงเอกสารนี้โดยอัตโนมัติ
             </span>
           </div>
+          <div className="flex flex-wrap gap-1">
+            {normalizedParticipants.map(p => (
+              <span key={p.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium shadow-2xs">
+                <span>{p.name}</span>
+                <span className="text-slate-500 font-mono text-[10px]">({p.roleTitle})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
+      {/* 3. Selected Whitelist Tags (Compact Avatar Tags) */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-slate-600">
+            เลือกแล้ว {selectedUsers.length} ท่าน
+          </span>
           {selectedUsers.length > 0 && (
             <button
               type="button"
               onClick={handleClearAll}
-              className="text-[11px] font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+              className="text-slate-400 hover:text-rose-600 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
             >
-              <RotateCcw size={12} />
-              ล้างทั้งหมด
+              <RotateCcw size={10} />
+              <span>ล้างทั้งหมด</span>
             </button>
           )}
         </div>
 
-        {/* Tag Pills Container */}
         {selectedUsers.length > 0 ? (
-          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-1 custom-scrollbar">
-            <AnimatePresence>
-              {selectedUsers.map(user => {
-                const theme = getDeptTheme(user.department || user.dept);
-                return (
-                  <motion.div
-                    key={user.id}
-                    initial={{ opacity: 0, scale: 0.85 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    transition={{ duration: 0.15 }}
-                    className="inline-flex items-center gap-2 pl-1.5 pr-2 py-1 rounded-lg bg-[#F5F5F5] border border-[#E5E5E5] hover:border-slate-300 text-xs transition-all shadow-2xs group"
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+            {selectedUsers.map(user => {
+              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
+              return (
+                <span
+                  key={user.id}
+                  className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs text-slate-800 shadow-2xs"
+                >
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${theme.avatar}`}>
+                    {getInitials(user.name)}
+                  </span>
+                  <span className="font-medium text-[12px]">{user.name}</span>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    ({user.primary_department || user.department || user.dept})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemove(user.id, e)}
+                    className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 transition-colors"
+                    title={`นำ ${user.name} ออก`}
                   >
-                    <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${theme.avatar}`}>
-                      {getInitials(user.name)}
-                    </span>
-                    <span className="font-bold text-[#1E1E1E] max-w-[140px] truncate">
-                      {user.name}
-                    </span>
-                    <span className="text-[10px] font-mono text-[#666666] px-1 py-0.2 rounded bg-white border border-[#E5E5E5]">
-                      {user.department || user.dept}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => handleRemoveUser(user.id, e)}
-                      className="text-slate-400 hover:text-rose-600 hover:bg-rose-100 p-0.5 rounded transition-colors ml-0.5 cursor-pointer"
-                      title={`นำ ${user.name} ออก`}
-                    >
-                      <X size={13} strokeWidth={2.5} />
-                    </button>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                    <X size={11} strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })}
           </div>
         ) : (
-          <div className="py-2.5 px-3 rounded-lg bg-[#F9F9F9] border border-dashed border-[#E5E5E5] text-center">
-            <p className="text-xs text-[#888888] flex items-center justify-center gap-1.5">
-              <Sparkles size={13} className="text-amber-500" />
-              ยังไม่ได้ระบุบุคคลเฉพาะ (ค้นหาและคลิกเลือกพนักงานจากรายการด้านล่าง)
-            </p>
+          <div className="text-xs text-slate-400 py-1 font-normal">
+            ยังไม่มีการเลือกรายชื่อเฉพาะบุคคล (ค้นหาและเลือกพนักงานด้านล่าง)
           </div>
         )}
       </div>
 
-      {/* ========================================================================= */}
-      {/* 2. Search Bar & Department Filter Chips */}
-      {/* ========================================================================= */}
-      <div className="space-y-2.5">
-        {/* Instant Search Bar */}
+      {/* 4. Search & Department Filter + Candidate Combobox */}
+      <div className="space-y-2 pt-1">
+        {/* Search Input Bar */}
         <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
           <input
             type="text"
-            placeholder="ค้นหาด้วยชื่อ, รหัสพนักงาน (EMP-001), User ID (U001), แผนก หรือตำแหน่ง..."
+            placeholder="ค้นหาด้วยชื่อ, รหัสพนักงาน (EMP-001), แผนก หรือตำแหน่ง..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-9 py-2 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all placeholder:text-slate-400 font-medium"
+            className="w-full pl-8 pr-8 py-1.5 h-8 text-xs bg-white border border-slate-200 rounded-lg focus:border-slate-400 focus:outline-none placeholder:text-slate-400 text-slate-800 shadow-2xs"
           />
           {searchTerm && (
             <button
               type="button"
               onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
             >
-              <X size={14} />
+              <X size={12} />
             </button>
           )}
         </div>
 
-        {/* Department Quick Filter Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+        {/* Department Filter Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
           <button
             type="button"
             onClick={() => setActiveDeptFilter('ALL')}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+            className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap cursor-pointer transition-all ${
               activeDeptFilter === 'ALL'
-                ? 'bg-[#1E1E1E] text-white shadow-2xs'
-                : 'bg-white text-slate-600 border border-[#E5E5E5] hover:bg-slate-100'
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
             ทั้งหมด ({activeUsers.length})
           </button>
-
           {departmentsList.map(dept => {
-            const count = activeUsers.filter(u => {
-              const uDepts = u.depts || (u.department ? [u.department] : [u.dept]);
-              return uDepts.includes(dept);
-            }).length;
-
             const isSelected = activeDeptFilter === dept;
-
             return (
               <button
                 key={dept}
                 type="button"
                 onClick={() => setActiveDeptFilter(dept)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer ${
+                className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-[#0D99FF] text-white shadow-2xs'
-                    : 'bg-white text-slate-600 border border-[#E5E5E5] hover:bg-slate-100'
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                <span>{dept}</span>
-                <span className={`text-[10px] font-mono px-1 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                  {count}
-                </span>
+                {dept}
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* ========================================================================= */}
-      {/* 3. Candidate Users List with High-Density Precision Cards */}
-      {/* ========================================================================= */}
-      <div className="border border-[#E5E5E5] bg-white rounded-xl overflow-hidden shadow-2xs">
-        {/* List Header Toolbar */}
-        <div className="px-3.5 py-2 bg-[#F5F5F5]/80 border-b border-[#E5E5E5] flex items-center justify-between text-xs">
-          <span className="text-[11px] font-medium text-slate-600">
-            พบ <strong className="text-[#1E1E1E]">{filteredUsers.length}</strong> รายชื่อ {activeDeptFilter !== 'ALL' ? `(แผนก ${activeDeptFilter})` : ''}
-          </span>
-
-          <div className="flex items-center gap-2">
-            {filteredUsers.length > 0 && (
-              <button
-                type="button"
-                onClick={isAllInViewSelected ? handleDeselectAllInView : handleSelectAllInView}
-                className="text-[11px] font-bold text-[#0D99FF] hover:text-[#007BE5] hover:underline cursor-pointer"
-              >
-                {isAllInViewSelected ? 'ยกเลิกทั้งหมดในกลุ่มนี้' : 'เลือกทั้งหมดในกลุ่มนี้'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Users Rows Container */}
-        <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 custom-scrollbar">
+        {/* Candidate Scrollable Rows */}
+        <div className="border border-slate-200 rounded-lg overflow-hidden max-h-44 overflow-y-auto divide-y divide-slate-100 bg-white shadow-2xs">
           {filteredUsers.length > 0 ? (
             filteredUsers.map(user => {
-              const isSelected = selectedUserIds.includes(user.id);
-              const theme = getDeptTheme(user.department || user.dept);
+              const isWorkflowParticipant = participantIdsSet.has(user.id) || (user.empId && participantIdsSet.has(user.empId));
+              const isSelected = isWorkflowParticipant || safeSelectedIds.includes(user.id) || (user.empId && safeSelectedIds.includes(user.empId));
+              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
 
               return (
                 <div
                   key={user.id}
-                  onClick={() => handleToggleUser(user.id)}
-                  className={`px-3.5 py-2.5 flex items-center justify-between cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'bg-blue-50/50 hover:bg-blue-50'
-                      : 'hover:bg-[#F9F9F9]'
+                  role="button"
+                  tabIndex={0}
+                  onClick={isWorkflowParticipant ? undefined : () => handleToggle(user.id)}
+                  onKeyDown={isWorkflowParticipant ? undefined : (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleToggle(user.id);
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 flex items-center justify-between text-xs transition-colors cursor-pointer select-none ${
+                    isWorkflowParticipant
+                      ? 'bg-slate-50/70 text-slate-400 cursor-not-allowed'
+                      : isSelected
+                        ? 'bg-slate-50 text-slate-900 font-medium'
+                        : 'hover:bg-slate-50 text-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {/* Checkbox */}
-                    <div
-                      className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
-                        isSelected
-                          ? 'bg-[#0D99FF] border-[#0D99FF] text-white'
-                          : 'border-slate-300 bg-white hover:border-slate-400'
-                      }`}
-                    >
-                      {isSelected && <Check size={11} strokeWidth={3} />}
-                    </div>
-
-                    {/* Avatar Initials */}
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${theme.avatar}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${theme.avatar}`}>
                       {getInitials(user.name)}
-                    </div>
-
-                    {/* User Identity Details */}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-[#1E1E1E] truncate">
-                          {user.name}
-                        </span>
-                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold border ${theme.bg}`}>
-                          {user.department || user.dept}
-                        </span>
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          Lv.{user.level}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#666666] truncate mt-0.5">
-                        {user.position || 'พนักงาน'} {user.empId ? `• ${user.empId}` : ''}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Right User ID Tag */}
-                  <div className="text-right shrink-0 ml-3">
-                    <span className="text-[11px] font-mono font-bold text-slate-400 group-hover:text-slate-600">
-                      {user.id}
                     </span>
+                    <span className="truncate font-medium">{user.name}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({user.primary_department || user.department || user.dept})
+                    </span>
+                    {isWorkflowParticipant && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 rounded font-medium">
+                        ผู้ร่วมสายงาน (Auto)
+                      </span>
+                    )}
+                  </div>
+                  <div className="shrink-0">
+                    {isWorkflowParticipant ? (
+                      <Lock size={11} className="text-slate-400" />
+                    ) : isSelected ? (
+                      <Check size={12} className="text-slate-900 stroke-[3]" />
+                    ) : (
+                      <Plus size={12} className="text-slate-400" />
+                    )}
                   </div>
                 </div>
               );
             })
           ) : (
-            <div className="py-8 px-4 text-center space-y-2">
-              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                <UserX size={20} />
-              </div>
-              <p className="text-xs font-bold text-slate-700">ไม่พบรายชื่อผู้ใช้ที่ตรงกับเงื่อนไข</p>
-              <p className="text-[11px] text-slate-400">
-                ลองค้นหาด้วยคำอื่น หรือเลือกตัวกรองแผนกเป็น "ทั้งหมด"
-              </p>
+            <div className="py-4 text-center text-xs text-slate-400">
+              ไม่พบรายชื่อผู้ใช้ที่ตรงกับเงื่อนไข
             </div>
           )}
         </div>

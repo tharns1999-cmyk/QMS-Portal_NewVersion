@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, AlertTriangle, XCircle, FileText, ArrowRight, X, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  CheckCircle, 
+  AlertTriangle, 
+  XCircle, 
+  FileText, 
+  ArrowRight, 
+  X, 
+  Loader2, 
+  Send
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
 /**
  * @typedef {Object} SummaryItem
@@ -9,7 +19,20 @@ import { motion, AnimatePresence } from 'framer-motion';
  */
 
 /**
- * ActionConfirmModal - A reusable modal to summarize and confirm actions
+ * Helper to extract raw text content from React node or string
+ */
+const extractTextContent = (node) => {
+  if (node === undefined || node === null) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractTextContent).join(' ');
+  if (node.props) {
+    if (node.props.children) return extractTextContent(node.props.children);
+  }
+  return '';
+};
+
+/**
+ * ActionConfirmModal - Sleek Progressive Card Dialog for modern SaaS (Linear / Vercel style)
  *
  * @param {Object} props
  * @param {boolean} props.isOpen
@@ -21,6 +44,7 @@ import { motion, AnimatePresence } from 'framer-motion';
  * @param {boolean} [props.requireTypeToConfirm=false]
  * @param {boolean} [props.isLoading=false]
  * @param {string} [props.confirmText]
+ * @param {string} [props.cancelText]
  */
 const ActionConfirmModal = ({
   isOpen,
@@ -29,150 +53,438 @@ const ActionConfirmModal = ({
   title,
   actionType = 'submit',
   summaryData = [],
+  summaryItems = null, // backward compatibility
   requireTypeToConfirm = false,
   isLoading = false,
   confirmText,
-  cancelText
+  cancelText,
+  confirmLabel, // backward compatibility
+  dar = null
 }) => {
   const [typedConfirmation, setTypedConfirmation] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Reset typed confirmation when modal opens
+  // Normalized items
+  const items = useMemo(() => {
+    return (summaryData && summaryData.length > 0) ? summaryData : (summaryItems || []);
+  }, [summaryData, summaryItems]);
+
+  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setTypedConfirmation('');
       setIsSuccess(false);
+      setIsSubmitting(false);
     }
   }, [isOpen]);
 
-  const handleConfirmClick = () => {
-    setIsSuccess(true);
-    setTimeout(() => {
-      onConfirm();
-    }, 800);
+  const handleConfirmClick = async () => {
+    if (isSubmitting || isSuccess) return;
+    setIsSubmitting(true);
+    try {
+      if (onConfirm) {
+        await onConfirm();
+      }
+      setIsSuccess(true);
+      setTimeout(() => {
+        if (onClose) onClose();
+      }, 500);
+    } catch (err) {
+      console.error('ActionConfirmModal onConfirm error:', err);
+      toast.error(err?.message || 'เกิดข้อผิดพลาด ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const getStyles = () => {
+  const getActionTheme = () => {
     switch (actionType) {
+      case 'review':
+        return {
+          icon: <CheckCircle className="w-5 h-5 text-indigo-600" />,
+          btn: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันผ่านการทบทวน',
+          badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200/80',
+          accentBorder: 'border-indigo-200/60'
+        };
       case 'approve':
         return {
-          icon: <CheckCircle className="w-6 h-6" />,
-          iconColor: 'text-[#4a724b]',
-          btn: 'bg-[#4a724b] hover:bg-[#3d5e3e] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#4a724b]/20 outline-none',
-          defaultText: 'ยืนยันการอนุมัติเอกสาร'
+          icon: <CheckCircle className="w-5 h-5 text-emerald-600" />,
+          btn: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันการอนุมัติเอกสาร',
+          badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+          accentBorder: 'border-emerald-200/60'
         };
       case 'reject':
         return {
-          icon: <XCircle className="w-6 h-6" />,
-          iconColor: 'text-[#a94442]',
-          btn: 'bg-[#a94442] hover:bg-[#8c3836] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#a94442]/20 outline-none',
-          defaultText: 'ยืนยันการไม่อนุมัติ / ส่งกลับแก้ไข'
+          icon: <XCircle className="w-5 h-5 text-rose-600" />,
+          btn: 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันการไม่อนุมัติ / ส่งกลับแก้ไข',
+          badgeBg: 'bg-rose-50 text-rose-700 border-rose-200/80',
+          accentBorder: 'border-rose-200/60'
         };
       case 'obsolete':
         return {
-          icon: <AlertTriangle className="w-6 h-6" />,
-          iconColor: 'text-[#b87c33]',
-          btn: 'bg-[#b87c33] hover:bg-[#99672b] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#b87c33]/20 outline-none',
-          defaultText: 'ยืนยันการยกเลิกเอกสาร'
+          icon: <AlertTriangle className="w-5 h-5 text-amber-600" />,
+          btn: 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm shadow-amber-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันการยกเลิกเอกสาร',
+          badgeBg: 'bg-amber-50 text-amber-700 border-amber-200/80',
+          accentBorder: 'border-amber-200/60'
         };
       case 'acknowledge':
         return {
-          icon: <CheckCircle className="w-6 h-6" />,
-          iconColor: 'text-[#da7756]',
-          btn: 'bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#da7756]/20 outline-none',
-          defaultText: 'รับทราบและยอมรับ'
+          icon: <CheckCircle className="w-5 h-5 text-blue-600" />,
+          btn: 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20 active:scale-[0.98]',
+          confirmDefault: 'รับทราบและยอมรับ',
+          badgeBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
+          accentBorder: 'border-blue-200/60'
         };
       case 'distribute':
         return {
-          icon: <ArrowRight className="w-6 h-6" />,
-          iconColor: 'text-[#da7756]',
-          btn: 'bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#da7756]/20 outline-none',
-          defaultText: 'ยืนยันการแจกจ่ายสำเนา'
+          icon: <Send className="w-5 h-5 text-blue-600" />,
+          btn: 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันการแจกจ่ายสำเนา',
+          badgeBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
+          accentBorder: 'border-blue-200/60'
         };
       case 'submit':
       default:
         return {
-          icon: <FileText className="w-6 h-6" />,
-          iconColor: 'text-[#da7756]',
-          btn: 'bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white shadow-none focus:ring-4 focus:ring-[#da7756]/20 outline-none',
-          defaultText: 'ยืนยันการส่งคำร้องขอ'
+          icon: <FileText className="w-5 h-5 text-blue-600" />,
+          btn: 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20 active:scale-[0.98]',
+          confirmDefault: 'ยืนยันการส่งคำร้องขอ',
+          badgeBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
+          accentBorder: 'border-blue-200/60'
         };
     }
   };
 
-  const styles = getStyles();
-  const isTypeConfirmed = !requireTypeToConfirm || typedConfirmation === 'CONFIRM';
-  const isConfirmDisabled = isLoading || !isTypeConfirmed || isSuccess;
+  const theme = getActionTheme();
+  const isTypeConfirmed = !requireTypeToConfirm || typedConfirmation.trim().toUpperCase() === 'CONFIRM';
+  const isConfirmDisabled = isLoading || isSubmitting || !isTypeConfirmed || isSuccess;
+
+  // Partition items into structured sections
+  const categorized = useMemo(() => {
+    let docCodeItem = null;
+    let docTitleItem = null;
+    let revItem = null;
+    let nextStepItem = null;
+    let detailItem = null;
+    const metadataItems = [];
+
+    items.forEach((item) => {
+      const label = item.label || '';
+      const textVal = extractTextContent(item.value);
+
+      // Doc Code
+      if (
+        !docCodeItem &&
+        (label.includes('รหัสเอกสาร') || label.includes('รหัสคำร้อง') || label.includes('เอกสารที่ขอยกเลิก') || label.includes('Doc No') || label.includes('Document Code'))
+      ) {
+        docCodeItem = item;
+      }
+      // Next Step / Signatory
+      else if (
+        !nextStepItem &&
+        (label.includes('ขั้นตอนถัดไป') || label.includes('สายการอนุมัติ') || label.includes('ผู้มีอำนาจทบทวน') || label.includes('ส่งต่อไปยัง') || label.includes('Next Step'))
+      ) {
+        nextStepItem = item;
+      }
+      // Revision change
+      else if (
+        !revItem &&
+        (label.includes('การเปลี่ยนแปลงฉบับ') || label.includes('ฉบับที่จะยกเลิก') || label.includes('ฉบับที่') || label.includes('Revision'))
+      ) {
+        revItem = item;
+      }
+      // Document Title
+      else if (
+        !docTitleItem &&
+        (label.includes('ชื่อเอกสาร') || label.includes('ชื่อเอกสารฉบับใหม่') || label.includes('Document Name') || label.includes('Title'))
+      ) {
+        docTitleItem = item;
+      }
+      // Detail or summary textarea blocks
+      else if (
+        !detailItem &&
+        (label.includes('รายละเอียด') || label.includes('สรุปการแก้ไข') || label.includes('ผลกระทบ') || label.includes('ความเห็นประกอบ'))
+      ) {
+        detailItem = item;
+      }
+      // Combined document field (e.g. "[SOP-QA-01] Work Instruction...")
+      else if (!docCodeItem && (label.includes('เอกสาร') || label.includes('เอกสารที่ขอยกเลิก')) && textVal.startsWith('[')) {
+        const match = textVal.match(/^\[(.*?)\]\s*(.*)$/);
+        if (match) {
+          docCodeItem = { label: 'รหัสเอกสาร', value: match[1] };
+          if (!docTitleItem && match[2]) {
+            docTitleItem = { label: 'ชื่อเอกสาร', value: match[2] };
+          }
+        } else {
+          docCodeItem = item;
+        }
+      }
+      // Standard metadata
+      else {
+        metadataItems.push(item);
+      }
+    });
+
+    return {
+      docCodeItem,
+      docTitleItem,
+      revItem,
+      nextStepItem,
+      detailItem,
+      metadataItems
+    };
+  }, [items]);
+
+  // หาข้อมูล Approver จาก approvalWorkflow array (Dynamic Workflow Binding)
+  const nextSignatory = useMemo(() => {
+    if (!dar || !dar.approvalWorkflow) return null;
+    
+    // หากเป็นโหมด Review -> ขั้นต่อไปคือ APPROVER
+    return dar.approvalWorkflow.find(step => step.roleKey === 'APPROVER');
+  }, [dar]);
+
+  const nextActorNameFromWorkflow = nextSignatory?.name || nextSignatory?.assignedTo;
+  const nextActorRoleFromWorkflow = nextSignatory?.role;
+
+  // Helper to parse Next Step actor details
+  const nextActorData = useMemo(() => {
+    if (!categorized.nextStepItem && !nextSignatory) return null;
+    const rawVal = categorized.nextStepItem?.value;
+    const rawText = rawVal ? extractTextContent(rawVal) : '';
+    
+    // Extract name & role
+    let title = 'ส่งต่อเพื่อพิจารณาขั้นถัดไป';
+    let name = nextActorNameFromWorkflow || rawText;
+    let role = nextActorRoleFromWorkflow || '';
+
+    if (!nextSignatory) {
+      if (rawText.includes('ส่งต่อไปยัง:')) {
+        name = rawText.replace(/.*ส่งต่อไปยัง:\s*/, '').trim();
+      } else if (rawText.includes('ส่งต่อให้:')) {
+        name = rawText.replace(/.*ส่งต่อให้:\s*/, '').trim();
+      } else if (rawText.includes('ส่งกลับไปยัง:')) {
+        title = 'ส่งกลับเพื่อดำเนินการแก้ไข';
+        name = rawText.replace(/.*ส่งกลับไปยัง:\s*/, '').trim();
+      } else if (rawText.includes('สิ้นสุดคำร้อง:')) {
+        title = 'สิ้นสุดกระบวนการคำร้อง';
+        name = rawText.replace(/.*สิ้นสุดคำร้อง:\s*/, '').trim();
+      }
+
+      // Check if contains (Role)
+      const parenMatch = name.match(/^(.*?)\s*\((.*?)\)$/);
+      if (parenMatch) {
+        name = parenMatch[1];
+        role = parenMatch[2];
+      }
+    }
+
+    const nextActorInitials = (name && name.length > 0) 
+      ? name.trim().substring(0, 1) 
+      : 'ผ';
+
+    return {
+      title,
+      name: name || 'ผู้อนุมัติ (Approver)',
+      role: role || (nextSignatory ? 'Approver' : ''),
+      initials: nextActorInitials,
+      originalValue: rawVal
+    };
+  }, [categorized.nextStepItem, nextSignatory, nextActorNameFromWorkflow, nextActorRoleFromWorkflow]);
+
+  // Helper to render values with proper typography
+  const renderItemValue = (item) => {
+    if (item.value === undefined || item.value === null || item.value === '') return '-';
+
+    // If string represents a revision transition (e.g. Rev.00 ➔ Rev.01 or 00 -> 01)
+    if (typeof item.value === 'string' && (item.value.includes('➔') || item.value.includes('->') || item.value.includes('→'))) {
+      const parts = item.value.split(/\s*(?:➔|->|→)\s*/);
+      if (parts.length === 2) {
+        const fromRev = parts[0].trim();
+        const toRev = parts[1].trim();
+        return (
+          <div className="flex items-center gap-1.5 font-mono text-xs font-semibold">
+            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
+              {fromRev.startsWith('Rev') ? fromRev : `Rev.${fromRev}`}
+            </span>
+            <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+            <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200/80 font-bold">
+              {toRev.startsWith('Rev') ? toRev : `Rev.${toRev}`}
+            </span>
+          </div>
+        );
+      }
+    }
+
+    return item.value;
+  };
+
+  const hasHeroSection = !!(categorized.docCodeItem || categorized.docTitleItem || categorized.revItem);
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/20 backdrop-blur-sm p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 transition-all">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ type: "spring", stiffness: 450, damping: 30 }}
-            className="bg-white rounded-xl w-full max-w-2xl sm:max-w-3xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-stone-200 flex flex-col max-h-[90vh] overflow-hidden"
+            initial={{ opacity: 0, scale: 0.96, y: 6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 6 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col transition-all animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className={`px-8 pt-8 pb-5 border-b border-stone-100 flex items-center justify-between bg-white`}>
-              <div className="flex items-center gap-4 min-w-0">
-                <div className={`flex items-center justify-center w-12 h-12 bg-[#f9f8f6] rounded-xl border border-stone-200 shrink-0 ${styles.iconColor}`}>
-                  {styles.icon}
+            {/* Header Strip */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200/70 flex items-center justify-center shrink-0">
+                  {theme.icon}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-bold text-[#2d2d2d] tracking-tight truncate">{title}</h2>
-                  <p className="text-sm text-stone-500 font-medium mt-1">กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน</p>
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 truncate">
+                    {title}
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5 font-normal">
+                    กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน
+                  </p>
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={onClose}
-                className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors shrink-0 focus:ring-2 focus:ring-[#da7756]/20 outline-none"
-                disabled={isLoading}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0 ml-2 outline-none cursor-pointer"
+                disabled={isLoading || isSubmitting}
                 title="ปิดหน้าต่าง"
               >
-                <X size={24} />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="p-8 overflow-y-auto max-h-[75vh] flex-1 bg-[#f9f8f6] space-y-6 scrollbar-thin">
-              <div className="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100 w-full max-w-full overflow-hidden shadow-sm">
-                {summaryData.map((item, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-start p-4 sm:p-5 gap-2 sm:gap-4 hover:bg-stone-50 transition-colors min-w-0">
-                    <span className="text-sm font-bold text-stone-500 uppercase tracking-wider w-36 sm:w-48 shrink-0">{item.label}</span>
-                    <div className="text-sm sm:text-base font-medium text-[#2d2d2d] break-all break-words min-w-0 [overflow-wrap:anywhere] flex-1 leading-relaxed">
-                      {item.value !== undefined && item.value !== null && item.value !== '' ? item.value : '-'}
+            {/* Modal Body - Clean single scrollable area */}
+            <div className="overflow-y-auto flex-1 p-0 custom-scrollbar divide-y divide-slate-100">
+              {/* Hero Document Identity Card */}
+              {hasHeroSection && (
+                <div className="mx-6 mt-4 p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {categorized.docCodeItem && (
+                      <div className="flex items-center gap-2">
+                        {React.isValidElement(categorized.docCodeItem.value) ? (
+                          categorized.docCodeItem.value
+                        ) : (
+                          <span className="font-mono font-bold text-xs text-blue-600 bg-blue-50/80 px-2.5 py-1 rounded-md border border-blue-200/50">
+                            {renderItemValue(categorized.docCodeItem)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {categorized.revItem && (
+                      <div className="flex items-center">
+                        {renderItemValue(categorized.revItem)}
+                      </div>
+                    )}
+                  </div>
+
+                  {categorized.docTitleItem && (
+                    <div className="text-sm font-semibold text-slate-900 leading-snug line-clamp-2">
+                      {renderItemValue(categorized.docTitleItem)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Compact Metadata Grid (2-Column Key-Value) */}
+              {categorized.metadataItems.length > 0 && (
+                <div className="px-6 py-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {categorized.metadataItems.map((item, idx) => (
+                    <div key={idx} className="space-y-1 min-w-0">
+                      <p className="text-slate-400 font-medium text-[11px] tracking-wide">
+                        {item.label}
+                      </p>
+                      <div className="text-slate-800 font-semibold break-all break-words min-w-0 [overflow-wrap:anywhere] leading-snug">
+                        {renderItemValue(item)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Details / Comments Card (if present) */}
+              {categorized.detailItem && (
+                <div className="px-6 py-3">
+                  <div className="p-3 rounded-xl bg-slate-50/60 border border-slate-200/60 space-y-1">
+                    <p className="text-[11px] font-medium text-slate-400">
+                      {categorized.detailItem.label}
+                    </p>
+                    <div className="text-xs text-slate-700 leading-relaxed break-all break-words [overflow-wrap:anywhere]">
+                      {renderItemValue(categorized.detailItem)}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
 
+              {/* Next Signatory Pathway Card (Gen-Z SaaS Style) */}
+              {nextActorData && (
+                <div className="mx-6 mb-5 p-3 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-xs transition-all">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Avatar อิงจากตัวอักษรแรกของชื่อจริง */}
+                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[13px] shadow-sm shrink-0">
+                      {nextActorData.initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-blue-600 font-medium mb-0.5">
+                        {nextActorData.title}
+                      </p>
+                      {React.isValidElement(nextActorData.originalValue) && nextActorData.originalValue.props?.['data-testid'] ? (
+                        nextActorData.originalValue
+                      ) : (
+                        <p className="text-slate-900 font-semibold text-[13px] truncate">
+                          {nextActorData.name} 
+                          {nextActorData.role && (
+                            <span className="text-slate-500 font-normal ml-1.5 text-[11px]">
+                              ({nextActorData.role})
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-white border border-blue-100 flex items-center justify-center shadow-sm shrink-0">
+                    <Send className="w-4 h-4 text-blue-600 shrink-0 relative -left-px mt-px" strokeWidth={2}/>
+                  </div>
+                </div>
+              )}
+
+              {/* Type to Confirm Guardrail (Obsolete / Critical Actions) */}
               {requireTypeToConfirm && (
-                <div className="mt-4 bg-white p-5 rounded-xl border border-stone-200 space-y-3 shadow-sm">
-                  <label className="block text-sm font-bold text-[#a94442]">
-                    นี่เป็นการดำเนินการสำคัญ กรุณาพิมพ์ <strong className="select-all bg-[#f5e6e6] px-2 py-0.5 rounded border border-[#a94442]/30 font-mono text-sm text-[#a94442]">CONFIRM</strong> เพื่อยืนยัน:
+                <div className="p-5 mx-6 my-3 rounded-xl border border-rose-200 bg-rose-50/30 space-y-2.5">
+                  <label className="block text-xs font-semibold text-rose-800">
+                    นี่เป็นการดำเนินการสำคัญ กรุณาพิมพ์{' '}
+                    <span className="select-all bg-rose-100 px-1.5 py-0.5 rounded font-mono font-bold text-rose-900">
+                      CONFIRM
+                    </span>{' '}
+                    เพื่อยืนยัน:
                   </label>
                   <input
                     type="text"
                     value={typedConfirmation}
                     onChange={(e) => setTypedConfirmation(e.target.value)}
                     placeholder="พิมพ์ CONFIRM"
-                    className="w-full px-4 py-3 text-sm border border-stone-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-[#a94442]/10 focus:border-[#a94442] transition-all font-mono uppercase bg-white text-[#2d2d2d]"
+                    className="w-full px-3 py-2 text-xs border border-rose-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-200 transition-all font-mono uppercase bg-white text-slate-900"
                     disabled={isLoading}
                   />
                 </div>
               )}
             </div>
 
-            {/* Footer */}
-            <div className="px-8 py-5 border-t border-stone-100 flex justify-end gap-4 bg-white shrink-0">
+            {/* Action Footer Buttons (Linear-Grade Polish) */}
+            <div className="px-6 py-3.5 bg-slate-50/80 border-t border-slate-150 flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-3 text-sm font-bold text-stone-600 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl transition-all focus:ring-4 focus:ring-stone-200 outline-none"
+                className="h-9 px-4 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-colors cursor-pointer outline-none"
                 disabled={isLoading || isSuccess}
               >
                 {cancelText || 'ยกเลิก / กลับไปแก้ไข'}
@@ -181,8 +493,10 @@ const ActionConfirmModal = ({
                 type="button"
                 onClick={handleConfirmClick}
                 disabled={isConfirmDisabled}
-                className={`text-sm font-bold px-6 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[150px] ${
-                  isConfirmDisabled ? 'opacity-50 cursor-not-allowed bg-stone-100 text-stone-400 border border-stone-200' : styles.btn
+                className={`h-9 px-4 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 min-w-[130px] cursor-pointer outline-none ${
+                  isConfirmDisabled
+                    ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none'
+                    : theme.btn
                 }`}
               >
                 <AnimatePresence mode="wait" initial={false}>
@@ -192,29 +506,30 @@ const ActionConfirmModal = ({
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.2 }}
+                      transition={{ duration: 0.15 }}
                     >
-                      <CheckCircle className="w-6 h-6 text-white" />
+                      <CheckCircle className="w-4 h-4 text-white" />
                     </motion.div>
-                  ) : isLoading ? (
+                  ) : (isLoading || isSubmitting) ? (
                     <motion.div
                       key="loading"
-                      initial={{ opacity: 0, y: 5 }}
+                      initial={{ opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      className="flex items-center gap-2 text-white"
+                      exit={{ opacity: 0, y: -3 }}
+                      className="flex items-center gap-1.5 text-white"
                     >
-                      <Loader2 className="animate-spin h-5 w-5 text-current" strokeWidth={2} />
+                      <Loader2 className="animate-spin h-3.5 w-3.5 text-current" strokeWidth={2} />
                       กำลังประมวลผล...
                     </motion.div>
                   ) : (
                     <motion.span
                       key="text"
-                      initial={{ opacity: 0, y: -5 }}
+                      initial={{ opacity: 0, y: -3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 5 }}
+                      exit={{ opacity: 0, y: 3 }}
+                      className="flex items-center gap-1.5"
                     >
-                      {confirmText || styles.defaultText}
+                      {confirmLabel || confirmText || theme.confirmDefault}
                     </motion.span>
                   )}
                 </AnimatePresence>
@@ -228,3 +543,4 @@ const ActionConfirmModal = ({
 };
 
 export default ActionConfirmModal;
+

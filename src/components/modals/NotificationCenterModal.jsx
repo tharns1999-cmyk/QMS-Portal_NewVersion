@@ -5,21 +5,20 @@ import {
   CheckCheck, 
   Search, 
   X, 
-  Calendar, 
   FileText, 
   Copy, 
   Settings, 
   ExternalLink,
-  Filter,
-  CheckCircle2,
-  Clock
+  Clock,
+  Globe
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import useStore from '../../store/useStore';
+import useStore, { isNotificationVisibleToUser, isNotificationReadByUser } from '../../store/useStore';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { TablePagination } from '../common/TablePagination';
 import toast from 'react-hot-toast';
+import { resolveNotificationNavigation } from '../../utils/notificationRouter';
 
 dayjs.extend(relativeTime);
 
@@ -45,23 +44,22 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
     return notifications
       .filter((item) => {
         // Must belong to current user or be general broadcast
-        const isForMe = !item.userId && !item.user_id 
-          ? true 
-          : (item.userId === currentUser?.id || item.user_id === currentUser?.id || item.department === currentUser?.department);
-        if (!isForMe) return false;
+        if (!isNotificationVisibleToUser(item, currentUser)) return false;
 
         // Unread check
-        const isUnread = !item.isRead && !item.read;
+        const isUnread = !isNotificationReadByUser(item, currentUser?.id);
 
         // Category / Tab filter
         if (activeTab === 'UNREAD' && !isUnread) return false;
         
         const cat = item.category || (
           item.title?.includes('DAR') ? 'DAR' :
-          (item.title?.includes('สำเนา') || item.title?.includes('ทดแทน')) ? 'CONTROLLED_COPY' : 'SYSTEM'
+          (item.title?.includes('สำเนา') || item.title?.includes('ทดแทน')) ? 'CONTROLLED_COPY' :
+          (item.title?.includes('เอกสารภายนอก') || item.message?.includes('เอกสารภายนอก') || item.link?.includes('external')) ? 'EXTERNAL_DOC' : 'SYSTEM'
         );
 
         if (activeTab === 'DAR' && cat !== 'DAR') return false;
+        if (activeTab === 'EXTERNAL_DOC' && cat !== 'EXTERNAL_DOC') return false;
         if (activeTab === 'CONTROLLED_COPY' && cat !== 'CONTROLLED_COPY') return false;
         if (activeTab === 'SYSTEM' && cat !== 'SYSTEM') return false;
 
@@ -82,10 +80,7 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
   // Unread count for current user
   const totalUnreadCount = useMemo(() => {
     return notifications.filter((n) => {
-      const isForMe = !n.userId && !n.user_id 
-        ? true 
-        : (n.userId === currentUser?.id || n.user_id === currentUser?.id || n.department === currentUser?.department);
-      return isForMe && (!n.isRead && !n.read);
+      return isNotificationVisibleToUser(n, currentUser) && !isNotificationReadByUser(n, currentUser?.id);
     }).length;
   }, [notifications, currentUser]);
 
@@ -103,12 +98,11 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
 
   const handleItemClick = (item) => {
     if (markAsRead && item.id) {
-      markAsRead(item.id);
+      markAsRead(item.id, currentUser?.id);
     }
-    if (item.link) {
-      onClose();
-      navigate(item.link);
-    }
+    onClose();
+    const target = resolveNotificationNavigation(item, store);
+    navigate(target.path, { state: target.state });
   };
 
   const handleMarkAllRead = () => {
@@ -121,7 +115,8 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
   const getCategoryBadge = (item) => {
     const cat = item.category || (
       item.title?.includes('DAR') ? 'DAR' :
-      (item.title?.includes('สำเนา') || item.title?.includes('ทดแทน')) ? 'CONTROLLED_COPY' : 'SYSTEM'
+      (item.title?.includes('สำเนา') || item.title?.includes('ทดแทน')) ? 'CONTROLLED_COPY' :
+      (item.title?.includes('เอกสารภายนอก') || item.message?.includes('เอกสารภายนอก') || item.link?.includes('external')) ? 'EXTERNAL_DOC' : 'SYSTEM'
     );
 
     switch (cat) {
@@ -130,6 +125,13 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#F0EDFF] text-[#7B61FF] border border-[#D5CDFF]">
             <FileText size={11} />
             <span>คำร้อง DAR</span>
+          </span>
+        );
+      case 'EXTERNAL_DOC':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#E0F2FE] text-[#0284C7] border border-[#BAE6FD]">
+            <Globe size={11} />
+            <span>เอกสารภายนอก</span>
           </span>
         );
       case 'CONTROLLED_COPY':
@@ -152,11 +154,11 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] w-full max-w-4xl h-[640px] max-h-[90vh] flex flex-col overflow-hidden"
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         
@@ -198,6 +200,7 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
               { id: 'ALL', label: 'ทั้งหมด' },
               { id: 'UNREAD', label: `ยังไม่อ่าน ${totalUnreadCount > 0 ? `(${totalUnreadCount})` : ''}` },
               { id: 'DAR', label: 'คำร้อง DAR' },
+              { id: 'EXTERNAL_DOC', label: 'เอกสารภายนอก' },
               { id: 'CONTROLLED_COPY', label: 'สำเนาควบคุม' },
               { id: 'SYSTEM', label: 'ระบบ' },
             ].map((tab) => (
@@ -260,7 +263,7 @@ export const NotificationCenterModal = ({ isOpen, onClose }) => {
             </div>
           ) : (
             paginatedData.map((item) => {
-              const isUnread = !item.isRead && !item.read;
+              const isUnread = !isNotificationReadByUser(item, currentUser?.id);
               const timeDisplay = item.timestamp || item.created_at || item.createdAt
                 ? dayjs(item.timestamp || item.created_at || item.createdAt).fromNow()
                 : (item.time || 'เมื่อสักครู่');

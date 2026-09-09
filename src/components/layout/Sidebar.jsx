@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,7 +10,7 @@ import {
   Library, 
   Copy, 
   Globe, 
-  Database, 
+  FileText,
   History, 
   Bell, 
   Calendar, 
@@ -18,10 +18,12 @@ import {
   RotateCcw,
   Trash2,
   Sparkles,
+  CheckCircle2,
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
+import { isActionableTask, isDccAdmin as checkDccAdmin } from '../../utils/taskFilter';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -29,7 +31,7 @@ const Sidebar = () => {
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
     masterUsers, setCurrentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData
+    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, externalRequests, externalDocuments
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -38,36 +40,33 @@ const Sidebar = () => {
   const isPortal = path === '/portal' || path === '/';
   const isDcc = !isPortal;
 
-  const isRequester = (requestUsers || []).some(u => u.id === currentUser?.id);
-  const isReviewerOrApprover = (reviewUsers || []).some(u => u.id === currentUser?.id) || (approveUsers || []).some(u => u.id === currentUser?.id);
+  const isRequester = Boolean(
+    currentUser?.status !== 'INACTIVE' && (
+      currentUser?.canCreateDar !== false ||
+      currentUser?.permissions?.includes('DAR_CREATE') ||
+      currentUser?.isWorkflowUser ||
+      (requestUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId)
+    )
+  );
+
+  const isReviewerOrApprover = Boolean(
+    currentUser?.canAccessTasks !== false && (
+      currentUser?.canAccessTasks ||
+      currentUser?.permissions?.includes('TASK_ACCESS') ||
+      currentUser?.isWorkflowUser ||
+      Number(currentUser?.approval_level || currentUser?.level || 0) >= 1 ||
+      (reviewUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId) ||
+      (approveUsers || []).some(u => u.id === currentUser?.id || u.empId === currentUser?.id || u.id === currentUser?.empId)
+    )
+  );
+
   const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'DCC_STAFF');
-  const isDccAdmin = Boolean(currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.isDcc);
+  const isDccAdmin = checkDccAdmin(currentUser);
   const isAdmin = isDccAdmin;
-  const isMasterListAccess = (currentUser?.level >= 5 && !isAdmin);
 
   // Task Counts Calculations
-  const userDepts = currentUser?.depts || (currentUser?.department ? [currentUser.department] : []);
-  const userTasks = (tasks || []).filter(t => {
-    const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId;
-    const isHardcopyReceipt = (t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.type === 'CONFIRM_RECEIPT' || t.task_type === 'CONFIRM_RECEIPT');
-
-    if (isHardcopyReceipt) {
-      if (taskAssigneeId) {
-        return taskAssigneeId === currentUser?.id || (t.assigneeName && t.assigneeName === currentUser?.name);
-      }
-      return t.assignedToDept && userDepts.includes(t.assignedToDept);
-    }
-
-    const isMyTask = (taskAssigneeId && (taskAssigneeId === currentUser?.id || t.assigneeName === currentUser?.name)) || 
-      (t.currentHandlerDepartment && userDepts.includes(t.currentHandlerDepartment) && Number(t.currentHandlerLevel) === Number(currentUser?.level)) ||
-      (!taskAssigneeId && t.assignedToDept && userDepts.includes(t.assignedToDept));
-    
-    if (isAdmin) {
-      return (t.type || '').startsWith('DCC_') || t.assignedToRole === 'DCC_ADMIN' || isMyTask;
-    }
-    return isMyTask;
-  });
-  const myTaskCount = userTasks.length;
+  const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
+  const myTaskCount = userTasks.filter(t => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED').length;
 
   const ccTaskCount = (controlledCopyInstances || []).filter(inst => {
     const doc = (documents || []).find(d => d.id === (inst.doc_id || inst.docId));
@@ -75,35 +74,62 @@ const Sidebar = () => {
     return (inst.status === 'PENDING_RECEIPT' || inst.status === 'PENDING_ISSUE' || inst.status === 'DISPATCHED_PENDING_RECEIPT' || inst.status === 'REPLACEMENT_REQUESTED' || inst.status === 'PENDING_RECALL' || isRecall);
   }).length;
 
+  const myExternalReviseCount = useMemo(() => {
+    const reviseDocIds = new Set();
+    (tasks || []).forEach(t => {
+      if (
+        (t.type === 'EXTERNAL_REVISE' || t.taskType === 'EXTERNAL_REVISE') &&
+        (t.assigneeId === currentUser?.id || t.requesterId === currentUser?.id) &&
+        t.status === 'PENDING'
+      ) {
+        reviseDocIds.add(t.referenceId || t.docId || t.id);
+      }
+    });
+    (externalRequests || []).forEach(r => {
+      if (r.requesterId === currentUser?.id && r.status === 'REVISE_REQUESTED') {
+        reviseDocIds.add(r.docId || r.externalDocId || r.requestId || r.id);
+      }
+    });
+    return reviseDocIds.size;
+  }, [tasks, externalRequests, currentUser]);
+
   const NavItem = ({ to, icon: IconComponent, label, badgeCount }) => (
     <NavLink 
       to={to} 
       className={({ isActive }) => 
-        `group relative flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[#0D99FF] ${
+        `group relative flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 ${
           isActive 
-            ? 'bg-[#E5F4FF] text-[#0D99FF] font-medium shadow-none border border-transparent' 
-            : 'text-[#444444] font-medium hover:text-[#1E1E1E] hover:bg-[#F5F5F5] border border-transparent'
+            ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs' 
+            : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
         }`
       }
     >
       {({ isActive }) => (
         <>
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Subtle Active Indicator Bar */}
+          {isActive && (
+            <span 
+              aria-hidden="true"
+              className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-blue-600 transition-all" 
+            />
+          )}
+
+          <div className="flex items-center gap-3 min-w-0 flex-1 pl-1">
             <IconComponent 
-              className={`w-4.5 h-4.5 shrink-0 transition-colors duration-150 ${
-                isActive ? 'text-[#0D99FF]' : 'text-[#666666] group-hover:text-[#444444]'
+              className={`w-4.5 h-4.5 shrink-0 transition-colors duration-200 ${
+                isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
               }`} 
-              strokeWidth={isActive ? 2 : 1.75} 
+              strokeWidth={1.5} 
             />
             <span className="truncate leading-normal tracking-tight text-[13.5px]">{label}</span>
           </div>
 
           {badgeCount > 0 && (
             <span 
-              className={`ml-2 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md shrink-0 transition-transform group-hover:scale-105 ${
+              className={`ml-2 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
                 isActive 
-                  ? 'bg-[#0D99FF] text-white shadow-none' 
-                  : 'bg-[#E5E5E5] text-[#666666]'
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                  : 'bg-slate-100 text-slate-500 border border-slate-200'
               }`}
             >
               {badgeCount}
@@ -115,16 +141,16 @@ const Sidebar = () => {
   );
 
   return (
-    <aside className="w-64 sm:w-[270px] h-full bg-white border-r border-[#E5E5E5] flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30">
+    <aside className="w-64 sm:w-[270px] h-full bg-white border-r border-slate-200 flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30 shadow-none">
       {/* ================= TOP SECTION: Brand Header & Notifications ================= */}
       <div className="space-y-3.5 shrink-0">
         {/* Brand Header */}
         <div 
           onClick={() => navigate('/portal')}
-          className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-100/80 transition-all duration-150 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-all duration-200 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
           title="ไปยังหน้าหลักพอร์ทัล"
         >
-          <div className="w-9 h-9 rounded-lg bg-[#1E1E1E] text-white flex items-center justify-center font-bold text-lg shadow-none shrink-0 group-hover:scale-105 transition-transform">
+          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0 group-hover:scale-105 transition-transform">
             Q
           </div>
           <div className="min-w-0 flex-1">
@@ -132,7 +158,7 @@ const Sidebar = () => {
               <h1 className="text-[16px] font-black text-slate-900 tracking-tight leading-tight truncate">
                 QMS
               </h1>
-              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] rounded shrink-0 uppercase tracking-wider">
+              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded shrink-0 uppercase tracking-wider">
                 Enterprise
               </span>
             </div>
@@ -142,11 +168,11 @@ const Sidebar = () => {
           </div>
         </div>
 
-        {/* Notifications Quick Bar (Figma UI3 Floating Panel) */}
+        {/* Notifications Quick Bar */}
         <NotificationPopover />
       </div>
 
-      <div className="my-3 border-b border-slate-200/80" />
+      <div className="my-3 border-b border-slate-200" />
 
       {/* ================= CENTER SECTION: Navigation Links ================= */}
       <nav className="flex-1 overflow-y-auto space-y-1 pr-1.5 -mr-1.5 custom-scrollbar">
@@ -156,7 +182,7 @@ const Sidebar = () => {
           <>
             <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>ระบบควบคุมเอกสาร</span>
-              <span className="text-[9.5px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">DCC</span>
+              <span className="text-[9.5px] font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">DCC</span>
             </div>
             
             <NavItem to="/dcc/dashboard" icon={Library} label="แดชบอร์ดภาพรวม" />
@@ -179,15 +205,13 @@ const Sidebar = () => {
               </>
             )}
             
-            {isMasterListAccess && (
-              <NavItem to="/dcc/master-list" icon={Database} label="ทะเบียนเอกสารหลัก" />
-            )}
             <NavItem to="/dcc/library" icon={Library} label="คลังเอกสารแม่บท" />
             
             {isDccUser && (
               <NavItem to="/dcc/controlled-copy" icon={Copy} label="ทะเบียนสำเนาควบคุม" badgeCount={ccTaskCount} />
             )}
-            <NavItem to="/dcc/external-docs" icon={Globe} label="เอกสารภายนอก" />
+            <NavItem to="/dcc/external-docs" icon={Globe} label="คลังเอกสารภายนอก" />
+            <NavItem to="/dcc/external/my-requests" icon={FileText} label="คำร้องเอกสารภายนอกของฉัน" badgeCount={myExternalReviseCount} />
             <NavItem to="/dcc/periodic-reviews" icon={Calendar} label="การทบทวนตามรอบ" />
 
             {/* Quick Reset & Seed Mock Data Buttons for DCC */}
@@ -232,19 +256,19 @@ const Sidebar = () => {
       </nav>
 
       {/* ================= BOTTOM SECTION: User Profile & Role Switcher ================= */}
-      <div className="pt-4 border-t border-[#E5E5E5] shrink-0">
-        <div className="p-3 bg-white border border-[#E5E5E5] rounded-xl space-y-3 shadow-none">
+      <div className="pt-4 border-t border-slate-200 shrink-0">
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-[#F5F5F5] text-[#1E1E1E] flex items-center justify-center font-bold text-sm border border-[#E5E5E5] shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200 shrink-0">
               {currentUser?.name?.charAt(0) || 'U'}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1.5">
-                <p className="text-xs font-semibold text-[#1E1E1E] leading-snug truncate tracking-tight">
+                <p className="text-xs font-semibold text-slate-900 leading-snug truncate tracking-tight">
                   {currentUser?.name}
                 </p>
                 {currentUser?.isDcc && (
-                  <span className="px-1.5 py-0.2 text-[9px] font-medium font-mono bg-[#E5F4FF] text-[#0D99FF] rounded border border-[#B8E1FF] shrink-0 uppercase tracking-wider">
+                  <span className="px-1.5 py-0.2 text-[9px] font-semibold font-mono bg-blue-50 text-blue-700 rounded border border-blue-200 shrink-0 uppercase tracking-wider">
                     DCC
                   </span>
                 )}
@@ -257,7 +281,7 @@ const Sidebar = () => {
 
           <div className="relative">
             <select 
-              className="w-full h-8 px-2.5 text-xs font-medium text-[#1E1E1E] bg-white border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D99FF]/20 focus:border-[#0D99FF] transition-all cursor-pointer leading-normal shadow-none"
+              className="w-full h-8 px-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer leading-normal shadow-none"
               value={currentUser?.id || ''}
               onChange={(e) => setCurrentUser(e.target.value)}
               title="สลับผู้ใช้งาน / บทบาทจำลอง"
@@ -274,35 +298,36 @@ const Sidebar = () => {
 
       {/* ================= CLEAN SLATE RESET MODAL ================= */}
       {isCleanSlateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs">
-          <div className="bg-[#fbfbfa] rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-150">
-            <div className="px-6 pt-6 pb-4 border-b border-slate-200 bg-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200/80 shrink-0">
                   <Trash2 size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-lg tracking-tight leading-snug">ล้างข้อมูลจำลองเพื่อเริ่มต้นใหม่</h3>
+                  <h3 className="font-bold text-slate-900 text-base tracking-tight leading-snug">ล้างข้อมูลจำลองเพื่อเริ่มต้นใหม่</h3>
                   <p className="text-xs text-slate-500 mt-0.5">รีเซ็ตข้อมูลธุรกรรมเพื่อการทดสอบระบบใหม่</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCleanSlateOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs text-slate-600 leading-relaxed">
+            <div className="p-6 space-y-4 text-xs text-slate-600 leading-relaxed flex-1 overflow-y-auto">
               <p className="text-sm text-slate-800 font-medium">
                 การดำเนินการนี้จะ <strong>ลบข้อมูลจำลองเชิงธุรกรรมทั้งหมด</strong> เพื่อให้ระบบกลับสู่สภาพเริ่มต้นสำหรับการทดสอบตั้งแต่ต้น:
               </p>
 
               <div className="p-4 bg-white border border-rose-200/80 rounded-xl space-y-2 shadow-2xs">
                 <div className="font-bold text-rose-700 flex items-center gap-2 text-xs">
-                  <span>🗑️ ข้อมูลที่จะถูกล้างเป็นค่าว่าง:</span>
+                  <Trash2 size={14} strokeWidth={1.5} className="text-rose-600 shrink-0" />
+                  <span>ข้อมูลที่จะถูกล้างเป็นค่าว่าง:</span>
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-700 pl-1 font-medium text-xs">
                   <li>คำร้อง DAR ทั้งหมด</li>
@@ -316,7 +341,8 @@ const Sidebar = () => {
 
               <div className="p-4 bg-white border border-emerald-200/80 rounded-xl space-y-2 shadow-2xs">
                 <div className="font-bold text-emerald-700 flex items-center gap-2 text-xs">
-                  <span>✅ ข้อมูลหลักที่ยังคงไว้ (Master Data):</span>
+                  <CheckCircle2 size={14} strokeWidth={1.5} className="text-emerald-600 shrink-0" />
+                  <span>ข้อมูลหลักที่ยังคงไว้ (Master Data):</span>
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-700 pl-1 font-medium text-xs">
                   <li>บัญชีผู้ใช้มาตรฐาน พร้อมรหัส PIN 123456</li>
@@ -328,7 +354,7 @@ const Sidebar = () => {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsCleanSlateOpen(false)}

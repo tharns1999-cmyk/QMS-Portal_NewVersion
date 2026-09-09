@@ -1,81 +1,297 @@
 /**
- * Resolves the appropriate Reviewer based on the Requester's level.
- * Rule: candidate.level > requester.level (Nearest Higher)
+ * workflowResolver.js
+ * 
+ * Multi-Stage Linear Approval Pipeline & Candidate Eligibility Resolver
+ * Enforces ISO 9001 / FSSC 22000 Segregation of Duties (SoD / 4-Eyes Principle)
+ * and Minimum Level Thresholds (L...+ Thresholds).
+ * 
+ * Department Alignment Rule (ISO 9001 SoD):
+ * - Reviewer and Approver must belong to the same department as the document (via
+ *   primary_department or affiliated_departments) OR be part of cross-organizational
+ *   authority departments (MGMT, EXEC, QMR) that have governance over all documents.
+ * - Personnel from unrelated operational departments (e.g., Engineering approving QA
+ *   documents) are strictly prohibited from entering the approval chain.
  */
-export const resolveReviewer = (requesterId, department, masterUsers, reviewUsers) => {
-  console.log(`[Routing] Resolving Reviewer for Requester: ${requesterId} in Dept: ${department}`);
+
+/** Departments with cross-organizational authority (can review/approve any department's docs) */
+export const CROSS_ORG_DEPTS = ['MGMT', 'EXEC', 'QMR'];
+
+export const DEFAULT_APPROVAL_MATRIX = [
+  { docType: 'QM', doc_type: 'QM', minRequesterLevel: 4, requiredReviewerLevel: 6, requiredApproverLevel: 8 },
+  { docType: 'SOP', doc_type: 'SOP', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 6 },
+  { docType: 'WI', doc_type: 'WI', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
+  { docType: 'FM', doc_type: 'FM', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
+  { docType: 'SD', doc_type: 'SD', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
+  { docType: 'SPEC', doc_type: 'SPEC', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
+  { docType: 'ED', doc_type: 'ED', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 6 }
+];
+
+export const getApprovalThresholds = (docType, approvalMatrix) => {
+  const matrix = (approvalMatrix && approvalMatrix.length > 0) ? approvalMatrix : DEFAULT_APPROVAL_MATRIX;
+  const normDocType = String(docType || '').toUpperCase().trim();
+  const entry = matrix.find(m => (m.docType || m.doc_type || '').toUpperCase() === normDocType);
   
-  const requester = masterUsers.find(u => u.id === requesterId);
-  if (!requester) {
-    console.error(`[Routing] Requester ${requesterId} not found in master data.`);
-    return null;
-  }
-
-  const reqLevel = requester.level || 0;
-
-  // Rule 1 & 2: Pull from review_master_data_user, same department, level > requester
-  // Note: reviewUsers only has {id, name, dept}, so we must cross-reference masterUsers for `level`.
-  let candidates = reviewUsers.filter(u => {
-    const hasDeptAccess = !u.depts || u.depts.length === 0 || u.depts.includes(department);
-    if (!hasDeptAccess) return false;
-    if (u.id === requesterId) return false; // SoD
-    const m = masterUsers.find(mu => mu.id === u.id);
-    if (!m) return false;
-    if (m.isDcc || m.role === 'DCC_ADMIN') return false; // Explicitly exclude DCC
-    return (m.level || 0) > reqLevel;
-  });
-  
-  if (candidates.length > 0) {
-    // Sort ascending to find the Nearest Higher
-    candidates.sort((a, b) => {
-       const lA = masterUsers.find(mu => mu.id === a.id)?.level || 0;
-       const lB = masterUsers.find(mu => mu.id === b.id)?.level || 0;
-       return lA - lB;
-    });
-    const selected = candidates[0];
-    const sLevel = masterUsers.find(mu => mu.id === selected.id)?.level || 0;
-    console.log(`[Routing] Found Nearest Higher Reviewer: ${selected.id} (${selected.name}) - Level ${sLevel} (Requester Level was ${reqLevel})`);
-    return { id: selected.id, level: sLevel, dept: department };
-  }
-
-  console.log(`[Routing] No direct higher level found for Requester Level ${reqLevel}. Skipping Review step...`);
-  return null;
+  return {
+    minRequesterLevel: entry?.minRequesterLevel ?? entry?.min_requester_level ?? 1,
+    minReviewerLevel: entry?.requiredReviewerLevel ?? entry?.required_reviewer_level ?? 4,
+    minApproverLevel: entry?.requiredApproverLevel ?? entry?.required_approver_level ?? 5,
+  };
 };
 
 /**
- * Resolves the appropriate Approver based on the Reviewer's level (and excluding Requester).
- * Rule: candidate.level > reviewer.level (Nearest Higher)
+ * Creates a route result object that behaves as an object with { id, level, dept }
+ * while safely coercing to id string when used in comparisons or string contexts.
  */
-export const resolveApprover = (requesterId, reviewerId, department, masterUsers, approveUsers) => {
-  console.log(`[Routing] Resolving Approver for Reviewer: ${reviewerId} (Requester: ${requesterId}) in Dept: ${department}`);
-  
-  const reviewer = masterUsers.find(u => u.id === reviewerId);
-  const revLevel = reviewer ? (reviewer.level || 0) : 0;
+const createRouteResult = (user, level, dept) => {
+  return {
+    id: user.id,
+    level,
+    dept,
+    name: user.name || user.fullName || '',
+    toString() { return this.id; },
+    valueOf() { return this.id; }
+  };
+};
 
-  // Rule 1 & 3: Pull from approve_master_data_user, level > reviewer, enforce SoD
-  let candidates = approveUsers.filter(u => {
-    const hasDeptAccess = !u.depts || u.depts.length === 0 || u.depts.includes(department);
-    if (!hasDeptAccess) return false;
-    if (u.id === requesterId) return false; // SoD
-    if (u.id === reviewerId) return false; // SoD
-    const m = masterUsers.find(mu => mu.id === u.id);
-    if (!m) return false;
-    if (m.isDcc || m.role === 'DCC_ADMIN') return false; // Explicitly exclude DCC
-    return (m.level || 0) > revLevel;
+/**
+ * Checks if a user has cross-organizational authority, meaning they can
+ * participate in the approval chain of ANY department's documents.
+ * This applies to MGMT, EXEC, and QMR roles.
+ */
+const isCrossOrgAuthority = (user) => {
+  if (!user) return false;
+  if (user.isQmr) return true;
+  const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : []));
+  return CROSS_ORG_DEPTS.some(d => (userDepts || []).includes(d));
+};
+
+/**
+ * Checks if a user is affiliated with a specific department.
+ * Strictly requires an explicit department match — empty affiliated_departments
+ * does NOT imply "any department" (previously a critical bug that allowed
+ * cross-department leakage into the approval chain).
+ */
+const isAffiliatedWithDept = (user, department) => {
+  const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : []));
+  return (userDepts || []).includes(department);
+};
+
+/**
+ * Resolves the appropriate Reviewer based on Document Type minimum threshold (L4+)
+ * and Segregation of Duties (Reviewer !== Requester).
+ * 
+ * Pipeline rules:
+ * 1. Filter candidates where candidate.id !== requesterId and candidate.level >= minReviewerLevel.
+ * 2. Exclude DCC Admin unless department is DC.
+ * 3. Department scope: candidates must either be affiliated with the document's department
+ *    OR belong to a cross-organizational authority (MGMT, EXEC, QMR).
+ * 4. Search within same-department candidates first. If multiple candidates exist, prioritize
+ *    candidates with level >= requester.level, then pick nearest level (ascending).
+ * 5. If no eligible same-dept candidate, escalate ONLY to cross-org authority (MGMT/QMR/EXEC).
+ * 6. Emergency fallback (last resort): any eligible user company-wide.
+ */
+export const resolveReviewer = (
+  requesterId, 
+  department, 
+  masterUsers = [], 
+  reviewUsers = [], 
+  docType = null, 
+  approvalMatrix = null
+) => {
+  const masters = masterUsers || [];
+  const requester = masters.find(u => u && u.id === requesterId);
+  const reqLevel = requester ? (requester.approval_level || requester.level || 0) : 0;
+  const { minReviewerLevel } = getApprovalThresholds(docType, approvalMatrix);
+
+  const pool = (reviewUsers && reviewUsers.length > 0) ? reviewUsers : masters;
+
+  // Base eligibility: level threshold + SoD + DCC exclusion
+  const isBaseEligible = (u) => {
+    if (!u || !u.id) return false;
+    if (u.id === requesterId) return false; // SoD: cannot review own request
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    if ((m.isDcc || m.role === 'DCC_ADMIN') && department !== 'DC') return false; // DCC exclusion
+    const candidateLevel = m.approval_level || m.level || 0;
+    return candidateLevel >= minReviewerLevel; // Minimum candidate eligibility threshold
+  };
+
+  const eligibleCandidates = pool.filter(isBaseEligible);
+
+  // --- Strict Department Alignment (ISO 9001 SoD) ---
+  // Priority 1: Same-department candidates (primary or affiliated)
+  const deptCandidates = eligibleCandidates.filter(u => {
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    return isAffiliatedWithDept(m, department);
   });
-  
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => {
-       const lA = masterUsers.find(mu => mu.id === a.id)?.level || 0;
-       const lB = masterUsers.find(mu => mu.id === b.id)?.level || 0;
-       return lA - lB;
-    });
-    const selected = candidates[0];
-    const sLevel = masterUsers.find(mu => mu.id === selected.id)?.level || 0;
-    console.log(`[Routing] Found Nearest Higher Approver: ${selected.id} (${selected.name}) - Level ${sLevel} (Reviewer Level was ${revLevel})`);
-    return { id: selected.id, level: sLevel, dept: department };
+
+  // Priority 2: Cross-org authority candidates (MGMT/EXEC/QMR) when dept has no eligible candidates
+  const crossOrgCandidates = eligibleCandidates.filter(u => {
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    return isCrossOrgAuthority(m);
+  });
+
+  // Determine candidate pool: dept-first, then cross-org, then emergency fallback
+  let candidatesToConsider;
+  if (deptCandidates.length > 0) {
+    candidatesToConsider = deptCandidates;
+  } else if (crossOrgCandidates.length > 0) {
+    // No same-dept candidate found — escalate to cross-org authority only
+    candidatesToConsider = crossOrgCandidates;
+  } else {
+    // Emergency fallback escalation: find any management/QMR authority
+    const fallback = masters.find(m => 
+      m && 
+      m.id !== requesterId && 
+      (!m.isDcc || department === 'DC') && 
+      ((m.approval_level || m.level || 0) >= minReviewerLevel || m.isQmr || m.role === 'DEPT_ADMIN')
+    );
+    if (fallback) {
+      const fLevel = fallback.approval_level || fallback.level || minReviewerLevel;
+      const fDept = fallback.primary_department || fallback.department || department;
+      return createRouteResult(fallback, fLevel, fDept);
+    }
+    return null;
   }
 
-  console.log(`[Routing] No direct higher level found for Reviewer Level ${revLevel}. Skipping Approve step...`);
-  return null;
+  // Sort ascending: prefer level >= reqLevel, then nearest level
+  candidatesToConsider.sort((a, b) => {
+    const mA = masters.find(mu => mu && mu.id === a.id) || a;
+    const mB = masters.find(mu => mu && mu.id === b.id) || b;
+    const lA = mA.approval_level || mA.level || 0;
+    const lB = mB.approval_level || mB.level || 0;
+
+    const aGeReq = lA >= reqLevel ? 1 : 0;
+    const bGeReq = lB >= reqLevel ? 1 : 0;
+    if (aGeReq !== bGeReq) return bGeReq - aGeReq;
+
+    return lA - lB;
+  });
+
+  const selected = candidatesToConsider[0];
+  const sMaster = masters.find(mu => mu && mu.id === selected.id) || selected;
+  const sLevel = sMaster.approval_level || sMaster.level || minReviewerLevel;
+  const sDept = sMaster.primary_department || sMaster.department || department;
+
+  return createRouteResult(selected, sLevel, sDept);
+};
+
+/**
+ * Resolves the appropriate Approver based on Document Type minimum threshold (L5+ / L6+ / L8+)
+ * and Segregation of Duties (Approver !== Requester && Approver !== Reviewer).
+ * 
+ * Pipeline rules:
+ * 1. Filter candidates where candidate.id !== requesterId AND candidate.id !== reviewerId.
+ * 2. Candidate level must satisfy candidate.level >= minApproverLevel.
+ * 3. Exclude DCC Admin unless department is DC.
+ * 4. Department scope: candidates must either be affiliated with the document's department
+ *    OR belong to a cross-organizational authority (MGMT, EXEC, QMR).
+ * 5. Search within same-department candidates first. If an eligible candidate with
+ *    level >= reviewerLevel exists in department, select them.
+ * 6. If no suitable same-dept candidate, escalate ONLY to cross-org authority (MGMT/QMR/EXEC).
+ * 7. Emergency fallback (last resort): any eligible management authority company-wide.
+ */
+export const resolveApprover = (
+  requesterId, 
+  reviewerId, 
+  department, 
+  masterUsers = [], 
+  approveUsers = [], 
+  docType = null, 
+  approvalMatrix = null
+) => {
+  const masters = masterUsers || [];
+  const reviewer = masters.find(u => u && u.id === reviewerId);
+  const revLevel = reviewer ? (reviewer.approval_level || reviewer.level || 0) : 0;
+  const { minApproverLevel } = getApprovalThresholds(docType, approvalMatrix);
+
+  const pool = (approveUsers && approveUsers.length > 0) ? approveUsers : masters;
+
+  // Base eligibility: level threshold + SoD + DCC exclusion
+  const isBaseEligible = (u) => {
+    if (!u || !u.id) return false;
+    if (u.id === requesterId) return false; // SoD: cannot approve own request
+    if (u.id === reviewerId) return false;  // 4-Eyes: cannot approve own review
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    if ((m.isDcc || m.role === 'DCC_ADMIN') && department !== 'DC') return false; // DCC exclusion
+    const candidateLevel = m.approval_level || m.level || 0;
+    return candidateLevel >= minApproverLevel; // Minimum candidate eligibility threshold
+  };
+
+  const eligibleCandidates = pool.filter(isBaseEligible);
+
+  // --- Strict Department Alignment (ISO 9001 SoD) ---
+  // Priority 1: Same-department candidates (primary or affiliated)
+  const deptCandidates = eligibleCandidates.filter(u => {
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    return isAffiliatedWithDept(m, department);
+  });
+
+  // Check if any dept candidate has level >= reviewer's level (required for upward authority)
+  const deptHasHigherOrEqual = deptCandidates.some(u => {
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    return (m.approval_level || m.level || 0) >= revLevel;
+  });
+
+  // Priority 2: Cross-org authority candidates (MGMT/EXEC/QMR)
+  const crossOrgCandidates = eligibleCandidates.filter(u => {
+    const m = masters.find(mu => mu && mu.id === u.id) || u;
+    return isCrossOrgAuthority(m);
+  });
+
+  // Determine candidate pool:
+  // - Use dept candidates if they have someone with >= reviewer's level
+  // - Otherwise, escalate to cross-org authority (NOT to all company dept heads)
+  // - Emergency fallback as last resort
+  let candidatesToConsider;
+  if (deptCandidates.length > 0 && deptHasHigherOrEqual) {
+    candidatesToConsider = deptCandidates;
+  } else if (crossOrgCandidates.length > 0) {
+    // Escalate to cross-org authority only (prevents ชัยวัฒน์ EN from approving QA docs)
+    candidatesToConsider = crossOrgCandidates;
+  } else if (deptCandidates.length > 0) {
+    // Use dept candidates even if none exceed reviewer level (better than cross-dept)
+    candidatesToConsider = deptCandidates;
+  } else {
+    // Emergency escalation: find any management authority not requester and not reviewer
+    const fallback = masters.find(m => 
+      m && 
+      m.id !== requesterId && 
+      m.id !== reviewerId && 
+      (!m.isDcc || department === 'DC') && 
+      ((m.approval_level || m.level || 0) >= minApproverLevel || m.isQmr || m.role === 'DEPT_ADMIN')
+    );
+    if (fallback) {
+      const fLevel = fallback.approval_level || fallback.level || minApproverLevel;
+      const fDept = fallback.primary_department || fallback.department || department;
+      return createRouteResult(fallback, fLevel, fDept);
+    }
+    return null;
+  }
+
+  // Sort: prefer candidates with level >= revLevel, then nearest level (ascending)
+  // Also prefer QMR / Executive role when level is equal
+  candidatesToConsider.sort((a, b) => {
+    const mA = masters.find(mu => mu && mu.id === a.id) || a;
+    const mB = masters.find(mu => mu && mu.id === b.id) || b;
+    const lA = mA.approval_level || mA.level || 0;
+    const lB = mB.approval_level || mB.level || 0;
+
+    const aGeRev = lA >= revLevel ? 1 : 0;
+    const bGeRev = lB >= revLevel ? 1 : 0;
+    if (aGeRev !== bGeRev) return bGeRev - aGeRev;
+
+    // Prefer QMR / Executive role when level is equal
+    const aExec = (mA.isQmr || mA.role === 'DEPT_ADMIN' || (mA.position || '').includes('Manager') || (mA.position || '').includes('Director')) ? 1 : 0;
+    const bExec = (mB.isQmr || mB.role === 'DEPT_ADMIN' || (mB.position || '').includes('Manager') || (mB.position || '').includes('Director')) ? 1 : 0;
+    if (aExec !== bExec) return bExec - aExec;
+
+    return lA - lB;
+  });
+
+  const selected = candidatesToConsider[0];
+  const sMaster = masters.find(mu => mu && mu.id === selected.id) || selected;
+  const sLevel = sMaster.approval_level || sMaster.level || minApproverLevel;
+  const sDept = sMaster.primary_department || sMaster.department || department;
+
+  return createRouteResult(selected, sLevel, sDept);
 };

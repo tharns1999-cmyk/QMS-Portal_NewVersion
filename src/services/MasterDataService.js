@@ -10,7 +10,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'PD-MASTER',
     departmentId: 'PD',
-    name: 'PD Head Office (จุดคุมงานหลัก Master)',
+    name: 'PD Head Office',
     code: 'PD-OFFICE',
     isMasterOffice: true,
     description: 'จุดควบคุมงานหลักฝ่ายผลิตและแฟ้มเอกสารหลัก'
@@ -76,7 +76,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'QA-MASTER',
     departmentId: 'QA/QC',
-    name: 'QA Head Office (Master)',
+    name: 'QA Head Office',
     code: 'QA-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานหลักฝ่ายประกันคุณภาพและงานควบคุมระบบ'
@@ -114,7 +114,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'WH-MASTER',
     departmentId: 'WH',
-    name: 'WH Office (Master)',
+    name: 'WH Office',
     code: 'WH-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานหลักฝ่ายคลังสินค้าและธุรการคลัง'
@@ -152,7 +152,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'EN-MASTER',
     departmentId: 'EN',
-    name: 'EN Office (Master)',
+    name: 'EN Office',
     code: 'EN-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานหลักฝ่ายวิศวกรรมและการวางแผนซ่อมบำรุง'
@@ -183,7 +183,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'PC-MASTER',
     departmentId: 'PC',
-    name: 'PC Head Office (จุดคุมงานหลัก Master)',
+    name: 'PC Head Office',
     code: 'PC-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานหลักฝ่ายจัดซื้อและประเมินคู่ค้า'
@@ -193,7 +193,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'HR-MASTER',
     departmentId: 'HR&GA',
-    name: 'HR&GA Head Office (จุดคุมงานหลัก Master)',
+    name: 'HR&GA Head Office',
     code: 'HR-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานฝ่ายบริหารทรัพยากรบุคคลและธุรการทั่วไป'
@@ -203,7 +203,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'HSE-MASTER',
     departmentId: 'HSE',
-    name: 'HSE Head Office (จุดคุมงานหลัก Master)',
+    name: 'HSE Head Office',
     code: 'HSE-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานความปลอดภัย อาชีวอนามัย และสิ่งแวดล้อม'
@@ -213,7 +213,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'ST-MASTER',
     departmentId: 'ST',
-    name: 'ST Office (จุดคุมงานหลัก Master)',
+    name: 'ST Office',
     code: 'ST-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานบริหารสต็อกและอุปกรณ์สำนักงาน'
@@ -223,7 +223,7 @@ export const STANDARD_STATIONS = [
   {
     id: 'MKT-MASTER',
     departmentId: 'MKT',
-    name: 'MKT Office (จุดคุมงานหลัก Master)',
+    name: 'MKT Office',
     code: 'MKT-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานฝ่ายการตลาดและการขาย'
@@ -263,18 +263,30 @@ export const getDepartmentStations = (deptId, customStationList = null) => {
 };
 
 /**
+ * Sanitize location name to remove any '(Master)' or '(จุดคุมงานหลัก Master)' text leakage.
+ */
+export const cleanLocationName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .replace(/\s*\((จุดคุมงานหลัก\s*)?Master\)/gi, '')
+    .replace(/\s*\(Master\)/gi, '')
+    .replace(/\s*[-–]\s*Master/gi, '')
+    .trim();
+};
+
+/**
  * Get the Office Master station for a department (used as fallback or Master lock)
  */
 export const getMasterStationForDept = (deptId, customStationList = null) => {
   const normDept = normalizeDepartmentId(deptId);
   const stations = getDepartmentStations(normDept, customStationList);
   const master = stations.find(s => s.isMasterOffice);
-  if (master) return master;
+  if (master) return { ...master, name: cleanLocationName(master.name) };
   
   return {
     id: `${normDept}-MASTER`,
     departmentId: normDept,
-    name: `${normDept} Office (Master)`,
+    name: `${normDept} Head Office`,
     code: `${normDept}-OFFICE`,
     isMasterOffice: true,
     description: `สำนักงานหลักฝ่าย ${normDept}`
@@ -284,24 +296,28 @@ export const getMasterStationForDept = (deptId, customStationList = null) => {
 /**
  * Pure calculation engine for allocating sequential copy numbers.
  * Rule:
- * - Copy 01 (Strict Lock): Always assigned to Owner Department Master station.
+ * - Copy 01 (Strict Lock): Always assigned to Owner Department as Controlled Copy (สำเนาควบคุม).
+ *   ISO 9001 Policy: Master copy is held strictly at DCC, NOT distributed to any department.
  * - Copy 02..N: Sequentially numbered for all selected locations without gaps.
- * - Validation Fallback: If a department is selected with 0 sub-stations, fallback to Office Master.
+ * - Validation Fallback: If a department is selected with 0 sub-stations, fallback to Office station.
  *
  * @param {string} ownerDept
  * @param {Array<{ departmentId: string, locationId: string, locationName?: string, isCustom?: boolean }>} selectedLocations
- * @returns {{ masterCopy: Object, distributedCopies: Array<Object>, allAllocations: Array<Object> }}
+ * @returns {{ masterCopy: Object, copy01: Object, originCopy: Object, distributedCopies: Array<Object>, allAllocations: Array<Object>, totalCopies: number }}
  */
 export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = []) => {
   const normOwner = normalizeDepartmentId(ownerDept);
   const ownerMasterStation = getMasterStationForDept(normOwner);
   const ownerDeptMeta = DEPARTMENT_METADATA.find(d => normalizeDepartmentId(d.id) === normOwner);
   const ownerDeptName = ownerDeptMeta?.name || normOwner;
+  const cleanOwnerLocName = cleanLocationName(ownerMasterStation.name) || `${normOwner} Head Office`;
 
-  const masterCopy = {
+  const copy01 = {
     copyNo: '01',
     copy_no: '01',
-    copyLabel: 'Copy 01 (Master)',
+    copyLabel: 'Copy 01 (สำเนาควบคุม)',
+    copyType: 'CONTROLLED',
+    type: 'CONTROLLED',
     departmentId: normOwner,
     dept: normOwner,
     dept_code: normOwner,
@@ -311,19 +327,19 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
     dept_name: ownerDeptName,
     locationId: ownerMasterStation.id,
     station_id: ownerMasterStation.id,
-    locationName: ownerMasterStation.name,
-    station_name: ownerMasterStation.name,
-    location: ownerMasterStation.name,
-    name: ownerMasterStation.name,
-    isMaster: true,
-    is_master: true,
+    locationName: cleanOwnerLocName,
+    station_name: cleanOwnerLocName,
+    location: cleanOwnerLocName,
+    name: cleanOwnerLocName,
+    isMaster: false,
+    is_master: false,
     isOwner: true,
     is_owner: true,
     isCustom: false,
     is_custom: false
   };
 
-  // Filter out any duplicates and ensure no collision with masterCopy
+  // Filter out any duplicates and ensure no collision with copy01
   const nonMasterSelections = [];
   const seenIds = new Set();
 
@@ -333,7 +349,20 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
     const locId = item.locationId || item.station_id || item.id || `${dept}-DEFAULT`;
     
     // Skip if it is the owner's master station itself (already locked at Copy 01)
-    if (dept === normOwner && locId === ownerMasterStation.id) {
+    if (
+      item.isOwner ||
+      item.is_owner ||
+      item.isOriginator ||
+      item.isMaster ||
+      item.is_master ||
+      (dept === normOwner && (
+        locId === ownerMasterStation.id ||
+        locId === `${normOwner}-MASTER` ||
+        locId === `${normOwner}-OFFICE` ||
+        item.copyNo === '01' ||
+        item.copy_no === '01'
+      ))
+    ) {
       return;
     }
 
@@ -342,11 +371,12 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
       seenIds.add(uniqueKey);
       
       // Lookup station name if missing
-      let locName = item.locationName || item.station_name || item.name || item.location;
-      if (!locName) {
+      let rawLocName = item.locationName || item.station_name || item.name || item.location;
+      if (!rawLocName) {
         const stdStation = STANDARD_STATIONS.find(s => s.id === locId);
-        locName = stdStation ? stdStation.name : locId;
+        rawLocName = stdStation ? stdStation.name : locId;
       }
+      const locName = cleanLocationName(rawLocName);
 
       const deptMeta = DEPARTMENT_METADATA.find(d => normalizeDepartmentId(d.id) === dept);
       const deptName = deptMeta?.name || dept;
@@ -370,7 +400,9 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
         isMaster: false,
         is_master: false,
         isOwner: false,
-        is_owner: false
+        is_owner: false,
+        copyType: 'CONTROLLED',
+        type: 'CONTROLLED'
       });
     }
   });
@@ -383,14 +415,18 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
       ...item,
       copyNo,
       copy_no: copyNo,
-      copyLabel: `Copy ${copyNo}`
+      copyLabel: `Copy ${copyNo} (สำเนาควบคุม)`,
+      copyType: 'CONTROLLED',
+      type: 'CONTROLLED'
     };
   });
 
-  const allAllocations = [masterCopy, ...distributedCopies];
+  const allAllocations = [copy01, ...distributedCopies];
 
   return {
-    masterCopy,
+    masterCopy: copy01,
+    originCopy: copy01,
+    copy01,
     distributedCopies,
     allAllocations,
     totalCopies: allAllocations.length
@@ -500,6 +536,7 @@ export default {
   STANDARD_STATIONS,
   DEPARTMENT_METADATA,
   normalizeDepartmentId,
+  cleanLocationName,
   getDepartmentStations,
   getMasterStationForDept,
   calculateCopyAllocations,

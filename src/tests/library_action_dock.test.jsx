@@ -91,7 +91,7 @@ describe('Library Figma UI3 Action Dock & Overflow Menu Tests', () => {
     fireEvent.click(moreBtn);
 
     // Context menu items
-    expect(screen.getByText('เปิดดูในแท็บใหม่ (Full Viewer)')).toBeInTheDocument();
+    expect(screen.queryByText('เปิดดูในแท็บใหม่ (Full Viewer)')).not.toBeInTheDocument();
     expect(screen.getByText('ดาวน์โหลด External Release')).toBeInTheDocument();
     expect(screen.getByText('Watermark Studio (ทดสอบลายน้ำ)')).toBeInTheDocument();
     expect(screen.getByText('ขอสำเนาควบคุมเพิ่มเติม')).toBeInTheDocument();

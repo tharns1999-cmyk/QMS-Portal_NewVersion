@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
-import { FileText, CheckCircle, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, ExternalLink, Sparkles } from 'lucide-react';
+import { resolveApprover } from '../../utils/workflowResolver';
+import { FileText, CheckCircle, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, ExternalLink, Sparkles, Zap, Globe, Lock, Building2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
@@ -12,7 +14,7 @@ import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 const TaskReview = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { tasks, dars, timeline, processWorkflow, currentUser, canDownloadDocument, documents, masterUsers } = useStore();
+  const { masterDepartments, tasks, dars, timeline, processWorkflow, currentUser, canDownloadDocument, documents, masterUsers } = useStore();
   
   const [comment, setComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
@@ -24,6 +26,91 @@ const TaskReview = () => {
   const task = tasks.find(t => t.id === id);
   const dar = task ? dars.find(d => d.id === task.darId) : null;
   const darTimeline = dar ? timeline.filter(t => t.darId === dar.id) : [];
+
+  // Dynamic extraction and assembly of approvalWorkflow for DAR
+  const darWithWorkflow = useMemo(() => {
+    if (!dar) return null;
+    if (dar.approvalWorkflow && Array.isArray(dar.approvalWorkflow)) return dar;
+
+    // Resolve approver dynamically (strictly no hardcoding)
+    let approverName = dar.approverName || dar.approver_name || (typeof dar.approver === 'string' ? dar.approver : dar.approver?.name);
+    let approverRole = dar.approverRole || 'Approver';
+    
+    if (!approverName && (dar.approverId || dar.approver_id || dar.manualApproverId)) {
+      const aId = dar.approverId || dar.approver_id || dar.manualApproverId;
+      const user = (masterUsers || []).find(u => u && u.id === aId);
+      if (user) {
+        approverName = user.name || user.fullName;
+        approverRole = user.position || approverRole;
+      }
+    }
+
+    if (!approverName) {
+      const resolved = resolveApprover(
+        dar.requesterId || dar.requester_id,
+        task?.assigneeId || currentUser?.id,
+        dar.department || 'PD',
+        masterUsers || [],
+        masterUsers || [],
+        dar.docType || dar.doc_type,
+        null
+      );
+      if (resolved) {
+        const user = (masterUsers || []).find(u => u && u.id === (resolved.id || resolved));
+        approverName = user ? (user.name || user.fullName) : (resolved.name || 'ผู้อนุมัติ (Approver)');
+        approverRole = user?.position || approverRole;
+      }
+    }
+
+    const finalApproverName = approverName || 'ผู้อนุมัติ (Approver)';
+
+    return {
+      ...dar,
+      approvalWorkflow: [
+        {
+          step: 1,
+          roleKey: 'REQUESTER',
+          role: 'ผู้ร้องขอ',
+          name: dar.requesterName || dar.requester_name || 'ผู้ร้องขอ',
+          assignedTo: dar.requesterName || dar.requester_name || 'ผู้ร้องขอ'
+        },
+        {
+          step: 2,
+          roleKey: 'REVIEWER',
+          role: 'ผู้ทบทวน',
+          name: dar.reviewerName || dar.reviewer_name || currentUser?.name || 'ผู้ทบทวน',
+          assignedTo: dar.reviewerName || dar.reviewer_name || currentUser?.name || 'ผู้ทบทวน'
+        },
+        {
+          step: 3,
+          roleKey: 'APPROVER',
+          role: approverRole,
+          name: finalApproverName,
+          assignedTo: finalApproverName
+        },
+        {
+          step: 4,
+          roleKey: 'DCC',
+          role: 'DCC Admin',
+          name: 'ธนาวุฒิ สมควรกิจดำรง (เจ้าหน้าที่ DCC)',
+          assignedTo: 'ธนาวุฒิ สมควรกิจดำรง'
+        }
+      ]
+    };
+  }, [dar, task, currentUser, masterUsers]);
+
+  // หาข้อมูล Approver จาก approvalWorkflow array (STRICT DYNAMIC BINDING)
+  const nextSignatory = useMemo(() => {
+    const currentDar = darWithWorkflow || dar;
+    if (!currentDar || !currentDar.approvalWorkflow) return null;
+    
+    // หากเป็นโหมด Review -> ขั้นต่อไปคือ APPROVER
+    return currentDar.approvalWorkflow.find(step => step.roleKey === 'APPROVER');
+  }, [darWithWorkflow, dar]);
+
+  // ดึงค่ามาเตรียมแสดงผล
+  const nextActorName = nextSignatory?.name || nextSignatory?.assignedTo || 'ผู้อนุมัติ (Approver)';
+  const nextActorRole = nextSignatory?.role || 'Approver';
 
   useEffect(() => {
     // If PDF container is small enough that it doesn't scroll, unlock immediately
@@ -85,10 +172,16 @@ const TaskReview = () => {
   };
 
   const executeAction = () => {
-    processWorkflow(task.id, pendingAction, comment);
-    toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'ผ่านการทบทวน' : 'ส่งกลับแก้ไข'} สำเร็จ`);
-    setShowConfirm(false);
-    navigate('/tasks');
+    try {
+      processWorkflow(task.id, pendingAction, comment);
+      toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'ผ่านการทบทวน' : 'ส่งกลับแก้ไข'} สำเร็จ`);
+      setShowConfirm(false);
+      navigate('/tasks');
+    } catch (error) {
+      console.error('Review Action Crash:', error);
+      toast.error(`เกิดข้อผิดพลาด: ${error.message || 'ระบบขัดข้อง'}`);
+      setShowConfirm(false);
+    }
   };
 
   return (
@@ -127,7 +220,9 @@ const TaskReview = () => {
             <div className="flex justify-between items-start">
                <div>
                   <h3 className="text-xs text-slate-400 uppercase tracking-wider font-bold">คำร้องขอเอกสาร (DAR)</h3>
-                  <p className="text-xl font-bold text-[#1E1E1E] font-mono mt-0.5">{dar.id}</p>
+                  <p className="text-xl font-bold text-[#1E1E1E] font-mono mt-0.5">
+                    {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+                  </p>
                </div>
                <span className="badge-system">{dar.type}</span>
             </div>
@@ -139,18 +234,32 @@ const TaskReview = () => {
                <p><span className="text-slate-400 w-24 inline-block font-medium">ฉบับที่:</span> <span className="font-mono font-bold">
                  {dar.type === 'REVISION' ? `${docInfo.docRev} ➡️ ${String(parseInt(docInfo.docRev || 0, 10) + 1).padStart(2, '0')}` : docInfo.docRev}
                </span></p>
-               <p><span className="text-slate-400 w-24 inline-block font-medium">แผนกเจ้าของ:</span> <span className="font-bold font-mono">{dar.department}</span></p>
+               <p><span className="text-slate-400 w-24 inline-block font-medium">แผนกเจ้าของ:</span> <span className="font-bold font-mono">{(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">ผู้ร้องขอ:</span> <span className="font-bold text-[#1E1E1E]">{requesterName}</span></p>
                <p><span className="text-slate-400 w-24 inline-block font-medium">วันบังคับใช้:</span> <span className="font-mono font-bold text-emerald-700">{dar.effectiveDate || '-'}</span></p>
+               {task?.dueDate && (
+                 <p className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                   <span className="text-slate-400 w-24 inline-block font-medium">วันครบกำหนด:</span>
+                   <span className={`font-mono font-bold ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-700' : 'text-slate-700'}`}>
+                     {task.dueDate}
+                   </span>
+                   {(task.isUrgent || task.slaType === 'FAST_TRACK') && (
+                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300">
+                       <Zap size={10} className="fill-amber-500 text-amber-600" />
+                       <span>งานด่วน (Fast-Track)</span>
+                     </span>
+                   )}
+                 </p>
+               )}
                
                {/* Confidentiality Pill */}
                <div className="flex items-center gap-2 pt-1">
                  <span className="text-slate-400 w-24 inline-block font-medium">ระดับความลับ:</span>
-                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${scopeMeta.badgeClass}`}>
-                   {accessScope === 'GENERAL' && '🌐 ทั่วไป'}
-                   {accessScope === 'DEPT_ONLY' && '🔒 เฉพาะแผนก'}
-                   {accessScope === 'TARGETED' && '🏢 เฉพาะบางแผนก'}
-                   {accessScope === 'RESTRICTED' && `🛡️ ลับเฉพาะ (Lv.${dar.access_control?.min_access_level || 4}+)`}
+                 <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold border ${scopeMeta.badgeClass}`}>
+                   {accessScope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>ทั่วไป</span></>}
+                   {accessScope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก</span></>}
+                   {accessScope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก</span></>}
+                   {accessScope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะ (Lv.{dar.access_control?.min_access_level || 4}+)</span></>}
                  </span>
                </div>
 
@@ -281,12 +390,12 @@ const TaskReview = () => {
                <h1 className="text-2xl font-bold text-center mb-6 border-b pb-3 text-[#1E1E1E]">{dar.title}</h1>
                <h2 className="text-base font-bold text-slate-800 mb-2">1. วัตถุประสงค์ (Purpose)</h2>
                <p className="text-xs text-slate-700 leading-relaxed mb-6">
-                 เอกสารฉบับนี้กำหนดมาตรฐานการปฏิบัติงานสำหรับแผนก {dar.department} เพื่อใช้เป็นแนวทางปฏิบัติงานตามข้อกำหนดระบบบริหารคุณภาพ ISO 9001 / FSSC 22000
+                 เอกสารฉบับนี้กำหนดมาตรฐานการปฏิบัติงานสำหรับแผนก {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()} เพื่อใช้เป็นแนวทางปฏิบัติงานตามข้อกำหนดระบบบริหารคุณภาพ ISO 9001 / FSSC 22000
                  {dar.requestDetail}
                </p>
                <h2 className="text-base font-bold text-slate-800 mb-2">2. ขอบเขต (Scope)</h2>
                <p className="text-xs text-slate-700 leading-relaxed">
-                 ครอบคลุมบุคลากรและกระบวนการทำงานที่เกี่ยวข้องทั้งหมดในสังกัด {dar.department}
+                 ครอบคลุมบุคลากรและกระบวนการทำงานที่เกี่ยวข้องทั้งหมดในสังกัด {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}
                </p>
                <div className="absolute bottom-8 left-0 right-0 text-center text-slate-400 text-xs font-mono">หน้า 1 จาก 2</div>
              </div>
@@ -314,15 +423,21 @@ const TaskReview = () => {
         onClose={() => setShowConfirm(false)}
         onConfirm={executeAction}
         title={pendingAction === 'APPROVE' ? 'ยืนยันการผ่านการทบทวนเอกสาร (Review DAR)' : 'ยืนยันการส่งกลับแก้ไข (Request Revision)'}
-        actionType={pendingAction === 'APPROVE' ? 'approve' : 'reject'}
+        actionType={pendingAction === 'APPROVE' ? 'review' : 'reject'}
         confirmText={pendingAction === 'APPROVE' ? 'ยืนยันผ่านการทบทวน' : 'ยืนยันส่งกลับแก้ไข'}
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
+        dar={darWithWorkflow}
         summaryData={[
           { label: 'ผู้ดำเนินการ', value: `${currentUser.name} (${currentUser.department})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
           { label: 'ผลการทบทวน', value: pendingAction === 'APPROVE' ? 'ผ่านการทบทวน (Review Passed)' : 'ส่งกลับแก้ไข (Revision Required)' },
           { label: 'ความเห็นประกอบ', value: comment || '-' },
-          { label: 'สายการอนุมัติถัดไป', value: pendingAction === 'APPROVE' ? 'ส่งต่อไปยัง: ผู้อนุมัติ (Approver)' : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' }
+          { 
+            label: 'สายการอนุมัติถัดไป', 
+            value: pendingAction === 'APPROVE' 
+              ? `ส่งต่อไปยัง: ${nextActorName} (${nextActorRole})` 
+              : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' 
+          }
         ]}
       />
 

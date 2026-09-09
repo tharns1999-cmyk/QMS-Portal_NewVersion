@@ -12,15 +12,15 @@ const Button = React.forwardRef(({
   disabled,
   ...props 
 }, ref) => {
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-300 ease-out focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]';
+  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]';
   
   const variants = {
-    primary: 'bg-[#0D99FF] text-white hover:bg-[#007BE5] active:bg-[#0066C0] shadow-sm focus:ring-[#0D99FF]/20',
-    secondary: 'bg-white text-slate-700 border border-[#E5E5E5] hover:bg-[#F5F5F5] hover:border-slate-300 shadow-xs focus:ring-slate-200',
-    outline: 'border border-[#E5E5E5] text-slate-700 hover:border-slate-400 hover:bg-[#F5F5F5] focus:ring-[#0D99FF]/20',
-    ghost: 'text-slate-600 hover:text-slate-900 hover:bg-[#F5F5F5] focus:ring-slate-200',
-    danger: 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-200 focus:ring-rose-500/20',
-    success: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200 focus:ring-emerald-500/20'
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 shadow-xs focus:ring-blue-500/20 cursor-pointer',
+    secondary: 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 hover:border-slate-400 shadow-2xs focus:ring-blue-500/20 cursor-pointer',
+    outline: 'border border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-slate-50 focus:ring-blue-500/20 cursor-pointer',
+    ghost: 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:ring-slate-300 cursor-pointer',
+    danger: 'bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800 shadow-xs focus:ring-rose-500/20 cursor-pointer',
+    success: 'bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-xs focus:ring-emerald-500/20 cursor-pointer'
   };
 
   const sizes = {

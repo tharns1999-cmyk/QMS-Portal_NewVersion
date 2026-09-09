@@ -33,9 +33,14 @@ import {
   Fingerprint,
   Award,
   FileCheck,
-  ChevronDown
+  ChevronDown,
+  AlertTriangle,
+  ArrowRight,
+  FileText,
+  RefreshCw
 } from 'lucide-react';
-import useStore from '../../store/useStore';
+import useStore, { SYSTEM_CORE_DEPTS } from '../../store/useStore';
+import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
@@ -67,6 +72,9 @@ const MasterDataHub = () => {
     addDepartment,
     updateDepartment,
     toggleDepartmentStatus,
+    checkDepartmentDependencies,
+    deactivateDepartment,
+    reactivateDepartment,
     addDocumentType,
     updateDocumentType,
     toggleDocumentTypeStatus,
@@ -91,6 +99,12 @@ const MasterDataHub = () => {
   const [userRoleFilter, setUserRoleFilter] = useState('');
 
   const [deptSearch, setDeptSearch] = useState('');
+  const [deptStatusFilter, setDeptStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+  const [deactivatingDept, setDeactivatingDept] = useState(null);
+  const [deactivationCheckResult, setDeactivationCheckResult] = useState(null);
+  const [fallbackDeptId, setFallbackDeptId] = useState('');
+  const [isDeactivatingLoading, setIsDeactivatingLoading] = useState(false);
+
   const [typeSearch, setTypeSearch] = useState('');
   
   const [locSearch, setLocSearch] = useState('');
@@ -112,9 +126,18 @@ const MasterDataHub = () => {
     empId: '',
     email: '',
     department: 'QA',
-    position: '',
+    primary_department: 'QA',
+    depts: ['QA'],
+    affiliated_departments: ['QA'],
+    position: 'Staff',
     role: 'GENERAL_USER',
-    level: 1
+    level: 1,
+    approval_level: 1,
+    permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
+    canCreateDar: true,
+    canAccessTasks: true,
+    canViewRegister: true,
+    isWorkflowUser: true
   });
 
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
@@ -170,16 +193,19 @@ const MasterDataHub = () => {
     signatureStampFormat: signatureSettings?.signatureStampFormat || 'STANDARD_WITH_METADATA'
   });
 
-  // Signature Profile Modal States
+  // Signature Asset Modal States (Draw, Upload, Font)
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [selectedUserForSignature, setSelectedUserForSignature] = useState(null);
+  const [signatureActiveTab, setSignatureActiveTab] = useState('DRAWN'); // 'DRAWN', 'IMAGE', 'TYPOGRAPHIC'
   const [signatureFormData, setSignatureFormData] = useState({
-    signatureType: 'TYPOGRAPHIC',
+    signatureType: 'DRAWN',
     signatureStyle: 'BRUSH_SCRIPT',
     signatureInitials: '',
     signatureImage: '',
     certificateSerial: ''
   });
+  const sigCanvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   // Digital Stamp Simulator Modal States
   const [isStampSimulatorModalOpen, setIsStampSimulatorModalOpen] = useState(false);
@@ -297,28 +323,6 @@ const MasterDataHub = () => {
     };
   }, []);
 
-  // If unauthorized, render Access Denied Card
-  if (!isAdmin) {
-    return (
-      <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-none max-w-md w-full text-center space-y-4">
-          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
-            <ShieldAlert size={32} />
-          </div>
-          <h2 className="text-xl font-bold text-[#1E1E1E]">การเข้าถึงถูกปฏิเสธ (Access Denied)</h2>
-          <p className="text-sm text-[#666666]">
-            ระบบสงวนสิทธิ์การเข้าใช้งานศูนย์ข้อมูลหลัก (Master Data Management Hub) ให้เฉพาะเจ้าหน้าที่ควบคุมเอกสาร (DCC Admin) หรือ Super Admin เท่านั้น
-          </p>
-          <button
-            onClick={() => navigate('/portal')}
-            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition-colors"
-          >
-            กลับสู่หน้าหลัก (Portal Home)
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // --- TAB 1 HANDLERS (Users) ---
   const filteredUsers = (masterUsers || []).filter(u => {
@@ -337,14 +341,21 @@ const MasterDataHub = () => {
   const handleOpenUserModal = (user = null) => {
     if (user) {
       setEditingUser(user);
+      const primary = user.primary_department || user.department || user.depts?.[0] || 'QA';
+      const rawAffiliated = user.affiliated_departments || user.depts || (user.department ? [user.department] : [primary]);
+      const affiliated = Array.from(new Set([primary, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
       setUserFormData({
         name: user.name,
         empId: user.empId || '',
         email: user.email || '',
-        department: user.department || user.depts?.[0] || 'QA',
+        department: primary,
+        primary_department: primary,
+        depts: affiliated,
+        affiliated_departments: affiliated,
         position: user.position || '',
         role: user.role || (user.isDcc ? 'DCC_ADMIN' : 'GENERAL_USER'),
-        level: user.level || 1
+        level: user.approval_level || user.level || 1,
+        approval_level: user.approval_level || user.level || 1
       });
     } else {
       setEditingUser(null);
@@ -353,9 +364,18 @@ const MasterDataHub = () => {
         empId: '',
         email: '',
         department: 'QA',
+        primary_department: 'QA',
+        depts: ['QA'],
+        affiliated_departments: ['QA'],
         position: 'Staff',
         role: 'GENERAL_USER',
-        level: 1
+        level: 1,
+        approval_level: 1,
+        permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
+        canCreateDar: true,
+        canAccessTasks: true,
+        canViewRegister: true,
+        isWorkflowUser: true
       });
     }
     setIsUserModalOpen(true);
@@ -370,10 +390,24 @@ const MasterDataHub = () => {
 
     try {
       if (editingUser) {
-        updateMasterUser(editingUser.id, userFormData);
+        updateMasterUser(editingUser.id, {
+          ...userFormData,
+          permissions: userFormData.permissions || editingUser.permissions || ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
+          canCreateDar: userFormData.canCreateDar !== undefined ? userFormData.canCreateDar : (editingUser.canCreateDar ?? true),
+          canAccessTasks: userFormData.canAccessTasks !== undefined ? userFormData.canAccessTasks : (editingUser.canAccessTasks ?? true),
+          canViewRegister: userFormData.canViewRegister !== undefined ? userFormData.canViewRegister : (editingUser.canViewRegister ?? true),
+          isWorkflowUser: userFormData.isWorkflowUser !== undefined ? userFormData.isWorkflowUser : (editingUser.isWorkflowUser ?? true)
+        });
         toast.success(`อัปเดตข้อมูลผู้ใช้ "${userFormData.name}" เรียบร้อยแล้ว`);
       } else {
-        addMasterUser(userFormData);
+        addMasterUser({
+          ...userFormData,
+          permissions: userFormData.permissions || ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
+          canCreateDar: true,
+          canAccessTasks: true,
+          canViewRegister: true,
+          isWorkflowUser: true
+        });
         toast.success(`เพิ่มผู้ใช้งาน "${userFormData.name}" เรียบร้อยแล้ว`);
       }
       setIsUserModalOpen(false);
@@ -384,59 +418,177 @@ const MasterDataHub = () => {
 
   // --- TAB 2 HANDLERS (Departments) ---
   const filteredDepartments = departmentsList.filter(d => {
-    return (d.id || '').toLowerCase().includes(deptSearch.toLowerCase()) ||
+    const matchSearch = (d.id || '').toLowerCase().includes(deptSearch.toLowerCase()) ||
       (d.nameTh || d.name || '').toLowerCase().includes(deptSearch.toLowerCase()) ||
       (d.nameEn || '').toLowerCase().includes(deptSearch.toLowerCase()) ||
       (d.headName || '').toLowerCase().includes(deptSearch.toLowerCase());
+
+    const isDeptActive = d.status !== 'INACTIVE';
+    const matchStatus = deptStatusFilter === 'ALL'
+      ? true
+      : (deptStatusFilter === 'ACTIVE' ? isDeptActive : !isDeptActive);
+
+    return matchSearch && matchStatus;
   });
+
+  const handleInitiateDeactivateDept = (dept) => {
+    if (SYSTEM_CORE_DEPTS.includes(dept.id)) {
+      toast.error(`แผนก "${dept.id}" เป็นแผนกหลักของระบบควบคุมคุณภาพ (Core Department) ไม่อนุญาตให้ระงับการใช้งาน`);
+      return;
+    }
+
+    const check = checkDepartmentDependencies(dept.id);
+    setDeactivationCheckResult(check);
+    setDeactivatingDept(dept);
+
+    // Pick first available active fallback dept that is not target
+    const availableFallbacks = departmentsList.filter(d => d.id !== dept.id && d.status !== 'INACTIVE' && !SYSTEM_CORE_DEPTS.includes(d.id));
+    const fallback = availableFallbacks.length > 0 
+      ? availableFallbacks[0].id 
+      : (departmentsList.find(d => d.id !== dept.id && d.status !== 'INACTIVE')?.id || '');
+    setFallbackDeptId(fallback);
+  };
+
+  const handleConfirmDeactivateDept = async () => {
+    if (!deactivatingDept) return;
+    setIsDeactivatingLoading(true);
+    try {
+      deactivateDepartment(deactivatingDept.id, fallbackDeptId);
+      toast.success(`ระงับการใช้งานแผนก "${deactivatingDept.id}" และโอนย้ายพนักงานเรียบร้อยแล้ว`);
+      setDeactivatingDept(null);
+      setDeactivationCheckResult(null);
+    } catch (err) {
+      toast.error(err.message || 'ไม่สามารถระงับแผนกได้');
+    } finally {
+      setIsDeactivatingLoading(false);
+    }
+  };
+
+  const handleReactivateDept = (deptId) => {
+    try {
+      reactivateDepartment(deptId);
+      toast.success(`เปิดใช้งานแผนก "${deptId}" อีกครั้งเรียบร้อยแล้ว`);
+    } catch (err) {
+      toast.error(err.message || 'ไม่สามารถเปิดใช้งานแผนกได้');
+    }
+  };
 
   const handleOpenDeptModal = (dept = null) => {
     if (dept) {
-      setEditingDept(dept);
+      const deptCode = dept.id || dept.code || dept.deptCode || '';
+      const nameTh = dept.nameTh || dept.name || dept.name_th || '';
+      const nameEn = dept.nameEn || dept.name_en || '';
+      setEditingDept({
+        ...dept,
+        id: deptCode,
+        code: deptCode,
+        deptCode: deptCode,
+        oldCode: deptCode
+      });
       setDeptFormData({
-        id: dept.id,
-        nameTh: dept.nameTh || dept.name || '',
-        nameEn: dept.nameEn || '',
+        id: deptCode,
+        code: deptCode,
+        deptCode: deptCode,
+        nameTh: nameTh,
+        name: nameTh,
+        name_th: nameTh,
+        nameEn: nameEn,
+        name_en: nameEn,
         headUserId: dept.headUserId || ''
       });
     } else {
       setEditingDept(null);
       setDeptFormData({
         id: '',
+        code: '',
+        deptCode: '',
         nameTh: '',
+        name: '',
+        name_th: '',
         nameEn: '',
+        name_en: '',
         headUserId: ''
       });
     }
     setIsDeptModalOpen(true);
   };
 
+  const handleCloseDeptModal = () => {
+    setIsDeptModalOpen(false);
+    setEditingDept(null);
+    setDeptFormData({
+      id: '',
+      code: '',
+      deptCode: '',
+      nameTh: '',
+      name: '',
+      name_th: '',
+      nameEn: '',
+      name_en: '',
+      headUserId: ''
+    });
+  };
+
   const handleSaveDept = (e) => {
-    e.preventDefault();
-    if (!deptFormData.id.trim() || !deptFormData.nameTh.trim()) {
-      toast.error('กรุณากรอกรหัสแผนกและชื่อภาษาไทย');
-      return;
-    }
-
-    const headUser = (masterUsers || []).find(u => u.id === deptFormData.headUserId);
-    const payload = {
-      ...deptFormData,
-      id: deptFormData.id.toUpperCase(),
-      name: deptFormData.nameTh,
-      headName: headUser ? headUser.name : (editingDept?.headName || 'ยังไม่ได้กำหนด')
-    };
-
+    if (e && e.preventDefault) e.preventDefault();
     try {
+      const currentDeptId = (editingDept?.id || editingDept?.code || editingDept?.deptCode || editingDept?.oldCode || '').toString().trim().toUpperCase();
+      const newCode = (deptFormData.id || deptFormData.code || deptFormData.deptCode || '').toString().trim().toUpperCase();
+      const rawNameTh = (deptFormData.nameTh || deptFormData.name || deptFormData.name_th || '').toString().trim();
+
+      if (!newCode || !rawNameTh) {
+        toast.error('กรุณากรอกรหัสแผนกและชื่อภาษาไทย');
+        return;
+      }
+
+      // Safe access to departments list (harmonized across all store aliases)
+      const departments = (masterDepartments && masterDepartments.length > 0)
+        ? masterDepartments
+        : ((storeDepts && storeDepts.length > 0) ? storeDepts : (departmentsList || []));
+
+      // ตรวจสอบซ้ำเฉพาะกรณีที่รหัสไม่ตรงกับตัวมันเอง (Exclude ตัวเองออกเสมอ)
+      const isDuplicate = departments.some(d => {
+        const existingId = (d.id || d.code || d.deptCode || '').toString().trim().toUpperCase();
+        return existingId === newCode && existingId !== currentDeptId;
+      });
+
+      if (isDuplicate) {
+        // แจ้งเตือนว่ารหัสซ้ำกับแผนกอื่น
+        toast.error(`รหัสแผนก ${newCode} มีอยู่ในระบบแล้ว`);
+        return;
+      }
+
+      const headUser = (masterUsers || []).find(u => u.id === deptFormData.headUserId);
+      const headName = headUser ? headUser.name : (editingDept?.headName || editingDept?.manager || 'ยังไม่ได้กำหนด');
+
+      const payload = {
+        ...deptFormData,
+        id: newCode,
+        code: newCode,
+        deptCode: newCode,
+        name: rawNameTh,
+        nameTh: rawNameTh,
+        name_th: rawNameTh,
+        nameEn: (deptFormData.nameEn || deptFormData.name_en || '').toString().trim(),
+        name_en: (deptFormData.nameEn || deptFormData.name_en || '').toString().trim(),
+        headUserId: deptFormData.headUserId || '',
+        headName: headName,
+        manager: headName
+      };
+
       if (editingDept) {
-        updateDepartment(editingDept.id, payload);
+        const targetId = editingDept.oldCode || editingDept.id || editingDept.code;
+        updateDepartment(targetId, payload);
         toast.success(`อัปเดตแผนก "${payload.id}" เรียบร้อยแล้ว`);
       } else {
         addDepartment(payload);
         toast.success(`เพิ่มแผนก "${payload.id}" เรียบร้อยแล้ว`);
       }
-      setIsDeptModalOpen(false);
+
+      handleCloseDeptModal();
     } catch (err) {
-      toast.error(err.message || 'เกิดข้อผิดพลาด');
+      console.error('handleSaveDept error:', err);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลแผนก');
     }
   };
 
@@ -601,23 +753,96 @@ const MasterDataHub = () => {
     }
   };
 
-  // --- TAB 5 HANDLERS (Security & 21 CFR Part 11 Digital Signature) ---
-  const handleSaveSecuritySettings = (e) => {
-    e.preventDefault();
-    updateSignatureSettings(secForm);
-    toast.success('บันทึกการตั้งค่านโยบายความปลอดภัยและ E-Signature สำเร็จ');
-  };
-
+  // --- SIGNATURE ASSET HANDLERS (Drawing, Upload, Typography) ---
   const handleOpenSignatureModal = (user) => {
     setSelectedUserForSignature(user);
+    const initialType = user.signatureType || (user.signatureImage ? 'IMAGE' : 'TYPOGRAPHIC');
+    setSignatureActiveTab(initialType);
     setSignatureFormData({
-      signatureType: user.signatureType || 'TYPOGRAPHIC',
+      signatureType: initialType,
       signatureStyle: user.signatureStyle || 'BRUSH_SCRIPT',
       signatureInitials: user.signatureInitials || (user.name ? user.name.split(' ').map(n => n[0]).join('') : 'SIG'),
       signatureImage: user.signatureImage || '',
-      certificateSerial: user.certificateSerial || `CERT-2026-${(user.department || 'QA').replace('/', '')}${user.id || '000'}`
+      certificateSerial: user.certificateSerial || `SIG-${user.id || '000'}`
     });
     setIsSignatureModalOpen(true);
+  };
+
+  const startDrawing = (e) => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    ctx.lineWidth = 2.8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = sigCanvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      setSignatureFormData(prev => ({
+        ...prev,
+        signatureType: 'DRAWN',
+        signatureImage: dataUrl
+      }));
+    }
+  };
+
+  const clearCanvas = () => {
+    const canvas = sigCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureFormData(prev => ({
+        ...prev,
+        signatureImage: ''
+      }));
+    }
+  };
+
+  const handleSignatureFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('ขนาดไฟล์ภาพต้องไม่เกิน 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setSignatureFormData(prev => ({
+        ...prev,
+        signatureType: 'IMAGE',
+        signatureImage: event.target.result
+      }));
+      toast.success('โหลดรูปภาพลายเซ็นสำเร็จ');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSaveSignatureProfile = (e) => {
@@ -625,11 +850,14 @@ const MasterDataHub = () => {
     if (!selectedUserForSignature) return;
 
     try {
-      updateUserSignatureProfile(selectedUserForSignature.id, signatureFormData);
-      toast.success(`อัปเดตโปรไฟล์ลายเซ็นของ "${selectedUserForSignature.name}" เรียบร้อยแล้ว`);
+      updateUserSignatureProfile(selectedUserForSignature.id, {
+        ...signatureFormData,
+        signatureType: signatureActiveTab
+      });
+      toast.success(`บันทึกสินทรัพย์ลายเซ็นของ "${selectedUserForSignature.name}" เรียบร้อยแล้ว`);
       setIsSignatureModalOpen(false);
     } catch (err) {
-      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกโปรไฟล์ลายเซ็น');
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกลายเซ็น');
     }
   };
 
@@ -732,67 +960,92 @@ const MasterDataHub = () => {
     );
   };
 
+  // If unauthorized, render Access Denied Card
+  if (!isAdmin) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-none max-w-md w-full text-center space-y-4">
+          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
+            <ShieldAlert size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-[#1E1E1E]">การเข้าถึงถูกปฏิเสธ (Access Denied)</h2>
+          <p className="text-sm text-[#666666]">
+            ระบบสงวนสิทธิ์การเข้าใช้งานศูนย์ข้อมูลหลัก (Master Data Management Hub) ให้เฉพาะเจ้าหน้าที่ควบคุมเอกสาร (DCC Admin) หรือ Super Admin เท่านั้น
+          </p>
+          <button
+            onClick={() => navigate('/portal')}
+            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition-colors"
+          >
+            กลับสู่หน้าหลัก (Portal Home)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
-      {/* 1. Minimalist Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      {/* 1. Minimalist Page Header (Clean Single-Row <= 48px) */}
+      <div className="flex items-center justify-between gap-3 h-11">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={() => navigate('/dcc/dashboard')}
-            className="action-icon-btn text-[#666666] hover:text-[#1E1E1E] shrink-0 h-11 w-11 rounded-xl"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="กลับ Dashboard"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={16} />
           </button>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1E1E1E] leading-tight">
-              ศูนย์กลางจัดการข้อมูลหลัก (Master Data Management Hub)
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900 truncate">
+              จัดการข้อมูลหลัก (Master Data)
             </h1>
-            <p className="text-sm text-[#666666] mt-1 font-normal">
-              จัดการโครงสร้างข้อมูลพื้นฐานของระบบคุณภาพ ISO 9001 / FSSC 22000
-            </p>
+            <span className="hidden sm:inline-flex px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+              ADMIN CONFIG
+            </span>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
+
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => {
               seedComprehensiveQaMockData();
               toast.success('โหลดชุดข้อมูลจำลอง QA Workflow (DARs, Tasks, สำเนาควบคุม) เรียบร้อยแล้ว');
             }}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold text-[#0D99FF] bg-[#E5F4FF] hover:bg-[#D1EFFF] border border-[#B8E1FF] transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="โหลดชุดข้อมูลจำลองคำร้อง QA ครบทุก Flow สำหรับ Manual Testing"
+            className="h-8 px-2.5 rounded-lg text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 transition-colors flex items-center gap-1.5"
+            title="โหลดชุดข้อมูลจำลองคำร้อง QA ครบทุก Flow"
           >
-            <Sparkles size={13} className="text-[#0D99FF]" />
-            <span>โหลด Mock Data (QA)</span>
+            <Sparkles size={12} className="text-sky-600" />
+            <span className="hidden md:inline">Mock Data (QA)</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsCleanSlateModalOpen(true)}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="ล้างข้อมูลจำลองเชิงธุรกรรมทั้งหมด เพื่อเริ่มทดสอบแบบ Clean Slate (คง Master Data ไว้ 100%)"
+            className="h-8 px-2.5 rounded-lg text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-colors flex items-center gap-1.5"
+            title="ล้างข้อมูลธุรกรรมจำลองทั้งหมด"
           >
-            <RotateCcw size={13} className="text-rose-600" />
-            <span>ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</span>
+            <RotateCcw size={12} className="text-rose-600" />
+            <span className="hidden md:inline">Clean Slate</span>
           </button>
 
-          <span className="bg-[#F5F5F5] text-slate-700 text-xs font-bold px-3.5 py-1.5 rounded-full border border-[#E5E5E5]/80 inline-flex items-center gap-2 font-mono shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            DCC ADMIN CENTER
+          <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
+
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-slate-600 bg-slate-50 border border-slate-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            ACTIVE
           </span>
         </div>
       </div>
 
-      {/* 2. Segmented Pill Floating Tabs (6 หมวดหมู่) */}
-      <div className="bg-[#F5F5F5]/80 p-1.5 rounded-xl flex gap-1.5 border border-[#E5E5E5]/60 overflow-x-auto scrollbar-none">
+      {/* 2. Modern Linear-Style Segmented Tabs */}
+      <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 overflow-x-auto scrollbar-none">
         {[
-          { id: 'users', label: '1. ผู้ใช้งานและสิทธิ์', icon: Users, count: (masterUsers || []).length },
-          { id: 'departments', label: '2. แผนกและโครงสร้าง', icon: Building2, count: departmentsList.length },
-          { id: 'docTypes', label: '3. ประเภทเอกสารและรหัส', icon: FileCode, count: (documentTypes || []).length },
-          { id: 'locations', label: '4. จุดใช้งานและไลน์ผลิต', icon: MapPin, count: (distributionLocations || []).length },
-          { id: 'security', label: '5. ลายมือชื่อและความปลอดภัย', icon: KeyRound },
-          { id: 'sla', label: '6. สายการอนุมัติและ SLAs', icon: Clock }
+          { id: 'users', label: 'ผู้ใช้งาน (Users)', legacyLabel: '1. ผู้ใช้งานและสิทธิ์', icon: Users, count: (masterUsers || []).length },
+          { id: 'departments', label: 'แผนก (Departments)', legacyLabel: '2. แผนกและโครงสร้าง', icon: Building2, count: departmentsList.length },
+          { id: 'docTypes', label: 'ประเภทเอกสาร (Doc Types)', legacyLabel: '3. ประเภทเอกสารและรหัส', icon: FileCode, count: (documentTypes || []).length },
+          { id: 'locations', label: 'จุดใช้งาน (Stations)', legacyLabel: '4. จุดใช้งานและไลน์ผลิต', icon: MapPin, count: (distributionLocations || []).length },
+          { id: 'sla', label: 'สายอนุมัติ & SLA', legacyLabel: '5. สายการอนุมัติและ SLAs', icon: Clock }
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -800,17 +1053,18 @@ const MasterDataHub = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
                 isActive
-                  ? 'bg-white text-[#1E1E1E] shadow-xs'
-                  : 'text-[#666666] hover:text-[#1E1E1E] hover:bg-white/50'
+                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
-              <Icon size={17} className={isActive ? 'text-[#0D99FF]' : 'text-slate-400'} />
+              <Icon size={14} className={isActive ? 'text-sky-600' : 'text-slate-400'} />
               <span>{tab.label}</span>
+              <span className="sr-only">{tab.legacyLabel}</span>
               {tab.count !== undefined && (
-                <span className={`text-xs font-mono px-2 py-0.5 rounded-full font-bold ${
-                  isActive ? 'bg-[#E5F4FF] text-[#007BE5]' : 'bg-slate-200/70 text-[#666666]'
+                <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full ${
+                  isActive ? 'bg-sky-100 text-sky-700 font-semibold' : 'bg-slate-200/70 text-slate-600'
                 }`}>
                   {tab.count}
                 </span>
@@ -824,25 +1078,25 @@ const MasterDataHub = () => {
       <div className="w-full max-w-full overflow-hidden">
         {/* ================= TAB 1: USERS & ROLES ================= */}
         {activeTab === 'users' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Unified Action Toolbar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto flex-1 min-w-0">
-                <div className="relative flex-1 min-w-[220px]">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto flex-1 min-w-0">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อ, รหัสพนักงาน, อีเมล, ตำแหน่ง..."
-                    className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                    placeholder="ค้นหาชื่อ, รหัสพนักงาน, อีเมล..."
+                    className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
 
                 <select
                   value={userDeptFilter}
                   onChange={(e) => setUserDeptFilter(e.target.value)}
-                  className="px-3 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none"
+                  className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none text-slate-700 cursor-pointer"
                 >
                   <option value="">ทุกแผนก (All Depts)</option>
                   {departmentsList.map(d => (
@@ -853,7 +1107,7 @@ const MasterDataHub = () => {
                 <select
                   value={userRoleFilter}
                   onChange={(e) => setUserRoleFilter(e.target.value)}
-                  className="px-3 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none"
+                  className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none text-slate-700 cursor-pointer"
                 >
                   <option value="">ทุกบทบาท (All Roles)</option>
                   <option value="DCC_ADMIN">DCC Admin</option>
@@ -864,95 +1118,121 @@ const MasterDataHub = () => {
 
               <button
                 onClick={() => handleOpenUserModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มผู้ใช้งานใหม่ (Add User)
+                <Plus size={14} /> เพิ่มผู้ใช้งานใหม่ (Add User)
               </button>
             </div>
 
             {/* Users Elevated Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[960px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 min-w-[240px] bg-[#F8FAFC]">ชื่อ-นามสกุล / อีเมล</th>
-                      <th className="px-4 py-3.5 w-28 whitespace-nowrap bg-[#F8FAFC]">แผนก</th>
-                      <th className="px-4 py-3.5 min-w-[140px] whitespace-nowrap bg-[#F8FAFC]">ตำแหน่งงาน</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">บทบาท (Role)</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">ระดับอนุมัติ</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-36 whitespace-nowrap bg-[#F8FAFC]">การจัดการ (Actions)</th>
+                      <th className="py-2.5 px-3 min-w-[240px] bg-slate-50">ชื่อ-นามสกุล / อีเมล</th>
+                      <th className="py-2.5 px-3 w-28 whitespace-nowrap bg-slate-50">แผนก</th>
+                      <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap bg-slate-50">ตำแหน่งงาน</th>
+                      <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">บทบาท (Role)</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">ระดับอนุมัติ</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-32 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {userPagination.paginatedData.map(user => (
-                      <tr key={user.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                        <td className="px-4 py-3 min-w-[240px]">
-                          <div className="font-bold text-[#1E1E1E] flex items-center gap-2 text-sm sm:text-[15px]">
+                      <tr key={user.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2 px-3 min-w-[240px]">
+                          <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
                             <span>{user.name}</span>
                             {user.isLocked && (
-                              <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs rounded-md font-bold">LOCKED</span>
+                              <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[10px] rounded font-mono font-bold">LOCKED</span>
                             )}
                           </div>
-                          <div className="text-slate-400 text-xs font-mono mt-0.5">
+                          <div className="text-slate-400 text-[11px] font-mono leading-none mt-0.5">
                             {user.empId || user.id} • {user.email}
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
-                          <span className="px-2.5 py-1 bg-[#F5F5F5] rounded-lg text-slate-700 font-mono text-xs font-bold">
-                            {user.department || user.depts?.[0]}
-                          </span>
+                        <td className="py-2 px-3 font-semibold text-slate-800 whitespace-nowrap">
+                          <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
+                            {(user.affiliated_departments && user.affiliated_departments.length > 0
+                              ? user.affiliated_departments
+                              : (user.depts && user.depts.length > 0 ? user.depts : [user.primary_department || user.department || 'QA'])
+                            ).map(dept => {
+                              const isPrimary = dept === (user.primary_department || user.department);
+                              return (
+                                <span 
+                                  key={dept}
+                                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold inline-flex items-center gap-0.5 ${
+                                    isPrimary 
+                                      ? 'bg-sky-50 text-sky-700 border border-sky-200' 
+                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  }`}
+                                  title={isPrimary ? 'แผนกหลัก (Primary Department)' : 'แผนกที่สังกัดร่วม (Affiliated)'}
+                                >
+                                  {isPrimary && <span>⭐</span>}
+                                  <span>{dept}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs sm:text-sm">
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
                           {user.position || '-'}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
                             user.role === 'DCC_ADMIN' || user.isDcc
                               ? 'bg-purple-50 text-purple-700 border border-purple-200'
                               : user.role === 'DEPT_ADMIN'
-                              ? 'bg-[#E5F4FF] text-[#007BE5] border border-[#E5F4FF]'
-                              : 'bg-[#F5F5F5] text-slate-700'
+                              ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                              : 'bg-slate-100 text-slate-600'
                           }`}>
                             {user.role || (user.isDcc ? 'DCC_ADMIN' : 'GENERAL_USER')}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] font-mono font-bold rounded-lg border border-indigo-100 text-xs">
-                            Level {user.level}
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-mono font-medium rounded text-xs border border-slate-200">
+                            L{user.level}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           <button
                             onClick={() => toggleUserStatus(user.id)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                               user.status === 'ACTIVE'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5] hover:bg-slate-200'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200'
                             }`}
                           >
                             {user.status === 'ACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleOpenSignatureModal(user)}
+                              className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
+                              title="จัดการลายเซ็นอิเล็กทรอนิกส์ (Signature Asset)"
+                            >
+                              <PenTool size={13} />
+                            </button>
                             <button
                               onClick={() => handleOpenUserModal(user)}
-                              className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                              className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                               title="แก้ไขข้อมูลผู้ใช้"
                             >
-                              <Edit size={14} />
+                              <Edit size={13} />
                             </button>
                             <button
                               onClick={() => {
                                 resetUserPassword(user.id);
                                 toast.success(`รีเซ็ตรหัสผ่านของ ${user.name} เรียบร้อยแล้ว`);
                               }}
-                              className="action-icon-btn text-[#666666] hover:text-amber-600 hover:bg-amber-50"
+                              className="w-7 h-7 rounded hover:bg-amber-50 flex items-center justify-center text-slate-500 hover:text-amber-600 transition-colors"
                               title="รีเซ็ตรหัสผ่านเริ่มต้น"
                             >
-                              <RotateCcw size={14} />
+                              <RotateCcw size={13} />
                             </button>
                             {user.isLocked && (
                               <button
@@ -960,10 +1240,10 @@ const MasterDataHub = () => {
                                   unlockUserAccount(user.id);
                                   toast.success(`ปลดล็อกบัญชี ${user.name} เรียบร้อยแล้ว`);
                                 }}
-                                className="action-icon-btn text-emerald-600 hover:bg-emerald-50"
+                                className="w-7 h-7 rounded hover:bg-emerald-50 flex items-center justify-center text-emerald-600 transition-colors"
                                 title="ปลดล็อกบัญชี"
                               >
-                                <Unlock size={14} />
+                                <Unlock size={13} />
                               </button>
                             )}
                           </div>
@@ -993,89 +1273,165 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 2: DEPARTMENTS ================= */}
         {activeTab === 'departments' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Action Bar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
               <div className="relative flex-1 w-full min-w-0">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={deptSearch}
                   onChange={(e) => setDeptSearch(e.target.value)}
                   placeholder="ค้นหารหัสแผนก หรือชื่อภาษาไทย/อังกฤษ..."
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                 />
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs shrink-0 self-stretch sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('ALL')}
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
+                    deptStatusFilter === 'ALL'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ทั้งหมด ({departmentsList.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('ACTIVE')}
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
+                    deptStatusFilter === 'ACTIVE'
+                      ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-emerald-700'
+                  }`}
+                >
+                  🟢 ใช้งานอยู่ ({departmentsList.filter(d => d.status !== 'INACTIVE').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeptStatusFilter('INACTIVE')}
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
+                    deptStatusFilter === 'INACTIVE'
+                      ? 'bg-white text-slate-700 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-700'
+                  }`}
+                >
+                  ⚪ ระงับแล้ว ({departmentsList.filter(d => d.status === 'INACTIVE').length})
+                </button>
               </div>
 
               <button
                 onClick={() => handleOpenDeptModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มแผนกใหม่ (Add Department)
+                <Plus size={14} /> เพิ่มแผนกใหม่ (Add Department)
               </button>
             </div>
 
-            {/* Departments Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* High-Density Departments Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {filteredDepartments.map(dept => {
                 const docCount = (documents || []).filter(d => d.department === dept.id || d.owner_dept === dept.id).length;
                 const copyCount = allCopies.filter(c => c.holder_dept === dept.id || c.department === dept.id).length;
+                const isCore = SYSTEM_CORE_DEPTS.includes(dept.id);
+                const isInactive = dept.status === 'INACTIVE';
 
                 return (
                   <div 
                     key={dept.id}
-                    className="card-surface p-5 hover:border-[#E5E5E5] hover:shadow-sm transition-all space-y-4 flex flex-col justify-between"
+                    className={`card-surface bg-white p-3 rounded-xl border border-slate-200/80 hover:border-slate-300 transition-all flex flex-col justify-between space-y-2.5 shadow-2xs ${
+                      isInactive ? 'opacity-80 bg-slate-50/70 border-dashed border-slate-300' : ''
+                    }`}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-1 bg-[#0D99FF] text-white font-mono font-bold text-xs rounded-lg shadow-2xs">
-                          {dept.id}
-                        </span>
-                        <button
-                          onClick={() => toggleDepartmentStatus(dept.id)}
-                          className={`px-3 py-1 rounded-full text-xs font-bold ${
-                            dept.status !== 'INACTIVE'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5]'
-                          }`}
-                        >
-                          {dept.status !== 'INACTIVE' ? '🟢 Active' : '⚪ Inactive'}
-                        </button>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 font-mono font-bold text-xs rounded-md ${
+                            isInactive ? 'bg-slate-400 text-white' : 'bg-sky-600 text-white'
+                          }`}>
+                            {dept.id}
+                          </span>
+                          {isCore && (
+                            <span 
+                              className="px-1.5 py-0.2 bg-sky-100 text-sky-800 text-[10px] font-semibold rounded flex items-center gap-0.5"
+                              title="แผนกหลักของระบบควบคุมคุณภาพ (ห้ามระงับ)"
+                            >
+                              🛡️ Core
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status / Deactivate / Reactivate Controls */}
+                        {isCore ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            🟢 Active
+                          </span>
+                        ) : isInactive ? (
+                          <div className="flex items-center gap-1">
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              ⚪ Inactive
+                            </span>
+                            <button
+                              onClick={() => handleReactivateDept(dept.id)}
+                              className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors flex items-center gap-1"
+                              title="เปิดใช้งานแผนกนี้อีกครั้ง"
+                            >
+                              <RefreshCw size={10} /> เปิดใช้งาน
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleInitiateDeactivateDept(dept)}
+                            className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-emerald-200 transition-colors group cursor-pointer"
+                            title="คลิกเพื่อระงับการใช้งานแผนก (Deactivate)"
+                          >
+                            <span className="group-hover:hidden">🟢 Active</span>
+                            <span className="hidden group-hover:inline">⚠️ ระงับ</span>
+                          </button>
+                        )}
                       </div>
 
                       <div>
-                        <h3 className="font-bold text-[#1E1E1E] text-base break-words">
-                          {dept.nameTh || dept.name}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5 break-words">
+                        <div className="flex items-baseline gap-1.5">
+                          <h3 className={`font-semibold text-xs truncate ${isInactive ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
+                            {dept.nameTh || dept.name}
+                          </h3>
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
                           {dept.nameEn || dept.name}
                         </p>
                       </div>
 
-                      <div className="p-3 bg-[#F5F5F5]/70 border border-slate-100 rounded-xl text-xs space-y-1">
-                        <span className="text-[#666666] font-medium block text-xs">หัวหน้าแผนก / ผู้ลงนามมาตรฐาน:</span>
-                        <span className="font-bold text-slate-800 block break-words text-sm">
+                      <div className="px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs flex items-center justify-between gap-1">
+                        <span className="text-slate-500 text-[11px] shrink-0">หัวหน้า:</span>
+                        <span className="font-medium text-slate-700 truncate text-[11px]" title={dept.headName || 'ยังไม่ได้กำหนด'}>
                           {dept.headName || 'ยังไม่ได้กำหนด'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 bg-[#F5F5F5] text-slate-700 rounded-lg font-medium text-xs" title="เอกสารแม่บทที่แผนกนี้เป็นเจ้าของ">
-                          📄 {docCount} เอกสาร
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px] font-medium font-mono inline-flex items-center gap-1" title="เอกสารแม่บท">
+                          <FileText size={11} strokeWidth={1.5} className="text-slate-400" />
+                          <span>{docCount}</span>
                         </span>
-                        <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] rounded-lg font-medium text-xs" title="สำเนาควบคุมที่ติดตั้งในแผนกนี้">
-                          📋 {copyCount} เล่มสำเนา
+                        <span className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded text-[11px] font-medium font-mono inline-flex items-center gap-1" title="สำเนาควบคุม">
+                          <Layers size={11} strokeWidth={1.5} className="text-sky-500" />
+                          <span>{copyCount}</span>
                         </span>
                       </div>
 
                       <button
                         onClick={() => handleOpenDeptModal(dept)}
-                        className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF]"
+                        className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                         title="แก้ไขข้อมูลแผนก"
                       >
-                        <Edit size={14} />
+                        <Edit size={13} />
                       </button>
                     </div>
                   </div>
@@ -1087,118 +1443,115 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 3: DOCUMENT TYPES ================= */}
         {activeTab === 'docTypes' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Action Bar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
               <div className="relative flex-1 w-full min-w-0">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={typeSearch}
                   onChange={(e) => setTypeSearch(e.target.value)}
                   placeholder="ค้นหารหัสประเภทเอกสาร เช่น QM, SOP, WI, FM..."
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                 />
               </div>
 
               <button
                 onClick={() => handleOpenTypeModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มประเภทเอกสาร (Add Document Type)
+                <Plus size={14} /> เพิ่มประเภทเอกสาร (Add Document Type)
               </button>
             </div>
 
             {/* Types Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[960px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 w-28 font-mono bg-[#F8FAFC]">Type Code</th>
-                      <th className="px-4 py-3.5 min-w-[220px] bg-[#F8FAFC]">ชื่อประเภทเอกสาร</th>
-                      <th className="px-4 py-3.5 min-w-[180px] font-mono bg-[#F8FAFC]">รูปแบบการตั้งรหัส (Pattern)</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">ขอบเขต & DAR</th>
-                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">Clean Form Bypass</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">รอบทบทวน</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">อายุจัดเก็บ</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-24 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                      <th className="py-2.5 px-3 w-28 font-mono bg-slate-50">Type Code</th>
+                      <th className="py-2.5 px-3 min-w-[200px] bg-slate-50">ชื่อประเภทเอกสาร</th>
+                      <th className="py-2.5 px-3 min-w-[160px] font-mono bg-slate-50">รูปแบบการตั้งรหัส</th>
+                      <th className="py-2.5 px-3 text-center w-28 whitespace-nowrap bg-slate-50">ขอบเขต & DAR</th>
+                      <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">Form Bypass</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">รอบทบทวน</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">อายุจัดเก็บ</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-20 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {docTypePagination.paginatedData.map(type => (
-                      <tr key={type.code || type.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-[#007BE5] whitespace-nowrap">
+                      <tr key={type.code || type.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2 px-3 font-mono font-bold text-sky-700 whitespace-nowrap">
                           {type.code || type.id}
                         </td>
-                        <td className="px-4 py-3 min-w-[220px]">
-                          <div className="font-bold text-[#1E1E1E] text-sm sm:text-[15px]">
+                        <td className="py-2 px-3 min-w-[200px]">
+                          <div className="font-medium text-slate-900 text-xs">
                             {type.nameTh || type.name}
                           </div>
-                          <div className="text-slate-400 text-xs mt-0.5">
-                            {type.description || type.name}
-                          </div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-700 whitespace-nowrap">
-                          <span className="bg-[#F5F5F5] px-2.5 py-1 rounded-lg border border-[#E5E5E5] font-bold text-xs">
+                        <td className="py-2 px-3 font-mono text-slate-700 whitespace-nowrap">
+                          <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-mono text-slate-600 border border-slate-200">
                             {type.namingPattern || `${type.code}-{Dept}-{##}`}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           {(type.allowDar !== false && type.category !== 'EXTERNAL' && type.code !== 'ED') ? (
-                            <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] font-bold rounded-full border border-[#E5F4FF] text-xs inline-flex items-center gap-1 shadow-2xs">
+                            <span className="px-2 py-0.5 bg-sky-50 text-sky-700 font-medium rounded-full border border-sky-200 text-[11px] inline-flex items-center gap-1">
                               📑 ภายใน (DAR)
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 bg-amber-50 text-amber-700 font-bold rounded-full border border-amber-200 text-xs inline-flex items-center gap-1 shadow-2xs">
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-medium rounded-full border border-amber-200 text-[11px] inline-flex items-center gap-1">
                               🌐 ภายนอก (External)
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           {type.is_form_type ? (
-                            <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-200 text-xs">
-                              ✅ Clean Bypass
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded-full border border-emerald-200 text-[11px]">
+                              ✅ Bypass
                             </span>
                           ) : (
-                            <span className="px-3 py-1 bg-[#F5F5F5] text-[#666666] rounded-full text-xs">
-                              Watermark Normal
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">
+                              Watermark
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap font-medium text-slate-700 text-xs sm:text-sm">
-                          ทุก {type.reviewCycleMonths || 12} เดือน
+                        <td className="py-2 px-3 text-center whitespace-nowrap text-slate-700 text-xs font-mono">
+                          {type.reviewCycleMonths || 12} เดือน
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap font-medium text-slate-700 text-xs sm:text-sm">
+                        <td className="py-2 px-3 text-center whitespace-nowrap text-slate-700 text-xs font-mono">
                           {type.retentionPeriodYears || 3} ปี
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           <button
                             onClick={() => toggleDocumentTypeStatus(type.code || type.id)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                               type.status !== 'INACTIVE'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5]'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200'
                             }`}
                           >
                             {type.status !== 'INACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
                           <button
                             onClick={() => handleOpenTypeModal(type)}
-                            className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                            className="w-7 h-7 rounded hover:bg-slate-100 inline-flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                             title="แก้ไขประเภทเอกสาร"
                           >
-                            <Edit size={14} />
+                            <Edit size={13} />
                           </button>
                         </td>
                       </tr>
                     ))}
                     {docTypePagination.paginatedData.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                        <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-xs">
                           ไม่พบข้อมูลประเภทเอกสารที่ค้นหา
                         </td>
                       </tr>
@@ -1219,29 +1572,29 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 4: LOCATIONS MATRIX ================= */}
         {activeTab === 'locations' && (
-          <div className="space-y-4">
-            {/* Unified Enterprise Search & Filter Toolbar (Figma UI3 Toolbar Pattern) */}
-            <div className="card-surface p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="space-y-3">
+            {/* Unified Enterprise Search & Filter Toolbar */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 shadow-2xs">
               {/* Left Section: Search Input + Searchable Department Combobox + Clear Filters */}
-              <div className="flex flex-1 flex-wrap items-center gap-2.5 min-w-0">
+              <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
                 {/* Station Free-text Search Field */}
-                <div className="relative flex-1 min-w-[200px] sm:min-w-[240px]">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="relative flex-1 min-w-[180px] sm:min-w-[220px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={locSearch}
                     onChange={(e) => setLocSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อจุดใช้งาน, รหัสสถานีปฏิบัติงาน..."
-                    className="w-full h-10.5 pl-10 pr-9 py-2 text-xs sm:text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all placeholder:text-slate-400 font-normal"
+                    placeholder="ค้นหาชื่อจุดใช้งาน, รหัสสถานี..."
+                    className="w-full h-9 pl-9 pr-8 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400 font-normal"
                   />
                   {locSearch && (
                     <button
                       type="button"
                       onClick={() => setLocSearch('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
                       title="ล้างคำค้นหา"
                     >
-                      <X size={14} />
+                      <X size={12} />
                     </button>
                   )}
                 </div>
@@ -1254,40 +1607,40 @@ const MasterDataHub = () => {
                       setIsLocDeptDropdownOpen(prev => !prev);
                       setLocDeptSearchText('');
                     }}
-                    className={`h-10.5 px-3.5 rounded-xl border transition-all text-xs sm:text-sm font-medium flex items-center justify-between gap-2.5 min-w-[200px] sm:w-64 md:w-72 bg-white ${
-                      isLocDeptDropdownOpen ? 'border-[#0D99FF] ring-2 ring-[#0D99FF]/10' : 'border-[#E5E5E5] hover:border-slate-300'
+                    className={`h-9 px-3 rounded-lg border transition-all text-xs font-medium flex items-center justify-between gap-2 min-w-[180px] sm:w-60 bg-slate-50 ${
+                      isLocDeptDropdownOpen ? 'border-sky-500 bg-white ring-1 ring-sky-500/20' : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 truncate">
-                      <Building2 size={15} className="text-[#0D99FF] shrink-0" />
-                      <span className="truncate text-slate-800 font-medium">
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      <Building2 size={13} className="text-sky-600 shrink-0" />
+                      <span className="truncate text-slate-700 font-medium">
                         {selectedLocDept === 'ALL'
-                          ? 'ทุกแผนก (All Departments)'
+                          ? 'ทุกแผนก (All Depts)'
                           : `${selectedLocDept} — ${departmentsList.find(d => d.id === selectedLocDept)?.nameTh || departmentsList.find(d => d.id === selectedLocDept)?.name || selectedLocDept}`}
                       </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {selectedLocDept !== 'ALL' && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-[#E5F4FF] text-[#007BE5] font-mono text-[11px] font-bold">
+                        <span className="px-1.5 py-0.2 rounded bg-sky-100 text-sky-700 font-mono text-[10px] font-bold">
                           {stationCountByDept[selectedLocDept] || 0}
                         </span>
                       )}
-                      <ChevronDown size={14} className={`text-slate-400 transition-transform ${isLocDeptDropdownOpen ? 'rotate-180 text-[#0D99FF]' : ''}`} />
+                      <ChevronDown size={13} className={`text-slate-400 transition-transform ${isLocDeptDropdownOpen ? 'rotate-180 text-sky-600' : ''}`} />
                     </div>
                   </button>
 
                   {/* Dropdown Popover */}
                   {isLocDeptDropdownOpen && (
-                    <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-[#E5E5E5] rounded-xl shadow-lg z-30 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
                       <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                           type="text"
                           autoFocus
                           value={locDeptSearchText}
                           onChange={(e) => setLocDeptSearchText(e.target.value)}
                           placeholder="พิมพ์ค้นหาชื่อ/รหัสแผนก..."
-                          className="w-full pl-8 pr-7 py-1.5 bg-[#F5F5F5] border border-[#E5E5E5] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#0D99FF]"
+                          className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-sky-500"
                         />
                         {locDeptSearchText && (
                           <button
@@ -1309,15 +1662,13 @@ const MasterDataHub = () => {
                               setSelectedLocDept('ALL');
                               setIsLocDeptDropdownOpen(false);
                             }}
-                            className={`w-full px-2.5 py-2 rounded-lg text-xs font-medium text-left flex items-center justify-between transition-colors ${
+                            className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-left flex items-center justify-between transition-colors ${
                               selectedLocDept === 'ALL'
-                                ? 'bg-[#E5F4FF] text-[#007BE5] font-bold'
-                                : 'text-slate-700 hover:bg-[#F5F5F5]'
+                                ? 'bg-sky-50 text-sky-700 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50'
                             }`}
                           >
-                            <span className="flex items-center gap-2">
-                              <span>ทุกแผนก (All Departments)</span>
-                            </span>
+                            <span>ทุกแผนก (All Departments)</span>
                             <span className="text-[11px] font-mono text-slate-400">
                               {(distributionLocations || []).length} จุด
                             </span>
@@ -1335,19 +1686,19 @@ const MasterDataHub = () => {
                                 setSelectedLocDept(dept.id);
                                 setIsLocDeptDropdownOpen(false);
                               }}
-                              className={`w-full px-2.5 py-2 rounded-lg text-xs text-left flex items-center justify-between transition-colors ${
+                              className={`w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center justify-between transition-colors ${
                                 isSelected
-                                  ? 'bg-[#E5F4FF] text-[#007BE5] font-bold'
-                                  : 'text-slate-700 hover:bg-[#F5F5F5]'
+                                  ? 'bg-sky-50 text-sky-700 font-bold'
+                                  : 'text-slate-700 hover:bg-slate-50'
                               }`}
                             >
                               <div className="flex items-center gap-2 min-w-0 truncate">
-                                <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px]">
+                                <span className="font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 text-[10px]">
                                   {dept.id}
                                 </span>
                                 <span className="truncate">{dept.nameTh || dept.name || dept.nameEn}</span>
                               </div>
-                              <span className={`text-[11px] font-mono shrink-0 ${isSelected ? 'text-[#007BE5] font-bold' : 'text-slate-400'}`}>
+                              <span className={`text-[11px] font-mono shrink-0 ${isSelected ? 'text-sky-700 font-bold' : 'text-slate-400'}`}>
                                 {count} จุด
                               </span>
                             </button>
@@ -1355,7 +1706,7 @@ const MasterDataHub = () => {
                         })}
 
                         {filteredDeptOptions.length === 0 && (
-                          <div className="py-4 text-center text-xs text-slate-400">
+                          <div className="py-3 text-center text-xs text-slate-400">
                             ไม่พบแผนกที่ค้นหา
                           </div>
                         )}
@@ -1373,51 +1724,51 @@ const MasterDataHub = () => {
                       setLocSearch('');
                       setLocDeptSearchText('');
                     }}
-                    className="h-10.5 px-3.5 rounded-xl border border-[#E5E5E5] bg-white text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                    className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                     title="ล้างตัวกรองและคำค้นหาทั้งหมด"
                   >
-                    <RotateCcw size={13} className="text-slate-400 group-hover:text-rose-600" />
+                    <RotateCcw size={12} className="text-slate-400 group-hover:text-rose-600" />
                     <span>ล้างตัวกรอง</span>
                   </button>
                 )}
               </div>
 
               {/* Right Section: Counter Badge + Primary Action Button */}
-              <div className="flex items-center gap-3 shrink-0 self-end lg:self-auto flex-wrap justify-end">
+              <div className="flex items-center gap-2 shrink-0 self-end lg:self-auto flex-wrap justify-end">
                 <div 
                   data-testid="station-count-badge"
-                  className="text-xs font-mono font-semibold text-[#64748B] px-3 py-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]/80 whitespace-nowrap"
+                  className="text-xs font-mono font-medium text-slate-500 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 whitespace-nowrap"
                 >
-                  พบ <strong className="text-[#1E1E1E]">{filteredLocations.length}</strong> จาก {(distributionLocations || []).length} จุด
+                  พบ <strong className="text-slate-900">{filteredLocations.length}</strong> / {(distributionLocations || []).length} จุด
                 </div>
 
                 <button
                   type="button"
                   onClick={() => handleOpenLocModal()}
-                  className="h-10.5 px-4 rounded-xl bg-[#0D99FF] text-white hover:bg-[#007BE5] font-semibold text-xs sm:text-sm shadow-2xs transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                  className="h-9 px-3.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-semibold text-xs shadow-2xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} />
                   <span>เพิ่มจุดใช้งานใหม่ (Add Location)</span>
                 </button>
               </div>
             </div>
 
             {/* Locations Elevated Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[980px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 w-28 whitespace-nowrap bg-[#F8FAFC]">แผนก</th>
-                      <th className="px-4 py-3.5 w-32 font-mono whitespace-nowrap bg-[#F8FAFC]">Location ID</th>
-                      <th className="px-4 py-3.5 min-w-[260px] bg-[#F8FAFC]">ชื่อจุดใช้งานหน้างาน (Point of Use / Station)</th>
-                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">Master Lock (Copy 01)</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">สำเนาควบคุมผูกอยู่</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-28 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                      <th className="py-2.5 px-3 w-24 whitespace-nowrap bg-slate-50">แผนก</th>
+                      <th className="py-2.5 px-3 w-28 font-mono whitespace-nowrap bg-slate-50">Location ID</th>
+                      <th className="py-2.5 px-3 min-w-[260px] bg-slate-50">ชื่อจุดใช้งานหน้างาน (Station)</th>
+                      <th className="py-2.5 px-3 text-center w-36 whitespace-nowrap bg-slate-50">จุดคุมงานต้นทาง (Copy 01)</th>
+                      <th className="py-2.5 px-3 text-center w-28 whitespace-nowrap bg-slate-50">สำเนาผูกอยู่</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-24 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {locationPagination.paginatedData.map(loc => {
                       const activeCopies = allCopies.filter(c => 
                         (c.location_id === loc.id || c.locationId === loc.id || c.location === loc.name) &&
@@ -1425,70 +1776,65 @@ const MasterDataHub = () => {
                       );
 
                       return (
-                        <tr key={loc.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
-                            <span className="px-2.5 py-1 bg-[#F5F5F5] rounded-lg text-slate-700 font-mono text-xs font-bold">
+                        <tr key={loc.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2 px-3 font-semibold text-slate-800 whitespace-nowrap">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-mono text-xs font-bold">
                               {loc.departmentId}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-mono font-bold text-[#007BE5] whitespace-nowrap">
+                          <td className="py-2 px-3 font-mono font-bold text-sky-700 whitespace-nowrap">
                             {loc.id}
                           </td>
-                          <td className="px-4 py-3 min-w-[260px]">
-                            <div className="font-bold text-[#1E1E1E] text-sm sm:text-[15px]">
+                          <td className="py-2 px-3 min-w-[260px]">
+                            <div className="font-medium text-slate-900 text-xs">
                               {loc.name}
                             </div>
-                            {loc.description && (
-                              <div className="text-slate-400 text-xs mt-0.5">
-                                {loc.description}
-                              </div>
-                            )}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
                             {loc.isMasterOffice ? (
-                              <span className="bg-amber-50 text-amber-700 border border-amber-200/70 text-xs font-bold px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
-                                <Crown size={14} className="text-amber-600" /> Master Station
+                              <span className="bg-sky-50 text-sky-700 border border-sky-200 text-[11px] font-medium px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <Crown size={12} className="text-sky-600" /> จุดคุมงานต้นทาง
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-xs">-</span>
+                              <span className="text-slate-400 text-xs font-mono">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold ${
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-medium ${
                               activeCopies.length > 0
                                 ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : 'bg-[#F5F5F5] text-slate-400'
+                                : 'bg-slate-100 text-slate-400'
                             }`}>
                               {activeCopies.length} เล่ม
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
                             <button
                               onClick={() => toggleLocationStatus(loc.id)}
-                              className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                                 loc.status !== 'INACTIVE'
                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5]'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200'
                               }`}
                             >
                               {loc.status !== 'INACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                             </button>
                           </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-2 px-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => handleOpenLocModal(loc)}
-                                className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                                 title="แก้ไขจุดใช้งาน"
                               >
-                                <Edit size={14} />
+                                <Edit size={13} />
                               </button>
                               <button
                                 onClick={() => handleDeleteLoc(loc.id)}
-                                className="action-icon-btn text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-rose-50 flex items-center justify-center text-slate-400 hover:text-rose-600 transition-colors"
                                 title="ลบจุดใช้งาน"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </td>
@@ -1537,670 +1883,224 @@ const MasterDataHub = () => {
           </div>
         )}
 
-        {/* ================= TAB 5: E-SIGNATURES & 21 CFR PART 11 SECURITY ================= */}
-        {activeTab === 'security' && (
-          <div className="space-y-6">
-            {/* 1. Compliance Master Banner */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-5 sm:p-6 border border-slate-700/60 shadow-md">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-[#0D99FF]/20 text-[#0D99FF] border border-[#0D99FF]/40 font-mono">
-                      21 CFR Part 11 Compliant
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
-                      ISO 9001:2015 Clause 7.5
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                      ISO 13485:2016 Certified
-                    </span>
-                  </div>
-                  <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                    สถาปัตยกรรมลายมือชื่ออิเล็กทรอนิกส์และความปลอดภัย (Digital Signatures & Security Architecture)
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-                    ระบบควบคุมความสมบูรณ์ของลายเซ็นดิจิทัล (Digital Signature Manifest), เจตจำนงการลงนาม (Signing Intent), การประทับเวลาที่ตรวจสอบย้อนกลับได้ (Audit Trail Timestamp), และการเข้ารหัสยืนยันตัวตนระดับบุคคลตามมาตรฐานสากล
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sampleUser = (masterUsers || [])[0] || currentUser;
-                      handleOpenStampSimulator(sampleUser);
-                    }}
-                    className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-[#0D99FF] hover:bg-[#007BE5] text-white transition-all shadow-xs flex items-center gap-2 cursor-pointer"
-                  >
-                    <Eye size={16} />
-                    <span>ทดสอบประทับตราจำลอง (Stamp Simulator)</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Main 2-Column Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Global Security & E-Signature Policy Engine (5 Cols) */}
-              <div className="lg:col-span-5 space-y-6">
-                <div className="card-surface p-5 sm:p-6 space-y-5">
-                  <div className="flex items-center gap-3 pb-3.5 border-b border-slate-100">
-                    <div className="p-2.5 bg-[#E5F4FF] text-[#0D99FF] rounded-xl shrink-0">
-                      <Lock size={18} />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-[#1E1E1E] text-sm sm:text-base">นโยบายความปลอดภัย E-Signature</h3>
-                      <p className="text-xs text-slate-400">21 CFR Part 11 Security & Authentication Policies</p>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSaveSecuritySettings} className="space-y-4.5 text-xs">
-                    {/* PIN Security Group */}
-                    <div className="space-y-3 p-3.5 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
-                      <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <KeyRound size={14} className="text-[#0D99FF]" />
-                        <span>นโยบายรหัสผ่าน Signing PIN</span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="font-semibold text-slate-700 block mb-1">ความยาว PIN (หลัก):</label>
-                          <input
-                            type="number"
-                            min="4"
-                            max="8"
-                            value={secForm.pinLength}
-                            onChange={(e) => setSecForm({ ...secForm, pinLength: parseInt(e.target.value) || 6 })}
-                            className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg focus:border-[#0D99FF] outline-none text-sm font-mono font-bold"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="font-semibold text-slate-700 block mb-1">จำนวนครั้งผิดสูงสุด:</label>
-                          <input
-                            type="number"
-                            min="3"
-                            max="10"
-                            value={secForm.maxFailedAttempts}
-                            onChange={(e) => setSecForm({ ...secForm, maxFailedAttempts: parseInt(e.target.value) || 3 })}
-                            className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg focus:border-[#0D99FF] outline-none text-sm font-mono font-bold"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="font-semibold text-slate-700 block mb-1">PIN เริ่มต้นเมื่อสร้าง/รีเซ็ต (Default PIN):</label>
-                        <input
-                          type="text"
-                          value={secForm.defaultPin}
-                          onChange={(e) => setSecForm({ ...secForm, defaultPin: e.target.value })}
-                          className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg font-mono focus:border-[#0D99FF] outline-none text-sm font-bold tracking-wider"
-                        />
-                      </div>
-                    </div>
-
-                    {/* 21 CFR Part 11 Toggles */}
-                    <div className="space-y-3">
-                      <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-emerald-600" />
-                        <span>เกณฑ์การบังคับใช้ตามมาตรฐาน 21 CFR Part 11</span>
-                      </div>
-
-                      <div className="space-y-2.5">
-                        {/* Toggle 1: Require Reason */}
-                        <label className="flex items-start gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(secForm.requireReasonForSigning)}
-                            onChange={(e) => setSecForm({ ...secForm, requireReasonForSigning: e.target.checked })}
-                            className="mt-0.5 w-4 h-4 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
-                          />
-                          <div className="flex-1 min-w-0 text-xs">
-                            <span className="font-bold text-slate-800 block">บังคับระบุเจตจำนงการลงนาม (Meaning / Intent)</span>
-                            <span className="text-[11px] text-slate-500">ระบุบทบาทและวัตถุประสงค์ (ผู้ยื่น / ผู้ตรวจทาน / ผู้อนุมัติ / ผู้รับทราบ) ในตราประทับ</span>
-                          </div>
-                        </label>
-
-                        {/* Toggle 2: Re-Authentication */}
-                        <label className="flex items-start gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(secForm.requireReAuthentication)}
-                            onChange={(e) => setSecForm({ ...secForm, requireReAuthentication: e.target.checked })}
-                            className="mt-0.5 w-4 h-4 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
-                          />
-                          <div className="flex-1 min-w-0 text-xs">
-                            <span className="font-bold text-slate-800 block">บังคับยืนยันตัวตนด้วย Signing PIN ทุกการอนุมัติ</span>
-                            <span className="text-[11px] text-slate-500">ป้องกันการลงนามค้างไว้จากเซสชันเบราว์เซอร์โดยไม่ตั้งใจ</span>
-                          </div>
-                        </label>
-
-                        {/* Toggle 3: Timestamp Authority */}
-                        <label className="flex items-start gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(secForm.enableTimestampAuthority)}
-                            onChange={(e) => setSecForm({ ...secForm, enableTimestampAuthority: e.target.checked })}
-                            className="mt-0.5 w-4 h-4 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
-                          />
-                          <div className="flex-1 min-w-0 text-xs">
-                            <span className="font-bold text-slate-800 block">ประทับเวลา Bangkok Timezone & Cryptographic Hash</span>
-                            <span className="text-[11px] text-slate-500">สร้าง Checksum SHA-256 เพื่อตรวจสอบความถูกต้องของเอกสาร</span>
-                          </div>
-                        </label>
-
-                        {/* Toggle 4: Dual Sign-Off */}
-                        <label className="flex items-start gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(secForm.dualSignOffOnObsolete)}
-                            onChange={(e) => setSecForm({ ...secForm, dualSignOffOnObsolete: e.target.checked })}
-                            className="mt-0.5 w-4 h-4 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
-                          />
-                          <div className="flex-1 min-w-0 text-xs">
-                            <span className="font-bold text-slate-800 block">บังคับลงนามคู่สำหรับการขอยกเลิกเอกสาร (Dual Sign-Off)</span>
-                            <span className="text-[11px] text-slate-500">ต้องได้รับการอนุมัติร่วมจากหัวหน้าแผนกและ DCC ก่อนยกเลิก</span>
-                          </div>
-                        </label>
-
-                        {/* Toggle 5: Immutable Audit Trail */}
-                        <label className="flex items-start gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(secForm.auditTrailLogging)}
-                            onChange={(e) => setSecForm({ ...secForm, auditTrailLogging: e.target.checked })}
-                            className="mt-0.5 w-4 h-4 rounded text-[#0D99FF] focus:ring-[#0D99FF]"
-                          />
-                          <div className="flex-1 min-w-0 text-xs">
-                            <span className="font-bold text-slate-800 block">บันทึก Audit Trail แบบแก้ไขไม่ได้ (Immutable Log)</span>
-                            <span className="text-[11px] text-slate-500">บันทึกทุกเหตุการณ์การลงนามเข้าสู่ระบบ System Action Log</span>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Stamp Format Preset */}
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">รูปแบบตราประทับเริ่มต้น (Stamp Preset):</label>
-                      <select
-                        value={secForm.signatureStampFormat || 'STANDARD_WITH_METADATA'}
-                        onChange={(e) => setSecForm({ ...secForm, signatureStampFormat: e.target.value })}
-                        className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl font-medium outline-none text-xs"
-                      >
-                        <option value="STANDARD_WITH_METADATA">มาตรฐานสากล: ลายเซ็น + ชื่อ + ตำแหน่ง + เจตจำนง + เวลา + Hash</option>
-                        <option value="FORMAL_BOXED_STAMP">กรอบทางการ: ตราประทับคู่พร้อมรหัสใบรับรอง (Formal Quality Seal)</option>
-                        <option value="MINIMAL_LEAN">กะทัดรัด: ลายเซ็นและชื่อพร้อมวันที่ 2 บรรทัด (Minimal Lean)</option>
-                      </select>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 mt-2 text-sm cursor-pointer"
-                    >
-                      <Save size={15} /> บันทึกนโยบายความปลอดภัย
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* Right Column: User Digital Signature Directory & Profile Management (7 Cols) */}
-              <div className="lg:col-span-7 card-surface p-5 sm:p-6 space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-bold text-[#1E1E1E] text-sm sm:text-base flex items-center gap-2">
-                      <PenTool size={18} className="text-[#0D99FF]" />
-                      <span>ไดเรกทอรีลายเซ็นและโปรไฟล์ความปลอดภัยรายบุคคล</span>
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      จัดการรูปแบบลายเซ็นดิจิทัล, ใบรับรองอิเล็กทรอนิกส์, และสถานะ Signing PIN
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-mono">
-                    <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#0D99FF] rounded-lg font-bold">
-                      {(masterUsers || []).filter(u => u.hasRegisteredSignature !== false).length} / {(masterUsers || []).length} Registered
-                    </span>
-                  </div>
-                </div>
-
-                {/* Toolbar Filters */}
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={sigUserSearch}
-                      onChange={(e) => setSigUserSearch(e.target.value)}
-                      placeholder="ค้นหาชื่อ, รหัส, แผนก..."
-                      className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none"
-                    />
-                  </div>
-
-                  <select
-                    value={sigDeptFilter}
-                    onChange={(e) => setSigDeptFilter(e.target.value)}
-                    className="px-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl font-medium outline-none"
-                  >
-                    <option value="ALL">ทุกแผนก</option>
-                    {departmentsList.map(d => (
-                      <option key={d.id} value={d.id}>{d.id}</option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={sigStatusFilter}
-                    onChange={(e) => setSigStatusFilter(e.target.value)}
-                    className="px-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl font-medium outline-none"
-                  >
-                    <option value="ALL">ทุกสถานะ</option>
-                    <option value="REGISTERED">ลงทะเบียนแล้ว</option>
-                    <option value="PENDING">ยังไม่ตั้งค่า</option>
-                    <option value="LOCKED">บัญชีถูกล็อก</option>
-                  </select>
-                </div>
-
-                {/* User Directory Table */}
-                <div className="overflow-hidden border border-[#E2E8F0] rounded-xl flex flex-col min-h-0 bg-white shadow-2xs">
-                  <div className="overflow-x-auto overflow-y-auto max-h-[480px] scrollbar-thin">
-                    <table className="w-full text-left text-xs table-auto border-collapse">
-                      <thead className="bg-[#F8FAFC] text-slate-700 font-bold uppercase tracking-wider sticky top-0 border-b border-[#E2E8F0] z-10 shadow-xs backdrop-blur-sm">
-                        <tr>
-                          <th className="px-4 py-3 min-w-[160px] bg-[#F8FAFC]">ผู้ใช้งาน & สังกัด</th>
-                          <th className="px-3 py-3 min-w-[140px] bg-[#F8FAFC]">รูปแบบลายเซ็น (Asset)</th>
-                          <th className="px-3 py-3 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ PIN</th>
-                          <th className="px-3 py-3 text-center w-24 whitespace-nowrap bg-[#F8FAFC]">บัญชี</th>
-                          <th className="px-4 py-3 text-right w-44 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#F1F5F9]">
-                        {sigUserPagination.paginatedData.map(u => {
-                          const styleLabel = u.signatureStyle === 'FORMAL_SERIF' ? 'Formal Serif' :
-                            u.signatureStyle === 'MODERN_SANS' ? 'Modern Sans' :
-                            u.signatureStyle === 'CLASSIC_CALLIGRAPHY' ? 'Calligraphy' : 'Brush Script';
-
-                          return (
-                            <tr key={u.id} className="hover:bg-[#F8FAFC] transition-colors">
-                              <td className="px-4 py-3 align-middle">
-                                <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                                  <span>{u.name}</span>
-                                  {u.role === 'DCC_ADMIN' && (
-                                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-[#0D99FF]/10 text-[#0D99FF]">DCC</span>
-                                  )}
-                                </div>
-                                <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
-                                  <span>{u.empId || u.id}</span>
-                                  <span>•</span>
-                                  <span className="font-semibold text-slate-600">{u.department}</span>
-                                  {u.position && <span>• {u.position}</span>}
-                                </div>
-                              </td>
-
-                              <td className="px-3 py-3 align-middle">
-                                <div className="space-y-1">
-                                  <div className="h-7 px-2.5 bg-slate-50 border border-slate-200/80 rounded-md flex items-center justify-center font-serif italic text-slate-800 text-xs truncate max-w-[150px] shadow-2xs">
-                                    {u.signatureInitials || u.name}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
-                                      {styleLabel}
-                                    </span>
-                                    <span className="text-[10px] text-emerald-600 font-bold">
-                                      ✓ Active
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-
-                              <td className="px-3 py-3 text-center align-middle whitespace-nowrap font-mono">
-                                <div className="text-xs font-bold text-slate-700">
-                                  {u.failedPinAttempts || 0} / {secForm.maxFailedAttempts}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {u.failedPinAttempts > 0 ? 'กรอกผิดสะสม' : 'ปกติ'}
-                                </div>
-                              </td>
-
-                              <td className="px-3 py-3 text-center align-middle whitespace-nowrap">
-                                {u.isLocked ? (
-                                  <span className="px-2 py-0.5 bg-rose-50 text-rose-700 font-bold rounded-lg text-[11px] border border-rose-200 inline-flex items-center gap-1">
-                                    <Lock size={10} /> Locked
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-[11px] inline-flex items-center gap-1">
-                                    <CheckCircle2 size={10} /> OK
-                                  </span>
-                                )}
-                              </td>
-
-                              <td className="px-4 py-3 text-right align-middle whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenSignatureModal(u)}
-                                    className="px-2 py-1 bg-[#E5F4FF] hover:bg-[#D1EFFF] text-[#0D99FF] rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                                    title="ตั้งค่าโปรไฟล์ลายเซ็นดิจิทัล"
-                                  >
-                                    <PenTool size={12} />
-                                    <span>ตั้งค่า</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenStampSimulator(u)}
-                                    className="p-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                                    title="ทดสอบตราประทับ"
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      resetUserPin(u.id);
-                                      toast.success(`รีเซ็ต PIN ของ ${u.name} เป็น ${secForm.defaultPin} สำเร็จ`);
-                                    }}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                                    title="รีเซ็ต PIN กลับเป็นค่าเริ่มต้น"
-                                  >
-                                    Reset PIN
-                                  </button>
-
-                                  {u.isLocked && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        unlockUserAccount(u.id);
-                                        toast.success(`ปลดล็อกบัญชี ${u.name} สำเร็จ`);
-                                      }}
-                                      className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                                    >
-                                      Unlock
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {sigUserPagination.paginatedData.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-xs">
-                              ไม่พบรายชื่อผู้ใช้งานตามเงื่อนไขที่ค้นหา
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <TablePagination
-                    currentPage={sigUserPagination.currentPage}
-                    totalItems={sigUserPagination.totalItems}
-                    pageSize={sigUserPagination.pageSize}
-                    onPageChange={sigUserPagination.setCurrentPage}
-                    onPageSizeChange={sigUserPagination.setPageSize}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= TAB 6: APPROVAL MATRIX & SLAS ================= */}
+        {/* ================= TAB 5: APPROVAL MATRIX & SLAS ================= */}
         {activeTab === 'sla' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines) */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center font-bold">
-                    <Clock size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#1E1E1E]">ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines)</h2>
-                    <p className="text-xs text-[#666666]">กำหนดจำนวนวันทำการสูงสุดสำหรับการดำเนินการในแต่ละขั้นตอนตามมาตรฐาน ISO 9001</p>
-                  </div>
-                </div>
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <Clock size={15} className="text-sky-600" />
+                <h2 className="text-xs font-semibold text-slate-800 uppercase tracking-wide">ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines)</h2>
+                <span className="text-[11px] text-slate-400 font-normal">จำนวนวันทำการสูงสุดตามมาตรฐาน ISO 9001</span>
               </div>
 
               {/* Compact SLA Metric Cards with Stepper Controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {/* Card 1: Review SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-[#0D99FF]/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[#0D99FF] font-bold text-xs sm:text-sm">
-                      <Clock size={15} />
-                      <span>1. ทบทวนคำขอ (Review SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-[#E5F4FF] text-[#007BE5]">
+                    <span className="text-xs font-semibold text-slate-800">1. ทบทวนคำขอ (Review)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-200">
                       Review
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('reviewSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.reviewSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, reviewSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-[#0D99FF] outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-sky-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('reviewSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้ทบทวนประจำแผนกในการตรวจทาน DAR
-                  </div>
                 </div>
 
                 {/* Card 2: Approve SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-emerald-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs sm:text-sm">
-                      <ShieldCheck size={15} />
-                      <span>2. อนุมัติเอกสาร (Approve SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">
+                    <span className="text-xs font-semibold text-slate-800">2. อนุมัติเอกสาร (Approve)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Approve
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('approvalSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.approvalSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, approvalSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-emerald-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-emerald-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('approvalSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้อนุมัติขั้นสุดท้าย (Dept Head / General Manager)
-                  </div>
                 </div>
 
                 {/* Card 3: Receipt SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-amber-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-amber-600 font-bold text-xs sm:text-sm">
-                      <Layers size={15} />
-                      <span>3. ตรวจรับเล่ม (Receipt SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-amber-50 text-amber-700">
+                    <span className="text-xs font-semibold text-slate-800">3. ตรวจรับเล่ม (Receipt)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
                       Receipt
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('hardcopyReceiptSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.hardcopyReceiptSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, hardcopyReceiptSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-amber-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-amber-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('hardcopyReceiptSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้ถือสำเนาประจำจุดตรวจสอบและยืนยันรับเล่มจริง
-                  </div>
                 </div>
 
                 {/* Card 4: Recall SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-rose-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-rose-600 font-bold text-xs sm:text-sm">
-                      <RotateCcw size={15} />
-                      <span>4. เรียกคืนและทำลาย (Recall SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-rose-50 text-rose-700">
+                    <span className="text-xs font-semibold text-slate-800">4. เรียกคืนทำลาย (Recall)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200">
                       Recall
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('recallSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.recallSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, recallSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-rose-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-rose-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('recallSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับ DCC จัดเก็บเล่มเดิมที่ยกเลิกเพื่อนำไปทำลาย
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร (Approval Matrix by Doc Type) */}
-            <div className="space-y-3">
+            {/* ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร */}
+            <div className="space-y-2.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                    <Sliders size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#1E1E1E]">ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร (Approval Routing Matrix by Doc Type)</h2>
-                    <p className="text-xs text-[#666666]">กำหนดระดับตำแหน่งขั้นต่ำ (Min Level) ของผู้ยื่น, ผู้ทบทวน, และผู้อนุมัติสำหรับเอกสารแต่ละประเภท</p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Sliders size={15} className="text-indigo-600" />
+                  <h2 className="text-xs font-semibold text-slate-800 uppercase tracking-wide">ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติ (Approval Matrix by Doc Type)</h2>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg text-xs border border-indigo-200/70 inline-flex items-center gap-1.5 shadow-2xs">
-                    <CheckCircle2 size={13} className="text-indigo-600" />
-                    <span>เชื่อมโยงจาก Tab 3 (Single Source of Truth)</span>
+                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-medium rounded-md text-[11px] border border-indigo-200 inline-flex items-center gap-1">
+                    <CheckCircle2 size={12} className="text-indigo-600" />
+                    <span>Single Source of Truth (Tab 3)</span>
                   </span>
                 </div>
               </div>
 
               {/* Elevated Matrix Table with Visual Workflow Pipeline */}
-              <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+              <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
                 <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                   <table className="w-full text-left text-xs table-auto min-w-[920px] border-collapse">
-                    <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                       <tr>
-                        <th className="px-4 py-3.5 w-60 bg-[#F8FAFC]">ประเภทเอกสาร (Doc Type)</th>
-                        <th className="px-4 py-3.5 min-w-[460px] bg-[#F8FAFC]">
+                        <th className="py-2.5 px-3 w-48 bg-slate-50">ประเภทเอกสาร (Doc Type)</th>
+                        <th className="py-2.5 px-3 min-w-[460px] bg-slate-50">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span>สายการอนุมัติ (Workflow Pipeline:</span>
-                            <span className="text-[11px] font-semibold text-slate-500 normal-case">ระดับผู้ยื่นขั้นต่ำ</span>
+                            <span>สายการอนุมัติ (Pipeline:</span>
+                            <span className="text-[11px] font-normal text-slate-500 normal-case">ผู้ยื่น</span>
                             <span className="text-slate-400">➔</span>
-                            <span className="text-[11px] font-semibold text-[#0D99FF] normal-case">ระดับผู้ทบทวน (Reviewer)</span>
+                            <span className="text-[11px] font-normal text-sky-600 normal-case">ผู้ทบทวน</span>
                             <span className="text-slate-400">➔</span>
-                            <span className="text-[11px] font-semibold text-indigo-600 normal-case">ระดับผู้อนุมัติ (Approver)</span>
+                            <span className="text-[11px] font-normal text-indigo-600 normal-case">ผู้อนุมัติ</span>
                             <span>)</span>
                           </div>
                         </th>
-                        <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">การรับทราบ (Default Ack)</th>
-                        <th className="px-4 py-3.5 text-right w-28 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                        <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">การรับทราบ (Default Ack)</th>
+                        <th className="py-2.5 px-3 text-right w-20 whitespace-nowrap bg-slate-50">การจัดการ</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#F1F5F9]">
+                    <tbody className="divide-y divide-slate-100">
                       {approvalMatrixPagination.paginatedData.map((item) => {
                         const code = item.code || item.docType || item.doc_type;
                         const minReq = item.minRequesterLevel ?? item.min_requester_level ?? 1;
@@ -2209,75 +2109,71 @@ const MasterDataHub = () => {
                         const isAck = item.requireAckDefault ?? item.require_ack_default ?? false;
 
                         return (
-                          <tr key={code} className="hover:bg-[#F8FAFC]/80 transition-colors">
+                          <tr key={code} className="hover:bg-slate-50/70 transition-colors">
                             {/* Document Type Column */}
-                            <td className="px-4 py-3.5 align-middle">
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-md bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF] shadow-2xs">
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
                                   {code}
                                 </span>
                                 <div className="min-w-0">
-                                  <div className="font-bold text-sm text-slate-800 truncate">{item.name || code}</div>
-                                  {item.description && item.description !== item.name && (
-                                    <div className="text-[11px] text-slate-400 truncate max-w-[220px]">{item.description}</div>
-                                  )}
+                                  <div className="font-medium text-xs text-slate-800 truncate">{item.name || code}</div>
                                 </div>
                               </div>
                             </td>
 
-                            {/* Visual Workflow Pipeline Column (1. Requester ➔ 2. Reviewer ➔ 3. Approver) */}
-                            <td className="px-4 py-3.5 align-middle">
-                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                            {/* Visual Workflow Pipeline Column */}
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap text-xs">
                                 {/* Step 1: Requester */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-slate-500 font-sans">1. ผู้ยื่น:</span>
-                                  <span className="font-bold text-slate-800">L{minReq}+</span>
-                                  <span className="text-[11px] text-slate-600 font-sans font-normal opacity-90">({minReq === 1 ? 'ทุกคน' : 'Sup+'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-slate-500 font-sans">ผู้ยื่น:</span>
+                                  <span className="font-bold">L{minReq}+</span>
+                                  <span className="text-[10px] text-slate-500 font-sans">({minReq === 1 ? 'ทุกคน' : 'Sup+'})</span>
                                 </div>
 
-                                <span className="text-slate-400 font-bold shrink-0">➔</span>
+                                <span className="text-slate-400 text-xs shrink-0">➔</span>
 
                                 {/* Step 2: Reviewer */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-[#0D99FF] font-sans">2. ผู้ทบทวน:</span>
-                                  <span className="font-bold text-[#007BE5]">L{reqRev}+</span>
-                                  <span className="text-[11px] text-[#007BE5] font-sans font-normal opacity-90">({reqRev >= 6 ? 'GM' : reqRev >= 5 ? 'Mgr' : 'Sup'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-sky-600 font-sans">ทบทวน:</span>
+                                  <span className="font-bold">L{reqRev}+</span>
+                                  <span className="text-[10px] text-sky-600 font-sans">({reqRev >= 6 ? 'GM' : reqRev >= 5 ? 'Mgr' : 'Sup'})</span>
                                 </div>
 
-                                <span className="text-slate-400 font-bold shrink-0">➔</span>
+                                <span className="text-slate-400 text-xs shrink-0">➔</span>
 
                                 {/* Step 3: Approver */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-indigo-500 font-sans">3. ผู้อนุมัติ:</span>
-                                  <span className="font-bold text-[#4F46E5]">L{reqApp}+</span>
-                                  <span className="text-[11px] text-[#4F46E5] font-sans font-normal opacity-90">({reqApp >= 8 ? 'MD/กรรมการ' : reqApp >= 6 ? 'GM' : 'Mgr'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-indigo-600 font-sans">อนุมัติ:</span>
+                                  <span className="font-bold">L{reqApp}+</span>
+                                  <span className="text-[10px] text-indigo-600 font-sans">({reqApp >= 8 ? 'MD' : reqApp >= 6 ? 'GM' : 'Mgr'})</span>
                                 </div>
                               </div>
                             </td>
 
                             {/* Default Ack Column */}
-                            <td className="px-4 py-3.5 text-center align-middle whitespace-nowrap">
+                            <td className="py-2 px-3 text-center align-middle whitespace-nowrap">
                               {isAck ? (
-                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-[11px] border border-emerald-200 inline-flex items-center gap-1">
-                                  <Check size={12} /> บังคับรับทราบ
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded-full text-[11px] border border-emerald-200 inline-flex items-center gap-1">
+                                  <Check size={11} /> บังคับรับทราบ
                                 </span>
                               ) : (
-                                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-medium rounded-lg text-[11px] inline-flex items-center gap-1">
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">
                                   ไม่ต้องรับทราบ
                                 </span>
                               )}
                             </td>
 
                             {/* Action Button */}
-                            <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
+                            <td className="py-2 px-3 text-right align-middle whitespace-nowrap">
                               <button
                                 type="button"
                                 onClick={() => handleOpenMatrixModal(item)}
-                                className="px-3 py-1.5 bg-[#E5F4FF] hover:bg-[#D1EFFF] text-[#0D99FF] rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-slate-100 inline-flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                                 title={`แก้ไขผังสายการอนุมัติของ ${code}`}
                               >
                                 <Edit size={13} />
-                                <span>แก้ไข</span>
                               </button>
                             </td>
                           </tr>
@@ -2304,18 +2200,18 @@ const MasterDataHub = () => {
             </div>
 
             {/* Unified Save Card */}
-            <div className="card-surface p-5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-[#E5E5E5] rounded-xl shadow-xs">
+            <div className="bg-white p-3 flex flex-col sm:flex-row items-center justify-between gap-3 border border-slate-200/80 rounded-xl shadow-2xs">
               <div>
-                <h3 className="font-bold text-[#1E1E1E] text-sm">บันทึกการตั้งค่าสายการอนุมัติและ SLAs ทั้งหมด</h3>
-                <p className="text-xs text-slate-500 mt-0.5">ระบบจะนำ SLA และ Routing Matrix ที่ตั้งค่าไปใช้คำนวณวันครบกำหนดและคัดเลือกผู้ทบทวน/อนุมัติอัตโนมัติ</p>
+                <h3 className="font-semibold text-slate-900 text-xs">บันทึกการตั้งค่าสายการอนุมัติและ SLAs</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">ระบบจะนำ SLA และ Routing Matrix ไปใช้คำนวณวันครบกำหนดและคัดเลือกผู้มีสิทธิ์อัตโนมัติ</p>
               </div>
 
               <button
                 type="button"
                 onClick={handleSaveAllSlaAndMatrix}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap px-5 py-2.5 flex items-center gap-2 shadow-xs cursor-pointer"
+                className="h-9 px-4 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
               >
-                <Save size={16} /> บันทึกการตั้งค่าสายการอนุมัติและ SLAs
+                <Save size={14} /> บันทึกการตั้งค่า
               </button>
             </div>
           </div>
@@ -2324,26 +2220,28 @@ const MasterDataHub = () => {
 
       {/* ================= USER MODAL ================= */}
       {isUserModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingUser ? 'แก้ไขข้อมูลผู้ใช้งาน' : 'เพิ่มผู้ใช้งานใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsUserModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveUser} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSaveUser} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ชื่อ-นามสกุล <span className="text-rose-500">*</span>:</label>
                 <input
@@ -2379,49 +2277,169 @@ const MasterDataHub = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">สังกัดแผนก:</label>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">ตำแหน่งงาน:</label>
+                <input
+                  type="text"
+                  value={userFormData.position}
+                  onChange={(e) => setUserFormData({ ...userFormData, position: e.target.value })}
+                  placeholder="เช่น Production Supervisor"
+                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                />
+              </div>
+
+              {/* Multi-Department Membership Tag Input */}
+              <div className="space-y-2 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Building2 size={14} className="text-[#0D99FF]" />
+                    <span>สังกัดแผนก (Multi-Department Membership):</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {userFormData.affiliated_departments?.length || 1} แผนกที่สังกัด
+                  </span>
+                </div>
+
+                {/* Selected Departments Tag Tray */}
+                <div className="flex flex-wrap items-center gap-1.5 min-h-[40px] p-2 bg-white border border-slate-200 rounded-lg">
+                  {(userFormData.affiliated_departments || []).map((deptCode) => {
+                    const normDeptCode = normalizeDepartmentId(deptCode);
+                    const isPrimary = normDeptCode === normalizeDepartmentId(userFormData.primary_department);
+                    const deptObj = departmentsList.find(d => normalizeDepartmentId(d.id) === normDeptCode);
+                    const deptLabel = deptObj ? `${normDeptCode} - ${deptObj.nameTh || deptObj.name}` : normDeptCode;
+
+                    return (
+                      <div
+                        key={deptCode}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all ${
+                          isPrimary
+                            ? 'bg-[#E5F4FF] border border-[#B8E1FF] text-[#007BE5] shadow-2xs font-bold'
+                            : 'bg-slate-100 border border-slate-200 text-slate-700 font-medium'
+                        }`}
+                      >
+                        {isPrimary ? (
+                          <span className="px-1.5 py-0.5 rounded bg-[#0D99FF] text-white text-[9px] font-bold uppercase tracking-wider flex items-center gap-0.5">
+                            ⭐ แผนกหลัก
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUserFormData(prev => ({
+                                ...prev,
+                                primary_department: deptCode,
+                                department: deptCode
+                              }));
+                              toast.success(`ตั้ง ${deptCode} เป็นแผนกหลัก`);
+                            }}
+                            className="text-[10px] text-slate-500 hover:text-[#0D99FF] underline cursor-pointer"
+                            title="คลิกเพื่อตั้งเป็นแผนกหลัก (Set as Primary)"
+                          >
+                            ตั้งเป็นหลัก
+                          </button>
+                        )}
+
+                        <span className="font-mono text-xs">{deptLabel}</span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if ((userFormData.affiliated_departments || []).length <= 1) {
+                              toast.error('ผู้ใช้งานต้องสังกัดอย่างน้อย 1 แผนก');
+                              return;
+                            }
+                            const updated = (userFormData.affiliated_departments || []).filter(d => d !== deptCode);
+                            let newPrimary = userFormData.primary_department;
+                            if (newPrimary === deptCode) {
+                              newPrimary = updated[0];
+                            }
+                            setUserFormData(prev => ({
+                              ...prev,
+                              affiliated_departments: updated,
+                              depts: updated,
+                              primary_department: newPrimary,
+                              department: newPrimary
+                            }));
+                          }}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-0.5 rounded cursor-pointer transition-colors"
+                          title="ลบแผนกนี้ออกจากการสังกัด"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Dropdown to add department */}
+                <div className="flex items-center gap-2 pt-1">
+                  <label htmlFor="add-dept-selector" className="sr-only">เพิ่มแผนกที่สังกัดร่วม</label>
                   <select
-                    value={userFormData.department}
-                    onChange={(e) => setUserFormData({ ...userFormData, department: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                    id="add-dept-selector"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      if (!selected) return;
+                      const current = userFormData.affiliated_departments || [];
+                      if (!current.includes(selected)) {
+                        const updated = [...current, selected];
+                        setUserFormData(prev => ({
+                          ...prev,
+                          affiliated_departments: updated,
+                          depts: updated
+                        }));
+                        toast.success(`เพิ่มแผนก ${selected} เรียบร้อยแล้ว`);
+                      }
+                      e.target.value = '';
+                    }}
+                    className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:border-[#0D99FF]"
                   >
-                    {departmentsList.map(d => (
-                      <option key={d.id} value={d.id}>{d.id} - {d.nameTh || d.name}</option>
-                    ))}
+                    <option value="" disabled>+ เลือกเพิ่มแผนกที่สังกัดร่วม...</option>
+                    {departmentsList
+                      .filter(d => !(userFormData.affiliated_departments || []).includes(d.id))
+                      .map(d => (
+                        <option key={d.id} value={d.id}>
+                          + เพิ่ม: {d.id} ({d.nameTh || d.name})
+                        </option>
+                      ))}
                   </select>
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">ตำแหน่งงาน:</label>
-                  <input
-                    type="text"
-                    value={userFormData.position}
-                    onChange={(e) => setUserFormData({ ...userFormData, position: e.target.value })}
-                    placeholder="เช่น Production Supervisor"
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                  />
-                </div>
+
+                {/* DCC_ADMIN / QMR Wildcard Notice */}
+                {(userFormData.role === 'DCC_ADMIN' || userFormData.role === 'QMR') && (
+                  <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2 text-[11px] text-purple-700">
+                    <ShieldCheck size={14} className="text-purple-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Wildcard Access:</strong> เนื่องจากผู้ใช้มีสิทธิ์ <strong>{userFormData.role}</strong> ระบบจะอนุญาตให้เข้าถึงและจัดการ Task ของทุกแผนกโดยอัตโนมัติ โดยไม่จำเป็นต้องเลือกแผนกจนครบ
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">บทบาทสิทธิ์ (Role):</label>
+                  <label htmlFor="user-role-select" className="font-bold text-slate-700 block mb-1">บทบาทสิทธิ์ (Role):</label>
                   <select
+                    id="user-role-select"
                     value={userFormData.role}
                     onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
                     className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                   >
                     <option value="GENERAL_USER">General User (ผู้ใช้งานทั่วไป)</option>
                     <option value="DEPT_ADMIN">Dept Admin / Reviewer</option>
+                    <option value="QMR">QMR (ตัวแทนฝ่ายบริหารคุณภาพ)</option>
                     <option value="DCC_ADMIN">DCC Admin (ผู้ควบคุมเอกสาร)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">ระดับอำนาจอนุมัติ (Level):</label>
+                  <label htmlFor="user-approval-level-select" className="font-bold text-slate-700 block mb-1">ระดับอำนาจอนุมัติ (Approval Level):</label>
                   <select
-                    value={userFormData.level}
-                    onChange={(e) => setUserFormData({ ...userFormData, level: parseInt(e.target.value) || 1 })}
+                    id="user-approval-level-select"
+                    value={userFormData.approval_level || userFormData.level || 1}
+                    onChange={(e) => {
+                      const lvl = parseInt(e.target.value) || 1;
+                      setUserFormData({ ...userFormData, level: lvl, approval_level: lvl });
+                    }}
                     className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                   >
                     <option value="1">Level 1: Staff / Operator</option>
@@ -2436,109 +2454,135 @@ const MasterDataHub = () => {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsUserModalOpen(false)}
-                  className="btn-secondary text-xs"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs"
-                >
-                  บันทึกข้อมูล
-                </button>
-              </div>
-            </form>
+              {editingUser && (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-slate-800 text-xs">ลายเซ็นอิเล็กทรอนิกส์ (Signature Asset):</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {editingUser.signatureType === 'DRAWN' ? '✍️ วาดลายเซ็นเรียบร้อย' : editingUser.signatureType === 'IMAGE' ? '🖼️ อัปโหลดไฟล์ภาพเรียบร้อย' : `🔤 Typographic Font: ${editingUser.signatureStyle || 'Brush Script'}`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserModalOpen(false);
+                      handleOpenSignatureModal(editingUser);
+                    }}
+                    className="px-3 py-1.5 bg-[#E5F4FF] hover:bg-[#D1EFFF] text-[#0D99FF] rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <PenTool size={13} />
+                    <span>จัดการลายเซ็น</span>
+                  </button>
+                </div>
+              )}
+
+                </div>
+
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsUserModalOpen(false)}
+                    className="btn-secondary text-xs cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs cursor-pointer"
+                  >
+                    บันทึกข้อมูล
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= DEPARTMENT MODAL ================= */}
       {isDeptModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-md overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingDept ? 'แก้ไขข้อมูลแผนก' : 'เพิ่มแผนกใหม่'}
               </h3>
               <button 
-                onClick={() => setIsDeptModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                type="button"
+                onClick={handleCloseDeptModal} 
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveDept} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">รหัสแผนก (Dept Code) <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  disabled={Boolean(editingDept)}
-                  value={deptFormData.id}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase() })}
-                  placeholder="เช่น PD, QA, QC, WH, EN..."
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
-                />
+            <form onSubmit={handleSaveDept} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">รหัสแผนก (Dept Code) <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={deptFormData.id || deptFormData.code || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, id: e.target.value.toUpperCase(), code: e.target.value.toUpperCase(), deptCode: e.target.value.toUpperCase() })}
+                    placeholder="เช่น PD, QA, QC, WH, EN..."
+                    className="w-full px-3 py-2 bg-white border border-[#E5E5E5] rounded-xl font-mono uppercase focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาไทย <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={deptFormData.nameTh || deptFormData.name || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value, name: e.target.value, name_th: e.target.value })}
+                    placeholder="เช่น ฝ่ายผลิต"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาอังกฤษ:</label>
+                  <input
+                    type="text"
+                    value={deptFormData.nameEn || deptFormData.name_en || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value, name_en: e.target.value })}
+                    placeholder="เช่น Production Department"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">หัวหน้าแผนก / ผู้มีอำนาจลงนามประจำแผนก:</label>
+                  <select
+                    value={deptFormData.headUserId || ''}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, headUserId: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  >
+                    <option value="">-- เลือกหัวหน้าแผนก --</option>
+                    {(masterUsers || []).map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.department})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาไทย <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={deptFormData.nameTh}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameTh: e.target.value })}
-                  placeholder="เช่น ฝ่ายผลิต"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อแผนกภาษาอังกฤษ:</label>
-                <input
-                  type="text"
-                  value={deptFormData.nameEn}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, nameEn: e.target.value })}
-                  placeholder="เช่น Production Department"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">หัวหน้าแผนก / ผู้มีอำนาจลงนามประจำแผนก:</label>
-                <select
-                  value={deptFormData.headUserId}
-                  onChange={(e) => setDeptFormData({ ...deptFormData, headUserId: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                >
-                  <option value="">-- เลือกหัวหน้าแผนก --</option>
-                  {(masterUsers || []).map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.department})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsDeptModalOpen(false)}
-                  className="btn-secondary text-xs"
+                  onClick={handleCloseDeptModal}
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกแผนก
                 </button>
@@ -2548,133 +2592,344 @@ const MasterDataHub = () => {
         </div>
       )}
 
-      {/* ================= DOCUMENT TYPE MODAL ================= */}
-      {isTypeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      {/* ================= SMART DEPARTMENT DEACTIVATION MODAL ================= */}
+      {deactivatingDept && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-              <h3 className="font-bold text-sm sm:text-base text-white">
-                {editingType ? 'แก้ไขประเภทเอกสาร' : 'เพิ่มประเภทเอกสารใหม่'}
-              </h3>
-              <button 
-                onClick={() => setIsTypeModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            {/* Header */}
+            <div className="px-6 py-4 bg-amber-500 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base text-white">
+                    ยืนยันการระงับการใช้งานฝ่าย {deactivatingDept.nameTh || deactivatingDept.name} ({deactivatingDept.id})
+                  </h3>
+                  <p className="text-xs text-amber-100 mt-0.5">
+                    Department Deactivation & User Re-assignment (ISO 9001)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setDeactivatingDept(null); setDeactivationCheckResult(null); }}
+                className="p-1.5 text-amber-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveType} className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+              {/* Warning Banner */}
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900">
+                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-xs">
+                    คำเตือน: การระงับแผนกเป็นการปิดการใช้งานแบบ Soft Delete
+                  </p>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    แผนกนี้จะไม่ปรากฏใน Dropdown การออก DAR หรือแบบฟอร์มขอขึ้นทะเบียนใหม่ แต่ประวัติการลงนามและรหัสเอกสารเดิมจะยังคงอยู่เพื่อการตรวจสอบย้อนกลับ (Audit Trail)
+                  </p>
+                </div>
+              </div>
+
+              {/* Dependency Pre-check Summary Card */}
+              <div className="card-surface p-4 border border-slate-200 rounded-xl space-y-3">
+                <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <Layers size={14} className="text-[#0D99FF]" />
+                  สรุปการตรวจสอบภาระผูกพัน (Dependency Pre-check)
+                </h4>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className={`p-2.5 rounded-lg border text-center ${
+                    deactivationCheckResult?.activeDocsCount > 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    <div className="text-lg font-black">{deactivationCheckResult?.activeDocsCount || 0}</div>
+                    <div className="text-[10px] font-medium mt-0.5">เอกสาร Effective</div>
+                  </div>
+
+                  <div className={`p-2.5 rounded-lg border text-center ${
+                    deactivationCheckResult?.activeCopiesCount > 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    <div className="text-lg font-black">{deactivationCheckResult?.activeCopiesCount || 0}</div>
+                    <div className="text-[10px] font-medium mt-0.5">สำเนาควบคุมจริง</div>
+                  </div>
+
+                  <div className={`p-2.5 rounded-lg border text-center ${
+                    deactivationCheckResult?.pendingTasksCount > 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    <div className="text-lg font-black">{deactivationCheckResult?.pendingTasksCount || 0}</div>
+                    <div className="text-[10px] font-medium mt-0.5">งานค้างในระบบ</div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-center">
+                    <div className="text-lg font-black">{deactivationCheckResult?.affectedUsers?.length || 0}</div>
+                    <div className="text-[10px] font-medium mt-0.5">พนักงานที่ผูกอยู่</div>
+                  </div>
+                </div>
+
+                {/* Blocking Banner if activeDocs, activeCopies, or pendingTasks exist */}
+                {(deactivationCheckResult?.activeDocsCount > 0 || deactivationCheckResult?.activeCopiesCount > 0 || deactivationCheckResult?.pendingTasksCount > 0) && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 space-y-1.5 mt-2">
+                    <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                      <ShieldAlert size={15} />
+                      ไม่สามารถระงับแผนกได้เนื่องจากยังมีงานหรือเอกสารคงค้างในระบบ
+                    </div>
+                    <ul className="list-disc list-inside text-[11px] text-rose-700 space-y-0.5 pl-1">
+                      {deactivationCheckResult.activeDocsCount > 0 && (
+                        <li>มีเอกสารแม่บทที่มีผลบังคับใช้ ({deactivationCheckResult.activeDocsCount} ฉบับ) ต้องทำการโอนย้ายเจ้าของ หรือยกเลิกด้วย DAR ก่อน</li>
+                      )}
+                      {deactivationCheckResult.activeCopiesCount > 0 && (
+                        <li>มีเล่มสำเนาควบคุมที่แผนกนี้ถือครองอยู่ ({deactivationCheckResult.activeCopiesCount} เล่ม) ต้องทำการเรียกคืน (Recall) หรือโอนย้ายสถานที่ติดตั้งก่อน</li>
+                      )}
+                      {deactivationCheckResult.pendingTasksCount > 0 && (
+                        <li>มีงาน DAR/คิวงานที่ยังไม่เสร็จสิ้น ({deactivationCheckResult.pendingTasksCount} รายการ) ต้องเคลียร์ให้เสร็จก่อนระงับแผนก</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* User Migration Section */}
+              {deactivationCheckResult?.affectedUsers?.length > 0 && (
+                <div className="card-surface p-4 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <Users size={14} className="text-[#0D99FF]" />
+                      การจัดสรรพนักงานในแผนก ({deactivationCheckResult.affectedUsers.length} คน)
+                    </h4>
+                  </div>
+
+                  {/* Fallback Department Selector (for Single-dept users) */}
+                  {deactivationCheckResult.affectedUsers.some(u => u.isSingleDept) && (
+                    <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-1.5">
+                      <label className="font-bold text-slate-800 text-xs block">
+                        ย้ายพนักงานที่ไม่มีแผนกรองไปยังแผนกใหม่ (Fallback Department): <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={fallbackDeptId}
+                        onChange={(e) => setFallbackDeptId(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-[#E5E5E5] rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-[#0D99FF]"
+                      >
+                        <option value="">-- กรุณาเลือกแผนกปลายทาง --</option>
+                        {departmentsList
+                          .filter(d => d.id !== deactivatingDept.id && d.status !== 'INACTIVE')
+                          .map(d => (
+                            <option key={d.id} value={d.id}>
+                              {d.id} - {d.nameTh || d.name}
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-[11px] text-slate-500">
+                        พนักงานที่มีแผนกนี้เพียงแผนกเดียว จะถูกย้ายสังกัดหลักและสังกัดย่อยไปยังแผนกที่เลือก
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Affected Users List */}
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
+                    {deactivationCheckResult.affectedUsers.map(u => (
+                      <div key={u.id} className="p-2.5 flex items-center justify-between gap-3 text-xs bg-white">
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-800 truncate">{u.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            รหัส: {u.empId || u.id} | ตำแหน่ง: {u.position || 'พนักงาน'}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {u.isSingleDept ? (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold">
+                              ย้ายไป {fallbackDeptId || '...'}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-[10px] font-bold">
+                              ตัดแผนกออก (หลักใหม่: {u.nextPrimary})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              </div>
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setDeactivatingDept(null); setDeactivationCheckResult(null); }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  ยกเลิก (Cancel)
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    isDeactivatingLoading ||
+                    deactivationCheckResult?.activeDocsCount > 0 ||
+                    deactivationCheckResult?.activeCopiesCount > 0 ||
+                    deactivationCheckResult?.pendingTasksCount > 0 ||
+                    (deactivationCheckResult?.affectedUsers?.some(u => u.isSingleDept) && !fallbackDeptId)
+                  }
+                  onClick={handleConfirmDeactivateDept}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 ${
+                    (deactivationCheckResult?.activeDocsCount > 0 || deactivationCheckResult?.activeCopiesCount > 0 || deactivationCheckResult?.pendingTasksCount > 0 || (deactivationCheckResult?.affectedUsers?.some(u => u.isSingleDept) && !fallbackDeptId))
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm cursor-pointer'
+                  }`}
+                >
+                  {isDeactivatingLoading ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      กำลังดำเนินการ...
+                    </>
+                  ) : (
+                    'ยืนยันระงับการใช้งาน (Confirm Deactivation)'
+                  )}
+                </button>
+              </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* ================= DOCUMENT TYPE MODAL ================= */}
+      {isTypeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-sm sm:text-base text-white">
+                {editingType ? 'แก้ไขประเภทเอกสาร' : 'เพิ่มประเภทเอกสารใหม่'}
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setIsTypeModalOpen(false)} 
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                title="ปิดหน้าต่าง"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveType} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">รหัสประเภท (Type Code) <span className="text-rose-500">*</span>:</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={Boolean(editingType)}
+                      value={typeFormData.code}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, code: e.target.value.toUpperCase() })}
+                      placeholder="เช่น SOP, WI, FM..."
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">รูปแบบรหัส (Pattern):</label>
+                    <input
+                      type="text"
+                      value={typeFormData.namingPattern}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, namingPattern: e.target.value })}
+                      placeholder="{Type}-{Dept}-{##}"
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">รหัสประเภท (Type Code) <span className="text-rose-500">*</span>:</label>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อประเภทภาษาไทย <span className="text-rose-500">*</span>:</label>
                   <input
                     type="text"
                     required
-                    disabled={Boolean(editingType)}
-                    value={typeFormData.code}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, code: e.target.value.toUpperCase() })}
-                    placeholder="เช่น SOP, WI, FM..."
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">รูปแบบรหัส (Pattern):</label>
-                  <input
-                    type="text"
-                    value={typeFormData.namingPattern}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, namingPattern: e.target.value })}
-                    placeholder="{Type}-{Dept}-{##}"
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อประเภทภาษาไทย <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={typeFormData.nameTh}
-                  onChange={(e) => setTypeFormData({ ...typeFormData, nameTh: e.target.value })}
-                  placeholder="เช่น ระเบียบปฏิบัติงาน"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">หมวดหมู่เอกสาร & สิทธิ์ DAR (Category & DAR Scope) <span className="text-rose-500">*</span>:</label>
-                <select
-                  value={typeFormData.category || 'INTERNAL'}
-                  onChange={(e) => {
-                    const cat = e.target.value;
-                    setTypeFormData({
-                      ...typeFormData,
-                      category: cat,
-                      allowDar: cat === 'INTERNAL'
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-medium"
-                >
-                  <option value="INTERNAL">เอกสารภายใน (Internal - รองรับการสร้างและเปิดคำร้อง DAR)</option>
-                  <option value="EXTERNAL">เอกสารภายนอก (External - ควบคุมผ่านโมดูล ED ไม่ผ่าน DAR)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">รอบเวลาทบทวน (เดือน):</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={typeFormData.reviewCycleMonths}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, reviewCycleMonths: parseInt(e.target.value) || 12 })}
+                    value={typeFormData.nameTh}
+                    onChange={(e) => setTypeFormData({ ...typeFormData, nameTh: e.target.value })}
+                    placeholder="เช่น ระเบียบปฏิบัติงาน"
                     className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
                   />
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">อายุจัดเก็บ (ปี):</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={typeFormData.retentionPeriodYears}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, retentionPeriodYears: parseInt(e.target.value) || 3 })}
-                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                  />
-                </div>
-              </div>
 
-              <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={typeFormData.is_form_type}
-                    onChange={(e) => setTypeFormData({ ...typeFormData, is_form_type: e.target.checked })}
-                    className="w-4 h-4 text-[#0D99FF] rounded"
-                  />
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">หมวดหมู่เอกสาร & สิทธิ์ DAR (Category & DAR Scope) <span className="text-rose-500">*</span>:</label>
+                  <select
+                    value={typeFormData.category || 'INTERNAL'}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      setTypeFormData({
+                        ...typeFormData,
+                        category: cat,
+                        allowDar: cat === 'INTERNAL'
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-medium"
+                  >
+                    <option value="INTERNAL">เอกสารภายใน (Internal - รองรับการสร้างและเปิดคำร้อง DAR)</option>
+                    <option value="EXTERNAL">เอกสารภายนอก (External - ควบคุมผ่านโมดูล ED ไม่ผ่าน DAR)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <span className="font-bold text-slate-800">เป็นแบบฟอร์มเปล่า (Blank Form Type)</span>
-                    <p className="text-xs text-slate-400">ใช้กฎ Form Clean Bypass ไม่ประทับลายน้ำเมื่ออยู่ในสถานะบังคับใช้</p>
+                    <label className="font-bold text-slate-700 block mb-1">รอบเวลาทบทวน (เดือน):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={typeFormData.reviewCycleMonths}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, reviewCycleMonths: parseInt(e.target.value) || 12 })}
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                    />
                   </div>
-                </label>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">อายุจัดเก็บ (ปี):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={typeFormData.retentionPeriodYears}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, retentionPeriodYears: parseInt(e.target.value) || 3 })}
+                      className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={typeFormData.is_form_type}
+                      onChange={(e) => setTypeFormData({ ...typeFormData, is_form_type: e.target.checked })}
+                      className="w-4 h-4 text-[#0D99FF] rounded"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-800">เป็นแบบฟอร์มเปล่า (Blank Form Type)</span>
+                      <p className="text-xs text-slate-400">ใช้กฎ Form Clean Bypass ไม่ประทับลายน้ำเมื่ออยู่ในสถานะบังคับใช้</p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsTypeModalOpen(false)}
-                  className="btn-secondary text-xs"
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกประเภทเอกสาร
                 </button>
@@ -2686,100 +2941,103 @@ const MasterDataHub = () => {
 
       {/* ================= LOCATION MODAL ================= */}
       {isLocModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-xl shadow-none border border-[#E5E5E5] w-full max-w-md overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm sm:text-base text-white">
                 {editingLoc ? 'แก้ไขจุดใช้งานหน้างาน' : 'เพิ่มจุดใช้งานใหม่'}
               </h3>
               <button 
+                type="button"
                 onClick={() => setIsLocModalOpen(false)} 
-                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-1.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveLoc} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">สังกัดแผนก <span className="text-rose-500">*</span>:</label>
-                <select
-                  value={locFormData.departmentId}
-                  onChange={(e) => setLocFormData({ ...locFormData, departmentId: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                >
-                  {departmentsList.map(d => (
-                    <option key={d.id} value={d.id}>{d.id} - {d.nameTh || d.name}</option>
-                  ))}
-                </select>
-              </div>
+            <form onSubmit={handleSaveLoc} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">สังกัดแผนก <span className="text-rose-500">*</span>:</label>
+                  <select
+                    value={locFormData.departmentId}
+                    onChange={(e) => setLocFormData({ ...locFormData, departmentId: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  >
+                    {departmentsList.map(d => (
+                      <option key={d.id} value={d.id}>{d.id} - {d.nameTh || d.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">รหัสจุดใช้งาน (Location ID/Code):</label>
-                <input
-                  type="text"
-                  disabled={Boolean(editingLoc)}
-                  value={locFormData.id}
-                  onChange={(e) => setLocFormData({ ...locFormData, id: e.target.value, code: e.target.value })}
-                  placeholder="เช่น PD-L5 (เว้นว่างเพื่อสร้างอัตโนมัติ)"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">ชื่อจุดใช้งาน/สถานีปฏิบัติงาน <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="text"
-                  required
-                  value={locFormData.name}
-                  onChange={(e) => setLocFormData({ ...locFormData, name: e.target.value })}
-                  placeholder="เช่น Line 5 - Baking Area 2"
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">คำอธิบายพื้นที่:</label>
-                <textarea
-                  value={locFormData.description}
-                  onChange={(e) => setLocFormData({ ...locFormData, description: e.target.value })}
-                  rows={2}
-                  placeholder="รายละเอียดจุดติดตั้งเอกสารฉบับควบคุม..."
-                  className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl resize-none"
-                />
-              </div>
-
-              <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">รหัสจุดใช้งาน (Location ID/Code):</label>
                   <input
-                    type="checkbox"
-                    checked={locFormData.isMasterOffice}
-                    onChange={(e) => setLocFormData({ ...locFormData, isMasterOffice: e.target.checked })}
-                    className="w-4 h-4 text-[#0D99FF] rounded"
+                    type="text"
+                    disabled={Boolean(editingLoc)}
+                    value={locFormData.id}
+                    onChange={(e) => setLocFormData({ ...locFormData, id: e.target.value, code: e.target.value })}
+                    placeholder="เช่น PD-L5 (เว้นว่างเพื่อสร้างอัตโนมัติ)"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl font-mono"
                   />
-                  <div>
-                    <span className="font-bold text-slate-800">เป็นจุดคุมงานหลัก (Master Station)</span>
-                    <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 ประจำแผนก</p>
-                  </div>
-                </label>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อจุดใช้งาน/สถานีปฏิบัติงาน <span className="text-rose-500">*</span>:</label>
+                  <input
+                    type="text"
+                    required
+                    value={locFormData.name}
+                    onChange={(e) => setLocFormData({ ...locFormData, name: e.target.value })}
+                    placeholder="เช่น Line 5 - Baking Area 2"
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">คำอธิบายพื้นที่:</label>
+                  <textarea
+                    value={locFormData.description}
+                    onChange={(e) => setLocFormData({ ...locFormData, description: e.target.value })}
+                    rows={2}
+                    placeholder="รายละเอียดจุดติดตั้งเอกสารฉบับควบคุม..."
+                    className="w-full px-3 py-2 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl resize-none"
+                  />
+                </div>
+
+                <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={locFormData.isMasterOffice}
+                      onChange={(e) => setLocFormData({ ...locFormData, isMasterOffice: e.target.checked })}
+                      className="w-4 h-4 text-[#0D99FF] rounded"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-800">เป็นจุดคุมงานหลักประจำแผนก (Origin Office)</span>
+                      <p className="text-xs text-slate-400">สำหรับล็อกหมายเลข Copy 01 (สำเนาควบคุม) ประจำแผนกเจ้าของเอกสาร</p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsLocModalOpen(false)}
-                  className="btn-secondary text-xs"
+                  className="btn-secondary text-xs cursor-pointer"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary text-xs"
+                  className="btn-primary text-xs cursor-pointer"
                 >
                   บันทึกจุดใช้งาน
                 </button>
@@ -2791,28 +3049,28 @@ const MasterDataHub = () => {
 
       {/* ================= CLEAN SLATE CONFIRMATION MODAL ================= */}
       {isCleanSlateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-[#E5E5E5] shadow-none space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3 text-rose-600">
                 <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl">
                   <RotateCcw size={24} className="text-rose-600" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-[#1E1E1E]">ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</h3>
-                  <p className="text-xs text-[#666666] font-normal">Factory Reset Transaction Data for E2E Testing</p>
+                  <h3 className="font-bold text-base text-slate-900">ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</h3>
+                  <p className="text-xs text-slate-500 font-normal">Factory Reset Transaction Data for E2E Testing</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCleanSlateModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-[#F5F5F5] transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 text-xs text-slate-600 leading-relaxed">
               <p>
                 การดำเนินการนี้จะ <strong>ลบข้อมูลจำลองเชิงธุรกรรม (Transaction Data) ทั้งหมด</strong> เพื่อให้ระบบกลับสู่สภาพเริ่มต้นที่สะอาด (Clean Slate) สำหรับการทดสอบ Workflow ตั้งแต่ต้น:
               </p>
@@ -2844,11 +3102,11 @@ const MasterDataHub = () => {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsCleanSlateModalOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-[#1E1E1E] hover:bg-[#F5F5F5] rounded-xl transition-colors"
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               >
                 ยกเลิก (Cancel)
               </button>
@@ -2859,7 +3117,7 @@ const MasterDataHub = () => {
                   setIsCleanSlateModalOpen(false);
                   toast.success('ล้างข้อมูลธุรกรรมทั้งหมดเรียบร้อยแล้ว ระบบพร้อมสำหรับการทดสอบ Clean Slate');
                 }}
-                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-sm shadow-rose-600/30 flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw size={14} />
                 <span>ยืนยันล้างข้อมูล (Confirm Reset)</span>
@@ -2869,28 +3127,31 @@ const MasterDataHub = () => {
         </div>
       )}
       {/* ================= USER SIGNATURE PROFILE MODAL ================= */}
+      {/* ================= USER SIGNATURE ASSET MODAL (Draw, Upload, Font) ================= */}
       {isSignatureModalOpen && selectedUserForSignature && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E2E8F0] w-full max-w-xl overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4.5 bg-slate-900 text-white flex items-center justify-between">
+            {/* Header */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-[#0D99FF]/20 rounded-xl text-[#0D99FF]">
                   <PenTool size={18} />
                 </div>
                 <div>
                   <h3 className="font-bold text-sm sm:text-base text-white">
-                    ตั้งค่าโปรไฟล์ลายเซ็นดิจิทัล (Digital Signature Profile)
+                    จัดการลายเซ็นอิเล็กทรอนิกส์ (Signature Asset)
                   </h3>
                   <p className="text-xs text-slate-400">
-                    21 CFR Part 11 & ISO 9001:2015 Electronic Signature Asset
+                    สำหรับผู้ใช้งาน: {selectedUserForSignature.name} ({selectedUserForSignature.department})
                   </p>
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsSignatureModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -2899,7 +3160,8 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveSignatureProfile} className="p-6 space-y-5 text-xs">
+            <form onSubmit={handleSaveSignatureProfile} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               {/* User Identity Banner */}
               <div className="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-center justify-between">
                 <div>
@@ -2907,134 +3169,271 @@ const MasterDataHub = () => {
                     {selectedUserForSignature.name}
                   </div>
                   <div className="text-slate-500 font-mono text-[11px] mt-0.5">
-                    {selectedUserForSignature.empId || selectedUserForSignature.id} • {selectedUserForSignature.department} • {selectedUserForSignature.position || 'User'}
+                    {selectedUserForSignature.empId || selectedUserForSignature.id} • แผนก {selectedUserForSignature.department} • {selectedUserForSignature.position || 'User'}
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]">
                   Level {selectedUserForSignature.level || 1}
                 </span>
               </div>
 
-              {/* Signature Style Selection */}
+              {/* Mode Selection Tabs (3 Modes) */}
               <div>
                 <label className="font-bold text-slate-700 block mb-2">
-                  1. เลือกสไตล์ลายเซ็นตัวอักษรแบบวิจิตร (Typographic Calligraphy Style):
+                  เลือกวิธีสร้างลายเซ็น (Signature Mode):
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {[
-                    { id: 'BRUSH_SCRIPT', label: 'Brush Script (พู่กันพลิ้วไหว)', fontClass: 'font-serif italic font-bold' },
-                    { id: 'FORMAL_SERIF', label: 'Formal Executive (ทางการสากล)', fontClass: 'font-serif tracking-widest uppercase' },
-                    { id: 'MODERN_SANS', label: 'Modern Sans (โมเดิร์นคมชัด)', fontClass: 'font-sans font-extrabold tracking-wide uppercase' },
-                    { id: 'CLASSIC_CALLIGRAPHY', label: 'Classic Calligraphy (ตวัดคลาสสิก)', fontClass: 'font-mono italic font-semibold' }
-                  ].map(style => {
-                    const isSelected = signatureFormData.signatureStyle === style.id;
-                    return (
-                      <button
-                        key={style.id}
-                        type="button"
-                        onClick={() => setSignatureFormData({ ...signatureFormData, signatureStyle: style.id })}
-                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#E5F4FF] border-[#0D99FF] ring-2 ring-[#0D99FF]/20 shadow-xs'
-                            : 'bg-white border-[#E2E8F0] hover:bg-[#F8FAFC]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-bold text-slate-700">{style.label}</span>
-                          {isSelected && <Check size={14} className="text-[#0D99FF]" />}
-                        </div>
-                        <div className={`text-slate-800 text-sm truncate py-1 ${style.fontClass}`}>
-                          {signatureFormData.signatureInitials || selectedUserForSignature.name}
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-3 gap-2 p-1 bg-[#F1F5F9] rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignatureActiveTab('DRAWN');
+                      setSignatureFormData(prev => ({ ...prev, signatureType: 'DRAWN' }));
+                    }}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      signatureActiveTab === 'DRAWN'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>✍️ วาดลายเซ็น</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignatureActiveTab('IMAGE');
+                      setSignatureFormData(prev => ({ ...prev, signatureType: 'IMAGE' }));
+                    }}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      signatureActiveTab === 'IMAGE'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🖼️ อัปโหลดรูป</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignatureActiveTab('TYPOGRAPHIC');
+                      setSignatureFormData(prev => ({ ...prev, signatureType: 'TYPOGRAPHIC' }));
+                    }}
+                    className={`py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      signatureActiveTab === 'TYPOGRAPHIC'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🔤 เลือก Font</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Initials & Serial Number */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">อักษรย่อลายเซ็น (Initials / Monogram):</label>
-                  <input
-                    type="text"
-                    value={signatureFormData.signatureInitials}
-                    onChange={(e) => setSignatureFormData({ ...signatureFormData, signatureInitials: e.target.value })}
-                    placeholder="เช่น BM-QA หรือ บีม"
-                    className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl font-medium focus:bg-white focus:border-[#0D99FF] outline-none text-xs"
-                  />
+              {/* Mode 1: Canvas Draw */}
+              {signatureActiveTab === 'DRAWN' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-700">วาดลายเซ็นด้วยเมาส์หรือระบบสัมผัส:</span>
+                    <button
+                      type="button"
+                      onClick={clearCanvas}
+                      className="px-2.5 py-1 text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer border border-rose-200"
+                    >
+                      ล้างลายเซ็น (Clear)
+                    </button>
+                  </div>
+                  <div className="border-2 border-dashed border-slate-300 rounded-xl bg-white p-2 overflow-hidden flex items-center justify-center shadow-inner">
+                    <canvas
+                      ref={sigCanvasRef}
+                      width={480}
+                      height={140}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                      className="cursor-crosshair w-full max-w-full bg-white touch-none"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 text-center">
+                    ลากเมาส์หรือใช้นิ้วเขียนลายเซ็นลงในกรอบด้านบน ลายเซ็นจะถูกแปลงเป็นไฟล์ภาพโปร่งใสโดยอัตโนมัติ
+                  </p>
                 </div>
+              )}
 
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">รหัสใบรับรองดิจิทัล (Digital Certificate ID):</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={signatureFormData.certificateSerial}
-                    className="w-full px-3 py-2 bg-slate-100 border border-[#E2E8F0] rounded-xl font-mono text-slate-500 text-xs select-all"
-                  />
+              {/* Mode 2: Image Upload */}
+              {signatureActiveTab === 'IMAGE' && (
+                <div className="space-y-3">
+                  <span className="font-semibold text-slate-700 block">อัปโหลดไฟล์ภาพลายเซ็น (PNG / JPG):</span>
+                  <div className="p-6 border-2 border-dashed border-slate-300 hover:border-[#0D99FF] rounded-xl bg-[#F8FAFC] text-center space-y-3 transition-colors">
+                    {signatureFormData.signatureImage && signatureFormData.signatureType === 'IMAGE' ? (
+                      <div className="space-y-3">
+                        <div className="max-h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200">
+                          <img
+                            src={signatureFormData.signatureImage}
+                            alt="Signature Preview"
+                            className="max-h-24 max-w-full object-contain"
+                          />
+                        </div>
+                        <div className="flex justify-center gap-2">
+                          <label className="px-3 py-1.5 bg-[#0D99FF] text-white rounded-lg text-xs font-bold hover:bg-[#007BE5] cursor-pointer transition-colors">
+                            เปลี่ยนรูปภาพ
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              onChange={handleSignatureFileUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setSignatureFormData(prev => ({ ...prev, signatureImage: '' }))}
+                            className="px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                          >
+                            ลบรูปภาพ
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="cursor-pointer block space-y-2">
+                        <div className="w-10 h-10 mx-auto rounded-full bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center">
+                          <Upload size={18} />
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-700 text-xs block">คลิกเพื่อเลือกไฟล์รูปภาพ</span>
+                          <span className="text-[11px] text-slate-400">แนะนำภาพพื้นหลังโปร่งใส (PNG) ขนาดไม่เกิน 2MB</span>
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={handleSignatureFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Live 21 CFR Part 11 Digital Stamp Preview */}
+              {/* Mode 3: Typographic Font Style */}
+              {signatureActiveTab === 'TYPOGRAPHIC' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1.5">
+                      ข้อความ / อักษรย่อลายเซ็น (Initials or Display Name):
+                    </label>
+                    <input
+                      type="text"
+                      value={signatureFormData.signatureInitials}
+                      onChange={(e) => setSignatureFormData({ ...signatureFormData, signatureInitials: e.target.value })}
+                      placeholder="เช่น สมชาย ส. หรือ BM-QA"
+                      className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl font-medium focus:bg-white focus:border-[#0D99FF] outline-none text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1.5">
+                      เลือกรูปแบบฟอนต์ลายเซ็น:
+                    </label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {[
+                        { id: 'BRUSH_SCRIPT', label: 'Brush Script (พู่กันพลิ้วไหว)', fontClass: 'font-serif italic font-bold' },
+                        { id: 'FORMAL_SERIF', label: 'Formal Executive (ทางการสากล)', fontClass: 'font-serif tracking-widest uppercase' },
+                        { id: 'MODERN_SANS', label: 'Modern Sans (โมเดิร์นคมชัด)', fontClass: 'font-sans font-extrabold tracking-wide uppercase' },
+                        { id: 'CLASSIC_CALLIGRAPHY', label: 'Classic Calligraphy (ตวัดคลาสสิก)', fontClass: 'font-mono italic font-semibold' }
+                      ].map(style => {
+                        const isSelected = signatureFormData.signatureStyle === style.id;
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            onClick={() => setSignatureFormData({ ...signatureFormData, signatureStyle: style.id })}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#E5F4FF] border-[#0D99FF] ring-2 ring-[#0D99FF]/20 shadow-xs'
+                                : 'bg-white border-[#E2E8F0] hover:bg-[#F8FAFC]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] font-bold text-slate-700">{style.label}</span>
+                              {isSelected && <Check size={14} className="text-[#0D99FF]" />}
+                            </div>
+                            <div className={`text-slate-800 text-sm truncate py-1 ${style.fontClass}`}>
+                              {signatureFormData.signatureInitials || selectedUserForSignature.name}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Real-time Signature Preview */}
               <div>
-                <label className="font-bold text-slate-700 block mb-1.5 flex items-center justify-between">
-                  <span>2. ตัวอย่างตราประทับดิจิทัลจริง (Live 21 CFR Part 11 Stamp Inspector):</span>
-                  <span className="text-[10px] text-[#0D99FF] font-mono font-normal">Real-Time Verification Preview</span>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  ตัวอย่างลายเซ็นบนเอกสาร (Live Asset Preview):
                 </label>
-                <div className="p-4 bg-white border-2 border-dashed border-[#0D99FF]/40 rounded-xl space-y-2 relative overflow-hidden shadow-2xs">
-                  <div className="absolute top-2 right-2 flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    <ShieldCheck size={12} /> VERIFIED
+                <div className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-2xs">
+                  <div className="h-14 flex items-center justify-center">
+                    {signatureActiveTab === 'IMAGE' && signatureFormData.signatureImage ? (
+                      <img src={signatureFormData.signatureImage} alt="Preview" className="max-h-12 max-w-[200px] object-contain" />
+                    ) : signatureActiveTab === 'DRAWN' && signatureFormData.signatureImage ? (
+                      <img src={signatureFormData.signatureImage} alt="Drawn" className="max-h-12 max-w-[200px] object-contain" />
+                    ) : (
+                      <div className={`text-slate-900 text-lg ${
+                        signatureFormData.signatureStyle === 'FORMAL_SERIF' ? 'font-serif tracking-widest uppercase' :
+                        signatureFormData.signatureStyle === 'MODERN_SANS' ? 'font-sans font-extrabold tracking-wide uppercase' :
+                        signatureFormData.signatureStyle === 'CLASSIC_CALLIGRAPHY' ? 'font-mono italic font-semibold' : 'font-serif italic font-bold'
+                      }`}>
+                        {signatureFormData.signatureInitials || selectedUserForSignature.name}
+                      </div>
+                    )}
                   </div>
-
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#0D99FF]">
-                    21 CFR PART 11 DIGITALLY SIGNED & SEALED
-                  </div>
-
-                  <div className="flex items-center gap-4 py-1">
-                    <div className="w-28 h-10 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center font-serif italic text-slate-900 font-bold text-base px-2 truncate shadow-2xs">
-                      {signatureFormData.signatureInitials || selectedUserForSignature.name}
-                    </div>
-                    <div className="space-y-0.5 text-[11px] text-slate-700 leading-snug">
-                      <div><strong className="text-slate-900">Signer:</strong> {selectedUserForSignature.name} ({selectedUserForSignature.empId || selectedUserForSignature.id})</div>
-                      <div><strong className="text-slate-900">Department:</strong> {selectedUserForSignature.department} | Level {selectedUserForSignature.level || 1}</div>
-                      <div><strong className="text-slate-900">Intent:</strong> Review & Approval of Documented Information (ISO 9001:2015)</div>
-                      <div className="text-[10px] text-slate-400 font-mono">Date/Time: 25/08/2026 22:15:00 (UTC+7 Bangkok) | SHA-256: 7f83b165...4a91c</div>
+                  <div className="text-right text-[11px] text-slate-500 space-y-0.5">
+                    <div><strong className="text-slate-800">ผู้ลงนาม:</strong> {selectedUserForSignature.name}</div>
+                    <div><strong className="text-slate-800">สังกัด:</strong> {selectedUserForSignature.department}</div>
+                    <div className="text-emerald-600 font-bold inline-flex items-center gap-1 justify-end">
+                      <CheckCircle2 size={13} strokeWidth={1.5} className="text-emerald-600" />
+                      <span>Active Signature Asset</span>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSignatureModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Save size={14} />
-                  <span>บันทึกโปรไฟล์ลายเซ็น</span>
-                </button>
-              </div>
-            </form>
+              {/* Actions */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsSignatureModalOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Save size={14} />
+                    <span>บันทึกสินทรัพย์ลายเซ็น</span>
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= DIGITAL STAMP SIMULATOR MODAL ================= */}
       {isStampSimulatorModalOpen && stampSimulatorUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
                   <ShieldCheck size={18} />
@@ -3049,6 +3448,7 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsStampSimulatorModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -3057,7 +3457,7 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <div className="p-6 space-y-5 text-xs">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
               {/* Role Selector */}
               <div>
                 <label className="font-bold text-slate-700 block mb-1.5">เลือกลำดับขั้นตอนการลงนามใน DAR Workflow:</label>
@@ -3128,16 +3528,16 @@ const MasterDataHub = () => {
                   ตราประทับอิเล็กทรอนิกส์นี้ผ่านการรับรองตามมาตรฐาน <strong>21 CFR Part 11 Subpart B</strong> และสามารถตรวจสอบความถูกต้องย้อนกลับได้ 100%
                 </span>
               </div>
+            </div>
 
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsStampSimulatorModalOpen(false)}
-                  className="btn-primary text-xs px-5 cursor-pointer"
-                >
-                  ปิดหน้าต่าง (Close)
-                </button>
-              </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsStampSimulatorModalOpen(false)}
+                className="btn-primary text-xs px-5 cursor-pointer"
+              >
+                ปิดหน้าต่าง (Close)
+              </button>
             </div>
           </motion.div>
         </div>
@@ -3145,13 +3545,13 @@ const MasterDataHub = () => {
 
       {/* ================= APPROVAL MATRIX EDIT MODAL ================= */}
       {isMatrixModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl border border-[#E5E5E5] w-full max-w-lg overflow-hidden flex flex-col my-8"
+            className="relative w-full max-w-xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-[#0D99FF]/20 rounded-xl text-[#0D99FF]">
                   <Sliders size={18} />
@@ -3166,6 +3566,7 @@ const MasterDataHub = () => {
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsMatrixModalOpen(false)} 
                 className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                 title="ปิดหน้าต่าง"
@@ -3174,7 +3575,8 @@ const MasterDataHub = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveMatrixEntry} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSaveMatrixEntry} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">ประเภทเอกสาร (Document Type):</label>
                 <div className="flex items-center gap-2.5 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
@@ -3274,46 +3676,55 @@ const MasterDataHub = () => {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsMatrixModalOpen(false)}
-                  className="btn-secondary text-xs cursor-pointer"
-                >
-                  ยกเลิก (Cancel)
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs cursor-pointer shadow-xs"
-                >
-                  บันทึกการเปลี่ยนแปลง
-                </button>
-              </div>
-            </form>
+                </div>
+
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsMatrixModalOpen(false)}
+                    className="btn-secondary text-xs cursor-pointer"
+                  >
+                    ยกเลิก (Cancel)
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary text-xs cursor-pointer shadow-xs"
+                  >
+                    บันทึกการเปลี่ยนแปลง
+                  </button>
+                </div>
+              </form>
           </motion.div>
         </div>
       )}
 
       {/* ================= ORPHAN PROTECTION MODAL ================= */}
       {orphanWarningModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-xl p-6 max-w-md w-full border border-rose-200 shadow-none space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <ShieldAlert size={28} />
-              <h3 className="font-bold text-base text-[#1E1E1E]">ไม่สามารถลบจุดใช้งานได้ (Orphan Protection)</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-rose-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-white border-b border-rose-100 flex items-center gap-3 text-rose-600 shrink-0">
+              <ShieldAlert size={24} />
+              <h3 className="font-bold text-base text-slate-900">ไม่สามารถลบจุดใช้งานได้ (Orphan Protection)</h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed break-words">
-              {orphanWarningModal.message}
-            </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-              💡 <strong>คำแนะนำด้านความปลอดภัย:</strong> หากไม่ต้องการใช้งานสถานีนี้ ให้คลิกเปลี่ยนสถานะเป็น <strong>Inactive</strong> แทนการลบข้อมูลถาวร
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              <p className="text-xs text-slate-600 leading-relaxed break-words">
+                {orphanWarningModal.message}
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                💡 <strong>คำแนะนำด้านความปลอดภัย:</strong> หากไม่ต้องการใช้งานสถานีนี้ ให้คลิกเปลี่ยนสถานะเป็น <strong>Inactive</strong> แทนการลบข้อมูลถาวร
+              </div>
             </div>
-            <button
-              onClick={() => setOrphanWarningModal({ isOpen: false, message: '' })}
-              className="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition-colors"
-            >
-              รับทราบ (Close)
-            </button>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setOrphanWarningModal({ isOpen: false, message: '' })}
+                className="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                รับทราบ (Close)
+              </button>
+            </div>
           </div>
         </div>
       )}
