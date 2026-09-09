@@ -39,7 +39,6 @@ export const normalizeDraftToFormState = (draft = {}, defaultState = {}) => {
   const minAccessLevel = draft.access_control?.min_access_level || draft.minAccessLevel || draft.min_access_level || 4;
 
   const access_control = {
-    scope: rawAccessScope,
     authorized_depts: Array.isArray(rawAuthorizedDepts) ? rawAuthorizedDepts : [],
     authorized_users: Array.isArray(rawAuthorizedUsers) ? rawAuthorizedUsers : [],
     min_access_level: minAccessLevel,

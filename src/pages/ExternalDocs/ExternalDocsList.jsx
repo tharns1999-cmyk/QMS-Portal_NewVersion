@@ -84,7 +84,7 @@ const ExternalDocsList = () => {
   } = useStore();
   
   // Level 1: Main Category Tabs (GENERAL, MY_DEPT, DISTRIBUTED)
-  const [activeMainTab, setActiveMainTab] = useState(TAB_GENERAL);
+  const [activeMainTab, setActiveMainTab] = useState(TAB_MY_DEPT);
   
   const [searchTerm, setSearchTerm] = useState('');
   // Level 2: 4 Status Filter Pills: ACTIVE, SUPERSEDED, OBSOLETE, ALL (default: ACTIVE)
@@ -871,7 +871,7 @@ const ExternalDocsList = () => {
     if (isActive) {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9] whitespace-nowrap shadow-2xs">
-          <CheckCircle2 size={13} strokeWidth={2} />
+          <CheckCircle2 size={13} strokeWidth={1.5} />
           <span>มีผลบังคับใช้</span>
         </span>
       );
@@ -879,7 +879,7 @@ const ExternalDocsList = () => {
     if (isSuperseded) {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
-          <Clock size={13} />
+          <Clock size={13} strokeWidth={1.5} />
           <span>ฉบับตกรุ่น</span>
         </span>
       );
@@ -887,7 +887,7 @@ const ExternalDocsList = () => {
     if (isObsolete) {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5] whitespace-nowrap shadow-2xs">
-          <XCircle size={13} strokeWidth={2} />
+          <XCircle size={13} strokeWidth={1.5} />
           <span>ยกเลิกถาวร</span>
         </span>
       );
@@ -895,7 +895,7 @@ const ExternalDocsList = () => {
     if (status === 'PENDING_EXT_REVIEW') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFF8E6] text-[#D49800] border border-[#FFE785] whitespace-nowrap shadow-2xs">
-          <Clock size={13} />
+          <Clock size={13} strokeWidth={1.5} />
           <span>รอทบทวน</span>
         </span>
       );
@@ -903,7 +903,7 @@ const ExternalDocsList = () => {
     if (status === 'PENDING_EXT_APPROVAL') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFF8E6] text-[#D49800] border border-[#FFE785] whitespace-nowrap shadow-2xs">
-          <Clock size={13} />
+          <Clock size={13} strokeWidth={1.5} />
           <span>รออนุมัติ</span>
         </span>
       );
@@ -911,7 +911,7 @@ const ExternalDocsList = () => {
     if (status === 'REJECTED') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FEECE8] text-[#F24822] border border-[#FAD3CC] whitespace-nowrap shadow-2xs">
-          <X size={13} />
+          <X size={13} strokeWidth={1.5} />
           <span>ไม่อนุมัติ</span>
         </span>
       );
@@ -928,20 +928,20 @@ const ExternalDocsList = () => {
       case 'Restricted':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] text-[#F24822] border border-[#FDC4B8]">
-            <Lock size={13} /> ลับเฉพาะ
+            <Lock size={13} strokeWidth={1.5} /> ลับเฉพาะ
           </span>
         );
       case 'Department':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
-            <Building2 size={13} /> เฉพาะแผนก
+            <Building2 size={13} strokeWidth={1.5} /> เฉพาะแผนก
           </span>
         );
       case 'General':
       default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9]">
-            <Globe size={13} /> ทั่วไป
+            <Globe size={13} strokeWidth={1.5} /> ทั่วไป
           </span>
         );
     }
@@ -949,17 +949,15 @@ const ExternalDocsList = () => {
 
   return (
     <div className="w-full space-y-4 pb-12">
-      {/* 1. Page Header Card with 3 ED Action Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-[#E2E8F0] rounded-2xl p-4.5 shadow-2xs">
-        <div className="flex items-start gap-3.5">
-          <div className="p-3 rounded-xl bg-[#E5F4FF] text-[#0D99FF] shrink-0 shadow-2xs">
-            <Globe className="w-5 h-5" strokeWidth={1.8} />
-          </div>
+      {/* 1. Page Header Card with 3 ED Action Controls (Standardized Page Header) */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/80 rounded-xl px-6 py-4 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <Globe className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-[#1E293B] tracking-tight">
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               คลังเอกสารภายนอก (External Document Library)
             </h1>
-            <p className="text-xs text-[#64748B] mt-0.5 leading-relaxed">
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
               ทะเบียนควบคุมมาตรฐานสากล กฎหมาย และคู่มือผู้ผลิตภายนอกตามข้อกำหนด ISO 9001:2015 Clause 7.5.3.2
             </p>
           </div>
@@ -1035,7 +1033,7 @@ const ExternalDocsList = () => {
               : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
           }`}
         >
-          <Globe size={16} strokeWidth={activeMainTab === TAB_GENERAL ? 2 : 1.75} />
+          <Globe size={16} strokeWidth={1.5} />
           <span>เอกสารทั่วไป</span>
           <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
             {generalDocsCount}
@@ -1055,7 +1053,7 @@ const ExternalDocsList = () => {
               : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
           }`}
         >
-          <Building2 size={16} strokeWidth={activeMainTab === TAB_MY_DEPT ? 2 : 1.75} />
+          <Building2 size={16} strokeWidth={1.5} />
           <span>เอกสารในแผนกฉัน</span>
           <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
             {myDeptDocsCount}
@@ -1075,7 +1073,7 @@ const ExternalDocsList = () => {
               : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
           }`}
         >
-          <Share2 size={16} strokeWidth={activeMainTab === TAB_DISTRIBUTED ? 2 : 1.75} />
+          <Share2 size={16} strokeWidth={1.5} />
           <span>เอกสารที่ได้รับการแจกจ่าย</span>
           <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
             {distributedDocsCount}
@@ -1182,9 +1180,9 @@ const ExternalDocsList = () => {
               <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide py-0.5">
                 <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
                   {[
-                    { id: 'ACTIVE', label: '✓ มีผลบังคับใช้ (Active)', count: statusCounts.active },
-                    { id: 'SUPERSEDED', label: '⏳ ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
-                    { id: 'OBSOLETE', label: '🚫 ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
+                    { id: 'ACTIVE', label: 'มีผลบังคับใช้ (Active)', count: statusCounts.active },
+                    { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
+                    { id: 'OBSOLETE', label: 'ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
                     { id: 'ALL', label: 'ทั้งหมด (All Records)', count: statusCounts.total },
                   ].map((tab) => (
                     <button
@@ -1312,20 +1310,20 @@ const ExternalDocsList = () => {
                                   handleOpenDetail(doc);
                                 }
                               }}
-                              className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
+                              className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
                               title={doc._isGrouped ? "ดูประวัติเอกสารย้อนหลัง (View Revision History)" : "ดูข้อมูลเอกสาร (View Details)"}
                             >
-                              <Eye size={14} />
+                              <Eye size={14} strokeWidth={1.5} />
                             </button>
 
                             {/* Quick Watermarked Download Button */}
                             <button
                               type="button"
                               onClick={(e) => handleDownload(doc, e)}
-                              className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#10B981] hover:border-[#10B981] hover:bg-emerald-50 transition-colors cursor-pointer"
+                              className="p-1.5 rounded text-slate-500 hover:text-emerald-600 hover:bg-slate-100 transition-colors cursor-pointer"
                               title="ดาวน์โหลด PDF พร้อมลายน้ำ (Watermarked PDF)"
                             >
-                              <Download size={14} />
+                              <Download size={14} strokeWidth={1.5} />
                             </button>
 
                             {/* 3-Dot More Options Dropdown */}
@@ -1337,14 +1335,14 @@ const ExternalDocsList = () => {
                                   e.stopPropagation();
                                   setOpenMenuDocId(isMenuOpen ? null : doc.id);
                                 }}
-                                className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                                className={`p-1.5 rounded transition-colors cursor-pointer ${
                                   isMenuOpen
-                                    ? 'bg-[#0D99FF] text-white border-[#0D99FF] shadow-xs'
-                                    : 'border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]'
+                                    ? 'bg-slate-900 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
                                 }`}
                                 title="เมนูการจัดการเพิ่มเติม (Row-Level Actions)"
                               >
-                                <MoreHorizontal size={14} />
+                                <MoreHorizontal size={14} strokeWidth={1.5} />
                               </button>
 
                               {/* Dropdown Menu Popup (Dropup / Smart Placement Support) */}
@@ -1363,7 +1361,7 @@ const ExternalDocsList = () => {
                                       onClick={() => handleOpenDetail(doc)}
                                       className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-[#0D99FF] hover:bg-[#F0F7FF] flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                     >
-                                      <FileText size={15} className="text-[#0D99FF] group-hover/item:scale-110 transition-transform" />
+                                      <FileText size={15} strokeWidth={1.5} className="text-[#0D99FF] group-hover/item:scale-110 transition-transform" />
                                       <span>ดูข้อมูลเอกสาร (View Details)</span>
                                     </button>
 
@@ -1373,7 +1371,7 @@ const ExternalDocsList = () => {
                                       onClick={() => handlePreview(doc)}
                                       className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                     >
-                                      <Eye size={15} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <Eye size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
                                       <span>เปิดอ่านไฟล์ PDF (View PDF)</span>
                                     </button>
                                   </div>
@@ -1388,7 +1386,7 @@ const ExternalDocsList = () => {
                                         className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                         title="แก้ไขหรือทบทวนเวอร์ชันใหม่"
                                       >
-                                        <RotateCw size={15} className="text-amber-600 group-hover/item:rotate-45 transition-transform" />
+                                        <RotateCw size={15} strokeWidth={1.5} className="text-amber-600 group-hover/item:rotate-45 transition-transform" />
                                         <span>อัปเดตฉบับใหม่ (Create Revision)</span>
                                       </button>
 
@@ -1400,7 +1398,7 @@ const ExternalDocsList = () => {
                                           className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                           title="ยื่นขอยกเลิกเอกสาร"
                                         >
-                                          <Archive size={15} className="text-rose-600 group-hover/item:scale-110 transition-transform" />
+                                          <Archive size={15} strokeWidth={1.5} className="text-rose-600 group-hover/item:scale-110 transition-transform" />
                                           <span>ยื่นขอยกเลิกใช้งาน (Request Obsolete)</span>
                                         </button>
                                       )}
@@ -1416,7 +1414,7 @@ const ExternalDocsList = () => {
                                         className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                         title="ขอสำเนาควบคุมหน้างาน (Request Physical Copy)"
                                       >
-                                        <Layers size={15} className="text-indigo-600 group-hover/item:scale-110 transition-transform" />
+                                        <Layers size={15} strokeWidth={1.5} className="text-indigo-600 group-hover/item:scale-110 transition-transform" />
                                         <span>ขอสำเนาควบคุมหน้างาน</span>
                                       </button>
                                     )}
@@ -1426,7 +1424,7 @@ const ExternalDocsList = () => {
                                       onClick={(e) => handleDownload(doc, e)}
                                       className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                     >
-                                      <Download size={15} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <Download size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
                                       <span>ดาวน์โหลด PDF (มีลายน้ำ)</span>
                                     </button>
 
@@ -1435,7 +1433,7 @@ const ExternalDocsList = () => {
                                       onClick={() => handleHistory(doc)}
                                       className="w-full px-3.5 py-2 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
                                     >
-                                      <History size={15} className="text-slate-400 group-hover/item:scale-110 transition-transform" />
+                                      <History size={15} strokeWidth={1.5} className="text-slate-400 group-hover/item:scale-110 transition-transform" />
                                       <span>ประวัติเอกสารและการแก้ไข</span>
                                     </button>
                                   </div>
@@ -1459,12 +1457,12 @@ const ExternalDocsList = () => {
                             {doc._isGrouped ? (
                               statusFilter === 'SUPERSEDED' ? (
                                 <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-300/80 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs">
-                                  <Clock size={11} className="text-amber-600" />
+                                  <Clock size={11} strokeWidth={1.5} className="text-amber-600" />
                                   <span>{doc._groupCount} ฉบับตกรุ่น</span>
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-2xs">
-                                  <Archive size={11} className="text-slate-500" />
+                                  <Archive size={11} strokeWidth={1.5} className="text-slate-500" />
                                   <span>{doc._groupCount} ฉบับยกเลิก</span>
                                 </span>
                               )
@@ -1537,7 +1535,7 @@ const ExternalDocsList = () => {
                               คลังประวัติเอกสาร
                             </span>
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                              <Archive size={11} className="text-slate-500" />
+                              <Archive size={11} strokeWidth={1.5} className="text-slate-500" />
                               <span>เก็บถาวรในคลังประวัติ</span>
                             </span>
                           </div>
@@ -1547,9 +1545,9 @@ const ExternalDocsList = () => {
                               ทุก {doc.reviewCycleMonths || 12} เดือน
                             </span>
                             <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${validity.colorClass}`}>
-                              {validity.status === 'OVERDUE' && <AlertTriangle size={11} />}
-                              {validity.status === 'DUE_SOON' && <Clock size={11} />}
-                              {validity.status === 'NORMAL' && <CheckCircle size={11} />}
+                              {validity.status === 'OVERDUE' && <AlertTriangle size={11} strokeWidth={1.5} />}
+                              {validity.status === 'DUE_SOON' && <Clock size={11} strokeWidth={1.5} />}
+                              {validity.status === 'NORMAL' && <CheckCircle size={11} strokeWidth={1.5} />}
                               {validity.label}
                             </span>
                           </div>
@@ -1561,12 +1559,12 @@ const ExternalDocsList = () => {
                         {doc._isGrouped ? (
                           statusFilter === 'SUPERSEDED' ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
-                              <Clock size={12} />
+                              <Clock size={12} strokeWidth={1.5} />
                               <span>ฉบับตกรุ่น</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
-                              <Archive size={12} />
+                              <Archive size={12} strokeWidth={1.5} />
                               <span>ยกเลิกถาวร</span>
                             </span>
                           )

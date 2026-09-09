@@ -14,10 +14,24 @@ const DarList = () => {
 
   const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
   
+  const extractDarNumber = (darStr = '') => {
+    const match = String(darStr || '').match(/\d+/g);
+    return match ? parseInt(match.join(''), 10) : 0;
+  };
+
   // Strict Personal Scoping: "คำร้อง DAR ของฉัน" displays ONLY the current user's requests
   const myDars = (dars || [])
     .filter(dar => isDarRequester(dar, currentUser))
-    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    .sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.submittedAt || a.date || a.request_date || 0).getTime();
+      const timeB = new Date(b.createdAt || b.submittedAt || b.date || b.request_date || 0).getTime();
+      if (timeB !== timeA) {
+        return timeB - timeA;
+      }
+      const darNumA = extractDarNumber(a.darNo || a.darNumber || a.dar_no || a.id);
+      const darNumB = extractDarNumber(b.darNo || b.darNumber || b.dar_no || b.id);
+      return darNumB - darNumA;
+    });
 
   const filteredDars = myDars.filter(dar => {
     if (!searchTerm) return true;

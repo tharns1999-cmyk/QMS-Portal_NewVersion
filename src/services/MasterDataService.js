@@ -270,6 +270,7 @@ export const cleanLocationName = (name) => {
   return name
     .replace(/\s*\((จุดคุมงานหลัก\s*)?Master\)/gi, '')
     .replace(/\s*\(Master\)/gi, '')
+    .replace(/\s*[-–]\s*Master/gi, '')
     .trim();
 };
 
@@ -348,7 +349,20 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
     const locId = item.locationId || item.station_id || item.id || `${dept}-DEFAULT`;
     
     // Skip if it is the owner's master station itself (already locked at Copy 01)
-    if (dept === normOwner && (locId === ownerMasterStation.id || locId === `${normOwner}-MASTER` || locId === `${normOwner}-OFFICE`)) {
+    if (
+      item.isOwner ||
+      item.is_owner ||
+      item.isOriginator ||
+      item.isMaster ||
+      item.is_master ||
+      (dept === normOwner && (
+        locId === ownerMasterStation.id ||
+        locId === `${normOwner}-MASTER` ||
+        locId === `${normOwner}-OFFICE` ||
+        item.copyNo === '01' ||
+        item.copy_no === '01'
+      ))
+    ) {
       return;
     }
 

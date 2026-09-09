@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
-import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer } from 'lucide-react';
+import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer, CheckCircle2 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
@@ -16,7 +16,7 @@ import {
   isUserAuthorizedForDocDept, 
   isDocumentEligibleForRevision 
 } from '../../utils/darHelper';
-import { cleanLocationName } from '../../services/MasterDataService';
+import { cleanLocationName, getMasterStationForDept, normalizeDepartmentId, calculateCopyAllocations } from '../../services/MasterDataService';
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ const DarRevisionForm = () => {
   const prefillDocId = location.state?.prefillDocId;
   const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.targetDocCode || location.state?.docCode;
   const deepLinkDocId = searchParams.get('docId') || location.state?.selectedDocId || location.state?.docId || prefillDocId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies } = useStore();
+  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies, distributionLocations } = useStore();
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
   
   const initialFormState = {
@@ -169,6 +169,19 @@ const DarRevisionForm = () => {
 
   const selectedDoc = (effectiveDocs || []).find(d => d.id === formData.docId) || (documents || []).find(d => d.id === formData.docId);
 
+  // Clean Form (FM) Bypass Helper: No controlled copies or distribution ledger for forms
+  const isFormDocument = Boolean(
+    (selectedDoc && (
+      selectedDoc.docType === 'FM' ||
+      selectedDoc.doc_type === 'FM' ||
+      selectedDoc.type === 'FM' ||
+      String(selectedDoc.code || '').startsWith('FM-') ||
+      String(selectedDoc.title || '').startsWith('FM-') ||
+      String(selectedDoc.name || '').startsWith('FM-') ||
+      String(selectedDoc.title || '').startsWith('FM')
+    )) || (formData.docType === 'FM')
+  );
+
   const getDocCurrentRevision = (doc) => {
     if (!doc) return '01';
     const r = doc.currentRevision || doc.rev || doc.doc_version || doc.revision || doc.version;
@@ -255,6 +268,34 @@ const DarRevisionForm = () => {
     });
   }, [selectedDoc, controlledCopyInstances, documentControlledCopies]);
 
+  // Single Source of Truth for Revision Copies (Unified Array with Copy 01 locked at index 0)
+  const activeRevisionCopies = useMemo(() => {
+    if (!selectedDoc || isFormDocument) return [];
+    const ownerDept = selectedDoc.department || currentUser?.department || 'PD';
+    const allocs = calculateCopyAllocations(ownerDept, formData.distributions || []);
+    return (allocs?.allAllocations || []).map((c, idx) => {
+      const copyNum = c.copyNo || c.copy_no || String(idx + 1).padStart(2, '0');
+      const isOrigin = c.isOwner || c.is_owner || c.isOriginator || copyNum === '01' || idx === 0;
+      const dept = c.departmentId || c.dept || c.dept_code || c.department || ownerDept;
+      const loc = cleanLocationName(c.locationName || c.station_name || c.location || c.name || `${dept} Head Office`);
+      return {
+        ...c,
+        copyNo: copyNum,
+        copy_no: copyNum,
+        department: dept,
+        departmentId: dept,
+        dept: dept,
+        location: loc,
+        locationName: loc,
+        station_name: loc,
+        name: loc,
+        isOriginator: isOrigin,
+        isOwner: isOrigin,
+        isLocked: isOrigin
+      };
+    });
+  }, [selectedDoc, isFormDocument, currentUser?.department, formData.distributions]);
+
   const handleDocSelect = (doc) => {
     const initialAc = doc.access_control || {
       scope: 'GENERAL',
@@ -304,35 +345,82 @@ const DarRevisionForm = () => {
     });
 
     let initialDistributions = [];
-    if (uniqueDocCopies.length > 0) {
-      // 1-to-1 distribution point mapping directly from active copies of Rev.02
-      initialDistributions = uniqueDocCopies.map((c, idx) => {
-        const copyNo = normCopyNo(c, idx + 1);
-        const dept = c.holder_dept || c.department || c.dept || doc.department || 'PD';
-        const locName = cleanLocationName(c.location || c.locationName || c.station_name || `${dept} Station`);
-        const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
-        const isOrigin = copyNo === '01' || !!c.is_owner || !!c.isOwner;
-        return {
-          id: c.locationId || c.station_id || `loc-${idx}`,
-          locationId: locId,
-          locationName: locName,
-          station_id: locId,
-          station_name: locName,
-          departmentId: dept,
-          department: dept,
-          dept: dept,
-          dept_code: dept,
-          copyNo: copyNo,
-          copyLabel: `Copy ${copyNo} (สำเนาควบคุม)`,
+    const isDocForm = Boolean(
+      doc.docType === 'FM' ||
+      doc.doc_type === 'FM' ||
+      doc.type === 'FM' ||
+      String(doc.code || '').startsWith('FM-') ||
+      String(doc.title || '').startsWith('FM-') ||
+      String(doc.name || '').startsWith('FM-') ||
+      String(doc.title || '').startsWith('FM')
+    );
+
+    if (!isDocForm) {
+      if (uniqueDocCopies.length > 0) {
+        // 1-to-1 distribution point mapping directly from active copies of Rev.02
+        initialDistributions = uniqueDocCopies.map((c, idx) => {
+          const copyNo = normCopyNo(c, idx + 1);
+          const dept = c.holder_dept || c.department || c.dept || doc.department || 'PD';
+          const locName = cleanLocationName(c.location || c.locationName || c.station_name || `${dept} Station`);
+          const locId = c.locationId || c.station_id || `${dept}-LOC-${copyNo}`;
+          const isOrigin = copyNo === '01' || !!c.is_owner || !!c.isOwner;
+          return {
+            id: c.locationId || c.station_id || `loc-${idx}`,
+            locationId: locId,
+            locationName: locName,
+            station_id: locId,
+            station_name: locName,
+            departmentId: dept,
+            department: dept,
+            dept: dept,
+            dept_code: dept,
+            copyNo: copyNo,
+            copyLabel: `Copy ${copyNo} (สำเนาควบคุม)`,
+            copyType: 'CONTROLLED',
+            isMaster: false,
+            is_master: false,
+            isOwner: isOrigin,
+            is_owner: isOrigin
+          };
+        });
+      } else if (doc.distributions && doc.distributions.length > 0) {
+        initialDistributions = JSON.parse(JSON.stringify(doc.distributions));
+      }
+
+      // ISO 9001 Copy 01 Mandatory Rule: Owner Department MUST always have Copy 01 allocated as master controlled copy
+      const ownerDept = doc.department || currentUser?.department || 'PD';
+      const normOwner = normalizeDepartmentId(ownerDept);
+      const hasCopy01 = initialDistributions.some(d => {
+        const cNo = d.copyNo || d.copy_no;
+        return cNo === '01' || d.isOwner || d.is_owner || d.isMaster || d.is_master;
+      });
+
+      if (!hasCopy01) {
+        const masterStation = getMasterStationForDept(normOwner, distributionLocations);
+        const cleanOwnerLocName = cleanLocationName(masterStation.name || masterStation.locationName || `${normOwner} Head Office`);
+        const copy01Item = {
+          id: masterStation.id || `${normOwner}-MASTER`,
+          locationId: masterStation.id || `${normOwner}-MASTER`,
+          station_id: masterStation.id || `${normOwner}-MASTER`,
+          locationName: cleanOwnerLocName,
+          station_name: cleanOwnerLocName,
+          location: cleanOwnerLocName,
+          name: cleanOwnerLocName,
+          departmentId: normOwner,
+          department: normOwner,
+          dept: normOwner,
+          dept_code: normOwner,
+          copyNo: '01',
+          copy_no: '01',
+          copyLabel: 'Copy 01 (สำเนาควบคุม)',
           copyType: 'CONTROLLED',
           isMaster: false,
           is_master: false,
-          isOwner: isOrigin,
-          is_owner: isOrigin
+          isOwner: true,
+          is_owner: true
         };
-      });
-    } else if (doc.distributions && doc.distributions.length > 0) {
-      initialDistributions = JSON.parse(JSON.stringify(doc.distributions));
+        initialDistributions.unshift(copy01Item);
+      }
     }
 
     setFormData(prev => ({
@@ -392,12 +480,14 @@ const DarRevisionForm = () => {
   const lastAlignedDocIdRef = useRef(null);
   useEffect(() => {
     if (!selectedDoc) return;
+    if (isFormDocument) return; // Clean Form Bypass: No controlled copy auto-alignment for FM
     if (targetDraftId || location.state?.draftData) return;
     if (lastAlignedDocIdRef.current === selectedDoc.id) return;
 
     if (!formData.distributions || formData.distributions.length === 0) {
+      let alignedDists = [];
       if (activeCopiesInCirculation && activeCopiesInCirculation.length > 0) {
-        const alignedDists = activeCopiesInCirculation.map((c, idx) => {
+        alignedDists = activeCopiesInCirculation.map((c, idx) => {
           const copyNo = c.normalizedCopyNo || normCopyNo(c, idx + 1);
           const dept = c.holder_dept || c.department || c.dept || selectedDoc.department || 'PD';
           const locName = cleanLocationName(c.location || c.locationName || c.station_name || `${dept} Station`);
@@ -422,14 +512,50 @@ const DarRevisionForm = () => {
             is_owner: isOrigin
           };
         });
-        setFormData(prev => ({
-          ...prev,
-          distributions: alignedDists
-        }));
       }
+
+      // Mandatory Copy 01 Allocation Rule
+      const ownerDept = selectedDoc.department || currentUser?.department || 'PD';
+      const normOwner = normalizeDepartmentId(ownerDept);
+      const hasCopy01 = alignedDists.some(d => {
+        const cNo = d.copyNo || d.copy_no;
+        return cNo === '01' || d.isOwner || d.is_owner || d.isMaster || d.is_master;
+      });
+
+      if (!hasCopy01) {
+        const masterStation = getMasterStationForDept(normOwner, distributionLocations);
+        const cleanOwnerLocName = cleanLocationName(masterStation.name || masterStation.locationName || `${normOwner} Head Office`);
+        const copy01Item = {
+          id: masterStation.id || `${normOwner}-MASTER`,
+          locationId: masterStation.id || `${normOwner}-MASTER`,
+          station_id: masterStation.id || `${normOwner}-MASTER`,
+          locationName: cleanOwnerLocName,
+          station_name: cleanOwnerLocName,
+          location: cleanOwnerLocName,
+          name: cleanOwnerLocName,
+          departmentId: normOwner,
+          department: normOwner,
+          dept: normOwner,
+          dept_code: normOwner,
+          copyNo: '01',
+          copy_no: '01',
+          copyLabel: 'Copy 01 (สำเนาควบคุม)',
+          copyType: 'CONTROLLED',
+          isMaster: false,
+          is_master: false,
+          isOwner: true,
+          is_owner: true
+        };
+        alignedDists.unshift(copy01Item);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        distributions: alignedDists
+      }));
     }
     lastAlignedDocIdRef.current = selectedDoc.id;
-  }, [selectedDoc, activeCopiesInCirculation, formData.distributions, targetDraftId, location.state?.draftData]);
+  }, [selectedDoc, activeCopiesInCirculation, formData.distributions, targetDraftId, location.state?.draftData, currentUser?.department, distributionLocations]);
 
 
   /**
@@ -441,9 +567,9 @@ const DarRevisionForm = () => {
    */
   const handleAccessControlChange = (newAc) => {
     const ownerDepartment = selectedDoc?.department || currentUser?.department || 'PD';
-    const normOwner = (ownerDepartment || 'PD').trim();
+    const normOwner = normalizeDepartmentId(ownerDepartment || 'PD');
     const scope = newAc?.scope || 'GENERAL';
-    const authorizedDepts = (newAc?.authorized_depts || []).map(d => String(d).trim());
+    const authorizedDepts = (newAc?.authorized_depts || []).map(d => normalizeDepartmentId(d));
 
     setFormData(prev => {
       let currentDists = prev.distributions || [];
@@ -453,43 +579,23 @@ const DarRevisionForm = () => {
       if (scope === 'DEPT_ONLY' || scope === 'RESTRICTED') {
         // Only keep distributions belonging to the Owner Department
         prunedDists = currentDists.filter(dist => {
-          const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
+          const distDept = normalizeDepartmentId(dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner);
           return distDept === normOwner || dist.isOwner || dist.is_owner || dist.isMaster || dist.is_master || dist.copyNo === '01';
         });
       } else if (scope === 'TARGETED' && authorizedDepts.length > 0) {
         // Only keep distributions belonging to Owner Department or explicitly Authorized Departments
         prunedDists = currentDists.filter(dist => {
-          const distDept = (dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner).trim();
+          const distDept = normalizeDepartmentId(dist.departmentId || dist.dept || dist.dept_code || dist.department || normOwner);
           return distDept === normOwner || authorizedDepts.includes(distDept) || dist.isOwner || dist.is_owner || dist.isMaster || dist.is_master || dist.copyNo === '01';
         });
       }
 
-      // Dynamic Copy Number Re-indexing
-      // Separate origin copy 01 vs non-origin copies and re-index sequentially starting from Copy 02
-      let masterItem = prunedDists.find(d => d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01');
-      const nonMasterItems = prunedDists.filter(d => !(d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01'));
-
-      const reindexedNonMasters = nonMasterItems.map((item, idx) => {
-        const copyNum = String(idx + 2).padStart(2, '0');
-        return {
-          ...item,
-          copyNo: copyNum,
-          copy_no: copyNum,
-          copyLabel: `Copy ${copyNum} (สำเนาควบคุม)`,
-          copyType: 'CONTROLLED',
-          isMaster: false,
-          isOwner: false
-        };
-      });
-
-      const finalDists = masterItem 
-        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01 (สำเนาควบคุม)', copyType: 'CONTROLLED', isMaster: false, isOwner: true }, ...reindexedNonMasters]
-        : reindexedNonMasters;
+      const allocs = calculateCopyAllocations(normOwner, prunedDists);
 
       return {
         ...prev,
         access_control: newAc,
-        distributions: finalDists
+        distributions: allocs.distributedCopies
       };
     });
   };
@@ -499,44 +605,27 @@ const DarRevisionForm = () => {
    * Unchecking chip triggers Two-Way Binding with DistributionSetup
    */
   const handleRemoveDistributionChip = (distToRemove) => {
-    if (distToRemove.isOwner || distToRemove.is_owner || distToRemove.isMaster || distToRemove.is_master || distToRemove.copyNo === '01') {
+    if (distToRemove.isOriginator || distToRemove.isOwner || distToRemove.is_owner || distToRemove.isMaster || distToRemove.is_master || distToRemove.copyNo === '01' || distToRemove.copy_no === '01' || distToRemove.isLocked) {
       toast.error('ไม่สามารถลบ Copy 01 (สำเนาควบคุม) ของแผนกเจ้าของเอกสารได้');
       return;
     }
+
+    const ownerDept = selectedDoc?.department || currentUser?.department || 'PD';
+    const normOwner = normalizeDepartmentId(ownerDept);
 
     setFormData(prev => {
       const remaining = (prev.distributions || []).filter(d => {
         const dLocId = d.locationId || d.station_id || d.id;
         const targetLocId = distToRemove.locationId || distToRemove.station_id || distToRemove.id;
-        const dDept = d.departmentId || d.dept || d.dept_code || d.department;
-        const targetDept = distToRemove.departmentId || distToRemove.dept || distToRemove.dept_code || distToRemove.department;
+        const dDept = normalizeDepartmentId(d.departmentId || d.dept || d.dept_code || d.department || d.target_department);
+        const targetDept = normalizeDepartmentId(distToRemove.departmentId || distToRemove.dept || distToRemove.dept_code || distToRemove.department || distToRemove.target_department);
         return !(dLocId === targetLocId && dDept === targetDept);
       });
 
-      // Dynamic Re-indexing
-      const masterItem = remaining.find(d => d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01');
-      const nonMasterItems = remaining.filter(d => !(d.isOwner || d.is_owner || d.isMaster || d.is_master || d.copyNo === '01'));
-
-      const reindexed = nonMasterItems.map((item, idx) => {
-        const copyNum = String(idx + 2).padStart(2, '0');
-        return {
-          ...item,
-          copyNo: copyNum,
-          copy_no: copyNum,
-          copyLabel: `Copy ${copyNum} (สำเนาควบคุม)`,
-          copyType: 'CONTROLLED',
-          isMaster: false,
-          isOwner: false
-        };
-      });
-
-      const finalDists = masterItem 
-        ? [{ ...masterItem, copyNo: '01', copy_no: '01', copyLabel: 'Copy 01 (สำเนาควบคุม)', copyType: 'CONTROLLED', isMaster: false, isOwner: true }, ...reindexed]
-        : reindexed;
-
+      const allocs = calculateCopyAllocations(normOwner, remaining);
       return {
         ...prev,
-        distributions: finalDists
+        distributions: allocs.distributedCopies
       };
     });
   };
@@ -666,7 +755,9 @@ const DarRevisionForm = () => {
       requireAck: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
       ackUserId: formData.ackUserId,
-      distributions: formData.distributions || [],
+      distributions: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
+      distributionList: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
+      newCopies: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
       effectiveDate: formData.effectiveDate,
       effective_date: formData.effectiveDate,
       relatedStandards: formData.relatedStandards || [],
@@ -732,9 +823,12 @@ const DarRevisionForm = () => {
         otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
         ackRequirement: formData.ackRequirement || 'NOT_REQUIRED',
         requireAck: formData.ackRequirement === 'REQUIRED',
+        require_ack: formData.ackRequirement === 'REQUIRED',
         ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
-        ackUserId: formData.ackUserId,
-        distributions: formData.distributions || [],
+        ackUserId: formData.ackRequirement === 'REQUIRED' ? formData.ackUserId : null,
+        distributions: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
+        distributionList: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
+        newCopies: isFormDocument ? [] : (activeRevisionCopies.length > 0 ? activeRevisionCopies : (formData.distributions || [])),
         effectiveDate: formData.effectiveDate || '',
         effective_date: formData.effectiveDate || '',
         relatedStandards: formData.relatedStandards || [],
@@ -763,24 +857,22 @@ const DarRevisionForm = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between px-6 py-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
-            <FileEdit size={22} strokeWidth={1.75}/>
-          </div>
+          <FileEdit className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
           <div>
-            <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">ยื่นคำขอแก้ไขเอกสาร (Revision DAR)</h2>
-            <p className="text-xs text-[#666666] mt-0.5">ปรับปรุงเอกสารที่มีผลบังคับใช้ พร้อมรัน Revision Number อัตโนมัติ</p>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">ยื่นคำขอแก้ไขเอกสาร (Revision DAR)</h1>
+            <p className="text-xs text-slate-500 mt-0.5">ปรับปรุงเอกสารที่มีผลบังคับใช้ พร้อมรัน Revision Number อัตโนมัติ</p>
           </div>
         </div>
-        <button onClick={() => navigate('/dar/new')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors cursor-pointer">
+        <button onClick={() => navigate('/dar/new')} className="h-9 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer">
           <ChevronLeft size={16} /> เปลี่ยนประเภท DAR
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4">
+      <form onSubmit={handleFormSubmit} className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY MASTER FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -1233,22 +1325,30 @@ const DarRevisionForm = () => {
           workflowParticipants={workflowParticipants || []}
         />
 
-        {/* Distribution Setup with Two-Way Binding */}
-        <DistributionSetup 
-          ownerDept={currentUser?.department || 'PD'}
-          distributions={formData.distributions || []}
-          oldDistributions={selectedDoc?.distributions || []}
-          onChange={(distributions) => setFormData(prev => ({ ...prev, distributions }))}
-          documentType={selectedDoc?.title ? selectedDoc.title.split('-')[0] : 'WI'}
-          accessControl={formData.access_control}
-          accessScope={formData.access_control?.scope}
-        />
+        {/* Section: การแจกจ่ายเอกสาร หรือ แจ้งเตือน Clean Form Notice Pill */}
+        {isFormDocument ? (
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50/80 border border-emerald-200/70 text-emerald-900 text-xs font-medium shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>แบบฟอร์มเปล่า (FM) จะพร้อมให้ดาวน์โหลดตามสิทธิ์การเข้าถึงทันทีเมื่ออนุมัติเสร็จสมบูรณ์ (Bypass การออกเล่มสำเนาควบคุม)</span>
+          </div>
+        ) : (
+          <DistributionSetup 
+            ownerDept={selectedDoc?.department || currentUser?.department || 'PD'}
+            distributions={formData.distributions || []}
+            oldDistributions={selectedDoc?.distributions || []}
+            onChange={(distributions) => setFormData(prev => ({ ...prev, distributions }))}
+            documentType={selectedDoc?.title ? selectedDoc.title.split('-')[0] : 'WI'}
+            accessControl={formData.access_control}
+            accessScope={formData.access_control?.scope}
+            targetDepartments={formData.access_control?.authorized_depts || formData.access_control?.targetDepartments || []}
+          />
+        )}
 
         {/* ========================================================================= */}
         {/* WIDGET: CIRCULATION & LIFECYCLE IMPACT SUMMARY (BENTO COMPARATIVE CARD)  */}
         {/* ISO 9001: 7.5 Control of Documented Information Compliance Evidence       */}
         {/* ========================================================================= */}
-        {selectedDoc && (
+        {selectedDoc && !isFormDocument && (
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl sm:rounded-3xl p-4 sm:p-5.5 space-y-4 shadow-xs">
             {/* Header Title */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200/70">
@@ -1349,7 +1449,7 @@ const DarRevisionForm = () => {
                       </span>
                     </div>
                     <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-emerald-100/90 text-emerald-800 border border-emerald-200">
-                      รวม {(formData.distributions || []).length} เล่ม
+                      รวม {activeRevisionCopies.length} เล่ม
                     </span>
                   </div>
 
@@ -1359,15 +1459,15 @@ const DarRevisionForm = () => {
 
                   {/* List of New Copies to Distribute with Interactive Tag Removal */}
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {(formData.distributions || []).length > 0 ? (
-                      (formData.distributions || []).map((dist, idx) => {
+                    {activeRevisionCopies.length > 0 ? (
+                      activeRevisionCopies.map((dist, idx) => {
                         const copyNum = dist.copyNo || dist.copy_no || String(idx + 1).padStart(2, '0');
-                        const isOrigin = dist.isOwner || dist.is_owner || copyNum === '01';
+                        const isOrigin = dist.isOriginator || dist.isOwner || dist.is_owner || copyNum === '01' || dist.isLocked || idx === 0;
                         const dept = dist.departmentId || dist.dept || dist.dept_code || dist.department || selectedDoc.department || 'PD';
-                        const loc = cleanLocationName(dist.locationName || dist.station_name || dist.location || `${dept} Station`);
+                        const loc = cleanLocationName(dist.locationName || dist.station_name || dist.location || dist.name || `${dept} Station`);
                         return (
                           <div 
-                            key={dist.id || `${dept}-${idx}`}
+                            key={dist.id || `${dept}-${copyNum}-${idx}`}
                             className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs border shadow-2xs transition-all ${
                               isOrigin 
                                 ? 'bg-sky-50/70 border-sky-200/80 text-slate-800' 
@@ -1397,9 +1497,9 @@ const DarRevisionForm = () => {
 
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="text-[10px] font-mono font-semibold text-emerald-700">
-                                Rev.{calculateNextRev(selectedDoc.rev)}
+                                Rev.{calculateNextRev(getDocCurrentRevision(selectedDoc))}
                               </span>
-                              {!isOrigin && (
+                              {!isOrigin && !dist.isLocked && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveDistributionChip(dist)}
@@ -1433,7 +1533,7 @@ const DarRevisionForm = () => {
         )}
 
         {/* Action Buttons */}
-        <div className="card-surface p-4 flex justify-end gap-2.5 shadow-2xs mb-2">
+        <div className="card-surface p-4 mt-6 flex items-center justify-end gap-3 shadow-2xs">
           <Button 
             variant="ghost"
             type="button" 
@@ -1560,14 +1660,7 @@ const DarRevisionForm = () => {
               },
               {
                 label: 'ขั้นตอนถัดไป / ผู้มีอำนาจทบทวน',
-                value: (
-                  <div className="text-xs sm:text-sm font-medium text-indigo-800 bg-[#E5F4FF]/80 p-2.5 rounded-xl border border-indigo-100 flex items-center gap-1.5">
-                    <span>ส่งต่อให้:</span>
-                    <strong className="font-bold">
-                      {resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}
-                    </strong>
-                  </div>
-                )
+                value: `ส่งต่อให้: ${resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department || 'Reviewer'})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}`
               }
             ]}
           />

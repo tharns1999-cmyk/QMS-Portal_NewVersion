@@ -263,7 +263,7 @@ const DarObsoleteForm = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -280,7 +280,7 @@ const DarObsoleteForm = () => {
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4">
+      <form onSubmit={handleFormSubmit} className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY MASTER FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -618,7 +618,7 @@ const DarObsoleteForm = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="card-surface p-4 flex justify-end gap-2.5 shadow-2xs mb-2">
+        <div className="card-surface p-4 mt-6 flex items-center justify-end gap-3 shadow-2xs mb-2">
           <Button 
             variant="ghost"
             type="button" 

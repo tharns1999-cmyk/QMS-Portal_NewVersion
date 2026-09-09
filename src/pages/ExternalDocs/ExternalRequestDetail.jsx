@@ -20,7 +20,8 @@ import {
   Printer, 
   MapPin, 
   FileCheck,
-  Tag
+  Tag,
+  ShieldCheck
 } from 'lucide-react';
 import ExternalDocFormModal from './ExternalDocFormModal';
 import ExternalDocPreviewModal from './ExternalDocPreviewModal';

@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Trash2,
   Sparkles,
+  CheckCircle2,
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -118,7 +119,7 @@ const Sidebar = () => {
               className={`w-4.5 h-4.5 shrink-0 transition-colors duration-200 ${
                 isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
               }`} 
-              strokeWidth={isActive ? 2 : 1.75} 
+              strokeWidth={1.5} 
             />
             <span className="truncate leading-normal tracking-tight text-[13.5px]">{label}</span>
           </div>
@@ -325,7 +326,8 @@ const Sidebar = () => {
 
               <div className="p-4 bg-white border border-rose-200/80 rounded-xl space-y-2 shadow-2xs">
                 <div className="font-bold text-rose-700 flex items-center gap-2 text-xs">
-                  <span>🗑️ ข้อมูลที่จะถูกล้างเป็นค่าว่าง:</span>
+                  <Trash2 size={14} strokeWidth={1.5} className="text-rose-600 shrink-0" />
+                  <span>ข้อมูลที่จะถูกล้างเป็นค่าว่าง:</span>
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-700 pl-1 font-medium text-xs">
                   <li>คำร้อง DAR ทั้งหมด</li>
@@ -339,7 +341,8 @@ const Sidebar = () => {
 
               <div className="p-4 bg-white border border-emerald-200/80 rounded-xl space-y-2 shadow-2xs">
                 <div className="font-bold text-emerald-700 flex items-center gap-2 text-xs">
-                  <span>✅ ข้อมูลหลักที่ยังคงไว้ (Master Data):</span>
+                  <CheckCircle2 size={14} strokeWidth={1.5} className="text-emerald-600 shrink-0" />
+                  <span>ข้อมูลหลักที่ยังคงไว้ (Master Data):</span>
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-700 pl-1 font-medium text-xs">
                   <li>บัญชีผู้ใช้มาตรฐาน พร้อมรหัส PIN 123456</li>

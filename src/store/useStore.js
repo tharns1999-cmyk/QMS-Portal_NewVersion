@@ -66,6 +66,149 @@ export {
   isActionableTask
 };
 
+export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
+  if (!dar) return currentDocs;
+  const now = new Date().toISOString();
+  const darType = String(dar.type || dar.requestType || dar.darType || '').toUpperCase();
+  const targetDocCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.code || dar.title;
+  if (!targetDocCode) return currentDocs;
+
+  const oldDoc = currentDocs.find(d => {
+    const code = d.docNo || d.document_code || d.doc_code || d.code || d.docCode || d.title;
+    return code && code.trim().toLowerCase() === targetDocCode.trim().toLowerCase() && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active);
+  }) || currentDocs.find(d => {
+    const code = d.docNo || d.document_code || d.doc_code || d.code || d.docCode || d.title;
+    return code && code.trim().toLowerCase() === targetDocCode.trim().toLowerCase();
+  });
+
+  const oldRev = dar.currentRevision || dar.previous_revision || dar.previousRev || (oldDoc ? (oldDoc.revision || oldDoc.rev || oldDoc.doc_version || oldDoc.version) : '00');
+  const currentRevNum = parseInt(String(oldRev).replace(/\D/g, ''), 10) || 0;
+  const newRevNum = currentRevNum + 1;
+  const defaultNextRev = newRevNum < 10 ? `0${newRevNum}` : `${newRevNum}`;
+
+  const rawTarget = dar.targetRevision || dar.newRevision || dar.newRev || dar.targetRev || dar.proposedRev;
+  let nextRevision;
+  if (rawTarget) {
+    const clean = String(rawTarget).replace(/^rev\.?/i, '').trim();
+    nextRevision = clean.length === 1 ? `0${clean}` : clean;
+  } else if (dar.rev && String(dar.rev).replace(/^rev\.?/i, '').trim() !== String(oldRev).replace(/^rev\.?/i, '').trim()) {
+    const clean = String(dar.rev).replace(/^rev\.?/i, '').trim();
+    nextRevision = clean.length === 1 ? `0${clean}` : clean;
+  } else if (dar.revision && String(dar.revision).replace(/^rev\.?/i, '').trim() !== String(oldRev).replace(/^rev\.?/i, '').trim()) {
+    const clean = String(dar.revision).replace(/^rev\.?/i, '').trim();
+    nextRevision = clean.length === 1 ? `0${clean}` : clean;
+  } else {
+    nextRevision = defaultNextRev;
+  }
+
+  let updatedMasterDocs = [...currentDocs];
+
+  if (darType === 'REVISE' || darType === 'REVISION' || darType === 'REVISE_DOCUMENT') {
+    // 1. ปรับฉบับเดิมของรหัสเอกสารนี้ที่มีสถานะ ACTIVE / EFFECTIVE ให้กลายเป็น SUPERSEDED
+    updatedMasterDocs = updatedMasterDocs.map(doc => {
+      const code = doc.docNo || doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+      const isMatchCode = code && code.trim().toLowerCase() === targetDocCode.trim().toLowerCase();
+      const isActive = doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE' || doc.is_active;
+      const isOldRev = String(doc.revision || doc.rev || doc.doc_version || doc.version).replace(/^rev\.?/i, '').trim() !== String(nextRevision).replace(/^rev\.?/i, '').trim();
+
+      if (isMatchCode && isActive && isOldRev) {
+        return {
+          ...doc,
+          status: 'SUPERSEDED',
+          is_active: false,
+          is_superseded: true,
+          isLocked: false,
+          hasPendingDar: false,
+          supersededAt: now,
+          superseded_at: now,
+          supersededByDar: dar.darNo || dar.darNumber || dar.id
+        };
+      }
+      if (isMatchCode) {
+        return {
+          ...doc,
+          isLocked: false,
+          hasPendingDar: false
+        };
+      }
+      return doc;
+    });
+
+    // 2. ตรวจสอบว่ามี Record ของฉบับใหม่นี้อยู่แล้วหรือไม่
+    const existingNewDocIndex = updatedMasterDocs.findIndex(
+      doc => {
+        const code = doc.docNo || doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+        const isMatchCode = code && code.trim().toLowerCase() === targetDocCode.trim().toLowerCase();
+        const docRev = String(doc.revision || doc.rev || doc.doc_version || doc.version).replace(/^rev\.?/i, '').trim();
+        return isMatchCode && docRev === String(nextRevision).replace(/^rev\.?/i, '').trim();
+      }
+    );
+
+    const isFormDoc = Boolean(
+      dar.docType === 'FM' ||
+      dar.doc_type === 'FM' ||
+      dar.type === 'FM' ||
+      oldDoc?.docType === 'FM' ||
+      String(targetDocCode).startsWith('FM')
+    );
+
+    const effectiveDateStr = dar.effectiveDate || dar.effective_date || now.split('T')[0];
+
+    const newDocumentRecord = {
+      id: `DOC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      darId: dar.id,
+      darNumber: dar.darNumber || dar.darNo || dar.id,
+      latestDarNo: dar.darNo || dar.darNumber || dar.id,
+      docNo: dar.docNo || targetDocCode,
+      document_code: targetDocCode,
+      doc_code: targetDocCode,
+      code: targetDocCode,
+      docCode: targetDocCode,
+      title: dar.docTitle || dar.title || (oldDoc ? oldDoc.title : targetDocCode),
+      name: dar.docTitle || dar.title || (oldDoc ? (oldDoc.name || oldDoc.title) : targetDocCode),
+      docName: dar.docTitle || dar.title || (oldDoc ? (oldDoc.docName || oldDoc.title) : targetDocCode),
+      docTitle: dar.docTitle || dar.title || (oldDoc ? oldDoc.docTitle : targetDocCode),
+      revision: nextRevision,
+      rev: nextRevision,
+      doc_version: nextRevision,
+      version: nextRevision,
+      department: dar.department || oldDoc?.department || 'PD',
+      type: dar.documentType || dar.docType || dar.type || (oldDoc?.type || (targetDocCode ? targetDocCode.split('-')[0] : 'SOP')),
+      status: 'EFFECTIVE',
+      is_active: true,
+      is_superseded: false,
+      is_obsolete: false,
+      isLocked: false,
+      hasPendingDar: false,
+      effectiveDate: effectiveDateStr,
+      effective_date: effectiveDateStr,
+      accessScope: dar.accessScope || dar.access_control?.scope || 'GENERAL',
+      access_control: dar.access_control || oldDoc?.access_control || { scope: dar.accessScope || 'GENERAL' },
+      targetDepartments: dar.targetDepartments || dar.target_departments || [],
+      confidentialityLevel: dar.confidentialityLevel || 'INTERNAL',
+      controlledCopy: isFormDoc ? 0 : (oldDoc?.controlledCopy || 0),
+      distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || [])),
+      pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
+      published_at: now,
+      updatedAt: now,
+      createdAt: now
+    };
+
+    if (existingNewDocIndex >= 0) {
+      updatedMasterDocs[existingNewDocIndex] = {
+        ...updatedMasterDocs[existingNewDocIndex],
+        ...newDocumentRecord,
+        status: 'EFFECTIVE',
+        is_active: true
+      };
+    } else {
+      updatedMasterDocs.unshift(newDocumentRecord);
+    }
+  }
+
+  return updatedMasterDocs;
+};
+
 export const resolveDccAdminUserId = (masterUsers) => {
   const admin = (masterUsers || []).find(u => isDccAdmin(u));
   return admin?.id || 'EMP-001';
@@ -127,6 +270,63 @@ export const isNotificationVisibleToUser = (notification, user) => {
   }
 
   return false;
+};
+
+/**
+ * Safely resolves the document code for a DAR or task, preventing Thai title leakage.
+ */
+export const resolveDarDocumentCode = (dar, documents = [], fallbackId = null) => {
+  if (!dar) return fallbackId || null;
+  const isThai = (str) => typeof str === 'string' && /[\u0E00-\u0E7F]/.test(str);
+
+  const directCandidates = [
+    dar.docNo,
+    dar.documentCode,
+    dar.document_code,
+    dar.docCode,
+    dar.doc_code,
+    dar.docIdInput,
+    dar.doc_number,
+    dar.code
+  ];
+  for (const c of directCandidates) {
+    if (c && typeof c === 'string' && c.trim() && !isThai(c.trim())) {
+      return c.trim();
+    }
+  }
+
+  // Ref document match
+  const refDocId = dar.docIdRef || dar.docId || dar.targetDocumentId;
+  const refDoc = (documents || []).find(d => 
+    (refDocId && String(d.id) === String(refDocId)) ||
+    (dar.docIdInput && (d.title === dar.docIdInput || d.document_code === dar.docIdInput || d.code === dar.docIdInput))
+  );
+  if (refDoc) {
+    const docCodes = [
+      refDoc.code,
+      refDoc.document_code,
+      refDoc.doc_code,
+      refDoc.doc_number,
+      refDoc.docNo,
+      refDoc.documentCode,
+      refDoc.title
+    ];
+    for (const dc of docCodes) {
+      if (dc && typeof dc === 'string' && dc.trim() && !isThai(dc.trim())) {
+        return dc.trim();
+      }
+    }
+  }
+
+  if (dar.darNumber && /^DAR-\d{4}-\d+/.test(dar.darNumber)) return dar.darNumber;
+  if (dar.darNo && /^DAR-\d{4}-\d+/.test(dar.darNo)) return dar.darNo;
+  if (dar.id && typeof dar.id === 'string' && /^DAR-\d{4}-\d+/.test(dar.id)) return dar.id;
+
+  if (dar.title && typeof dar.title === 'string' && !isThai(dar.title)) {
+    return dar.title.trim();
+  }
+
+  return fallbackId || dar.darNumber || dar.darNo || dar.id || null;
 };
 
 /**
@@ -766,16 +966,18 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
     }
     updated = { ...updated, origin };
 
-    // Populate missing docTitle/docName from master documents, DARs, or copy instances
-    if (!updated.docName || !updated.docTitle || updated.docTitle === updated.doc_code) {
-      const docCode = updated.doc_code || updated.docCode || updated.document_code;
+    // Populate missing docTitle/docName and sanitize docCode (preventing Thai titles in docCode)
+    const isThaiCode = typeof (updated.doc_code || updated.docCode || updated.docNo) === 'string' && /[\u0E00-\u0E7F]/.test(updated.doc_code || updated.docCode || updated.docNo);
+    if (!updated.docName || !updated.docTitle || updated.docTitle === updated.doc_code || isThaiCode) {
+      const docCode = updated.doc_code || updated.docCode || updated.document_code || updated.docNo;
       const docId = updated.docId || updated.doc_id;
-      const matchedDoc = safeDocs.find(d => 
-        (docId && String(d.id) === String(docId)) ||
-        (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
-      );
       const matchedDar = safeDars.find(d => String(d.id) === String(updated.darId));
       const matchedInst = safeInstances.find(i => String(i.id) === String(updated.copyId || updated.copy_id));
+      const refDocId = docId || matchedDar?.docIdRef || matchedDar?.docId;
+      const matchedDoc = safeDocs.find(d => 
+        (refDocId && String(d.id) === String(refDocId)) ||
+        (docCode && !/[\u0E00-\u0E7F]/.test(docCode) && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+      );
 
       const officialName = 
         matchedDoc?.name || 
@@ -783,14 +985,23 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         matchedDar?.name || 
         matchedDar?.document_name || 
         matchedInst?.docName || 
-        matchedInst?.name;
+        matchedInst?.name ||
+        (matchedDar?.title && !matchedDar.title.startsWith('DAR-') ? matchedDar.title : null);
 
-      if (officialName) {
+      const validDocCode = resolveDarDocumentCode(matchedDar, safeDocs) ||
+        (matchedDoc?.document_code || matchedDoc?.code || (!/[\u0E00-\u0E7F]/.test(matchedDoc?.title || '') ? matchedDoc?.title : null)) ||
+        (!isThaiCode ? docCode : null);
+
+      if (officialName || validDocCode) {
         updated = {
           ...updated,
-          docTitle: officialName,
-          docName: officialName,
-          docCode: docCode || matchedDoc?.title || matchedDoc?.document_code || updated.docCode
+          ...(officialName ? { docTitle: officialName, docName: officialName } : {}),
+          ...(validDocCode ? { 
+            docCode: validDocCode, 
+            doc_code: validDocCode, 
+            docNo: validDocCode, 
+            documentCode: validDocCode 
+          } : {})
         };
       }
     }
@@ -1252,6 +1463,7 @@ export const getInitialStoreState = () => ({
   tasks: [],
   timeline: [],
   documents: [],
+  masterDocuments: [],
   externalDocuments: [],
   externalRequests: [],
   externalAuditTrail: [],
@@ -1381,6 +1593,7 @@ const useStore = create(persist((set, get) => ({
       tasks: [],
       timeline: [],
       documents: [],
+      masterDocuments: [],
       externalDocuments: [],
       externalRequests: [],
       externalAuditTrail: [],
@@ -4207,7 +4420,7 @@ const useStore = create(persist((set, get) => ({
 
     if (!dar.isDraft && reviewerObj) {
       const newTaskId = `t-${Date.now()}`;
-      const docCode = newDar.docCode || newDar.document_code || newDar.docIdInput || newDar.docId || newDar.title || newDar.darNumber;
+      const docCode = resolveDarDocumentCode(newDar, state.documents, newDar.id);
       const docOfficialTitle = newDar.docTitle || newDar.name || newDar.document_name || newDar.docName || newDar.title;
       newTasks.push({
         id: newTaskId,
@@ -4373,6 +4586,7 @@ const useStore = create(persist((set, get) => ({
     let newlyCompletedDar = null;
     let targetTask = null;
     let targetDar = null;
+    let newStatus = null;
     set((state) => {
     const task = state.tasks.find(t => t.id === taskId);
     if (!task) return state;
@@ -4384,7 +4598,7 @@ const useStore = create(persist((set, get) => ({
     targetDar = dar;
 
     const newTasks = state.tasks.filter(t => t.id !== taskId);
-    let newStatus = dar.status;
+    newStatus = dar.status;
 
     const today = new Date();
     today.setDate(today.getDate() + state.mockDateOffset);
@@ -4436,7 +4650,7 @@ const useStore = create(persist((set, get) => ({
             mockDateOffset: state.mockDateOffset
           });
           const newTaskId = `t-${Date.now()}`;
-          const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+          const docCode = resolveDarDocumentCode(dar, state.documents, dar.id);
           const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
           const darDept = dar.department || 'PD';
           newTasks.push({
@@ -4503,7 +4717,7 @@ const useStore = create(persist((set, get) => ({
           mockDateOffset: state.mockDateOffset
         });
         const newTaskId = `t-${Date.now()}`;
-        const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+        const docCode = resolveDarDocumentCode(dar, state.documents, dar.id);
         const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
         const darDept = dar.department || 'PD';
         newTasks.push({
@@ -4600,7 +4814,7 @@ const useStore = create(persist((set, get) => ({
             stepSlaDays: 3,
             mockDateOffset: state.mockDateOffset
           });
-          const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+          const docCode = resolveDarDocumentCode(dar, state.documents, dar.id);
           const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
           const darDept = dar.department || 'PD';
           dar.ackUserIds.forEach(uid => {
@@ -4650,7 +4864,7 @@ const useStore = create(persist((set, get) => ({
           mockDateOffset: state.mockDateOffset
         });
         const newTaskId = `t-${Date.now()}`;
-        const docCode = dar.docIdInput || dar.title || dar.darNumber || dar.doc_number;
+        const docCode = resolveDarDocumentCode(dar, state.documents, dar.id);
         const docOfficialTitle = dar.name || dar.document_name || dar.docName || dar.title;
         const darDept = dar.department || 'PD';
         newTasks.push({
@@ -4727,6 +4941,7 @@ const useStore = create(persist((set, get) => ({
     }
 
     const updatedDars = state.dars.map(d => d.id === dar.id ? { ...d, status: newStatus } : d);
+    const updatedDarRequests = (state.darRequests || []).map(d => d.id === dar.id ? { ...d, status: newStatus } : d);
     if (newStatus === 'COMPLETED' && dar.status !== 'COMPLETED') {
       newlyCompletedDar = { ...dar, status: 'COMPLETED' };
     }
@@ -4767,9 +4982,11 @@ const useStore = create(persist((set, get) => ({
 
     const newState = {
       documents: updatedDocs,
+      masterDocuments: updatedDocs,
       tasks: newTasks,
       notifications: newNotifications,
       dars: updatedDars,
+      darRequests: updatedDarRequests,
       timeline: newTimeline,
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -4785,17 +5002,23 @@ const useStore = create(persist((set, get) => ({
     return newState;
     });
 
-    const targetDarToPublish = ((targetTask?.type === 'Approve' || targetTask?.type === 'APPROVE') && action === 'APPROVE') ? targetDar : newlyCompletedDar;
+    const isApproveFinal = (targetTask?.type === 'Approve' || targetTask?.type === 'APPROVE') && action === 'APPROVE';
+    const targetDarToPublish = isApproveFinal ? { ...targetDar, status: newStatus || 'COMPLETED' } : newlyCompletedDar;
     if (targetDarToPublish) {
       const store = get();
       if (store.syncRevisionEffective) store.syncRevisionEffective(targetDarToPublish);
       if (store.syncObsoleteCompleted) store.syncObsoleteCompleted(targetDarToPublish);
       if (store.publishApprovedDar) {
         store.publishApprovedDar(targetDarToPublish.id);
-      } else if (targetDarToPublish.type === 'REVISION') {
-        store.publishDarRevision(targetDarToPublish.id);
-      } else if (targetDarToPublish.type === 'OBSOLETE') {
-        store.publishObsoleteDar(targetDarToPublish.id);
+      } else {
+        const dType = String(targetDarToPublish.type || targetDarToPublish.requestType || '').toUpperCase();
+        if (dType === 'REVISION' || dType === 'REVISE') {
+          store.publishDarRevision(targetDarToPublish.id);
+        } else if (dType === 'OBSOLETE') {
+          store.publishObsoleteDar(targetDarToPublish.id);
+        } else if (dType === 'NEW' || dType === 'NEW_DOCUMENT') {
+          store.publishNewDocumentDar(targetDarToPublish.id);
+        }
       }
     }
   },
@@ -4874,8 +5097,8 @@ const useStore = create(persist((set, get) => ({
         mockDateOffset: state.mockDateOffset
       });
 
-      const docCode = updatedData.title || dar.title || dar.docIdInput;
-      const docOfficialTitle = updatedData.name || dar.name || updatedData.title || dar.title;
+      const docCode = resolveDarDocumentCode({ ...dar, ...updatedData }, state.documents, dar.id);
+      const docOfficialTitle = updatedData.name || dar.name || updatedData.docTitle || dar.docTitle || updatedData.title || dar.title;
       const darDept = dar.department || updatedData.department || 'PD';
       newTasks.push({
         id: `t-${Date.now()}`,
@@ -5140,6 +5363,12 @@ const useStore = create(persist((set, get) => ({
         newDars = newDars.map(d => d.id === dar.id ? completedDar : d);
         
         if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') {
+          const isFormDoc = Boolean(
+            dar.docType === 'FM' ||
+            dar.doc_type === 'FM' ||
+            dar.type === 'FM' ||
+            String(dar.docIdInput || dar.title || '').startsWith('FM')
+          );
           const newDoc = {
             id: `doc-${Date.now()}-${Math.random()}`,
             darId: dar.id,
@@ -5150,13 +5379,13 @@ const useStore = create(persist((set, get) => ({
             department: dar.department,
             controlledCopy: 0,
             effectiveDate: dar.effectiveDate || todayStr,
-            distributions: dar.distributions || [],
+            distributions: isFormDoc ? [] : (dar.distributions || []),
             access_control: dar.access_control || { scope: 'GENERAL' }
           };
           newDocuments.push(newDoc);
           newNotifications.push({ id: Date.now() + Math.random(), userId: dar.requesterId, title: 'เอกสารบังคับใช้แล้ว', message: `เอกสารใหม่ "${dar.title}" มีผลบังคับใช้แล้ว`, isRead: false, link: '/library', timestamp: new Date().toISOString() });
 
-          if (!newDoc.title.startsWith('FM')) {
+          if (!isFormDoc) {
             const allocations = calculateCopyAllocations(newDoc.department, newDoc.distributions || []);
             const allTargets = allocations.allAllocations || [];
 
@@ -5252,9 +5481,9 @@ const useStore = create(persist((set, get) => ({
                   recall_task_id: null
                 };
                 const alreadyExists = newControlledCopyInstances.some(inst => {
-                  const isMatchDoc = (String(inst.docId || inst.doc_id) === String(createdDoc.id)) ||
-                                     (inst.doc_code === createdDoc.title || inst.docTitle === createdDoc.title);
-                  const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(createdDoc.rev);
+                  const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
+                                     (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+                  const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
                   const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
                   return isMatchDoc && isMatchRev && isMatchCopyNo;
                 });
@@ -5310,6 +5539,13 @@ const useStore = create(persist((set, get) => ({
                return doc;
              });
              
+             const isFormDoc = Boolean(
+               dar.docType === 'FM' ||
+               dar.doc_type === 'FM' ||
+               dar.type === 'FM' ||
+               oldDoc?.docType === 'FM' ||
+               String(targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title || dar.title || '').startsWith('FM')
+             );
              const newDoc = {
                id: `doc-${Date.now()}-${Math.random()}`,
                darId: dar.id,
@@ -5324,15 +5560,15 @@ const useStore = create(persist((set, get) => ({
                rev: newRevStr,
                revision: newRevStr,
                department: dar.department || oldDoc?.department || 'PD',
-               controlledCopy: oldDoc?.controlledCopy || 0,
+               controlledCopy: isFormDoc ? 0 : (oldDoc?.controlledCopy || 0),
                effectiveDate: dar.effectiveDate || todayStr,
-               distributions: dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || []),
+               distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || [])),
                access_control: dar.access_control || oldDoc?.access_control || { scope: 'GENERAL' }
              };
              newDocuments.push(newDoc);
              newNotifications.push({ id: Date.now() + Math.random(), userId: dar.requesterId, title: 'ฉบับปรับปรุงบังคับใช้แล้ว', message: `เอกสารปรับปรุง "${dar.title}" มีผลบังคับใช้เป็น Rev.${newDoc.rev} แล้ว`, isRead: false, link: '/library', timestamp: new Date().toISOString() });
 
-              if (!newDoc.title.startsWith('FM')) {
+              if (!isFormDoc) {
                 // Universal Superseded Copy Recall Invariant: Mark ALL active / received copies of oldDoc as PENDING_RECALL across all stations
                 const isMatchingOldCopy = (inst) => {
                   const copyCode = inst.document_code || inst.doc_code || inst.docTitle;
@@ -5760,7 +5996,17 @@ const useStore = create(persist((set, get) => ({
   canDownloadDocument: (doc, user) => {
     if (!doc || !user) return false;
     if (user.isDcc || user.role === 'DCC_ADMIN') return true;
-    if (doc && doc.title && doc.title.startsWith('FM')) return true;
+
+    const isForm = Boolean(
+      doc.docType === 'FM' ||
+      doc.doc_type === 'FM' ||
+      doc.type === 'FM' ||
+      String(doc.title || doc.code || doc.document_code || doc.name || '').startsWith('FM')
+    );
+    if (isForm) {
+      return hasDocumentAccess(doc, user);
+    }
+
     if (user.level >= 5) return true; // Global download for Asst. Manager and above
 
     const userDept = user.department || user.dept;
@@ -6850,6 +7096,13 @@ const useStore = create(persist((set, get) => ({
 
     const targetCode = dar.docIdInput || dar.document_code || dar.doc_code || dar.docCode || dar.code || dar.title;
     const docName = dar.title || dar.name || targetCode;
+    const isFormDoc = Boolean(
+      dar.docType === 'FM' ||
+      dar.doc_type === 'FM' ||
+      dar.type === 'FM' ||
+      (targetCode && String(targetCode).startsWith('FM')) ||
+      (dar.title && String(dar.title).startsWith('FM'))
+    );
 
     // Check if document already exists
     const existingIndex = state.documents.findIndex(d => 
@@ -6868,7 +7121,7 @@ const useStore = create(persist((set, get) => ({
         effective_date: dar.effectiveDate || todayStr,
         published_at: isEffectiveTodayOrPast ? (updatedDocs[existingIndex].published_at || new Date().toISOString()) : null,
         access_control: dar.access_control || updatedDocs[existingIndex].access_control || { scope: 'GENERAL' },
-        distributions: dar.distributions && dar.distributions.length > 0 ? dar.distributions : updatedDocs[existingIndex].distributions
+        distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : updatedDocs[existingIndex].distributions)
       };
       updatedDocs[existingIndex] = createdDoc;
     } else {
@@ -6891,7 +7144,7 @@ const useStore = create(persist((set, get) => ({
         effectiveDate: dar.effectiveDate || todayStr,
         effective_date: dar.effectiveDate || todayStr,
         published_at: isEffectiveTodayOrPast ? new Date().toISOString() : null,
-        distributions: dar.distributions || [],
+        distributions: isFormDoc ? [] : (dar.distributions || []),
         access_control: dar.access_control || { scope: 'GENERAL' },
         file: dar.file || null,
         relatedStandards: dar.relatedStandards || []
@@ -6904,7 +7157,7 @@ const useStore = create(persist((set, get) => ({
     let newAuditLogs = [...(state.controlledCopyAuditTrail || [])];
     let newTasks = [...state.tasks];
 
-    if (!targetCode.startsWith('FM')) {
+    if (!isFormDoc) {
       const allocations = calculateCopyAllocations(createdDoc.department, createdDoc.distributions || []);
       const allTargets = allocations.allAllocations || [];
 
@@ -7037,7 +7290,7 @@ const useStore = create(persist((set, get) => ({
       id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       actionType: 'DOCUMENT_PUBLISHED',
       actor: 'System (Lifecycle Engine)',
-      details: `เอกสารใหม่ ${createdDoc.title} เผยแพร่สถานะ ${createdDoc.status} เรียบร้อยแล้ว`,
+      details: isFormDoc ? `แบบฟอร์มใหม่ ${createdDoc.title} เผยแพร่สถานะ ${createdDoc.status} เรียบร้อยแล้ว (Bypass การออกเล่มสำเนาควบคุม)` : `เอกสารใหม่ ${createdDoc.title} เผยแพร่สถานะ ${createdDoc.status} เรียบร้อยแล้ว`,
       timestamp: new Date().toISOString()
     };
 
@@ -7080,7 +7333,9 @@ const useStore = create(persist((set, get) => ({
 
     return {
       documents: updatedDocs,
+      masterDocuments: updatedDocs,
       dars: updatedDars,
+      darRequests: updatedDarRequests,
       controlledCopyInstances: finalCopies,
       documentControlledCopies: finalCopies,
       tasks: cleanupDccTasks(newTasks, finalCopies, updatedDocs),
@@ -7092,19 +7347,24 @@ const useStore = create(persist((set, get) => ({
 
   publishApprovedDar: (darId) => {
     const state = get();
-    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+    const safeDars = state.dars || [];
+    const safeDarRequests = state.darRequests || [];
+    const dar = safeDars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId)
+      || safeDarRequests.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId);
     if (!dar) return;
 
-    if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') {
+    const darType = String(dar.type || dar.requestType || dar.darType || '').toUpperCase();
+    if (darType === 'NEW' || darType === 'NEW_DOCUMENT') {
       get().publishNewDocumentDar(dar.id);
-    } else if (dar.type === 'REVISION' || dar.type === 'REVISE') {
+    } else if (darType === 'REVISION' || darType === 'REVISE' || darType === 'REVISE_DOCUMENT') {
       get().publishDarRevision(dar.id);
-    } else if (dar.type === 'OBSOLETE') {
+    } else if (darType === 'OBSOLETE' || darType === 'OBSOLETE_DOCUMENT') {
       get().publishObsoleteDar(dar.id);
     }
   },
 
-  approveDar: (darId, comment = 'Approved') => {
+  approveDar: (darId, userOrComment = 'Approved', optionalComment = '') => {
+    const comment = typeof userOrComment === 'string' ? userOrComment : (optionalComment || 'Approved');
     const state = get();
     const task = (state.tasks || []).find(t => 
       (t.darId === darId || t.referenceId === darId) && 
@@ -7113,11 +7373,28 @@ const useStore = create(persist((set, get) => ({
     if (task) {
       get().processWorkflow(task.id, 'APPROVE', comment);
     } else {
-      const dar = (state.dars || []).find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+      const safeDars = state.dars || [];
+      const safeDarRequests = state.darRequests || [];
+      const dar = safeDars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId)
+        || safeDarRequests.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId);
       if (dar) {
+        set((s) => {
+          const updatedDars = (s.dars || []).map(d => d.id === dar.id ? { ...d, status: 'COMPLETED' } : d);
+          const updatedDarRequests = (s.darRequests || []).map(d => d.id === dar.id ? { ...d, status: 'COMPLETED' } : d);
+          return { dars: updatedDars, darRequests: updatedDarRequests };
+        });
         get().publishApprovedDar(dar.id);
       }
     }
+  },
+
+  finalApproveDar: (darId, userOrComment = 'Approved', optionalComment = '') => {
+    return get().approveDar(darId, userOrComment, optionalComment);
+  },
+
+  approveTask: (taskId, userOrComment = 'Approved', optionalComment = '') => {
+    const comment = typeof userOrComment === 'string' ? userOrComment : (optionalComment || 'Approved');
+    return get().processWorkflow(taskId, 'APPROVE', comment);
   },
 
   checkScheduledEffectiveDocs: () => set((state) => {
@@ -7197,12 +7474,15 @@ const useStore = create(persist((set, get) => ({
   }),
 
   publishDarRevision: (darId) => set((state) => {
-    const dar = state.dars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId);
+    const safeDars = state.dars || [];
+    const safeDarRequests = state.darRequests || [];
+    const dar = safeDars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId)
+      || safeDarRequests.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId);
     if (!dar) return state;
 
     const targetDocId = dar.docIdRef || dar.docId || dar.doc_id || dar.targetDocumentId;
-    const refDoc = targetDocId ? state.documents.find(d => String(d.id) === String(targetDocId)) : null;
-    let targetCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || (refDoc ? (refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title) : null);
+    const refDoc = targetDocId ? (state.documents || []).find(d => String(d.id) === String(targetDocId)) : null;
+    let targetCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || (refDoc ? (refDoc.docNo || refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title) : null);
     if (!targetCode && dar.title) {
       targetCode = dar.title.startsWith('[') ? dar.title.replace(/^\[.*?\]\s*/, '') : dar.title;
     }
@@ -7210,32 +7490,54 @@ const useStore = create(persist((set, get) => ({
     // Strict code matching to find previous revisions
     const isDocMatchCode = (doc) => {
       if (targetDocId && String(doc.id) === String(targetDocId)) return true;
-      const code = doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+      const code = doc.docNo || doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
       if (targetCode && code && code.trim().toLowerCase() === targetCode.trim().toLowerCase()) return true;
       if (refDoc) {
-        const refCode = refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title;
+        const refCode = refDoc.docNo || refDoc.document_code || refDoc.doc_code || refDoc.code || refDoc.docCode || refDoc.title;
         if (refCode && code && code.trim().toLowerCase() === refCode.trim().toLowerCase()) return true;
       }
       return false;
     };
 
-    const matchingDocs = state.documents.filter(isDocMatchCode);
+    const matchingDocs = (state.documents || []).filter(isDocMatchCode);
     const oldDoc = matchingDocs.find(d => d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active) || matchingDocs[matchingDocs.length - 1];
 
-    const oldRev = oldDoc ? (oldDoc.revision || oldDoc.rev) : (dar.previous_revision || dar.previousRev || '00');
-    const currentRevNum = parseInt(oldRev, 10) || 0;
+    const oldRev = dar.currentRevision || dar.previous_revision || dar.previousRev || (oldDoc ? (oldDoc.revision || oldDoc.rev || oldDoc.doc_version || oldDoc.version) : '00');
+    const currentRevNum = parseInt(String(oldRev).replace(/\D/g, ''), 10) || 0;
     const newRevNum = currentRevNum + 1;
-    const newRevStr = dar.revision || dar.rev || (newRevNum < 10 ? `0${newRevNum}` : `${newRevNum}`);
+    const defaultNextRev = newRevNum < 10 ? `0${newRevNum}` : `${newRevNum}`;
+    
+    // Explicit target revision priority (strictly avoid falling back to old revision)
+    const rawTarget = dar.targetRevision || dar.newRevision || dar.newRev || dar.targetRev || dar.proposedRev;
+    let newRevStr;
+    if (rawTarget) {
+      const clean = String(rawTarget).replace(/^rev\.?/i, '').trim();
+      newRevStr = clean.length === 1 ? `0${clean}` : clean;
+    } else if (dar.rev && String(dar.rev).replace(/^rev\.?/i, '').trim() !== String(oldRev).replace(/^rev\.?/i, '').trim()) {
+      const clean = String(dar.rev).replace(/^rev\.?/i, '').trim();
+      newRevStr = clean.length === 1 ? `0${clean}` : clean;
+    } else if (dar.revision && String(dar.revision).replace(/^rev\.?/i, '').trim() !== String(oldRev).replace(/^rev\.?/i, '').trim()) {
+      const clean = String(dar.revision).replace(/^rev\.?/i, '').trim();
+      newRevStr = clean.length === 1 ? `0${clean}` : clean;
+    } else {
+      newRevStr = defaultNextRev;
+    }
     
     const today = new Date();
     today.setDate(today.getDate() + (state.mockDateOffset || 0));
     const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
     const isEffectiveTodayOrPast = !dar.effectiveDate || dar.effectiveDate <= todayStr;
     const docStatus = isEffectiveTodayOrPast ? 'EFFECTIVE' : 'SCHEDULED_EFFECTIVE';
+    const nowIso = new Date().toISOString();
 
     // 1. Single Active Revision Invariant: If effective today or past, update ALL previous revisions of this code to SUPERSEDED
-    let updatedDocs = state.documents.map(doc => {
-      if (isEffectiveTodayOrPast && isDocMatchCode(doc)) {
+    let updatedDocs = (state.documents || []).map(doc => {
+      const isTargetMatch = isDocMatchCode(doc) || (dar.docNo && (doc.docNo === dar.docNo || doc.code === dar.docNo || doc.document_code === dar.docNo));
+      const docRev = String(doc.revision || doc.rev || doc.doc_version || doc.version).replace(/^rev\.?/i, '').trim();
+      const isOldRevision = docRev !== String(newRevStr).replace(/^rev\.?/i, '').trim();
+      const isTargetActive = doc.status === 'EFFECTIVE' || doc.status === 'ACTIVE' || doc.is_active;
+
+      if (isEffectiveTodayOrPast && isTargetMatch && isOldRevision && isTargetActive) {
         return {
           ...doc,
           status: 'SUPERSEDED',
@@ -7243,10 +7545,12 @@ const useStore = create(persist((set, get) => ({
           is_superseded: true,
           isLocked: false,
           hasPendingDar: false,
-          superseded_at: doc.superseded_at || new Date().toISOString()
+          superseded_at: doc.superseded_at || nowIso,
+          supersededAt: doc.supersededAt || nowIso,
+          supersededByDar: dar.darNo || dar.darNumber || dar.id
         };
       }
-      if (isDocMatchCode(doc)) {
+      if (isTargetMatch) {
         return {
           ...doc,
           isLocked: false,
@@ -7256,18 +7560,29 @@ const useStore = create(persist((set, get) => ({
       return doc;
     });
 
-    const newDocId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const isFormDoc = Boolean(
+      dar.docType === 'FM' ||
+      dar.doc_type === 'FM' ||
+      dar.type === 'FM' ||
+      oldDoc?.docType === 'FM' ||
+      String(targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title || dar.title || '').startsWith('FM')
+    );
+
+    const newDocId = `DOC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newDoc = {
       id: newDocId,
       darId: dar.id,
-      darNumber: dar.darNumber || dar.id,
-      document_code: targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
-      doc_code: targetCode || oldDoc?.doc_code || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
-      code: targetCode || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
-      docCode: targetCode || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
-      title: oldDoc ? oldDoc.title : targetCode,
-      name: dar.title || oldDoc?.name || 'Procedure Document',
-      docName: dar.title || oldDoc?.name || 'Procedure Document',
+      darNumber: dar.darNumber || dar.darNo || dar.id,
+      latestDarNo: dar.darNo || dar.darNumber || dar.id,
+      docNo: dar.docNo || targetCode,
+      document_code: targetCode || dar.docNo || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
+      doc_code: targetCode || dar.docNo || oldDoc?.doc_code || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
+      code: targetCode || dar.docNo || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
+      docCode: targetCode || dar.docNo || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
+      title: dar.docTitle || dar.title || (oldDoc ? oldDoc.title : targetCode),
+      name: dar.docTitle || dar.title || (oldDoc ? (oldDoc.name || oldDoc.title) : 'Procedure Document'),
+      docName: dar.docTitle || dar.title || (oldDoc ? (oldDoc.docName || oldDoc.title) : 'Procedure Document'),
+      docTitle: dar.docTitle || dar.title || (oldDoc ? oldDoc.docTitle : targetCode),
       status: docStatus,
       is_active: isEffectiveTodayOrPast,
       is_superseded: false,
@@ -7277,20 +7592,52 @@ const useStore = create(persist((set, get) => ({
       rev: newRevStr,
       revision: newRevStr,
       doc_version: newRevStr,
+      version: newRevStr,
       department: dar.department || oldDoc?.department || 'PD',
-      controlledCopy: oldDoc?.controlledCopy || 0,
+      type: dar.documentType || dar.docType || dar.type || (oldDoc?.type || (targetCode ? targetCode.split('-')[0] : 'SOP')),
+      controlledCopy: isFormDoc ? 0 : (oldDoc?.controlledCopy || 0),
       effectiveDate: dar.effectiveDate || todayStr,
       effective_date: dar.effectiveDate || todayStr,
-      published_at: isEffectiveTodayOrPast ? new Date().toISOString() : null,
-      distributions: dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || []),
-      access_control: dar.access_control || oldDoc?.access_control || { scope: 'GENERAL' }
+      published_at: isEffectiveTodayOrPast ? nowIso : null,
+      distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || [])),
+      accessScope: dar.accessScope || dar.access_control?.scope || 'GENERAL',
+      access_control: dar.access_control || oldDoc?.access_control || { scope: dar.accessScope || 'GENERAL' },
+      targetDepartments: dar.targetDepartments || dar.target_departments || [],
+      confidentialityLevel: dar.confidentialityLevel || 'INTERNAL',
+      pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
+      updatedAt: nowIso,
+      createdAt: nowIso
     };
-    updatedDocs.push(newDoc);
 
-    // 2. Mark ALL existing active / received copies of the old revision as PENDING_RECALL across ALL stations
+    const existingNewDocIndex = updatedDocs.findIndex(
+      doc => (isDocMatchCode(doc) || (dar.docNo && (doc.docNo === dar.docNo || doc.code === dar.docNo || doc.document_code === dar.docNo))) && (
+        String(doc.revision || doc.rev || doc.doc_version || doc.version).replace(/^rev\.?/i, '').trim() === String(newRevStr).replace(/^rev\.?/i, '').trim()
+      )
+    );
+
+    if (existingNewDocIndex >= 0) {
+      updatedDocs[existingNewDocIndex] = {
+        ...updatedDocs[existingNewDocIndex],
+        ...newDoc,
+        status: docStatus,
+        is_active: isEffectiveTodayOrPast
+      };
+    } else {
+      updatedDocs.unshift(newDoc);
+    }
+
+    // 2. Controlled copies and tasks management (Bypassed for FM blank forms)
     let currentCopies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
       : (state.documentControlledCopies && state.documentControlledCopies.length > 0 ? state.documentControlledCopies : (state.controlledCopyInstances || []));
+    let updatedCopies = currentCopies;
+    let newCreatedCopies = [];
+    let newAuditLogs = [...(state.controlledCopyAuditTrail || [])];
+    let newTasks = [...state.tasks];
+    let recalledCopies = [];
+
+    if (!isFormDoc) {
+      // Mark ALL existing active / received copies of the old revision as PENDING_RECALL across ALL stations
 
     const isOldCopy = (copy) => {
       const copyCode = copy.document_code || copy.doc_code || copy.docTitle;
@@ -7306,10 +7653,9 @@ const useStore = create(persist((set, get) => ({
       return isDocMatch && isRevMatch && isActive;
     };
 
-    let newAuditLogs = [...(state.controlledCopyAuditTrail || [])];
-    const recalledCopies = currentCopies.filter(isOldCopy);
+    recalledCopies = currentCopies.filter(isOldCopy);
 
-    const updatedCopies = currentCopies.map(copy => {
+      updatedCopies = currentCopies.map(copy => {
       if (isOldCopy(copy)) {
         newAuditLogs.unshift({
           id: `audit-supersede-${Date.now()}-${copy.id}`,
@@ -7338,7 +7684,6 @@ const useStore = create(persist((set, get) => ({
     });
 
     // 3. Create new copies for Rev.01 based on dar.distributions
-    let newCreatedCopies = [];
     const allocations = calculateCopyAllocations(newDoc.department, newDoc.distributions || []);
     const allTargets = allocations.allAllocations || [];
 
@@ -7421,7 +7766,6 @@ const useStore = create(persist((set, get) => ({
     });
 
     // 4. Create DCC Tasks
-    let newTasks = [...state.tasks];
 
     // Distribution Task: Decoupled for new revision distribution
     if (allTargets.length > 0) {
@@ -7513,15 +7857,18 @@ const useStore = create(persist((set, get) => ({
       newTasks.push(recallTask);
     }
 
+    }
+
     // 5. Update DAR status to COMPLETED
-    const updatedDars = state.dars.map(d => d.id === dar.id ? { ...d, status: 'COMPLETED' } : d);
+    const updatedDars = safeDars.map(d => d.id === dar.id ? { ...d, status: 'COMPLETED' } : d);
+    const updatedDarRequests = safeDarRequests.map(d => d.id === dar.id ? { ...d, status: 'COMPLETED' } : d);
 
     // 6. Action Log
     const actionLogEntry = {
       id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       actionType: 'REVISION_PUBLISHED',
       actor: 'System (Lifecycle Engine)',
-      details: `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newRevStr}: สำเนาเดิม Rev.${oldRev} ทั้งหมด (${recalledCopies.length} เล่ม) ถูกตั้งสถานะเรียกคืน (SUPERSEDED_PENDING_RECALL)`,
+      details: isFormDoc ? `แบบฟอร์ม ${newDoc.title} ปรับปรุงเป็น Rev.${newRevStr} เรียบร้อยแล้ว (Bypass การออกเล่มสำเนาควบคุม)` : `เอกสาร ${newDoc.title} ปรับปรุงเป็น Rev.${newRevStr}: สำเนาเดิม Rev.${oldRev} ทั้งหมดถูกตั้งสถานะเรียกคืน (SUPERSEDED_PENDING_RECALL)`,
       timestamp: new Date().toISOString()
     };
 
@@ -7607,7 +7954,9 @@ const useStore = create(persist((set, get) => ({
 
     return {
       documents: updatedDocs,
+      masterDocuments: updatedDocs,
       dars: updatedDars,
+      darRequests: updatedDarRequests,
       controlledCopyInstances: finalCopies,
       documentControlledCopies: finalCopies,
       tasks: cleanupDccTasks(newTasks, finalCopies, updatedDocs),
@@ -9785,6 +10134,46 @@ const useStore = create(persist((set, get) => ({
   }),
 
   // --- 4. Point-of-Use Locations (Matrix) Actions ---
+  addMasterStation: (departmentId, stationData) => {
+    let created = null;
+    set((state) => {
+      const stationName = typeof stationData === 'string' ? stationData : stationData?.name || '';
+      const cleanName = cleanLocationName(stationName.trim());
+      const newStation = {
+        id: (stationData && typeof stationData === 'object' && stationData.id) 
+          ? stationData.id 
+          : `STATION-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: cleanName,
+        code: (stationData && typeof stationData === 'object' && stationData.code) || `STATION-${Date.now().toString().slice(-4)}`,
+        departmentId: departmentId,
+        isCustom: true,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        ...(typeof stationData === 'object' ? stationData : {})
+      };
+      newStation.name = cleanName;
+      newStation.departmentId = departmentId;
+      newStation.isCustom = true;
+      newStation.status = 'ACTIVE';
+      created = newStation;
+
+      const currentLocs = state.distributionLocations || [];
+      const updatedLocs = [...currentLocs, newStation];
+
+      return {
+        distributionLocations: updatedLocs,
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_STATION_CREATED',
+          actor: state.currentUser?.name || 'Requester',
+          details: `Created new point-of-use station "${newStation.name}" in department ${departmentId}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
+    });
+    return created;
+  },
+
   addDistributionLocation: (locData) => set((state) => {
     const newLoc = {
       id: locData.id || `${locData.departmentId}-${Date.now().toString().slice(-4)}`,
@@ -10218,8 +10607,10 @@ const useStore = create(persist((set, get) => ({
     tasks: state.tasks,
     notifications: state.notifications,
     dars: state.dars,
+    darRequests: state.darRequests || state.dars,
     timeline: state.timeline,
     documents: state.documents,
+    masterDocuments: state.masterDocuments || state.documents,
     externalDocuments: state.externalDocuments,
     externalRequests: state.externalRequests,
     documentControlledCopies: state.documentControlledCopies,
@@ -10273,6 +10664,38 @@ if (typeof window !== 'undefined' && window.localStorage) {
         return t;
       });
       if (migrated) {
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration for DAR Completion & Master Document Lifecycle Sync
+    if (persisted && persisted.state && Array.isArray(persisted.state.dars) && Array.isArray(persisted.state.documents)) {
+      let darsMigrated = false;
+      persisted.state.dars.forEach(dar => {
+        if (dar.status === 'COMPLETED') {
+          const darType = String(dar.type || dar.requestType || dar.darType || '').toUpperCase();
+          if (darType === 'REVISE' || darType === 'REVISION' || darType === 'REVISE_DOCUMENT') {
+            const targetCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.code || dar.title;
+            const rawTarget = dar.targetRevision || dar.newRevision || dar.newRev || dar.targetRev || dar.proposedRev;
+            if (targetCode && rawTarget) {
+              const cleanTarget = String(rawTarget).replace(/^rev\.?/i, '').trim().padStart(2, '0');
+              const docs = persisted.state.documents;
+              const hasActiveNewRev = docs.some(d => {
+                const code = d.docNo || d.document_code || d.doc_code || d.code || d.docCode || d.title;
+                const rev = String(d.revision || d.rev || d.doc_version || d.version).replace(/^rev\.?/i, '').trim().padStart(2, '0');
+                return code && code.trim().toLowerCase() === targetCode.trim().toLowerCase() && rev === cleanTarget && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active);
+              });
+              if (!hasActiveNewRev) {
+                persisted.state.documents = syncCompletedDarToMasterDocuments(dar, persisted.state.documents);
+                darsMigrated = true;
+              }
+            }
+          }
+        }
+      });
+      if (darsMigrated) {
+        persisted.state.masterDocuments = persisted.state.documents;
+        persisted.state.darRequests = persisted.state.dars;
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       }
     }

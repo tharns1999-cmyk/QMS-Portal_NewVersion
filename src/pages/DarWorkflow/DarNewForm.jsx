@@ -9,11 +9,11 @@ import {
   ShieldAlert, 
   ChevronLeft, 
   UploadCloud, 
-  Settings
+  Settings,
+  CheckCircle2
 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
-import FormDistributionSetup from '../../components/workflow/FormDistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
@@ -90,8 +90,6 @@ const DarNewForm = () => {
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     distributions: [],
-    distributedDepartments: [],
-    formDistributionMode: 'ALL_DEPTS',
     effectiveDate: '',
     file: null,
     relatedStandards: [],
@@ -129,107 +127,8 @@ const DarNewForm = () => {
     }
   }, [targetDraftId, dars, darRequests, currentUser?.department, location.state]);
 
-  const prevScopeRef = React.useRef(formData.access_control?.scope || 'GENERAL');
-
   // ตรวจสอบว่าเป็นเอกสารประเภท FM หรือไม่
   const isFormDocument = formData.docType === 'FM' || formData.doc_type === 'FM';
-
-  // อัปเดตขอบเขตการแจกจ่ายแบบฟอร์มเมื่อ Access Scope และ Authorized Departments เปลี่ยนแปลง (Cascading Security)
-  useEffect(() => {
-    if (!isFormDocument) return;
-
-    const currentScope = formData.access_control?.scope || formData.accessScope || 'GENERAL';
-    const ownerDept = currentUser?.department || 'PD';
-    const rawAuthDepts = formData.access_control?.authorized_depts || formData.authorizedDepartments || [];
-    const authorizedDepts = Array.from(new Set([ownerDept, ...rawAuthDepts]));
-
-    if (currentScope === 'TARGETED') {
-      setFormData((prev) => {
-        // กรองเอาเฉพาะแผนกที่ยังคงอยู่ใน Authorized List ด้านบน
-        const currentDistDepts = prev.distributedDepartments || [];
-        const validDistributedDepts = currentDistDepts.filter(
-          (deptCode) => deptCode === ownerDept || rawAuthDepts.includes(deptCode)
-        );
-        const nextDistDepts = validDistributedDepts.length > 0 
-          ? validDistributedDepts 
-          : authorizedDepts;
-
-        const nextPayload = nextDistDepts.map(dId => ({
-          departmentId: dId,
-          department: dId,
-          dept: dId,
-          dept_code: dId,
-          target_department: dId,
-          targetDepartment: dId,
-          locationId: dId,
-          locationName: `${dId} Department`,
-          copyNo: '00',
-          isForm: true
-        }));
-
-        return {
-          ...prev,
-          formDistributionMode: 'SPECIFIC_DEPTS',
-          distributedDepartments: nextDistDepts,
-          distributions: nextPayload
-        };
-      });
-    } else if (currentScope === 'DEPT_ONLY') {
-      const ownerPayload = [{
-        departmentId: ownerDept,
-        department: ownerDept,
-        dept: ownerDept,
-        dept_code: ownerDept,
-        target_department: ownerDept,
-        targetDepartment: ownerDept,
-        locationId: ownerDept,
-        locationName: `${ownerDept} Department`,
-        copyNo: '00',
-        isForm: true
-      }];
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'SPECIFIC_DEPTS',
-        distributedDepartments: [ownerDept],
-        distributions: ownerPayload
-      }));
-    } else if (currentScope === 'RESTRICTED') {
-      const ownerPayload = [{
-        departmentId: ownerDept,
-        department: ownerDept,
-        dept: ownerDept,
-        dept_code: ownerDept,
-        target_department: ownerDept,
-        targetDepartment: ownerDept,
-        locationId: ownerDept,
-        locationName: `${ownerDept} Department`,
-        copyNo: '00',
-        isForm: true
-      }];
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'RESTRICTED_USERS',
-        distributedDepartments: [ownerDept],
-        distributions: ownerPayload
-      }));
-    } else if (currentScope === 'GENERAL' && prevScopeRef.current !== 'GENERAL') {
-      // เมื่อสลับกลับเป็น GENERAL ให้คืนค่าเริ่มต้นเป็นทุกแผนก
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'ALL_DEPTS',
-        distributedDepartments: [],
-        distributions: []
-      }));
-    }
-    prevScopeRef.current = currentScope;
-  }, [
-    formData.access_control?.scope, 
-    JSON.stringify(formData.access_control?.authorized_depts), 
-    formData.accessScope, 
-    JSON.stringify(formData.authorizedDepartments), 
-    formData.docType, 
-    currentUser?.department
-  ]);
 
   // Auto-calculated Workflow Participants for Auto-Whitelisting
   const workflowParticipants = useMemo(() => {
@@ -371,7 +270,7 @@ const DarNewForm = () => {
       requireAck: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
       ackUserId: formData.ackUserId,
-      distributions: formData.distributions || [],
+      distributions: isFormDocument ? [] : (formData.distributions || []),
       effectiveDate: formData.effectiveDate,
       effective_date: formData.effectiveDate,
       relatedStandards: formData.relatedStandards || [],
@@ -406,17 +305,25 @@ const DarNewForm = () => {
       type: 'NEW',
       title: formData.title,
       requesterId: currentUser?.id,
+      requester_id: currentUser?.id,
+      requester_name: currentUser?.name,
       department: currentUser?.department || formData.department,
       date: new Date().toISOString().split('T')[0],
       docType: formData.docType,
       docIdInput: getPreviewCode(),
       document_code: formData.docCode || getPreviewCode(),
       requestDetail: formData.requestDetail,
+      request_detail: formData.requestDetail,
       requestReason: formData.requestReason,
+      request_reason: formData.requestReason,
       ackRequirement: formData.ackRequirement,
+      requireAck: formData.ackRequirement === 'REQUIRED',
+      require_ack: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
-      distributions: formData.distributions || [],
+      ackUserId: formData.ackRequirement === 'REQUIRED' ? formData.ackUserId : null,
+      distributions: isFormDocument ? [] : (formData.distributions || []),
       effectiveDate: formData.effectiveDate,
+      effective_date: formData.effectiveDate,
       isDraft: false,
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
@@ -430,23 +337,21 @@ const DarNewForm = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 pb-8 w-full px-4 sm:px-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto">
+      <div className="flex items-center justify-between px-6 py-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center shadow-xs">
-            <FileText size={22} strokeWidth={1.75}/>
-          </div>
+          <FileText className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
           <div>
-            <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">ยื่นคำร้องสร้างเอกสารใหม่ (New Document DAR)</h2>
-            <p className="text-xs text-[#666666] mt-0.5">ออกรหัสเอกสารฉบับใหม่และกำหนดสายการอนุมัติตามมาตรฐาน ISO 9001</p>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">ยื่นคำร้องสร้างเอกสารใหม่ (New Document DAR)</h1>
+            <p className="text-xs text-slate-500 mt-0.5">ออกรหัสเอกสารฉบับใหม่และกำหนดสายการอนุมัติตามมาตรฐาน ISO 9001</p>
           </div>
         </div>
-        <button onClick={() => navigate('/dar/new')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors cursor-pointer">
+        <button onClick={() => navigate('/dar/new')} className="h-9 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer">
           <ChevronLeft size={16} /> เปลี่ยนประเภท DAR
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4">
+      <form onSubmit={handleFormSubmit} className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -741,25 +646,10 @@ const DarNewForm = () => {
 
         {/* Section: การแจกจ่ายเอกสาร */}
         {isFormDocument ? (
-          <FormDistributionSetup
-            accessScope={formData.access_control?.scope || formData.accessScope}
-            accessControl={formData.access_control}
-            ownerDept={currentUser?.department || formData?.department || 'PD'}
-            distributionMode={formData.formDistributionMode || 'SPECIFIC_DEPTS'}
-            selectedDepts={formData.distributedDepartments || []}
-            authorizedDepts={formData.access_control?.authorized_depts || []}
-            allDepartments={availableDepartments}
-            onChangeMode={(mode) => {
-              setFormData(prev => ({ ...prev, formDistributionMode: mode }));
-            }}
-            onToggleDept={(deptCode) => {
-              setFormData(prev => {
-                const cur = prev.distributedDepartments || [];
-                const next = cur.includes(deptCode) ? cur.filter(d => d !== deptCode) : [...cur, deptCode];
-                return { ...prev, distributedDepartments: next };
-              });
-            }}
-          />
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50/80 border border-emerald-200/70 text-emerald-900 text-xs font-medium shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>แบบฟอร์มเปล่า (FM) จะพร้อมให้ดาวน์โหลดตามสิทธิ์การเข้าถึงทันทีเมื่ออนุมัติเสร็จสมบูรณ์ (Bypass การออกเล่มสำเนาควบคุม)</span>
+          </div>
         ) : (
           <DistributionSetup 
             ownerDept={currentUser?.department || formData?.department || 'PD'}
@@ -768,11 +658,12 @@ const DarNewForm = () => {
             documentType={formData.docType}
             accessControl={formData.access_control}
             accessScope={formData.access_control?.scope}
+            targetDepartments={formData.access_control?.authorized_depts || formData.access_control?.targetDepartments || []}
           />
         )}
 
         {/* Action Buttons */}
-        <div className="card-surface p-4 flex justify-end gap-2.5">
+        <div className="card-surface p-4 mt-6 flex items-center justify-end gap-3 shadow-2xs">
           <Button 
             variant="ghost"
             type="button" 
@@ -918,7 +809,12 @@ const DarNewForm = () => {
               },
               {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
-                value: (() => {
+                value: isFormDocument ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
+                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                    <span>แบบฟอร์มเปล่า (FM) ดิจิทัล - Bypass การออกเล่มสำเนาควบคุม (ดาวน์โหลดตามระดับสิทธิ์การเข้าถึง)</span>
+                  </div>
+                ) : (() => {
                   const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
                   const allList = allocs?.allAllocations || [];
                   return (
@@ -946,14 +842,7 @@ const DarNewForm = () => {
               },
               {
                 label: 'ขั้นตอนถัดไป / ผู้มีอำนาจทบทวน',
-                value: (
-                  <div className="text-xs sm:text-sm font-medium text-indigo-800 bg-[#E5F4FF]/80 p-2.5 rounded-xl border border-indigo-100 flex items-center gap-1.5">
-                    <span>ส่งต่อให้:</span>
-                    <strong className="font-bold">
-                      {resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}
-                    </strong>
-                  </div>
-                )
+                value: `ส่งต่อให้: ${resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department || 'Reviewer'})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}`
               }
             ]}
           />

@@ -4,36 +4,30 @@ import {
   X, 
   Check, 
   Plus, 
-  Users, 
-  UserPlus,
-  UserCheck, 
-  UserX, 
-  RotateCcw,
-  Shield,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * Department color mapping for consistent avatars & badges
+ * Department color mapping for avatars
  */
 const DEPT_COLORS = {
-  QA: { bg: 'bg-blue-50 text-blue-700 border-blue-200', avatar: 'bg-blue-600 text-white' },
-  'QA/QC': { bg: 'bg-blue-50 text-blue-700 border-blue-200', avatar: 'bg-blue-600 text-white' },
-  PD: { bg: 'bg-amber-50 text-amber-800 border-amber-200', avatar: 'bg-amber-600 text-white' },
-  EN: { bg: 'bg-purple-50 text-purple-700 border-purple-200', avatar: 'bg-purple-600 text-white' },
-  WH: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', avatar: 'bg-emerald-600 text-white' },
-  DC: { bg: 'bg-sky-50 text-sky-700 border-sky-200', avatar: 'bg-sky-600 text-white' },
-  FIN: { bg: 'bg-teal-50 text-teal-700 border-teal-200', avatar: 'bg-teal-600 text-white' },
-  EXEC: { bg: 'bg-zinc-100 text-zinc-800 border-zinc-300', avatar: 'bg-zinc-900 text-white' },
-  MGMT: { bg: 'bg-indigo-50 text-indigo-700 border-indigo-200', avatar: 'bg-indigo-600 text-white' },
-  MKT: { bg: 'bg-rose-50 text-rose-700 border-rose-200', avatar: 'bg-rose-600 text-white' },
-  HR: { bg: 'bg-cyan-50 text-cyan-700 border-cyan-200', avatar: 'bg-cyan-600 text-white' },
-  'HR&GA': { bg: 'bg-cyan-50 text-cyan-700 border-cyan-200', avatar: 'bg-cyan-600 text-white' },
-  HSE: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', avatar: 'bg-emerald-600 text-white' },
-  PC: { bg: 'bg-purple-50 text-purple-700 border-purple-200', avatar: 'bg-purple-600 text-white' },
-  ST: { bg: 'bg-slate-100 text-slate-700 border-slate-200', avatar: 'bg-slate-600 text-white' },
-  DEFAULT: { bg: 'bg-slate-50 text-slate-700 border-slate-200', avatar: 'bg-slate-700 text-white' }
+  QA: { avatar: 'bg-blue-600 text-white' },
+  'QA/QC': { avatar: 'bg-blue-600 text-white' },
+  PD: { avatar: 'bg-amber-600 text-white' },
+  EN: { avatar: 'bg-purple-600 text-white' },
+  WH: { avatar: 'bg-emerald-600 text-white' },
+  DC: { avatar: 'bg-sky-600 text-white' },
+  FIN: { avatar: 'bg-teal-600 text-white' },
+  EXEC: { avatar: 'bg-zinc-900 text-white' },
+  MGMT: { avatar: 'bg-indigo-600 text-white' },
+  MKT: { avatar: 'bg-rose-600 text-white' },
+  HR: { avatar: 'bg-cyan-600 text-white' },
+  'HR&GA': { avatar: 'bg-cyan-600 text-white' },
+  HSE: { avatar: 'bg-emerald-600 text-white' },
+  PC: { avatar: 'bg-purple-600 text-white' },
+  ST: { avatar: 'bg-slate-600 text-white' },
+  DEFAULT: { avatar: 'bg-slate-700 text-white' }
 };
 
 const getDeptTheme = (dept) => DEPT_COLORS[dept] || DEPT_COLORS.DEFAULT;
@@ -48,16 +42,7 @@ const getInitials = (name = '') => {
 };
 
 /**
- * AuthorizedUsersSelector Component (Linear / Modern B2B SaaS 2-Column Split View)
- * 
- * Layout:
- * - Left Column (lg:col-span-5):
- *   1. Minimum Position Level Card (Shield icon, dropdown)
- *   2. Auto-Authorized Workflow Strip (Requester, Reviewer, Approver with locked chips)
- *   3. Selected Whitelist Panel (Scrollable vertical chips, remove button, clear all)
- * - Right Column (lg:col-span-7):
- *   1. Search Input Bar + Horizontal Scrollable Department Filter Pills
- *   2. Scrollable User Cards Grid (max-h-[440px]) with 3 states: Auto-Authorized, Selected, Available
+ * AuthorizedUsersSelector Component (Compact Linear / Vercel Combobox Style)
  */
 const AuthorizedUsersSelector = ({
   selectedUserIds = [],
@@ -72,17 +57,14 @@ const AuthorizedUsersSelector = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDeptFilter, setActiveDeptFilter] = useState('ALL');
 
-  // Ensure selectedUserIds is always an array
   const safeSelectedIds = useMemo(() => {
     return Array.isArray(selectedUserIds) ? selectedUserIds : [];
   }, [selectedUserIds]);
 
-  // List of active users
   const activeUsers = useMemo(() => {
     return (users || []).filter(u => u && (u.status === 'ACTIVE' || u.status === 'Active' || !u.status));
   }, [users]);
 
-  // Normalize workflow participants (Requester, Reviewer, Approver)
   const normalizedParticipants = useMemo(() => {
     if (!Array.isArray(workflowParticipants)) return [];
     return workflowParticipants.map(item => {
@@ -116,7 +98,6 @@ const AuthorizedUsersSelector = ({
     }).filter(Boolean);
   }, [workflowParticipants, users]);
 
-  // Set of participant IDs for fast lookup in grid
   const participantIdsSet = useMemo(() => {
     const set = new Set();
     (normalizedParticipants || []).forEach(p => {
@@ -126,14 +107,12 @@ const AuthorizedUsersSelector = ({
     return set;
   }, [normalizedParticipants]);
 
-  // Selected user objects
   const selectedUsers = useMemo(() => {
     return (safeSelectedIds || [])
       .map(id => (activeUsers || []).find(u => u && (u.id === id || u.empId === id)))
       .filter(Boolean);
   }, [safeSelectedIds, activeUsers]);
 
-  // Unique departments for filter chips
   const departmentsList = useMemo(() => {
     const depts = new Set();
     (activeUsers || []).forEach(u => {
@@ -147,20 +126,17 @@ const AuthorizedUsersSelector = ({
     return Array.from(depts).filter(Boolean).sort();
   }, [activeUsers]);
 
-  // Filtered candidate users list
   const filteredUsers = useMemo(() => {
     const query = (searchTerm || '').trim().toLowerCase();
 
     return (activeUsers || []).filter(user => {
       if (!user) return false;
-      // 1. Department Filter
       if (activeDeptFilter !== 'ALL') {
         const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : [user.dept]));
         const matchDept = (userDepts || []).some(d => d === activeDeptFilter);
         if (!matchDept) return false;
       }
 
-      // 2. Search Query Matching (Name, EmpId, ID, Dept, Position)
       if (!query) return true;
 
       const nameMatch = (user.name || '').toLowerCase().includes(query);
@@ -173,7 +149,6 @@ const AuthorizedUsersSelector = ({
     });
   }, [activeUsers, activeDeptFilter, searchTerm]);
 
-  // Handle single user toggle
   const handleToggle = (userId) => {
     if (onToggleUser) {
       onToggleUser(userId);
@@ -185,7 +160,6 @@ const AuthorizedUsersSelector = ({
     if (onChange) onChange(next);
   };
 
-  // Handle single user remove
   const handleRemove = (userId, e) => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (onRemoveUser) {
@@ -195,392 +169,223 @@ const AuthorizedUsersSelector = ({
     if (onChange) onChange(next);
   };
 
-  // Clear all selected users
   const handleClearAll = () => {
     if (onChange) onChange([]);
   };
 
-  // Select all in current filter
-  const handleSelectAllInView = () => {
-    const filteredIds = (filteredUsers || []).map(u => u?.id).filter(Boolean);
-    const newSelection = Array.from(new Set([...safeSelectedIds, ...filteredIds]));
-    if (onChange) onChange(newSelection);
-  };
-
-  // Deselect all in current filter
-  const handleDeselectAllInView = () => {
-    const filteredIdsSet = new Set((filteredUsers || []).map(u => u?.id).filter(Boolean));
-    const newSelection = safeSelectedIds.filter(id => !filteredIdsSet.has(id));
-    if (onChange) onChange(newSelection);
-  };
-
-  const isAllInViewSelected = (filteredUsers || []).length > 0 && (filteredUsers || []).every(u => u && safeSelectedIds.includes(u.id));
-
   return (
-    <div className="select-none">
-      {/* 2-Column Split View Layout (Mobile: 1 Col, Desktop: 12 Cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        
-        {/* ========================================================================= */}
-        {/* คอลัมน์ซ้าย (lg:col-span-5) — Configuration & Selected Summary            */}
-        {/* ========================================================================= */}
-        <div className="lg:col-span-5 space-y-4">
-          
-          {/* 1. Minimum Position Level Card */}
-          {minLevel !== null && minLevel !== undefined && (
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-2xs hover:border-slate-300 transition-all space-y-2.5">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 border border-amber-200/70 flex items-center justify-center shrink-0 shadow-2xs">
-                  <Shield size={16} strokeWidth={2.2} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <label htmlFor="min-access-level-select" className="text-xs font-bold text-slate-900 block cursor-pointer">
-                    ระดับตำแหน่งขั้นต่ำที่อนุญาต (Minimum Position Level)
-                  </label>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    พนักงานที่มีตำแหน่งตั้งแต่ระดับนี้ขึ้นไปจะเข้าถึงเอกสารลับนี้ได้โดยอัตโนมัติ
-                  </p>
-                </div>
-              </div>
-              <div>
-                <select
-                  id="min-access-level-select"
-                  aria-label="ระดับสิทธิ์ขั้นต่ำ"
-                  value={minLevel}
-                  onChange={(e) => onMinLevelChange && onMinLevelChange(Number(e.target.value))}
-                  disabled={!onMinLevelChange}
-                  className="w-full h-9 px-3 bg-slate-50/70 hover:bg-white text-xs font-bold text-slate-800 border border-slate-200 rounded-xl shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-100"
-                >
-                  <option value={4}>Level 4: หัวหน้างานขึ้นไป (Supervisor L4+)</option>
-                  <option value={1}>Level 1: ทุกคนในองค์กร (All Staff)</option>
-                  <option value={3}>Level 3: เจ้าหน้าที่อาวุโสขึ้นไป (Senior Staff L3+)</option>
-                  <option value={5}>Level 5: ผู้ช่วยผู้จัดการขึ้นไป (Asst. Manager L5+)</option>
-                  <option value={6}>Level 6: ผู้จัดการฝ่ายขึ้นไป (Dept. Manager L6+)</option>
-                  <option value={7}>Level 7: ผู้บริหารระดับสูง (Directors & Executives)</option>
-                  <option value={99}>🔒 เฉพาะบุคคลที่กำหนดเท่านั้น (Custom Whitelist Only)</option>
-                </select>
-              </div>
-            </div>
-          )}
+    <div className="space-y-3 select-none">
+      {/* 1. Optional Min Level row if provided */}
+      {minLevel !== null && minLevel !== undefined && (
+        <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+          <label htmlFor="min-access-level-select" className="text-xs font-semibold text-slate-800 shrink-0">
+            ระดับตำแหน่งขั้นต่ำที่อนุญาต (Minimum Position Level):
+          </label>
+          <select
+            id="min-access-level-select"
+            aria-label="ระดับสิทธิ์ขั้นต่ำ"
+            value={minLevel}
+            onChange={(e) => onMinLevelChange && onMinLevelChange(Number(e.target.value))}
+            className="h-8 px-2 bg-white text-xs text-slate-800 border border-slate-200 rounded-md focus:outline-none cursor-pointer flex-1 max-w-xs"
+          >
+            <option value={4}>Level 4: หัวหน้างานขึ้นไป (Supervisor L4+)</option>
+            <option value={1}>Level 1: ทุกคนในองค์กร (All Staff)</option>
+            <option value={3}>Level 3: เจ้าหน้าที่อาวุโสขึ้นไป (Senior Staff L3+)</option>
+            <option value={5}>Level 5: ผู้ช่วยผู้จัดการขึ้นไป (Asst. Manager L5+)</option>
+            <option value={6}>Level 6: ผู้จัดการฝ่ายขึ้นไป (Dept. Manager L6+)</option>
+            <option value={7}>Level 7: ผู้บริหารระดับสูง (Directors & Executives)</option>
+          </select>
+        </div>
+      )}
 
-          {/* 2. Auto-Authorized Workflow Strip (สิทธิ์ตามสายอนุมัติ) */}
-          {normalizedParticipants.length > 0 && (
-            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-3.5 shadow-2xs space-y-2.5 transition-all">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
-                    <Lock size={12} strokeWidth={2.4} />
-                  </div>
-                  <span className="text-xs font-bold text-slate-900">
-                    สิทธิ์เข้าถึงอัตโนมัติตามสายอนุมัติ (Auto-Authorized):
-                  </span>
-                </div>
-              </div>
-              <p className="text-[11px] text-emerald-800/80 leading-relaxed font-medium">
-                ได้รับสิทธิ์เปิดดูอัตโนมัติตามสายงาน (บุคคลในสายการจัดทำ ทบทวน และอนุมัติจะได้รับสิทธิ์เข้าถึงเอกสารนี้โดยอัตโนมัติ)
-              </p>
-
-              {/* Locked Chips List */}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {normalizedParticipants.map((participant) => {
-                  const theme = getDeptTheme(participant.department);
-                  return (
-                    <div
-                      key={participant.id}
-                      className="inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-xl bg-white border border-emerald-200/90 text-xs shadow-2xs select-none"
-                    >
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${theme.avatar}`}>
-                        {getInitials(participant.name)}
-                      </span>
-                      <span className="font-bold text-slate-800 text-[12px] truncate max-w-[120px]">
-                        {participant.name}
-                      </span>
-                      <span className="text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {participant.roleTitle}
-                      </span>
-                      <Lock size={11} className="text-emerald-600 shrink-0" title="ได้รับสิทธิ์อัตโนมัติตามสายงาน (ล็อก)" />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 3. Selected Whitelist Panel (รายชื่อที่เลือกเพิ่ม) */}
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs space-y-3 transition-all">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <UserCheck size={14} strokeWidth={2.2} />
-                </div>
-                <span className="text-xs font-bold text-slate-900">
-                  ผู้ได้รับสิทธิ์พิเศษ ({selectedUsers.length})
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
-                  {selectedUsers.length} คน
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
-                  เลือกแล้ว {selectedUsers.length} ท่าน
-                </span>
-                {selectedUsers.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearAll}
-                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-0.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw size={11} />
-                    <span>ล้างทั้งหมด</span>
-                    <span className="text-slate-400 font-normal hidden sm:inline">(Clear all)</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Selected Whitelist Chips: Scrollable Vertical Stack */}
-            {selectedUsers.length > 0 ? (
-              <div className="max-h-[260px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                <AnimatePresence>
-                  {selectedUsers.map((user) => {
-                    const theme = getDeptTheme(user.primary_department || user.department || user.dept);
-                    return (
-                      <motion.div
-                        key={user.id}
-                        initial={{ opacity: 0, y: 3 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.15 }}
-                        className="flex items-center justify-between p-2 rounded-xl bg-slate-50/80 border border-slate-200/90 shadow-2xs hover:border-slate-300 hover:bg-white transition-all group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${theme.avatar}`}>
-                            {getInitials(user.name)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-800 text-xs truncate max-w-[130px]">
-                                {user.name}
-                              </span>
-                              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${theme.bg}`}>
-                                {user.primary_department || user.department || user.dept}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 truncate">
-                              {user.position || 'พนักงาน'} {user.empId ? `• ${user.empId}` : `• ${user.id}`}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => handleRemove(user.id, e)}
-                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-100/80 p-1 rounded-lg transition-colors ml-1 cursor-pointer shrink-0"
-                          title={`นำ ${user.name} ออก`}
-                        >
-                          <X size={13} strokeWidth={2.5} />
-                        </button>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
-            ) : (
-              <div className="py-7 px-3 rounded-xl bg-slate-50/60 border border-dashed border-slate-200 flex flex-col items-center justify-center gap-1.5 text-center">
-                <UserPlus size={18} className="text-slate-400 mb-0.5" />
-                <p className="text-xs text-slate-500 font-medium">ยังไม่มีการเลือกรายชื่อเฉพาะบุคคล</p>
-                <p className="text-[11px] text-slate-400">ค้นหาและคลิกเลือกพนักงานจากแผงรายชื่อทางขวาเพื่อเพิ่มสิทธิ์พิเศษ</p>
-              </div>
-            )}
+      {/* 2. Auto-Authorized Workflow Strip */}
+      {normalizedParticipants.length > 0 && (
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-slate-700">
+            <Lock size={12} className="text-slate-500 shrink-0" />
+            <span className="font-semibold text-xs text-slate-900">สิทธิ์เข้าถึงอัตโนมัติตามสายอนุมัติ (Auto-Authorized):</span>
+            <span className="text-[11px] text-slate-500 hidden md:inline">
+              บุคคลในสายการจัดทำ ทบทวน และอนุมัติจะได้รับสิทธิ์เข้าถึงเอกสารนี้โดยอัตโนมัติ
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {normalizedParticipants.map(p => (
+              <span key={p.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium shadow-2xs">
+                <span>{p.name}</span>
+                <span className="text-slate-500 font-mono text-[10px]">({p.roleTitle})</span>
+              </span>
+            ))}
           </div>
         </div>
+      )}
 
-        {/* ========================================================================= */}
-        {/* คอลัมน์ขวา (lg:col-span-7) — Interactive Member Directory & Picker        */}
-        {/* ========================================================================= */}
-        <div className="lg:col-span-7 space-y-3">
-          
-          {/* Header Label */}
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-900 flex items-center gap-2">
-              <Users size={15} className="text-indigo-600" />
-              <span>ระบุบุคคลที่ได้รับอนุญาตเพิ่มเติมเฉพาะบุคคล (Authorized Individual Whitelist)</span>
-            </label>
-          </div>
+      {/* 3. Selected Whitelist Tags (Compact Avatar Tags) */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-slate-600">
+            เลือกแล้ว {selectedUsers.length} ท่าน
+          </span>
+          {selectedUsers.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="text-slate-400 hover:text-rose-600 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <RotateCcw size={10} />
+              <span>ล้างทั้งหมด</span>
+            </button>
+          )}
+        </div>
 
-          {/* 1. Search & Filter Header */}
-          <div className="space-y-2.5">
-            {/* Search Input Bar */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input
-                type="text"
-                placeholder="ค้นหาด้วยชื่อ, รหัสพนักงาน (EMP-001), User ID (U001), แผนก หรือตำแหน่ง..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-9 py-2 h-9 text-xs bg-white border border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all placeholder:text-slate-400 font-medium shadow-2xs"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded transition-colors"
+        {selectedUsers.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+            {selectedUsers.map(user => {
+              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
+              return (
+                <span
+                  key={user.id}
+                  className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-xs text-slate-800 shadow-2xs"
                 >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${theme.avatar}`}>
+                    {getInitials(user.name)}
+                  </span>
+                  <span className="font-medium text-[12px]">{user.name}</span>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    ({user.primary_department || user.department || user.dept})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemove(user.id, e)}
+                    className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 transition-colors"
+                    title={`นำ ${user.name} ออก`}
+                  >
+                    <X size={11} strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 py-1 font-normal">
+            ยังไม่มีการเลือกรายชื่อเฉพาะบุคคล (ค้นหาและเลือกพนักงานด้านล่าง)
+          </div>
+        )}
+      </div>
 
-            {/* Department Filter Pills (Horizontal Scrollable) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+      {/* 4. Search & Department Filter + Candidate Combobox */}
+      <div className="space-y-2 pt-1">
+        {/* Search Input Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+          <input
+            type="text"
+            placeholder="ค้นหาด้วยชื่อ, รหัสพนักงาน (EMP-001), แผนก หรือตำแหน่ง..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-8 pr-8 py-1.5 h-8 text-xs bg-white border border-slate-200 rounded-lg focus:border-slate-400 focus:outline-none placeholder:text-slate-400 text-slate-800 shadow-2xs"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
+        {/* Department Filter Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+          <button
+            type="button"
+            onClick={() => setActiveDeptFilter('ALL')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap cursor-pointer transition-all ${
+              activeDeptFilter === 'ALL'
+                ? 'bg-slate-900 text-white'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            ทั้งหมด ({activeUsers.length})
+          </button>
+          {departmentsList.map(dept => {
+            const isSelected = activeDeptFilter === dept;
+            return (
               <button
+                key={dept}
                 type="button"
-                onClick={() => setActiveDeptFilter('ALL')}
-                className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
-                  activeDeptFilter === 'ALL'
-                    ? 'bg-zinc-900 text-white shadow-xs'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 shadow-2xs'
+                onClick={() => setActiveDeptFilter(dept)}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap cursor-pointer transition-all ${
+                  isSelected
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                ทั้งหมด ({activeUsers.length})
+                {dept}
               </button>
+            );
+          })}
+        </div>
 
-              {departmentsList.map(dept => {
-                const count = activeUsers.filter(u => {
-                  const uDepts = u.affiliated_departments || u.depts || (u.primary_department ? [u.primary_department] : (u.department ? [u.department] : [u.dept]));
-                  return (uDepts || []).includes(dept);
-                }).length;
+        {/* Candidate Scrollable Rows */}
+        <div className="border border-slate-200 rounded-lg overflow-hidden max-h-44 overflow-y-auto divide-y divide-slate-100 bg-white shadow-2xs">
+          {filteredUsers.length > 0 ? (
+            filteredUsers.map(user => {
+              const isWorkflowParticipant = participantIdsSet.has(user.id) || (user.empId && participantIdsSet.has(user.empId));
+              const isSelected = isWorkflowParticipant || safeSelectedIds.includes(user.id) || (user.empId && safeSelectedIds.includes(user.empId));
+              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
 
-                const isSelected = activeDeptFilter === dept;
-
-                return (
-                  <button
-                    key={dept}
-                    type="button"
-                    onClick={() => setActiveDeptFilter(dept)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-1 cursor-pointer ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100 shadow-2xs'
-                    }`}
-                  >
-                    <span>{dept}</span>
-                    <span className={`text-[10px] font-mono px-1 rounded ${isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 2. Scrollable User Cards Grid */}
-          <div className="border border-slate-200/90 bg-slate-50/50 rounded-2xl overflow-hidden shadow-2xs p-3 space-y-2.5">
-            {/* Toolbar Header */}
-            <div className="flex items-center justify-between text-xs px-1">
-              <span className="text-[11px] font-medium text-slate-500">
-                พบ <strong className="text-slate-800 font-bold">{filteredUsers.length}</strong> รายชื่อ {activeDeptFilter !== 'ALL' ? `(แผนก ${activeDeptFilter})` : ''}
-              </span>
-
-              {filteredUsers.length > 0 && (
-                <button
-                  type="button"
-                  onClick={isAllInViewSelected ? handleDeselectAllInView : handleSelectAllInView}
-                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
+              return (
+                <div
+                  key={user.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={isWorkflowParticipant ? undefined : () => handleToggle(user.id)}
+                  onKeyDown={isWorkflowParticipant ? undefined : (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleToggle(user.id);
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 flex items-center justify-between text-xs transition-colors cursor-pointer select-none ${
+                    isWorkflowParticipant
+                      ? 'bg-slate-50/70 text-slate-400 cursor-not-allowed'
+                      : isSelected
+                        ? 'bg-slate-50 text-slate-900 font-medium'
+                        : 'hover:bg-slate-50 text-slate-700'
+                  }`}
                 >
-                  {isAllInViewSelected ? 'ยกเลิกทั้งหมดในกลุ่มนี้' : 'เลือกทั้งหมดในกลุ่มนี้'}
-                </button>
-              )}
-            </div>
-
-            {/* User Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[440px] overflow-y-auto pr-1 custom-scrollbar">
-              {filteredUsers.length > 0 ? (
-                filteredUsers.map(user => {
-                  const isWorkflowParticipant = participantIdsSet.has(user.id) || (user.empId && participantIdsSet.has(user.empId));
-                  const isSelected = isWorkflowParticipant || safeSelectedIds.includes(user.id) || (user.empId && safeSelectedIds.includes(user.empId));
-                  const theme = getDeptTheme(user.primary_department || user.department || user.dept);
-
-                  return (
-                    <div
-                      key={user.id}
-                      onClick={isWorkflowParticipant ? undefined : () => handleToggle(user.id)}
-                      className={`p-2.5 rounded-xl border transition-all duration-150 flex items-center justify-between gap-2.5 outline-none ${
-                        isWorkflowParticipant
-                          ? 'bg-emerald-50/30 border-emerald-200/80 ring-1 ring-emerald-400/40 shadow-xs cursor-default select-none'
-                          : isSelected
-                            ? 'ring-2 ring-indigo-500 bg-indigo-50/40 border-indigo-200 shadow-xs cursor-pointer hover:scale-[1.01]'
-                            : 'bg-white border-slate-200/80 hover:bg-slate-50/80 hover:border-slate-300 shadow-2xs cursor-pointer hover:scale-[1.01]'
-                      }`}
-                    >
-                      {/* Left: Avatar & Identity Details */}
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${theme.avatar}`}>
-                          {getInitials(user.name)}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-xs text-slate-900 truncate">
-                              {user.name}
-                            </span>
-                            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold border ${theme.bg}`}>
-                              {user.primary_department || user.department || user.dept}
-                            </span>
-                            <span className="px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                              Lv.{user.approval_level || user.level || 1}
-                            </span>
-                            {isWorkflowParticipant && (
-                              <span className="px-1.5 py-0.2 rounded-md text-[10px] font-bold bg-emerald-100/80 text-emerald-700 border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                                <Lock size={9} strokeWidth={2.5} />
-                                <span>ผู้ร่วมสายงาน (Auto)</span>
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                            {user.position || 'พนักงาน'} {user.empId ? `• ${user.empId}` : `• ${user.id}`}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Right: Action Button */}
-                      <div className="shrink-0">
-                        {isWorkflowParticipant ? (
-                          <button
-                            type="button"
-                            disabled
-                            aria-label={`ผู้ร่วมสายงาน (Auto) - ${user.name}`}
-                            className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs cursor-not-allowed opacity-95"
-                            title="ผู้ร่วมสายงาน (Auto) - ได้รับสิทธิ์อัตโนมัติตามสายงาน ไม่สามารถปลดออกได้"
-                          >
-                            <Lock size={11} strokeWidth={2.4} />
-                          </button>
-                        ) : isSelected ? (
-                          <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-                            <Check size={13} strokeWidth={3} />
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 flex items-center justify-center transition-colors">
-                            <Plus size={13} strokeWidth={2.5} />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="col-span-full py-8 px-4 text-center space-y-2 bg-white rounded-xl border border-slate-200">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                    <UserX size={20} />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${theme.avatar}`}>
+                      {getInitials(user.name)}
+                    </span>
+                    <span className="truncate font-medium">{user.name}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({user.primary_department || user.department || user.dept})
+                    </span>
+                    {isWorkflowParticipant && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 rounded font-medium">
+                        ผู้ร่วมสายงาน (Auto)
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs font-bold text-slate-700">ไม่พบรายชื่อผู้ใช้ที่ตรงกับเงื่อนไข</p>
-                  <p className="text-[11px] text-slate-400">
-                    ลองค้นหาด้วยคำอื่น หรือเลือกตัวกรองแผนกเป็น "ทั้งหมด"
-                  </p>
+                  <div className="shrink-0">
+                    {isWorkflowParticipant ? (
+                      <Lock size={11} className="text-slate-400" />
+                    ) : isSelected ? (
+                      <Check size={12} className="text-slate-900 stroke-[3]" />
+                    ) : (
+                      <Plus size={12} className="text-slate-400" />
+                    )}
+                  </div>
                 </div>
-              )}
+              );
+            })
+          ) : (
+            <div className="py-4 text-center text-xs text-slate-400">
+              ไม่พบรายชื่อผู้ใช้ที่ตรงกับเงื่อนไข
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -24,7 +24,8 @@ import {
   User,
   ArrowRight,
   FileText,
-  Globe
+  Globe,
+  Star
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
@@ -67,28 +68,101 @@ const formatThaiDateTime = (dateInput) => {
 // Helper 1: Extract official document code — returns null if none found
 // NEVER returns raw task.id / UUIDs / timestamps
 // ─────────────────────────────────────────────────────────────────────────────
-const getDocumentIdentifier = (task) => {
-  // 1. Explicit code fields
-  const explicit =
-    task.docCode ||
-    task.doc_code ||
-    task.doc_number ||
-    task.docNumber ||
-    task.darNumber ||
-    task.document_code ||
-    task.edCode;
-  if (explicit) return String(explicit).trim();
+const isThaiText = (str) => typeof str === 'string' && /[\u0E00-\u0E7F]/.test(str);
 
-  // 2. Extract standard doc code pattern from title (e.g. SOP-PD-01, WI-WH-002)
+export const getDocumentIdentifier = (task, storeContext = {}, matchedDar = null, matchedDoc = null) => {
+  if (!task) return null;
+
+  // 1. Direct explicit code fields on task
+  const directCandidates = [
+    task.docNo,
+    task.documentCode,
+    task.darData?.docNo,
+    task.darData?.documentCode,
+    task.documentNumber,
+    task.docCode,
+    task.doc_code,
+    task.doc_number,
+    task.docNumber,
+    task.document_code,
+    task.edCode
+  ];
+
+  for (const c of directCandidates) {
+    if (c && typeof c === 'string' && c.trim()) {
+      const trimmed = c.trim();
+      // Guard against title erroneously assigned to docCode (Thai characters)
+      if (!isThaiText(trimmed)) {
+        return trimmed;
+      }
+    }
+  }
+
+  // 2. Query matched DAR (or dars from storeContext)
+  const safeDars = storeContext?.dars || [];
+  const dar = matchedDar || safeDars.find(d => 
+    (task.darId && (String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId)) ||
+    (task.referenceType === 'INTERNAL_DAR' && String(d.id) === String(task.referenceId))
+  );
+
+  if (dar) {
+    const darCandidates = [
+      dar.docNo,
+      dar.documentCode,
+      dar.document_code,
+      dar.docCode,
+      dar.doc_code,
+      dar.docIdInput,
+      dar.doc_number,
+      dar.code
+    ];
+    for (const dc of darCandidates) {
+      if (dc && typeof dc === 'string' && dc.trim() && !isThaiText(dc.trim())) {
+        return dc.trim();
+      }
+    }
+  }
+
+  // 3. Query matched Document (or documents from storeContext)
+  const safeDocs = storeContext?.documents || [];
+  const targetDocId = task.docId || task.doc_id || dar?.docIdRef || dar?.docId || dar?.targetDocumentId;
+  const doc = matchedDoc || safeDocs.find(d => 
+    (targetDocId && String(d.id) === String(targetDocId)) ||
+    (task.docCode && !isThaiText(task.docCode) && (d.title === task.docCode || d.document_code === task.docCode || d.code === task.docCode))
+  );
+
+  if (doc) {
+    const docCandidates = [
+      doc.code,
+      doc.document_code,
+      doc.doc_code,
+      doc.doc_number,
+      doc.docNo,
+      doc.documentCode,
+      doc.title
+    ];
+    for (const dcc of docCandidates) {
+      if (dcc && typeof dcc === 'string' && dcc.trim() && !isThaiText(dcc.trim())) {
+        return dcc.trim();
+      }
+    }
+  }
+
+  // 4. Extract standard doc code pattern from title (e.g. SOP-PD-01, WI-WH-002)
   const titleMatch = String(task.title || '').match(
     /\b([A-Z]{1,5}-[A-Z]{1,5}-\d{2,4}(?:-\d{1,3})?)\b/
   );
   if (titleMatch) return titleMatch[1];
 
-  // 3. darId that looks like a formal number (DAR-YYYY-XXX)
+  // 5. Formal DAR number (DAR-YYYY-XXX)
   if (task.darId && /^DAR-\d{4}-\d+/.test(task.darId)) return task.darId;
+  if (task.darNumber && /^DAR-\d{4}-\d+/.test(task.darNumber)) return task.darNumber;
 
-  // 4. Nothing — caller decides to hide the chip
+  // 6. Alphanumeric docId fallback (ignoring system IDs like t-xxx or DOC-MOCK-xxx)
+  if (task.docId && typeof task.docId === 'string' && !isThaiText(task.docId) && !task.docId.startsWith('t-') && !task.docId.startsWith('DOC-MOCK-')) {
+    return task.docId;
+  }
+
   return null;
 };
 
@@ -124,11 +198,11 @@ const stripTitlePrefixes = (raw) => {
   return result;
 };
 
-const getDocumentTitle = (task, storeContext = {}) => {
+export const getDocumentTitle = (task, storeContext = {}) => {
   if (!task) return '';
   const { documents = [], externalDocuments = [], dars = [], controlledCopyInstances = [] } = storeContext;
 
-  const docCode = getDocumentIdentifier(task);
+  const docCode = getDocumentIdentifier(task, storeContext);
 
   // 1. Explicit name fields on task if present and distinct from the code
   const explicit =
@@ -169,8 +243,9 @@ const getDocumentTitle = (task, storeContext = {}) => {
   const darId = task.darId || (task.referenceType === 'INTERNAL_DAR' ? task.referenceId : null);
   if (darId) {
     const matchedDar = (dars || []).find(d => String(d.id) === String(darId) || d.darNo === darId || d.dar_no === darId);
-    if (matchedDar && (matchedDar.name || matchedDar.document_name || matchedDar.docName)) {
-      return matchedDar.name || matchedDar.document_name || matchedDar.docName;
+    if (matchedDar && (matchedDar.name || matchedDar.document_name || matchedDar.docName || matchedDar.title)) {
+      const darTitle = matchedDar.name || matchedDar.document_name || matchedDar.docName || matchedDar.title;
+      if (darTitle && darTitle !== docCode) return darTitle;
     }
   }
 
@@ -445,9 +520,9 @@ export const formatDepartmentBadge = (deptCode, masterDepartments) => {
   if (deptObj) {
     const rawTh = deptObj.nameTh || deptObj.name || '';
     const thaiName = rawTh.replace(/^.*?\((.*?)\)/, '$1').replace(new RegExp(`^${clean}\\s*[-:]*\\s*`, 'i'), '').trim();
-    return `🏢 ${clean} - ${thaiName || deptObj.name || clean}`;
+    return `${clean} - ${thaiName || deptObj.name || clean}`;
   }
-  return `🏢 ${clean}`;
+  return clean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -638,28 +713,28 @@ const getTaskIconConfig = (task) => {
 
   if (normType === 'REVIEW' || normType === 'EXT_REVIEW') {
     return {
-      icon: <Eye size={17} strokeWidth={2} />,
+      icon: <Eye size={17} strokeWidth={1.5} />,
       iconBg: 'bg-indigo-50 text-indigo-600 border border-indigo-100',
       chipClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
     };
   }
   if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
     return {
-      icon: <ShieldCheck size={17} strokeWidth={2} />,
+      icon: <ShieldCheck size={17} strokeWidth={1.5} />,
       iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
       chipClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
     };
   }
   if (normType === 'ACK' || normType === 'ACKNOWLEDGE') {
     return {
-      icon: <Bell size={17} strokeWidth={2} />,
+      icon: <Bell size={17} strokeWidth={1.5} />,
       iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
       chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
   }
   if (normType === 'REVISE') {
     return {
-      icon: <FileEdit size={17} strokeWidth={2} />,
+      icon: <FileEdit size={17} strokeWidth={1.5} />,
       iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
       chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
     };
@@ -671,7 +746,7 @@ const getTaskIconConfig = (task) => {
     normType === 'RECEIPT'
   ) {
     return {
-      icon: <Layers size={17} strokeWidth={2} />,
+      icon: <Layers size={17} strokeWidth={1.5} />,
       iconBg: 'bg-violet-50 text-violet-600 border border-violet-100',
       chipClass: 'bg-violet-50 text-violet-700 border border-violet-200',
     };
@@ -679,13 +754,13 @@ const getTaskIconConfig = (task) => {
   if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
     if (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') {
       return {
-        icon: <Clock size={17} strokeWidth={2} />,
+        icon: <Clock size={17} strokeWidth={1.5} />,
         iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
         chipClass: 'bg-amber-50 text-amber-700 border border-amber-200',
       };
     }
     return {
-      icon: <Send size={17} strokeWidth={2} />,
+      icon: <Send size={17} strokeWidth={1.5} />,
       iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
       chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
@@ -702,26 +777,26 @@ const getTaskIconConfig = (task) => {
     const isDamaged = task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด');
     if (isDamaged) {
       return {
-        icon: <AlertTriangle size={17} strokeWidth={2} />,
+        icon: <AlertTriangle size={17} strokeWidth={1.5} />,
         iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
         chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
       };
     }
     return {
-      icon: <AlertTriangle size={17} strokeWidth={2} />,
+      icon: <AlertTriangle size={17} strokeWidth={1.5} />,
       iconBg: 'bg-orange-50 text-orange-600 border border-orange-100',
       chipClass: 'bg-orange-50 text-orange-700 border border-orange-200',
     };
   }
   if (normType.startsWith('DCC_')) {
     return {
-      icon: <AlertCircle size={17} strokeWidth={2} />,
+      icon: <AlertCircle size={17} strokeWidth={1.5} />,
       iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
       chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
     };
   }
   return {
-    icon: <CheckSquare size={17} strokeWidth={2} />,
+    icon: <CheckSquare size={17} strokeWidth={1.5} />,
     iconBg: 'bg-slate-100 text-slate-500 border border-slate-200',
     chipClass: 'bg-slate-100 text-slate-600 border border-slate-200',
   };
@@ -1009,20 +1084,20 @@ const TaskInbox = () => {
 
   const tabs = useMemo(() => {
     const baseTabs = dccAdmin ? [
-      { id: 'ALL', thaiLabel: 'ทั้งหมด', engLabel: 'All Tasks', count: getTaskCount('ALL') },
-      { id: 'DCC_DISTRIBUTE', thaiLabel: 'งานแจกจ่าย', engLabel: 'Distribution', count: getTaskCount('DCC_DISTRIBUTE') },
-      { id: 'DCC_RECALL', thaiLabel: 'งานเรียกคืน', engLabel: 'Recall', count: getTaskCount('DCC_RECALL') },
-      { id: 'REVIEW', thaiLabel: 'ทบทวน', engLabel: 'Review', count: getTaskCount('REVIEW') },
-      { id: 'APPROVE', thaiLabel: 'อนุมัติ', engLabel: 'Approve', count: getTaskCount('APPROVE') },
-      { id: 'RECEIPT', thaiLabel: 'ตรวจรับเล่ม', engLabel: 'Receipt', count: getTaskCount('RECEIPT') },
-      { id: 'REVISE', thaiLabel: 'ส่งกลับแก้ไข', engLabel: 'Returned', count: getTaskCount('REVISE') },
+      { id: 'ALL', label: 'ทั้งหมด', count: getTaskCount('ALL') },
+      { id: 'DCC_DISTRIBUTE', label: 'แจกจ่าย', count: getTaskCount('DCC_DISTRIBUTE') },
+      { id: 'DCC_RECALL', label: 'เรียกคืน', count: getTaskCount('DCC_RECALL') },
+      { id: 'REVIEW', label: 'ทบทวน', count: getTaskCount('REVIEW') },
+      { id: 'APPROVE', label: 'อนุมัติ', count: getTaskCount('APPROVE') },
+      { id: 'RECEIPT', label: 'ตรวจรับ', count: getTaskCount('RECEIPT') },
+      { id: 'REVISE', label: 'ส่งกลับ/แก้ไข', count: getTaskCount('REVISE') },
     ] : [
-      { id: 'ALL', thaiLabel: 'ทั้งหมด', engLabel: 'All Tasks', count: getTaskCount('ALL') },
-      { id: 'REVIEW', thaiLabel: 'ทบทวน', engLabel: 'Review', count: getTaskCount('REVIEW') },
-      { id: 'APPROVE', thaiLabel: 'อนุมัติ', engLabel: 'Approve', count: getTaskCount('APPROVE') },
-      { id: 'RECEIPT', thaiLabel: 'ตรวจรับเล่ม', engLabel: 'Receipt', count: getTaskCount('RECEIPT') },
-      { id: 'ACK', thaiLabel: 'รับทราบ', engLabel: 'Acknowledge', count: getTaskCount('ACK') },
-      { id: 'REVISE', thaiLabel: 'ส่งกลับแก้ไข', engLabel: 'Returned', count: getTaskCount('REVISE') },
+      { id: 'ALL', label: 'ทั้งหมด', count: getTaskCount('ALL') },
+      { id: 'REVIEW', label: 'ทบทวน', count: getTaskCount('REVIEW') },
+      { id: 'APPROVE', label: 'อนุมัติ', count: getTaskCount('APPROVE') },
+      { id: 'RECEIPT', label: 'ตรวจรับ', count: getTaskCount('RECEIPT') },
+      { id: 'ACK', label: 'รับทราบ', count: getTaskCount('ACK') },
+      { id: 'REVISE', label: 'ส่งกลับ/แก้ไข', count: getTaskCount('REVISE') },
     ];
     if (isLevel6Executive) {
       return baseTabs.filter(tab => tab.id !== 'RECEIPT');
@@ -1084,21 +1159,22 @@ const TaskInbox = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-2.5 tracking-tight">
-            <CheckSquare className="text-indigo-600" size={26} /> กล่องงานที่ต้องจัดการ
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">รายการคำขอและงานที่รอการตรวจทาน อนุมัติ หรือเซ็นรับเอกสาร</p>
+    <div className="space-y-4 max-w-7xl mx-auto pb-10 w-full max-w-full overflow-hidden">
+      {/* ── Standardized Page Header ── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-6 py-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs">
+        <div className="flex items-center gap-3">
+          <CheckSquare className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            กล่องงานที่ต้องจัดการ
+          </h1>
         </div>
 
-        {/* 🏷️ Document Origin Filter (Segmented Control / Pill Filter) */}
-        <div className="flex items-center p-1 bg-slate-100/80 rounded-xl border border-slate-200/80 w-full sm:w-fit shadow-2xs overflow-x-auto">
+        {/* 🏷️ Document Origin Filter (Minimal Pill Switcher) */}
+        <div className="flex items-center p-1 bg-slate-100/90 rounded-lg border border-slate-200/80 w-full sm:w-auto">
           {[
-            { id: 'ALL', label: 'ทั้งหมด', subLabel: 'All Tasks', count: originCounts.ALL, icon: Layers },
-            { id: 'INTERNAL', label: 'เอกสารภายใน', subLabel: 'Internal QMS', count: originCounts.INTERNAL, icon: FileText },
-            { id: 'EXTERNAL', label: 'เอกสารภายนอก', subLabel: 'External Docs', count: originCounts.EXTERNAL, icon: Globe },
+            { id: 'ALL', label: 'ทั้งหมด', count: originCounts.ALL, icon: Layers },
+            { id: 'INTERNAL', label: 'เอกสารภายใน', count: originCounts.INTERNAL, icon: FileText },
+            { id: 'EXTERNAL', label: 'เอกสารภายนอก', count: originCounts.EXTERNAL, icon: Globe },
           ].map(tab => {
             const Icon = tab.icon;
             const isSelected = originFilter === tab.id;
@@ -1107,19 +1183,16 @@ const TaskInbox = () => {
                 key={tab.id}
                 type="button"
                 onClick={() => setOriginFilter(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                   isSelected
                     ? 'bg-white text-slate-900 shadow-2xs font-bold border border-slate-200/60'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
                 }`}
               >
-                <Icon size={14} className={isSelected ? 'text-[#0D99FF]' : 'text-slate-400'} />
+                <Icon size={13} className={isSelected ? 'text-indigo-600' : 'text-slate-400'} />
                 <span>{tab.label}</span>
-                <span className={`hidden sm:inline text-[11px] font-normal ${isSelected ? 'text-slate-600' : 'text-slate-400'}`}>
-                  ({tab.subLabel})
-                </span>
                 <span className={`px-1.5 py-0.2 rounded text-[11px] font-mono ${
-                  isSelected ? 'bg-[#0D99FF]/10 text-[#0D99FF] font-bold' : 'bg-slate-200/70 text-slate-600'
+                  isSelected ? 'bg-indigo-50 text-indigo-600 font-bold' : 'bg-slate-200/70 text-slate-600'
                 }`}>
                   {tab.count}
                 </span>
@@ -1129,27 +1202,27 @@ const TaskInbox = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-[#E5E5E5] overflow-hidden shadow-none">
-        {/* Filter & Tabs Bar */}
-        <div className="p-4 border-b border-[#E5E5E5] bg-white flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
-          <div className="flex items-center overflow-x-auto custom-scrollbar gap-1.5 w-full md:w-auto py-0.5">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+        {/* ── Single-Row Action Tabs & Search Bar ── */}
+        <div className="px-3.5 py-2.5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2.5">
+          {/* Action Tabs: Compact Segmented Pills without horizontal scrollbar */}
+          <div className="flex items-center flex-wrap gap-1 w-full md:w-auto">
             {tabs.map(tab => {
               const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 py-2.5 px-4 rounded-lg font-bold text-sm transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border ${
                     isActive
-                      ? 'bg-[#1E1E1E] border-[#1E1E1E] text-white shadow-none'
-                      : 'bg-white border-[#E5E5E5] text-[#666666] hover:text-[#1E1E1E] hover:bg-[#FAFAFA] hover:border-[#CCCCCC]'
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 hover:border-slate-300'
                   }`}
                 >
-                  <span className="text-sm font-semibold">{tab.thaiLabel}</span>
-                  <span className={`text-xs font-normal ${isActive ? 'text-[#CCCCCC]' : 'text-[#999999]'}`}>(<span>{tab.engLabel}</span>)</span>
+                  <span>{tab.label}</span>
                   {tab.count > 0 && (
-                    <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-[#F5F5F5] text-[#1E1E1E] border border-[#E5E5E5]'
+                    <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200/80'
                     }`}>
                       {tab.count}
                     </span>
@@ -1159,45 +1232,46 @@ const TaskInbox = () => {
             })}
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
-            <div className="relative flex-1 md:w-72">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#999999]" size={16} />
+          {/* Search Box: Compact & Sleek */}
+          <div className="flex items-center gap-1.5 w-full md:w-auto shrink-0">
+            <div className="relative flex-1 md:w-56">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
                 type="text"
-                placeholder="ค้นหา รหัส, ชื่อเอกสาร..."
+                placeholder="ค้นหารหัส, ชื่อเอกสาร..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 h-10 bg-white border border-[#E5E5E5] rounded-lg text-sm font-medium focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] transition-all placeholder:text-[#999999] shadow-none"
+                className="w-full pl-8 pr-3 h-8 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-400"
               />
             </div>
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                title="ล้างตัวกรอง"
-                className="p-2 h-10 w-10 rounded-lg border border-[#E5E5E5] bg-white hover:bg-[#FFF0F0] text-[#999999] hover:text-[#E02424] transition-all cursor-pointer shadow-none flex items-center justify-center"
+                title="ล้างคำค้นหา"
+                className="p-1.5 h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all cursor-pointer flex items-center justify-center shrink-0"
               >
-                <FilterX size={16} />
+                <FilterX size={14} />
               </button>
             )}
           </div>
         </div>
 
-        {/* 🏢 Department Filter Pill Bar */}
+        {/* 🏢 Department Filter: Minimal Subtle Chips */}
         {availableDepts.length > 0 && (
-          <div className="px-4 py-2.5 bg-slate-50 border-b border-[#E5E5E5] flex items-center gap-2 overflow-x-auto custom-scrollbar text-xs">
-            <span className="text-slate-500 font-bold shrink-0 flex items-center gap-1.5 mr-1">
-              <Building2 size={14} className="text-indigo-600" /> แผนก:
+          <div className="px-3.5 py-2 bg-slate-50/70 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs">
+            <span className="text-slate-400 font-semibold shrink-0 flex items-center gap-1 mr-0.5 text-[11px]">
+              <Building2 size={13} className="text-indigo-500" /> แผนก:
             </span>
             <button
               type="button"
               onClick={() => setDeptFilter('ALL')}
-              className={`px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                 deptFilter === 'ALL'
-                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs font-semibold'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100/80'
               }`}
             >
-              {dccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${userTasks.length})` : `📁 ทุกแผนกที่สังกัด (${userTasks.length})`}
+              {dccAdmin ? `งานทั้งหมดทุกแผนก (${userTasks.length})` : `ทุกแผนกที่สังกัด (${userTasks.length})`}
             </button>
             {availableDepts.map(dept => {
               const deptCount = userTasks.filter(t => isTaskMatchingDept(t, dept)).length;
@@ -1208,16 +1282,16 @@ const TaskInbox = () => {
                   key={dept}
                   type="button"
                   onClick={() => setDeptFilter(dept)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                     isSelected
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xs font-semibold'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100/80'
                   }`}
                 >
-                  <span>เฉพาะงาน {dept}</span>
-                  {isPrimary && <span className="text-amber-400 text-xs" title="แผนกหลัก">⭐</span>}
-                  <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
-                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                  <span>{dept}</span>
+                  {isPrimary && <Star size={11} strokeWidth={1.5} className="text-amber-400 fill-amber-400 shrink-0" title="แผนกหลัก" />}
+                  <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${
+                    isSelected ? 'bg-white/20 text-white font-bold' : 'bg-slate-100 text-slate-600'
                   }`}>
                     {deptCount}
                   </span>
@@ -1227,8 +1301,8 @@ const TaskInbox = () => {
           </div>
         )}
 
-        {/* ─── Task List (High-Density Contextual Bento Cards) ─── */}
-        <div className="p-3 sm:p-4 bg-slate-50/50 space-y-2.5 overflow-y-auto max-h-[640px] scrollbar-thin">
+        {/* ─── Task List (High-Density Modern Task Rows) ─── */}
+        <div className="p-3 bg-slate-50/40 space-y-2 overflow-y-auto max-h-[640px] scrollbar-thin">
           {pagination.paginatedData.length > 0 ? (
             pagination.paginatedData.map(task => {
               const isExternal = getTaskOrigin(task) === 'EXTERNAL';
@@ -1236,12 +1310,27 @@ const TaskInbox = () => {
               const normType = (task.type || task.taskType || '').toUpperCase();
 
               // ── Data extraction with full null-safety ──
-              const docCode = getDocumentIdentifier(task);
-              const matchedDar = (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId);
+              const matchedDar = (dars || []).find(d => 
+                (task.darId && (String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId)) ||
+                (task.referenceType === 'INTERNAL_DAR' && String(d.id) === String(task.referenceId))
+              );
+              const directDocCode = getDocumentIdentifier(task, storeContext, matchedDar);
               const matchedDoc = (documents || []).find(d => 
                 (task.docId && String(d.id) === String(task.docId)) || 
-                (docCode && (d.title === docCode || d.document_code === docCode || d.code === docCode))
+                (matchedDar?.docIdRef && String(d.id) === String(matchedDar.docIdRef)) ||
+                (matchedDar?.docId && String(d.id) === String(matchedDar.docId)) ||
+                (directDocCode && (d.title === directDocCode || d.document_code === directDocCode || d.code === directDocCode))
               );
+              const docCode = directDocCode || getDocumentIdentifier(task, storeContext, matchedDar, matchedDoc);
+              const displayDocCode = 
+                docCode ||
+                task.docNo ||
+                task.documentCode ||
+                task.documentNumber ||
+                task.darData?.docNo ||
+                task.darData?.documentCode ||
+                (task.docId && typeof task.docId === 'string' && !/[\u0E00-\u0E7F]/.test(task.docId) && !task.docId.startsWith('t-') ? task.docId : null) ||
+                '-';
 
               const darNo = resolveDarIdentifier(task, matchedDar);
               const docTitle = getDocumentTitle(task, storeContext);
@@ -1265,34 +1354,34 @@ const TaskInbox = () => {
                 <div
                   key={task.id}
                   onClick={() => handleTaskClick(task)}
-                  className="bg-white border border-slate-200/90 hover:border-indigo-400 hover:shadow-md hover:bg-slate-50/[0.2] rounded-xl p-4 sm:p-4.5 transition-all duration-150 group cursor-pointer relative flex flex-col gap-2.5"
+                  className="bg-white border border-slate-200/90 hover:border-indigo-400 hover:shadow-xs rounded-lg p-3 sm:py-2.5 sm:px-3.5 transition-all duration-150 group cursor-pointer relative flex flex-col gap-1.5"
                 >
                   {/* ── 1. Header Row (ประเภทงาน, หมายเลข และ SLA) ── */}
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     {/* ฝั่งซ้าย: Badge ประเภทงานเด่นชัด + Badge เลขที่คำร้องแบบโมโนสเปซ */}
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-bold border whitespace-nowrap ${badgeConfig.badgeClass}`}>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border whitespace-nowrap ${badgeConfig.badgeClass}`}>
                         {badgeConfig.icon}
                         <span>{badgeConfig.label}</span>
                       </span>
 
                       {darNo && (
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 group-hover:bg-indigo-50 group-hover:text-indigo-700 group-hover:border-indigo-200 transition-colors whitespace-nowrap">
+                        <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 group-hover:bg-indigo-50 group-hover:text-indigo-700 group-hover:border-indigo-200 transition-colors whitespace-nowrap">
                           {darNo}
                         </span>
                       )}
 
                       {copyNo && (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                           {copyNo}
                         </span>
                       )}
 
                       {/* 🛡️ Soft Muted Origin Badge to preserve Visual Hierarchy */}
                       {isExternal && (
-                        <span className="bg-slate-100 text-slate-600 border border-slate-200/80 px-2 py-0.5 rounded text-[11px] font-medium inline-flex items-center gap-1 shadow-2xs whitespace-nowrap">
-                          <Globe size={11} className="text-slate-400 shrink-0" />
-                          <span>เอกสารภายนอก</span>
+                        <span className="bg-slate-100 text-slate-600 border border-slate-200/80 px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 whitespace-nowrap">
+                          <Globe size={10} className="text-slate-400 shrink-0" />
+                          <span>ภายนอก</span>
                         </span>
                       )}
                     </div>
@@ -1300,14 +1389,14 @@ const TaskInbox = () => {
                     {/* ฝั่งขวา: Badge เตือนกำหนดเวลาและ SLA */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isUrgentFastTrack && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
-                          <Zap size={10} className="fill-amber-500" /> Fast-Track
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                          <Zap size={9} className="fill-amber-500" /> Fast-Track
                         </span>
                       )}
                       {slaBadge}
                       {dueDate && (
-                        <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                          <Clock size={11} className="text-slate-400" />
+                        <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                          <Clock size={10} className="text-slate-400" />
                           <span>กำหนด: <strong className="font-mono text-slate-700">{formatThaiDateTime(dueDate)}</strong></span>
                         </span>
                       )}
@@ -1315,55 +1404,58 @@ const TaskInbox = () => {
                   </div>
 
                   {/* ── 2. Primary Identity Line (อัตลักษณ์เอกสาร) ── */}
-                  <div className="flex items-start sm:items-center justify-between gap-3 pt-0.5">
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
-                      {/* รหัสเอกสารตัวหนา (Mono Font) */}
-                      {docCode && (
-                        <span className="font-mono text-sm sm:text-base font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors tracking-tight whitespace-nowrap">
-                          {docCode}
-                        </span>
-                      )}
+                  <div className="flex items-start sm:items-center justify-between gap-2.5 my-1">
+                    <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                      {/* 1. รหัสเอกสาร (Document Code) */}
+                      <span className="font-bold text-blue-600 dark:text-blue-400 font-mono text-[13px] tracking-tight group-hover:text-blue-700 transition-colors whitespace-nowrap">
+                        {displayDocCode}
+                      </span>
 
-                      {/* ชิปแสดงฉบับเอกสารตามบริบทงาน (Context-Aware Revision Badge) */}
-                      {revTransition && (
+                      {/* 2. แท็ก Revision (ถ้ามี) */}
+                      {revTransition ? (
                         revTransition.type === 'TRANSITION' ? (
-                          <span className={`inline-flex items-center gap-1 font-mono text-xs px-2 py-0.5 rounded-md whitespace-nowrap ${revTransition.badgeClass || 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold'}`}>
-                            Rev.{revTransition.prev} <span className="text-indigo-400">➔</span> {revTransition.next}
+                          <span className={`inline-flex items-center gap-1 font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap ${revTransition.badgeClass || ''}`}>
+                            Rev.{revTransition.prev} <span className="text-slate-400">→</span> Rev.{revTransition.next}
                           </span>
                         ) : (
-                          <span className={`inline-flex items-center font-mono text-xs px-2 py-0.5 rounded-md whitespace-nowrap border ${revTransition.badgeClass || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                          <span className={`inline-flex items-center font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap ${revTransition.badgeClass || ''}`}>
                             {revTransition.label}
                           </span>
                         )
-                      )}
+                      ) : (task.revision || task.targetRevision) ? (
+                        <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+                          {task.currentRevision ? `Rev.${task.currentRevision} → ` : ''}Rev.{String(task.revision || task.targetRevision).replace(/^rev\.?/i, '')}
+                        </span>
+                      ) : null}
 
-                      {/* ชื่อเอกสารทางการภาษาไทย */}
-                      <h3 
-                        className="text-sm sm:text-base font-bold text-slate-800 group-hover:text-indigo-950 transition-colors leading-snug line-clamp-1"
+                      {/* 3. ชื่อเอกสาร (Document Title) */}
+                      <span 
+                        className="text-slate-900 font-medium text-[13px] sm:text-sm leading-snug tracking-tight line-clamp-1"
                         title={typeof finalDocTitle === 'string' ? finalDocTitle : undefined}
                       >
-                        {finalDocTitle}
-                      </h3>
+                        {finalDocTitle || task.docTitle || task.title || task.documentName}
+                      </span>
 
                       {isReplacement && (
-                        <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                        <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
                           ฉบับทดแทน
                         </span>
                       )}
                     </div>
 
                     {/* 4. Card Action & Affordance (ปุ่ม Action ลัด) */}
-                    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-200 text-slate-700 shadow-xs group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 group-hover:shadow transition-all whitespace-nowrap shrink-0">
+                    <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all whitespace-nowrap shrink-0">
                       <span>{badgeConfig.actionLabel}</span>
-                      <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                      <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                     </div>
                   </div>
 
                   {/* ── 3. Contextual Metadata Row (ข้อมูลประกอบการพิจารณา) ── */}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-0.5 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                     {/* Badge แผนกเจ้าของเอกสาร */}
                     {ownerDept && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold whitespace-nowrap">
+                        <Building2 size={11} strokeWidth={1.5} className="text-slate-500" />
                         <span>{formatDepartmentBadge(ownerDept, masterDepartments)}</span>
                       </span>
                     )}
@@ -1371,15 +1463,15 @@ const TaskInbox = () => {
                     {/* ข้อมูลผู้ยื่นคำร้อง */}
                     {requesterName && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium whitespace-nowrap">
-                        <User size={12} className="text-slate-400" />
-                        <span>ผู้ร้องขอ: <strong className="text-slate-800 font-semibold">{requesterName}</strong></span>
+                        <User size={11} className="text-slate-400" />
+                        <span>ผู้ขอ: <strong className="text-slate-800 font-semibold">{requesterName}</strong></span>
                       </span>
                     )}
 
                     {/* ตัวอย่างเหตุผลการแก้ไข (Reason Snippet) Truncated */}
                     {reasonSnippet && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 min-w-0 max-w-lg truncate" title={reasonSnippet}>
-                        <FileText size={12} className="text-slate-400 shrink-0" />
+                      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 min-w-0 max-w-md truncate" title={reasonSnippet}>
+                        <FileText size={11} className="text-slate-400 shrink-0" />
                         <span className="shrink-0 text-slate-600 font-medium">เหตุผล:</span>
                         <span className="truncate text-slate-700">{reasonSnippet}</span>
                       </span>
@@ -1388,15 +1480,15 @@ const TaskInbox = () => {
                     {/* Location if hardcopy receipt task */}
                     {location && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
-                        <MapPin size={12} className="text-slate-400" />
+                        <MapPin size={11} className="text-slate-400" />
                         <span>{location}</span>
                       </span>
                     )}
 
                     {/* 🛡️ Return Reason Alert Banner for EXTERNAL_REVISE / REVISE */}
                     {(task.returnReason || task.rejectReason) && (
-                      <div className="w-full flex items-start gap-2 text-xs bg-rose-50 text-rose-800 border border-rose-200/80 px-3 py-2 rounded-lg font-medium mt-1">
-                        <AlertCircle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                      <div className="w-full flex items-start gap-1.5 text-xs bg-rose-50 text-rose-800 border border-rose-200/80 px-2.5 py-1.5 rounded-md font-medium mt-0.5">
+                        <AlertCircle size={13} className="text-rose-600 shrink-0 mt-0.5" />
                         <div>
                           <span className="font-bold">เหตุผลที่ส่งกลับแก้ไข:</span> {task.returnReason || task.rejectReason}
                         </div>
@@ -1406,17 +1498,17 @@ const TaskInbox = () => {
                     {/* Mobile Action indicator */}
                     <div className="sm:hidden ml-auto flex items-center text-indigo-600 font-bold text-[11px] gap-0.5">
                       <span>{badgeConfig.actionLabel}</span>
-                      <ChevronRight size={14} />
+                      <ChevronRight size={13} />
                     </div>
                   </div>
                 </div>
               );
             })
           ) : (
-            <div className="p-12 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-              <CheckCircle className="mx-auto text-emerald-500 mb-2" size={36} />
-              <p className="text-sm font-bold text-slate-700">ไม่มีงานค้างในกล่องข้อความ</p>
-              <p className="text-xs text-slate-400 mt-0.5">คุณจัดการงานทั้งหมดเรียบร้อยแล้ว</p>
+            <div className="p-8 text-center text-slate-400 bg-white rounded-lg border border-dashed border-slate-200">
+              <CheckCircle className="mx-auto text-emerald-500 mb-1.5" size={30} />
+              <p className="text-xs sm:text-sm font-bold text-slate-700">ไม่มีงานค้างในกล่องข้อความ</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">คุณจัดการงานทั้งหมดเรียบร้อยแล้ว</p>
             </div>
           )}
         </div>

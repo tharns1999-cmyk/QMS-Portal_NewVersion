@@ -69,7 +69,7 @@ const Library = () => {
     currentUser?.role === 'DCC_STAFF'
   );
 
-  const [activeTab, setActiveTab] = useState(TAB_GENERAL);
+  const [activeTab, setActiveTab] = useState(TAB_MY_DEPT);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -184,12 +184,10 @@ const Library = () => {
     return unique.length > 0 ? unique : [primaryDept];
   }, [currentUser, primaryDept]);
 
-  const [myDeptSubFilter, setMyDeptSubFilter] = useState(primaryDept);
+  const [myDeptSubFilter, setMyDeptSubFilter] = useState('ALL');
 
   useEffect(() => {
-    if (primaryDept) {
-      setMyDeptSubFilter(primaryDept);
-    }
+    setMyDeptSubFilter('ALL');
   }, [primaryDept]);
 
   const availableDepts = useMemo(() => {
@@ -658,6 +656,10 @@ const Library = () => {
 
   const handleDownloadUncontrolled = async (doc, e, openInTab = false) => {
     if (e) e.stopPropagation();
+    if (!canDownloadDocument(doc, currentUser)) {
+      toast.error('คุณไม่มีสิทธิ์ดาวน์โหลดเอกสารนี้ตามระดับการเข้าถึง (Access Scope)');
+      return;
+    }
     const docCode = doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title || 'Document';
     const isForm = UniversalWatermarkService.isBlankFormBypass(doc);
 
@@ -927,7 +929,7 @@ const Library = () => {
   const handleSelectTab = (tab) => {
     setActiveTab(tab);
     if (tab === TAB_MY_DEPT || tab === 'dept') {
-      setMyDeptSubFilter(primaryDept);
+      setMyDeptSubFilter('ALL');
     } else {
       setFilterStatus('EFFECTIVE');
     }
@@ -941,7 +943,7 @@ const Library = () => {
     setFilterAccessScope('ALL');
     setFilterStatus('EFFECTIVE');
     if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
-      setMyDeptSubFilter(primaryDept);
+      setMyDeptSubFilter('ALL');
     }
   };
 
@@ -978,36 +980,36 @@ const Library = () => {
     const scope = doc?.access_control?.scope || doc?.access_scope || 'GENERAL';
     if (scope === 'GENERAL') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9]">
-          <Globe size={13} /> ทั่วไป
+        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+          <Globe size={11} className="text-slate-400" /> ทั่วไป
         </span>
       );
     }
     if (scope === 'DEPT_ONLY') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
-          <Lock size={13} /> เฉพาะแผนก
+        <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 font-medium">
+          <Lock size={11} className="text-amber-500" /> เฉพาะแผนก
         </span>
       );
     }
     if (scope === 'TARGETED') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF]">
-          <Building2 size={13} /> ระบุแผนก
+        <span className="inline-flex items-center gap-1 text-[11px] text-blue-700 font-medium">
+          <Building2 size={11} className="text-blue-500" /> ระบุแผนก
         </span>
       );
     }
     if (scope === 'RESTRICTED') {
       const minLvl = doc?.access_control?.min_access_level;
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] text-[#F24822] border border-[#FDC4B8]">
-          <ShieldAlert size={13} /> ลับเฉพาะ{minLvl ? ` (Lv.${minLvl}+)` : ''}
+        <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 font-medium">
+          <ShieldAlert size={11} className="text-rose-500" /> ลับเฉพาะ{minLvl ? ` (Lv.${minLvl}+)` : ''}
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9]">
-        <Globe size={13} /> ทั่วไป
+      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+        <Globe size={11} className="text-slate-400" /> ทั่วไป
       </span>
     );
   };
@@ -1096,19 +1098,19 @@ const Library = () => {
 
     if (hasActiveVersion) {
       return (
-        <StatusBadge status="EFFECTIVE" customLabel="มีผลบังคับใช้ (Active)" icon={<CheckCircle2 size={13} strokeWidth={2} />} />
+        <StatusBadge status="EFFECTIVE" customLabel="มีผลบังคับใช้ (Active)" icon={<CheckCircle2 size={13} strokeWidth={1.5} />} />
       );
     }
 
     if (isObsolete) {
       return (
-        <StatusBadge status="OBSOLETE" customLabel="ยกเลิกถาวร" icon={<XCircle size={13} strokeWidth={2} />} />
+        <StatusBadge status="OBSOLETE" customLabel="ยกเลิกถาวร" icon={<XCircle size={13} strokeWidth={1.5} />} />
       );
     }
 
     if (isSuperseded) {
       return (
-        <StatusBadge status="SUPERSEDED" customLabel="ฉบับตกรุ่น" icon={<Clock size={13} strokeWidth={2} />} />
+        <StatusBadge status="SUPERSEDED" customLabel="ฉบับตกรุ่น" icon={<Clock size={13} strokeWidth={1.5} />} />
       );
     }
 
@@ -1123,18 +1125,18 @@ const Library = () => {
         <table className="w-full text-left text-sm table-auto min-w-full border-collapse">
           <thead className="bg-slate-50 text-slate-700 font-semibold text-xs uppercase tracking-wider border-b border-slate-200 sticky top-0 z-20 whitespace-nowrap backdrop-blur-xs">
             <tr>
-              {filterStatus !== 'OBSOLETE' && (
-                <th className="w-[80px] min-w-[80px] py-3.5 px-3 text-center select-none bg-slate-50">การจัดการ</th>
-              )}
-              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[33%]' : 'w-[30%]'} min-w-[220px] py-3.5 px-3.5 select-none bg-slate-50`}>รหัสและชื่อเอกสาร</th>
-              <th className="w-[15%] min-w-[130px] py-3.5 px-3.5 select-none bg-slate-50">แผนกและสิทธิ์</th>
-              <th className="w-[15%] min-w-[130px] py-3.5 px-3.5 select-none bg-slate-50">
+              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[35%]' : 'w-[30%]'} min-w-[220px] py-2.5 px-3.5 select-none bg-slate-50`}>รหัสและชื่อเอกสาร</th>
+              <th className="w-[15%] min-w-[130px] py-2.5 px-3 select-none bg-slate-50">แผนกและสิทธิ์</th>
+              <th className="w-[15%] min-w-[130px] py-2.5 px-3 select-none bg-slate-50">
                 {filterStatus === 'SUPERSEDED' ? 'จำนวนฉบับตกรุ่น' : 'ฉบับและวันบังคับใช้'}
               </th>
-              <th className="w-[20%] min-w-[160px] py-3.5 px-3.5 select-none bg-slate-50">
+              <th className="w-[20%] min-w-[160px] py-2.5 px-3 select-none bg-slate-50">
                 {filterStatus === 'SUPERSEDED' ? 'สายอนุมัติและสถานะเรียกคืน' : 'สายอนุมัติและสำเนา'}
               </th>
-              <th className="w-[15%] min-w-[140px] py-3.5 px-3.5 select-none bg-slate-50">สถานะเอกสาร</th>
+              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[15%]' : 'w-[13%]'} min-w-[130px] py-2.5 px-3 select-none bg-slate-50`}>สถานะเอกสาร</th>
+              {filterStatus !== 'OBSOLETE' && (
+                <th className="w-[76px] min-w-[76px] py-2.5 px-2.5 text-center select-none bg-slate-50">การจัดการ</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -1200,6 +1202,13 @@ const Library = () => {
               );
               const hasActiveCopiesToReport = isDccUser || myDeptActiveCopies.length > 0;
               const isMenuOpen = openMenuDocId === primaryDoc.id;
+              const isFormDoc = Boolean(
+                docType === 'FM' ||
+                primaryDoc.type === 'FM' ||
+                primaryDoc.docType === 'FM' ||
+                docCodeUpper.startsWith('FM') ||
+                (primaryDoc.title && String(primaryDoc.title).trim().toUpperCase().startsWith('FM'))
+              );
 
               return (
                 <React.Fragment key={primaryDoc.id || `${docCode}-${idx}`}>
@@ -1209,202 +1218,19 @@ const Library = () => {
                     } ${isMenuOpen ? 'relative z-10 bg-slate-50' : ''}`}
                     onClick={() => setPreviewDoc(primaryDoc)}
                   >
-                    {/* 1. เครื่องมือและการจัดการ (Actions - 80px) */}
-                    {filterStatus !== 'OBSOLETE' && (
-                      <td className={`px-2.5 py-3 whitespace-nowrap text-xs text-center ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5 dropdown-action-dock">
-                          {/* ปุ่มดาวน์โหลดด่วน (Quick Download) */}
-                          <button
-                            type="button"
-                            title={(() => {
-                              const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
-                              const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
-                              if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
-                              if (isDccUser) return 'ดาวน์โหลด Master Document (DCC)';
-                              return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
-                            })()}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
-                              const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
-                              if (dt === 'FM' || dt === 'FORM') {
-                                handleDownloadUncontrolled(primaryDoc, e, false);
-                              } else if (isDccUser) {
-                                handleDownloadMaster(primaryDoc, e);
-                              } else {
-                                handleDownloadUncontrolled(primaryDoc, e, false);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg border border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
-                          >
-                            <Download size={14} />
-                          </button>
-
-                          {/* ปุ่มเปิดเมนูเพิ่มเติม (...) */}
-                          <div className="relative">
-                            <button
-                              type="button"
-                              title="เมนูการจัดการเพิ่มเติม"
-                              aria-label="เมนูเพิ่มเติม"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuDocId(isMenuOpen ? null : primaryDoc.id);
-                              }}
-                              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                                isMenuOpen
-                                  ? 'bg-[#0D99FF] text-white border-[#0D99FF] shadow-xs'
-                                  : 'border-[#E2E8F0] bg-white text-[#475569] hover:bg-[#F8FAFC]'
-                              }`}
-                            >
-                              <MoreHorizontal size={14} />
-                            </button>
-
-                            {/* Overflow Dropdown Menu */}
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className={`overflow-dropdown-menu absolute left-0 top-full mt-1.5 w-60 bg-white border border-[#CBD5E1] rounded-xl shadow-2xl z-50 py-1.5 divide-y divide-[#F1F5F9] animate-in fade-in-50 zoom-in-95 duration-100 ${
-                                isMenuOpen ? 'block' : 'hidden'
-                              }`}
-                            >
-
-                              {/* กลุ่มที่ 2: ฟังก์ชัน DCC */}
-                              {isDccUser && (
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    title="ดาวน์โหลดไฟล์ต้นฉบับแท้โดยไม่มีการประทับลายน้ำ (Clean Master ISO 9001)"
-                                    onClick={(e) => {
-                                      setOpenMenuDocId(null);
-                                      handleDownloadCleanMaster(primaryDoc, e);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#065F46] hover:bg-[#ECFDF5] flex items-center gap-2.5 transition-colors font-semibold group cursor-pointer"
-                                  >
-                                    <ShieldCheck className="text-[#059669] shrink-0" size={14} />
-                                    <span>ดาวน์โหลดต้นฉบับ (ไม่ติดลายน้ำ)</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    title="ดาวน์โหลดสำหรับแจกจ่ายภายนอก (External Release)"
-                                    onClick={(e) => {
-                                      setOpenMenuDocId(null);
-                                      handleDownloadExternal(primaryDoc, e);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#F0FDF4] hover:text-[#059669] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <Globe className="text-[#059669] shrink-0" size={14} />
-                                    <span>ดาวน์โหลด External Release</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    title="Watermark Studio (ทดสอบและดาวน์โหลดลายน้ำ 7 รูปแบบ)"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenMenuDocId(null);
-                                      setStudioDoc(primaryDoc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#F5F3FF] hover:text-[#7C3AED] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <Sparkles className="text-[#7C3AED] shrink-0" size={14} />
-                                    <span>Watermark Studio (ทดสอบลายน้ำ)</span>
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* กลุ่มที่ 3: การขอสำเนาควบคุม */}
-                              {isOwner && isEffective && (
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    title="ขอสำเนาควบคุมเพิ่มเติม"
-                                    onClick={() => {
-                                      setOpenMenuDocId(null);
-                                      handleRequestAdditionalCopy(primaryDoc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#F0FDF4] hover:text-[#14AE5C] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <PlusCircle className="text-[#14AE5C] shrink-0" size={14} />
-                                    <span>ขอสำเนาควบคุมเพิ่มเติม</span>
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* กลุ่มที่ 4: DAR Workflow Actions */}
-                              {isOwner && isEffective && (
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    title="ยื่นคำร้องขอแก้ไขฉบับใหม่"
-                                    onClick={() => {
-                                      setOpenMenuDocId(null);
-                                      handleInitiateRevision(primaryDoc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#1E293B] hover:bg-[#FFFBEB] hover:text-[#D97706] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <Edit3 className="text-[#D97706] shrink-0" size={14} />
-                                    <span>ยื่นคำร้องขอแก้ไขฉบับใหม่</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    title="ขอยกเลิกเอกสารฉบับนี้"
-                                    onClick={() => {
-                                      setOpenMenuDocId(null);
-                                      handleInitiateObsolete(primaryDoc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#DC2626] hover:bg-[#FEF2F2] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <GitFork className="text-[#DC2626] shrink-0" size={14} />
-                                    <span>ขอยกเลิกเอกสารฉบับนี้</span>
-                                  </button>
-                                </div>
-                              )}
-
-                              {hasActiveCopiesToReport && (
-                                <div className="py-1">
-                                  <button
-                                    type="button"
-                                    title="แจ้งเอกสารชำรุด หรือสูญหาย เพื่อขอออกเล่มทดแทน"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenMenuDocId(null);
-                                      const targetCopy = myDeptActiveCopies[0] || (controlledCopyInstances || []).find(c => 
-                                        (String(c.docId || c.doc_id) === String(primaryDoc.id) || c.doc_code === docCode) &&
-                                        ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status)
-                                      );
-                                      if (targetCopy) {
-                                        setReplacementInstance(targetCopy);
-                                      } else {
-                                        toast.error('ไม่พบสำเนาควบคุมที่ใช้งานอยู่สำหรับเอกสารนี้');
-                                      }
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-[#F24822] hover:bg-[#FFF2F0] flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <AlertTriangle className="text-[#F24822] shrink-0" size={14} />
-                                    <span>แจ้งชำรุด หรือสูญหาย</span>
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                    )}
-
-                    {/* 2. รหัสและชื่อเอกสาร (Document Identity - 30%) */}
-                    <td className="py-3 px-3.5 align-middle">
+                    {/* 1. รหัสและชื่อเอกสาร (Document Identity - First Column) */}
+                    <td className="py-2.5 px-3.5 align-middle">
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-sm text-[#0D99FF] bg-[#E5F4FF] border border-[#B8E1FF] px-2.5 py-0.5 rounded-md inline-block">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-xs sm:text-sm text-slate-900 group-hover:text-blue-600 transition-colors tracking-tight">
                             {docCode}
                           </span>
-                          <span className="bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded text-xs font-mono font-bold border border-[#E2E8F0]">
+                          <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold border border-slate-200">
                             {docType}
                           </span>
                         </div>
                         <div 
-                          className="font-medium text-[#1E293B] text-sm leading-relaxed truncate max-w-md group-hover:text-[#0D99FF] transition-colors" 
+                          className="font-medium text-slate-700 text-xs sm:text-sm leading-relaxed truncate max-w-md group-hover:text-blue-900 transition-colors" 
                           title={docTitleName}
                         >
                           {docTitleName}
@@ -1412,12 +1238,11 @@ const Library = () => {
                       </div>
                     </td>
 
-                    {/* 3. แผนกและสิทธิ์การเข้าถึง (Dept & Access - 15%) */}
-                    <td className="py-3 px-3.5 align-middle">
-                      <div className="flex flex-col items-start gap-1.5">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          <Building2 size={12} className="text-slate-500" />
-                          <span>{canonicalDept}</span>
+                    {/* 2. แผนกและสิทธิ์การเข้าถึง (Dept & Access) */}
+                    <td className="py-2.5 px-3 align-middle">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="font-semibold text-xs text-slate-800">
+                          {canonicalDept}
                         </span>
                         <div>
                           {renderSecurityBadge(primaryDoc)}
@@ -1425,35 +1250,35 @@ const Library = () => {
                       </div>
                     </td>
 
-                    {/* 4. ฉบับและวันบังคับใช้ หรือ จำนวนฉบับตกรุ่น (15%) */}
-                    <td className="py-3 px-3.5 align-middle">
+                    {/* 3. ฉบับและวันบังคับใช้ หรือ จำนวนฉบับตกรุ่น */}
+                    <td className="py-2.5 px-3 align-middle">
                       {isSupersededTab ? (
                         <div className="flex flex-col items-start gap-1">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
-                            <Clock size={12} className="text-[#D97706] shrink-0" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs">
+                            <Clock size={11} className="text-[#D97706] shrink-0" />
                             <span className="font-bold">{supersededCount} ฉบับตกรุ่น</span>
-                            <span className="font-mono text-[11px] text-[#B45309] bg-[#FEF3C7] px-1.5 py-0.5 rounded border border-[#FDE68A]">
+                            <span className="font-mono text-[10px] text-[#B45309] bg-[#FEF3C7] px-1.5 py-0.2 rounded border border-[#FDE68A]">
                               ({supersededRevTags.join(', ')})
                             </span>
                           </span>
-                          <span className="font-mono text-[11px] text-slate-500">
+                          <span className="font-mono text-[10px] text-slate-500">
                             ประวัติตกรุ่นสะสม
                           </span>
                         </div>
                       ) : (
                         <div className="flex flex-col items-start gap-0.5">
-                          <span className="font-mono font-bold text-sm text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                          <span className="font-mono font-bold text-xs sm:text-sm text-slate-800">
                             Rev.{revFormatted}
                           </span>
-                          <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่มีผลบังคับใช้">
+                          <span className="font-mono text-[11px] text-slate-500" title="วันที่มีผลบังคับใช้">
                             {effDateDisplay}
                           </span>
                         </div>
                       )}
                     </td>
 
-                    {/* 5. สายอนุมัติและสำเนา หรือ สรุปสถานะการเรียกคืน (20%) */}
-                    <td className="py-3 px-3.5 align-middle">
+                    {/* 4. สายอนุมัติและสำเนา หรือ สรุปสถานะการเรียกคืน */}
+                    <td className="py-2.5 px-3 align-middle">
                       <div className="flex flex-col items-start gap-1">
                         {isSupersededTab ? (
                           (() => {
@@ -1511,29 +1336,214 @@ const Library = () => {
                           })()
                         ) : (
                           <span 
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium"
                             title={distSummary.tooltip}
                           >
-                            <Share2 size={12} className="text-blue-500 shrink-0" />
+                            <Share2 size={11} className="text-slate-400" />
                             <span>{distSummary.count > 0 ? `${distSummary.count} จุดแจกจ่าย` : 'สำเนาดิจิทัล'}</span>
                           </span>
                         )}
 
                         <div 
-                          className="text-xs text-slate-600 truncate max-w-[190px]"
+                          className="text-[11px] text-slate-500 truncate max-w-[190px]"
                           title={`ผู้ขอ: ${workflow.req} | ผู้ทบทวน: ${workflow.rev} | ผู้อนุมัติ: ${workflow.app}`}
                         >
-                          <span className="text-slate-500">ผู้ขอ:</span> <span className="font-medium text-slate-700">{workflow.req}</span> · <span className="text-slate-500">อนุมัติ:</span> <span className="font-medium text-slate-700">{workflow.app}</span>
+                          <span>ผู้ขอ:</span> <strong className="font-medium text-slate-700">{workflow.req}</strong> · <span>อนุมัติ:</span> <strong className="font-medium text-slate-700">{workflow.app}</strong>
                         </div>
                       </div>
                     </td>
 
-                    {/* 6. สถานะเอกสาร (Master Lifecycle Status - 15%) */}
-                    <td className="py-3 px-3.5 align-middle">
-                      <div className="flex flex-col items-start gap-1.5">
+                    {/* 5. สถานะเอกสาร (Master Lifecycle Status) */}
+                    <td className="py-2.5 px-3 align-middle">
+                      <div className="flex flex-col items-start gap-1">
                         {renderLifecycleBadge(primaryDoc, activeRevisionsList, isObsoleteTab, isSupersededTab)}
                       </div>
                     </td>
+
+                    {/* 6. เครื่องมือและการจัดการ (Actions - Far Right Column) */}
+                    {filterStatus !== 'OBSOLETE' && (
+                      <td className={`px-2 py-2.5 whitespace-nowrap text-xs text-center ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1 dropdown-action-dock">
+                          {/* ปุ่มดาวน์โหลดด่วน (Minimal Ghost Download Button) */}
+                          {canDownloadDocument(primaryDoc, currentUser) && (
+                            <button
+                              type="button"
+                              title={(() => {
+                                const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
+                                const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
+                                if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
+                                if (isDccUser) return 'ดาวน์โหลด Master Document (DCC)';
+                                return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
+                              })()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const docCode = primaryDoc.document_code || primaryDoc.doc_code || primaryDoc.title || '';
+                                const dt = (primaryDoc.docType || primaryDoc.doc_type || primaryDoc.type || docCode.split('-')[0] || '').toUpperCase();
+                                if (dt === 'FM' || dt === 'FORM') {
+                                  handleDownloadUncontrolled(primaryDoc, e, false);
+                                } else if (isDccUser) {
+                                  handleDownloadMaster(primaryDoc, e);
+                                } else {
+                                  handleDownloadUncontrolled(primaryDoc, e, false);
+                                }
+                              }}
+                              className="p-1.5 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                              <Download size={14} />
+                            </button>
+                          )}
+
+                          {/* ปุ่มเปิดเมนูเพิ่มเติม (...) */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              title="เมนูการจัดการเพิ่มเติม"
+                              aria-label="เมนูเพิ่มเติม"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuDocId(isMenuOpen ? null : primaryDoc.id);
+                              }}
+                              className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                isMenuOpen
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                              }`}
+                            >
+                              <MoreHorizontal size={14} />
+                            </button>
+
+                            {/* Overflow Dropdown Menu */}
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className={`overflow-dropdown-menu absolute right-0 top-full mt-1.5 w-60 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 divide-y divide-slate-100 animate-in fade-in-50 zoom-in-95 duration-100 ${
+                                isMenuOpen ? 'block' : 'hidden'
+                              }`}
+                            >
+
+                              {/* กลุ่มที่ 2: ฟังก์ชัน DCC */}
+                              {isDccUser && (
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    title="ดาวน์โหลดไฟล์ต้นฉบับแท้โดยไม่มีการประทับลายน้ำ (Clean Master ISO 9001)"
+                                    onClick={(e) => {
+                                      setOpenMenuDocId(null);
+                                      handleDownloadCleanMaster(primaryDoc, e);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-emerald-800 hover:bg-emerald-50 flex items-center gap-2.5 transition-colors font-semibold group cursor-pointer"
+                                  >
+                                    <ShieldCheck className="text-emerald-600 shrink-0" size={14} />
+                                    <span>ดาวน์โหลดต้นฉบับ (ไม่ติดลายน้ำ)</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    title="ดาวน์โหลดสำหรับแจกจ่ายภายนอก (External Release)"
+                                    onClick={(e) => {
+                                      setOpenMenuDocId(null);
+                                      handleDownloadExternal(primaryDoc, e);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 hover:text-emerald-600 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <Globe className="text-slate-400 group-hover:text-emerald-500 shrink-0" size={14} />
+                                    <span>ดาวน์โหลด External Release</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    title="Watermark Studio (ทดสอบและดาวน์โหลดลายน้ำ 7 รูปแบบ)"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMenuDocId(null);
+                                      setStudioDoc(primaryDoc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <Sparkles className="text-purple-500 shrink-0" size={14} />
+                                    <span>Watermark Studio (ทดสอบลายน้ำ)</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* กลุ่มที่ 3: การขอสำเนาควบคุม */}
+                              {isOwner && isEffective && !isFormDoc && (
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    title="ขอสำเนาควบคุมเพิ่มเติม"
+                                    onClick={() => {
+                                      setOpenMenuDocId(null);
+                                      handleRequestAdditionalCopy(primaryDoc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 hover:text-blue-600 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <PlusCircle className="text-blue-500 shrink-0" size={14} />
+                                    <span>ขอสำเนาควบคุมเพิ่มเติม</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* กลุ่มที่ 4: DAR Workflow Actions */}
+                              {isOwner && isEffective && (
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    title="ยื่นคำร้องขอแก้ไขฉบับใหม่"
+                                    onClick={() => {
+                                      setOpenMenuDocId(null);
+                                      handleInitiateRevision(primaryDoc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <Edit3 className="text-amber-500 shrink-0" size={14} />
+                                    <span>ยื่นคำร้องขอแก้ไขฉบับใหม่</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    title="ขอยกเลิกเอกสารฉบับนี้"
+                                    onClick={() => {
+                                      setOpenMenuDocId(null);
+                                      handleInitiateObsolete(primaryDoc);
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <GitFork className="text-rose-500 shrink-0" size={14} />
+                                    <span>ขอยกเลิกเอกสารฉบับนี้</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {hasActiveCopiesToReport && (
+                                <div className="py-1">
+                                  <button
+                                    type="button"
+                                    title="แจ้งเอกสารชำรุด หรือสูญหาย เพื่อขอออกเล่มทดแทน"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMenuDocId(null);
+                                      const targetCopy = myDeptActiveCopies[0] || (controlledCopyInstances || []).find(c => 
+                                        (String(c.docId || c.doc_id) === String(primaryDoc.id) || c.doc_code === docCode) &&
+                                        ['ISSUED_ACTIVE', 'ACTIVE'].includes(c.status)
+                                      );
+                                      if (targetCopy) {
+                                        setReplacementInstance(targetCopy);
+                                      } else {
+                                        toast.error('ไม่พบสำเนาควบคุมที่ใช้งานอยู่สำหรับเอกสารนี้');
+                                      }
+                                    }}
+                                    className="w-full px-3.5 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
+                                  >
+                                    <AlertTriangle className="text-rose-500 shrink-0" size={14} />
+                                    <span>แจ้งชำรุด หรือสูญหาย</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    )}
                   </tr>
 
                   {/* Accordion Inset Panel for Sub-table */}
@@ -1626,30 +1636,32 @@ const Library = () => {
                                           >
                                             <ExternalLink size={13} />
                                           </button>
-                                          <button
-                                            type="button"
-                                            title={(() => {
-                                              const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
-                                              const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
-                                              if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
-                                              if (isDccUser) return 'ดาวน์โหลด Master PDF';
-                                              return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
-                                            })()}
-                                            onClick={(e) => {
-                                              const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
-                                              const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
-                                              if (dt === 'FM' || dt === 'FORM') {
-                                                handleDownloadUncontrolled(subDoc, e, false);
-                                              } else if (isDccUser) {
-                                                handleDownloadMaster(subDoc, e);
-                                              } else {
-                                                handleDownloadUncontrolled(subDoc, e, false);
-                                              }
-                                            }}
-                                            className="p-1.5 rounded border border-[#CBD5E1] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
-                                          >
-                                            <Download size={13} />
-                                          </button>
+                                          {canDownloadDocument(subDoc, currentUser) && (
+                                            <button
+                                              type="button"
+                                              title={(() => {
+                                                const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
+                                                const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
+                                                if (dt === 'FM' || dt === 'FORM') return 'ดาวน์โหลดแบบฟอร์ม (ไม่มีลายน้ำ)';
+                                                if (isDccUser) return 'ดาวน์โหลด Master PDF';
+                                                return 'ดาวน์โหลดสำเนาไม่ควบคุม (UNCONTROLLED COPY)';
+                                              })()}
+                                              onClick={(e) => {
+                                                const subCode = subDoc.document_code || subDoc.doc_code || subDoc.title || '';
+                                                const dt = (subDoc.docType || subDoc.doc_type || subDoc.type || subCode.split('-')[0] || '').toUpperCase();
+                                                if (dt === 'FM' || dt === 'FORM') {
+                                                  handleDownloadUncontrolled(subDoc, e, false);
+                                                } else if (isDccUser) {
+                                                  handleDownloadMaster(subDoc, e);
+                                                } else {
+                                                  handleDownloadUncontrolled(subDoc, e, false);
+                                                }
+                                              }}
+                                              className="p-1.5 rounded border border-[#CBD5E1] bg-white text-[#475569] hover:text-[#0D99FF] hover:border-[#0D99FF] hover:bg-[#F0F7FF] transition-colors cursor-pointer"
+                                            >
+                                              <Download size={13} />
+                                            </button>
+                                          )}
                                           {isDccUser && (
                                             <button
                                               type="button"
@@ -1697,315 +1709,306 @@ const Library = () => {
   );
 
   return (
-    <div className="w-full h-full flex-1 flex flex-col min-h-0 space-y-3 pb-4">
-      {/* Header Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 card-surface p-4 shrink-0">
-        <div className="flex items-start gap-3">
-          <div className="p-2.5 rounded-xl bg-slate-100 text-slate-800 border border-slate-200 shrink-0">
-            <BookOpen className="w-5 h-5" strokeWidth={1.75} />
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-slate-900 tracking-tight">
-              คลังเอกสารแม่บท (Document Library)
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              ศูนย์รวมเอกสารคุณภาพ เอกสารทั่วไป เอกสารภายในแผนก และเอกสารที่ได้รับการแจกจ่ายตามมาตรฐาน ISO 9001
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 3-Tier Segmented Tabs Navigation */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-100 border border-slate-200 rounded-xl w-fit overflow-x-auto shrink-0">
-        {/* Tab 1: เอกสารทั่วไป */}
-        <button
-          type="button"
-          onClick={() => handleSelectTab(TAB_GENERAL)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === TAB_GENERAL || activeTab === 'general'
-              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
-          }`}
-        >
-          <Globe size={16} strokeWidth={activeTab === TAB_GENERAL || activeTab === 'general' ? 2 : 1.75} className={activeTab === TAB_GENERAL || activeTab === 'general' ? 'text-blue-600' : 'text-slate-400'} />
-          <span>เอกสารทั่วไป</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${
-            activeTab === TAB_GENERAL || activeTab === 'general'
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'bg-slate-200 text-slate-600'
-          }`}>
-            {generalDocsCount}
-          </span>
-        </button>
-
-        {/* Tab 2: เอกสารในแผนกฉัน */}
-        <button
-          type="button"
-          onClick={() => handleSelectTab(TAB_MY_DEPT)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === TAB_MY_DEPT || activeTab === 'dept'
-              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
-          }`}
-        >
-          <Building2 size={16} strokeWidth={activeTab === TAB_MY_DEPT || activeTab === 'dept' ? 2 : 1.75} className={activeTab === TAB_MY_DEPT || activeTab === 'dept' ? 'text-blue-600' : 'text-slate-400'} />
-          <span>เอกสารในแผนกฉัน</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${
-            activeTab === TAB_MY_DEPT || activeTab === 'dept'
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'bg-slate-200 text-slate-600'
-          }`}>
-            {myDeptDocsCount}
-          </span>
-        </button>
-
-        {/* Tab 3: เอกสารที่ได้รับการแจกจ่าย */}
-        <button
-          type="button"
-          onClick={() => handleSelectTab(TAB_DISTRIBUTED)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-            activeTab === TAB_DISTRIBUTED || activeTab === 'dist'
-              ? 'bg-white text-slate-900 border border-slate-200 shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
-          }`}
-        >
-          <Share2 size={16} strokeWidth={activeTab === TAB_DISTRIBUTED || activeTab === 'dist' ? 2 : 1.75} className={activeTab === TAB_DISTRIBUTED || activeTab === 'dist' ? 'text-blue-600' : 'text-slate-400'} />
-          <span>เอกสารที่ได้รับการแจกจ่าย</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${
-            activeTab === TAB_DISTRIBUTED || activeTab === 'dist'
-              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-              : 'bg-slate-200 text-slate-600'
-          }`}>
-            {distributedDocsCount}
-          </span>
-        </button>
-      </div>
-
-      {/* Control Toolbar: 2-Row Clean Enterprise Layout */}
-      <div className="card-surface p-4 space-y-3.5 shrink-0">
+    <div className="w-full h-full flex-1 flex flex-col min-h-0 pb-4">
+      {/* ── Single-Canvas Clean Container (Header + Filters + Table unified) ── */}
+      <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs flex-1 flex flex-col min-h-0">
         
-        {/* แถวที่ 1: ค้นหา + 4 Dropdowns + ปุ่มส่งออก (เรียงแถวเดียวสมบูรณ์) */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
-          
-          {/* ช่องค้นหาเอกสาร (ขยายตามพื้นที่ว่างที่เหลือ) */}
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-            <input
-              type="text"
-              placeholder="ค้นหาตามรหัสเอกสาร หรือ ชื่อเอกสาร..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-primary w-full h-10 pl-9 pr-10"
-            />
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                ✕
-              </button>
-            )}
+        {/* 1. Header Strip: Title + Scope Tabs (Standardized Page Header) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <BookOpen className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              คลังเอกสารแม่บท
+            </h1>
           </div>
 
-          {/* Dropdown 0: แผนก (Department Filter พร้อมตัวเลือก ทุกแผนก All) */}
-          <div className="w-full lg:w-48 shrink-0">
-            <select
-              value={filterDept || 'ALL'}
-              onChange={(e) => setFilterDept(e.target.value)}
-              className="select-primary w-full h-10 px-3 cursor-pointer"
-            >
-              <option value="ALL">ทุกแผนก (All)</option>
-              {availableDepts.map(d => (
-                <option key={d.id} value={d.id}>{d.name || d.id}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Dropdown 1: ประเภทเอกสาร */}
-          <div className="w-full lg:w-40 shrink-0">
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="select-primary w-full h-10 px-3 cursor-pointer"
-            >
-              <option value="ALL">ทุกประเภท (Types)</option>
-              {availableTypes.map(t => {
-                const matchedType = (documentTypes || []).find(dt => (dt.code || dt.id) === t);
-                const label = matchedType ? `${matchedType.nameTh || matchedType.name} (${t})` : t;
-                return <option key={t} value={t}>{label}</option>;
-              })}
-            </select>
-          </div>
-
-          {/* Dropdown 2: มาตรฐานที่เกี่ยวข้อง */}
-          <div className="w-full lg:w-36 shrink-0">
-            <select
-              value={filterStandard || 'ALL'}
-              onChange={(e) => setFilterStandard(e.target.value)}
-              className="select-primary w-full h-10 px-3 cursor-pointer"
-            >
-              <option value="ALL">ทุกมาตรฐาน</option>
-              {availableStandards.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Dropdown 3: ระดับความลับ */}
-          <div className="w-full lg:w-36 shrink-0">
-            <select
-              value={filterAccessScope || 'ALL'}
-              onChange={(e) => setFilterAccessScope(e.target.value)}
-              className="select-primary w-full h-10 px-3 cursor-pointer"
-            >
-              <option value="ALL">ทุกระดับความลับ</option>
-              <option value="GENERAL">ทั่วไป (General)</option>
-              <option value="DEPT_ONLY">เฉพาะแผนก (Dept Only)</option>
-              <option value="TARGETED">ระบุแผนก (Targeted)</option>
-              <option value="RESTRICTED">ลับเฉพาะ (Restricted)</option>
-            </select>
-          </div>
-
-          {/* ปุ่มส่งออกเอกสารแผนก */}
-          {(activeTab === TAB_MY_DEPT || activeTab === 'dept' || isDccUser) && (
-            <div className="shrink-0">
-              <button
-                type="button"
-                onClick={handleExport}
-                className="w-full lg:w-auto h-10 px-4 inline-flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold btn-secondary whitespace-nowrap cursor-pointer"
-              >
-                <Download className="text-slate-700 shrink-0" size={15} />
-                <span>{isDccUser ? 'ส่งออกเอกสารแม่บท' : 'ส่งออกเอกสารแผนก'}</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Quick-Pills สำหรับผู้ใช้ Multi-Department / Executive ในแท็บ 'เอกสารในแผนกฉัน' */}
-        {(activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && (
-          <div className="flex items-center flex-wrap gap-2 pt-2 border-t border-[#F1F5F9]">
-            <span className="text-xs font-semibold text-[#64748B] flex items-center gap-1.5 mr-1">
-              <Building2 size={14} className="text-[#0D99FF]" />
-              <span>สายงาน / แผนก:</span>
-            </span>
-
-            {/* ปุ่ม: ทั้งหมดในสายงาน (จำนวนรวม) */}
+          {/* 3 Scope Tabs: Minimal Segmented Pills */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-lg overflow-x-auto shrink-0 text-xs">
+            {/* Tab 1: เอกสารทั่วไป */}
             <button
               type="button"
-              onClick={() => setMyDeptSubFilter('ALL')}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                myDeptSubFilter === 'ALL'
-                  ? 'bg-[#0D99FF] text-white shadow-xs font-semibold'
-                  : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
+              onClick={() => handleSelectTab(TAB_GENERAL)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === TAB_GENERAL || activeTab === 'general'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
               }`}
             >
-              <span>ทั้งหมดในสายงาน</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono ${
-                myDeptSubFilter === 'ALL' ? 'bg-white/25 text-white' : 'bg-[#CBD5E1] text-[#1E293B]'
+              <Globe size={13} className={activeTab === TAB_GENERAL || activeTab === 'general' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>เอกสารทั่วไป</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeTab === TAB_GENERAL || activeTab === 'general'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                  : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {generalDocsCount}
+              </span>
+            </button>
+
+            {/* Tab 2: เอกสารในแผนกฉัน */}
+            <button
+              type="button"
+              onClick={() => handleSelectTab(TAB_MY_DEPT)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === TAB_MY_DEPT || activeTab === 'dept'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Building2 size={13} className={activeTab === TAB_MY_DEPT || activeTab === 'dept' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ในแผนกฉัน</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeTab === TAB_MY_DEPT || activeTab === 'dept'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                  : 'bg-slate-200/80 text-slate-600'
               }`}>
                 {myDeptDocsCount}
               </span>
             </button>
 
-            {/* ปุ่มแยกรายแผนก */}
-            {userDistinctDepts.map((dept) => {
-              const isPrimary = deptMatches(dept, primaryDept);
-              const count = deptCounts[dept] || 0;
-              const isSelected = myDeptSubFilter === dept;
-
-              return (
-                <button
-                  key={dept}
-                  type="button"
-                  onClick={() => setMyDeptSubFilter(dept)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-[#0D99FF] text-white shadow-xs font-semibold'
-                      : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]'
-                  }`}
-                >
-                  <span>{isPrimary ? `⭐️ [${dept}]` : `[${dept}]`}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono ${
-                    isSelected ? 'bg-white/25 text-white' : 'bg-[#CBD5E1] text-[#1E293B]'
-                  }`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+            {/* Tab 3: เอกสารที่ได้รับการแจกจ่าย */}
+            <button
+              type="button"
+              onClick={() => handleSelectTab(TAB_DISTRIBUTED)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === TAB_DISTRIBUTED || activeTab === 'dist'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Share2 size={13} className={activeTab === TAB_DISTRIBUTED || activeTab === 'dist' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ที่ได้รับการแจกจ่าย</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeTab === TAB_DISTRIBUTED || activeTab === 'dist'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {distributedDocsCount}
+              </span>
+            </button>
           </div>
-        )}
+        </div>
 
-        {/* แถวที่ 2: Universal Status Tabs (เฉพาะในเมนู "เอกสารในแผนกฉัน" เท่านั้น) */}
-        {(activeTab === TAB_MY_DEPT || activeTab === 'dept') ? (
-          <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
-              {[
-                { id: 'EFFECTIVE', label: '✓ มีผลบังคับใช้ (Active)' },
-                { id: 'SUPERSEDED', label: '⏳ ฉบับเดิมตกรุ่น (Superseded)' },
-                { id: 'OBSOLETE', label: '🚫 ยกเลิกการใช้งาน (Obsolete)' },
-                { id: 'ALL', label: 'ทั้งหมด (All Records)' },
-              ].map((tab) => (
+        {/* 2. Unified Filter Toolbar (Directly part of canvas) */}
+        <div className="px-4 py-2.5 space-y-2 border-b border-slate-100 bg-white shrink-0">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
+            {/* Search Input: Compact (h-8.5) */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+              <input
+                type="text"
+                placeholder="ค้นหารหัส หรือชื่อเอกสาร..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full h-8.5 pl-8 pr-7 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-400"
+              />
+              {searchTerm && (
                 <button
-                  key={tab.id}
                   type="button"
-                  onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : tab.id)}
-                  className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    (filterStatus === tab.id) || (tab.id === 'ALL' && filterStatus === '')
-                      ? 'bg-white text-slate-900 shadow-2xs font-bold border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                  }`}
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
                 >
-                  <span>{tab.label}</span>
+                  ✕
                 </button>
-              ))}
+              )}
             </div>
 
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || filterAccessScope !== '' || (filterStatus !== 'EFFECTIVE' && filterStatus !== '') || ((activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && myDeptSubFilter !== primaryDept) ? (
+            {/* Quick Dropdowns: High-Density (h-8.5, text-xs) */}
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              {/* Department Filter */}
+              <select
+                value={filterDept || 'ALL'}
+                onChange={(e) => setFilterDept(e.target.value)}
+                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[120px]"
+              >
+                <option value="ALL">ทุกแผนก (All)</option>
+                {availableDepts.map(d => (
+                  <option key={d.id} value={d.id}>{d.name || d.id}</option>
+                ))}
+              </select>
+
+              {/* Document Type */}
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[110px]"
+              >
+                <option value="ALL">ทุกประเภท (Types)</option>
+                {availableTypes.map(t => {
+                  const matchedType = (documentTypes || []).find(dt => (dt.code || dt.id) === t);
+                  const label = matchedType ? `${matchedType.nameTh || matchedType.name} (${t})` : t;
+                  return <option key={t} value={t}>{label}</option>;
+                })}
+              </select>
+
+              {/* Standards */}
+              <select
+                value={filterStandard || 'ALL'}
+                onChange={(e) => setFilterStandard(e.target.value)}
+                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[105px]"
+              >
+                <option value="ALL">ทุกมาตรฐาน</option>
+                {availableStandards.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+
+              {/* Access Scope */}
+              <select
+                value={filterAccessScope || 'ALL'}
+                onChange={(e) => setFilterAccessScope(e.target.value)}
+                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[110px]"
+              >
+                <option value="ALL">ทุกระดับความลับ</option>
+                <option value="GENERAL">ทั่วไป (General)</option>
+                <option value="DEPT_ONLY">เฉพาะแผนก (Dept Only)</option>
+                <option value="TARGETED">ระบุแผนก (Targeted)</option>
+                <option value="RESTRICTED">ลับเฉพาะ (Restricted)</option>
+              </select>
+
+              {/* Active Pill Badge (Inline Filter Chip) for General / Distributed tabs */}
+              {activeTab !== TAB_MY_DEPT && activeTab !== 'dept' && (
+                <span className="h-8.5 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
+                  <CheckCircle2 size={12} />
+                  <span>เฉพาะฉบับบังคับใช้</span>
+                </span>
+              )}
+
+              {/* Export Button: Ghost/Outline (h-8.5) */}
+              {(activeTab === TAB_MY_DEPT || activeTab === 'dept' || isDccUser) && (
                 <button
                   type="button"
-                  onClick={handleResetFilters}
-                  className="text-rose-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  onClick={handleExport}
+                  className="h-8.5 px-3 inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg whitespace-nowrap cursor-pointer transition-all shadow-2xs shrink-0"
                 >
-                  <RotateCcw size={12} />
-                  <span>ล้างตัวกรองทั้งหมด</span>
+                  <Download className="text-slate-500 shrink-0" size={13} />
+                  <span>{isDccUser ? 'ส่งออกแม่บท' : 'ส่งออกแผนก'}</span>
                 </button>
-              ) : null}
+              )}
+            </div>
+          </div>
+
+          {/* Quick-Pills สำหรับผู้ใช้ Multi-Department ในแท็บ 'เอกสารในแผนกฉัน' */}
+          {(activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && (
+            <div className="flex items-center flex-wrap gap-1.5 pt-2 border-t border-slate-100 text-xs">
+              <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 mr-0.5">
+                <Building2 size={13} className="text-blue-500" />
+                <span>สายงาน / แผนก:</span>
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setMyDeptSubFilter('ALL')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  myDeptSubFilter === 'ALL'
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-2xs font-semibold'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <span>ทั้งหมดในสายงาน</span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                  myDeptSubFilter === 'ALL' ? 'bg-white/25 text-white font-bold' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {myDeptDocsCount}
+                </span>
+              </button>
+
+              {userDistinctDepts.map((dept) => {
+                const isPrimary = deptMatches(dept, primaryDept);
+                const count = deptCounts[dept] || 0;
+                const isSelected = myDeptSubFilter === dept;
+
+                return (
+                  <button
+                    key={dept}
+                    type="button"
+                    onClick={() => setMyDeptSubFilter(dept)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 border ${
+                      isSelected
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-2xs font-semibold'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{isPrimary ? `★ ${dept}` : dept}</span>
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
+                      isSelected ? 'bg-white/25 text-white font-bold' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Universal Status Tabs (เฉพาะในเมนู "เอกสารในแผนกฉัน" เท่านั้น) */}
+          {(activeTab === TAB_MY_DEPT || activeTab === 'dept') && (
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                {[
+                  { id: 'EFFECTIVE', label: 'มีผลบังคับใช้' },
+                  { id: 'SUPERSEDED', label: 'ฉบับเดิมตกรุ่น' },
+                  { id: 'OBSOLETE', label: 'ยกเลิกการใช้งาน' },
+                  { id: 'ALL', label: 'ทั้งหมด' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : tab.id)}
+                    className={`px-2.5 py-1 rounded text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      (filterStatus === tab.id) || (tab.id === 'ALL' && filterStatus === '')
+                        ? 'bg-white text-slate-900 shadow-2xs font-bold border border-slate-200/80'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2.5 text-[11px] text-slate-500">
+                {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || filterAccessScope !== '' || (filterStatus !== 'EFFECTIVE' && filterStatus !== '') || ((activeTab === TAB_MY_DEPT || activeTab === 'dept') && userDistinctDepts.length > 1 && myDeptSubFilter !== 'ALL') ? (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="text-rose-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw size={11} />
+                    <span>ล้างตัวกรอง</span>
+                  </button>
+                ) : null}
+                <span className="font-mono">
+                  แสดงผล <strong className="text-slate-900 font-bold">{isGroupedView ? `${groupedDocs.length} รหัส (${filteredDocs.length} ฉบับ)` : `${filteredDocs.length} รายการ`}</strong> / {tabFilteredDocs.length}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Status Count for General & Distributed Tabs */}
+          {activeTab !== TAB_MY_DEPT && activeTab !== 'dept' && (
+            <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <div>
+                {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || (filterAccessScope !== '' && filterAccessScope !== 'ALL') ? (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="text-rose-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw size={11} />
+                    <span>ล้างตัวกรองทั้งหมด</span>
+                  </button>
+                ) : null}
+              </div>
               <span className="font-mono">
-                แสดงผล <strong className="text-slate-900 font-bold">{isGroupedView ? `${groupedDocs.length} รหัสเอกสาร (${filteredDocs.length} ฉบับ)` : `${filteredDocs.length} รายการ`}</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
+                แสดงผล <strong className="text-slate-900 font-bold">{filteredDocs.length}</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
               </span>
             </div>
-          </div>
-        ) : (
-          <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                <CheckCircle2 size={13} />
-                <span>เฉพาะเอกสารที่มีผลบังคับใช้ (Active Documents Only)</span>
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              {(filterType !== 'ALL' && filterType !== '') || (filterDept !== 'ALL' && filterDept !== '') || (filterStandard !== 'ALL' && filterStandard !== '') || searchTerm || (filterAccessScope !== '' && filterAccessScope !== 'ALL') ? (
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  className="text-rose-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <RotateCcw size={12} />
-                  <span>ล้างตัวกรองทั้งหมด</span>
-                </button>
-              ) : null}
-              <span className="font-mono">
-                แสดงผล <strong className="text-slate-900 font-bold">{filteredDocs.length} รายการ</strong> จากทั้งหมด {tabFilteredDocs.length} รายการ
-              </span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* 3. Table directly rendered on Canvas */}
+        {renderFlatTable()}
       </div>
-
-      {renderFlatTable()}
 
       {/* Document Detail Modal */}
       {previewDoc && (

@@ -316,10 +316,10 @@ const DarReviewModal = ({
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">ระดับชั้นความลับ (Access Scope)</span>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
-                      {accessControl.scope === 'GENERAL' && '🌐 เปิดเผยทั่วไป — ทุกคนเข้าถึงได้'}
-                      {accessControl.scope === 'DEPT_ONLY' && `🔒 เฉพาะแผนก — ล็อกเฉพาะคนในแผนก ${ownerDept}`}
-                      {accessControl.scope === 'TARGETED' && '🏢 เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม'}
-                      {accessControl.scope === 'RESTRICTED' && '🛡️ ลับเฉพาะบุคคล/ตำแหน่ง'}
+                      {accessControl.scope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>เปิดเผยทั่วไป — ทุกคนเข้าถึงได้</span></>}
+                      {accessControl.scope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก — ล็อกเฉพาะคนในแผนก {ownerDept}</span></>}
+                      {accessControl.scope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม</span></>}
+                      {accessControl.scope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะบุคคล/ตำแหน่ง</span></>}
                     </span>
                   </div>
 

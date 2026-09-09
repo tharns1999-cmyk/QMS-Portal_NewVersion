@@ -1,9 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
-import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Sparkles, Zap } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Sparkles, Zap, Globe, Lock, Building2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
@@ -25,6 +25,60 @@ const TaskApprove = () => {
   const task = tasks.find(t => t.id === id);
   const dar = task ? dars.find(d => d.id === task.darId) : null;
   const darTimeline = dar ? timeline.filter(t => t.darId === dar.id) : [];
+
+  // Dynamic extraction and assembly of approvalWorkflow for DAR
+  const darWithWorkflow = useMemo(() => {
+    if (!dar) return null;
+    if (dar.approvalWorkflow && Array.isArray(dar.approvalWorkflow)) return dar;
+
+    const dccUser = (masterUsers || []).find(u => u && (u.isDcc || u.role === 'DCC_ADMIN'));
+    const dccName = dccUser ? (dccUser.fullName || dccUser.name) : 'เจ้าหน้าที่ DCC';
+
+    return {
+      ...dar,
+      approvalWorkflow: [
+        {
+          step: 1,
+          roleKey: 'REQUESTER',
+          role: 'ผู้ร้องขอ',
+          name: dar.requesterName || dar.requester_name || 'ผู้ร้องขอ',
+          assignedTo: dar.requesterName || dar.requester_name || 'ผู้ร้องขอ'
+        },
+        {
+          step: 2,
+          roleKey: 'REVIEWER',
+          role: 'ผู้ทบทวน',
+          name: dar.reviewerName || dar.reviewer_name || 'ผู้ทบทวน',
+          assignedTo: dar.reviewerName || dar.reviewer_name || 'ผู้ทบทวน'
+        },
+        {
+          step: 3,
+          roleKey: 'APPROVER',
+          role: dar.approverRole || 'Approver',
+          name: dar.approverName || currentUser?.name || 'ผู้อนุมัติ',
+          assignedTo: dar.approverName || currentUser?.name || 'ผู้อนุมัติ'
+        },
+        {
+          step: 4,
+          roleKey: 'DCC',
+          role: 'เจ้าหน้าที่ DCC (ตรวจสอบและประกาศใช้)',
+          name: dccName,
+          assignedTo: dccName
+        }
+      ]
+    };
+  }, [dar, currentUser, masterUsers]);
+
+  const nextSignatory = useMemo(() => {
+    const currentDar = darWithWorkflow || dar;
+    if (!currentDar || !currentDar.approvalWorkflow) return null;
+    if (pendingAction !== 'APPROVE') return null;
+
+    return currentDar.approvalWorkflow.find(step => step.roleKey === 'DCC' || step.roleKey === 'ACKNOWLEDGEMENT');
+  }, [darWithWorkflow, dar, pendingAction]);
+
+  const nextActorName = nextSignatory?.name || nextSignatory?.assignedTo || 'เจ้าหน้าที่ DCC';
+  const nextActorRole = nextSignatory?.role || 'ตรวจสอบและประกาศใช้';
 
   useEffect(() => {
     // If PDF container is small enough that it doesn't scroll, unlock immediately
@@ -85,10 +139,16 @@ const TaskApprove = () => {
   };
 
   const executeAction = () => {
-    processWorkflow(task.id, pendingAction, comment);
-    toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'อนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ไม่อนุมัติเอกสาร' : 'ส่งกลับแก้ไข'} สำเร็จ`);
-    setShowConfirm(false);
-    navigate('/tasks');
+    try {
+      processWorkflow(task.id, pendingAction, comment);
+      toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'อนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ไม่อนุมัติเอกสาร' : 'ส่งกลับแก้ไข'} สำเร็จ`);
+      setShowConfirm(false);
+      navigate('/tasks');
+    } catch (error) {
+      console.error('Approval Crash:', error);
+      toast.error(`เกิดข้อผิดพลาด: ${error.message || 'ระบบขัดข้อง'}`);
+      setShowConfirm(false);
+    }
   };
 
   return (
@@ -162,11 +222,11 @@ const TaskApprove = () => {
                {/* Confidentiality Pill */}
                <div className="flex items-center gap-2 pt-1">
                  <span className="text-slate-400 w-24 inline-block font-medium">ระดับความลับ:</span>
-                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${scopeMeta.badgeClass}`}>
-                   {accessScope === 'GENERAL' && '🌐 ทั่วไป'}
-                   {accessScope === 'DEPT_ONLY' && '🔒 เฉพาะแผนก'}
-                   {accessScope === 'TARGETED' && '🏢 เฉพาะบางแผนก'}
-                   {accessScope === 'RESTRICTED' && `🛡️ ลับเฉพาะ (Lv.${dar.access_control?.min_access_level || 4}+)`}
+                 <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold border ${scopeMeta.badgeClass}`}>
+                   {accessScope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>ทั่วไป</span></>}
+                   {accessScope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก</span></>}
+                   {accessScope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก</span></>}
+                   {accessScope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะ (Lv.{dar.access_control?.min_access_level || 4}+)</span></>}
                  </span>
                </div>
 
@@ -343,12 +403,20 @@ const TaskApprove = () => {
         actionType={pendingAction === 'APPROVE' ? 'approve' : 'reject'}
         confirmText={pendingAction === 'APPROVE' ? 'ยืนยันการอนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ยืนยันไม่อนุมัติคำร้อง' : 'ยืนยันส่งกลับแก้ไข'}
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
+        dar={darWithWorkflow}
         summaryData={[
           { label: 'ผู้อนุมัติ', value: `${currentUser.name} (${currentUser.department})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
           { label: 'ผลการพิจารณา', value: pendingAction === 'APPROVE' ? 'อนุมัติประกาศใช้ (Approved)' : pendingAction === 'REJECT' ? 'ไม่อนุมัติคำร้อง (Rejected)' : 'ส่งกลับแก้ไข (Revision Required)' },
           { label: 'ความเห็นประกอบ', value: comment || '-' },
-          { label: 'สายการอนุมัติถัดไป', value: pendingAction === 'APPROVE' ? 'ส่งต่อไปยัง: เจ้าหน้าที่ DCC (ตรวจสอบและประกาศใช้)' : pendingAction === 'REJECT' ? 'สิ้นสุดคำร้อง: ส่งเข้าคลังประวัติ (ไม่อนุมัติ)' : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' }
+          { 
+            label: 'สายการอนุมัติถัดไป', 
+            value: pendingAction === 'APPROVE' 
+              ? `ส่งต่อไปยัง: ${nextActorName} (${nextActorRole})` 
+              : pendingAction === 'REJECT' 
+                ? 'สิ้นสุดคำร้อง: ส่งเข้าคลังประวัติ (ไม่อนุมัติ)' 
+                : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' 
+          }
         ]}
       />
 

@@ -160,7 +160,28 @@ const Dashboard = () => {
     recentDars = recentDars.filter(d => d.type === filterType);
   }
   
-  recentDars.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  // Multi-tier sort comparator: 1. Timestamp descending (createdAt, submittedAt, date), 2. Numeric DAR ID descending
+  const extractDarNumber = (darStr = '') => {
+    const match = String(darStr || '').match(/\d+/g);
+    return match ? parseInt(match.join(''), 10) : 0;
+  };
+
+  recentDars.sort((a, b) => {
+    // 1. เปรียบเทียบจาก Timestamp ละเอียดระดับวินาที (createdAt หรือ submittedAt หรือ date)
+    const timeA = new Date(a.createdAt || a.submittedAt || a.date || a.request_date || 0).getTime();
+    const timeB = new Date(b.createdAt || b.submittedAt || b.date || b.request_date || 0).getTime();
+
+    if (timeB !== timeA) {
+      return timeB - timeA; // มากไปน้อย (ใหม่สุดขึ้นก่อน)
+    }
+
+    // 2. Secondary Sort: หาก Timestamp เท่ากันหรือไม่มี ให้สกัดตัวเลขจากรหัส DAR เช่น DAR-2026-005 -> 2026005
+    const darNumA = extractDarNumber(a.darNo || a.darNumber || a.dar_no || a.id);
+    const darNumB = extractDarNumber(b.darNo || b.darNumber || b.dar_no || b.id);
+
+    return darNumB - darNumA; // ตัวเลขมาก (ใบใหม่) ขึ้นก่อน
+  });
+
   recentDars = recentDars.slice(0, 10);
 
   const getCurrentHandler = (dar) => {
@@ -311,154 +332,138 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="space-y-7 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
+    <div className="space-y-4 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
       
       {/* ========================================================================= */}
-      {/* SECTION 1: FIGMA PROPERTY PANEL HERO BANNER                              */}
+      {/* SECTION 1: COMPACT SINGLE-ROW HERO BAR (<= 48px)                          */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden card-surface p-7 sm:p-8">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          
-          {/* Left: Welcome info & status badges */}
-          <div className="space-y-3">
-            {/* Top Badges */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>ศูนย์ควบคุมระบบคุณภาพ (QMS Command)</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>ระบบพร้อมใช้งาน</span>
-              </span>
-            </div>
+      <div className="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-h-[44px]">
+        {/* Left: User greeting and department/role info */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-sm sm:text-[15px] text-slate-900 truncate">
+            สวัสดีคุณ {currentUser?.name || 'ผู้ใช้งาน'}
+          </span>
+          <span className="text-slate-300 shrink-0">•</span>
+          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+            {currentUser?.department || 'PD'}
+          </span>
+          {currentUser?.position && (
+            <span className="text-xs text-slate-500 hidden md:inline truncate">
+              ({currentUser.position})
+            </span>
+          )}
+          {isAdmin && (
+            <span className="text-[11px] font-mono font-medium text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded hidden lg:inline shrink-0">
+              SLA: {simulatedDate}
+            </span>
+          )}
+        </div>
 
-            {/* Heading & User Name */}
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-tight">
-                สวัสดีคุณ, {currentUser?.name || 'ผู้ใช้งาน'}
-              </h1>
-              <p className="text-sm text-slate-600 mt-1.5 font-medium flex flex-wrap items-center gap-2">
-                <span>{currentUser?.position || 'เจ้าหน้าที่'}</span>
-                <span className="text-slate-300">•</span>
-                <span className="text-blue-600 font-semibold">สังกัดฝ่าย/แผนก {currentUser?.department || 'PD'}</span>
-                {isAdmin && (
-                  <>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-amber-600 font-medium">วันจำลอง SLA: {simulatedDate}</span>
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-
-          {/* Right: Modern Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            {isAdmin ? (
-              <>
-                <button
-                  onClick={() => navigate('/dcc/library')}
-                  className="btn-primary"
-                >
-                  <Library className="w-4 h-4" />
-                  <span>คลังเอกสารแม่บท</span>
-                </button>
-                <button
-                  onClick={simulateNextDay}
-                  className="btn-secondary"
-                  title="จำลองวันเพื่อทดสอบระบบ SLA"
-                >
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  <span>จำลองข้ามวัน</span>
-                </button>
-                <button
-                  onClick={() => navigate('/controlled-copy?tab=ACTION_REQUIRED')}
-                  className="btn-secondary"
-                >
-                  <span>ประวัติแจกจ่าย</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </button>
-              </>
-            ) : currentUser?.level <= 3 ? (
-              <>
-                <button
-                  onClick={() => navigate('/dar/new')}
-                  className="btn-primary"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>สร้างเอกสารใหม่</span>
-                </button>
-                <button
-                  onClick={() => navigate('/dar/new/revision')}
-                  className="btn-secondary"
-                >
-                  <FileEdit className="w-4 h-4 text-blue-600" />
-                  <span>ขอแก้ไขเอกสาร</span>
-                </button>
-                <button
-                  onClick={() => navigate('/library')}
-                  className="btn-secondary"
-                >
-                  <Library className="w-4 h-4 text-slate-400" />
-                  <span>คลังเอกสาร</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => navigate('/tasks')}
-                  className="btn-primary"
-                >
-                  <Activity className="w-4 h-4" />
-                  <span>ตรวจสอบคิวงาน</span>
-                </button>
-                <button
-                  onClick={() => navigate('/library')}
-                  className="btn-secondary"
-                >
-                  <Library className="w-4 h-4 text-slate-400" />
-                  <span>คลังเอกสารแผนก</span>
-                </button>
-              </>
-            )}
-          </div>
-
+        {/* Right: Modern Compact Action Buttons (h-8 text-xs) */}
+        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto flex-wrap">
+          {isAdmin ? (
+            <>
+              <button
+                onClick={() => navigate('/dcc/library')}
+                className="h-8 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Library size={13} />
+                <span>คลังเอกสารแม่บท</span>
+              </button>
+              <button
+                onClick={simulateNextDay}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="จำลองวันเพื่อทดสอบระบบ SLA"
+              >
+                <Clock size={13} className="text-amber-600" />
+                <span>จำลองข้ามวัน</span>
+              </button>
+              <button
+                onClick={() => navigate('/controlled-copy?tab=ACTION_REQUIRED')}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>ประวัติแจกจ่าย</span>
+                <ChevronRight size={13} className="text-slate-400" />
+              </button>
+            </>
+          ) : currentUser?.level <= 3 ? (
+            <>
+              <button
+                onClick={() => navigate('/dar/new')}
+                className="h-8 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Plus size={13} />
+                <span>สร้างเอกสารใหม่</span>
+              </button>
+              <button
+                onClick={() => navigate('/dar/new/revision')}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <FileEdit size={13} className="text-sky-600" />
+                <span>ขอแก้ไขเอกสาร</span>
+              </button>
+              <button
+                onClick={() => navigate('/library')}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Library size={13} className="text-slate-400" />
+                <span>คลังเอกสาร</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate('/tasks')}
+                className="h-8 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Activity size={13} />
+                <span>ตรวจสอบคิวงาน</span>
+              </button>
+              <button
+                onClick={() => navigate('/library')}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Library size={13} className="text-slate-400" />
+                <span>คลังเอกสารแผนก</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 2: SYSTEM OVERVIEW & METRIC BENTO TILES                           */}
+      {/* SECTION 2: COMPACT KPI STRIP & TABS                                      */}
       {/* ========================================================================= */}
-      <div className="space-y-5">
+      <div className="space-y-3">
         
         {/* Modern Segmented Navigation Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-3">
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80">
             {isAdmin ? (
               <>
                 <button
                   onClick={() => { setActiveOverviewTab('ALL_REQUESTS'); setActiveCardFilter(''); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`h-8 px-3 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     activeOverviewTab === 'ALL_REQUESTS' 
-                      ? 'bg-white text-slate-900 shadow-2xs border border-slate-200' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
-                  <Briefcase size={16} className={activeOverviewTab === 'ALL_REQUESTS' ? 'text-blue-600' : 'text-slate-400'} />
+                  <Briefcase size={13} className={activeOverviewTab === 'ALL_REQUESTS' ? 'text-sky-600' : 'text-slate-400'} />
                   <span>ภาพรวมระบบ</span>
                 </button>
                 <button
                   onClick={() => { setActiveOverviewTab('DOC_CONTROL'); setActiveCardFilter(''); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`h-8 px-3 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     activeOverviewTab === 'DOC_CONTROL' 
-                      ? 'bg-white text-slate-900 shadow-2xs border border-slate-200' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
-                  <Copy size={16} className={activeOverviewTab === 'DOC_CONTROL' ? 'text-blue-600' : 'text-slate-400'} />
+                  <Copy size={13} className={activeOverviewTab === 'DOC_CONTROL' ? 'text-sky-600' : 'text-slate-400'} />
                   <span>งานควบคุมเอกสาร</span>
                   {(pendingPrintCount + pendingRecallCount + replacementRequestCount) > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono">
+                    <span className="bg-rose-500 text-white text-[10px] font-semibold px-1.5 py-0.2 rounded-full font-mono">
                       {pendingPrintCount + pendingRecallCount + replacementRequestCount}
                     </span>
                   )}
@@ -468,28 +473,28 @@ const Dashboard = () => {
               <>
                 <button
                   onClick={() => { setActiveOverviewTab('ALL_REQUESTS'); setActiveCardFilter(''); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`h-8 px-3 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     activeOverviewTab === 'ALL_REQUESTS' 
-                      ? 'bg-white text-slate-900 shadow-2xs border border-slate-200' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
-                  <Briefcase size={16} className={activeOverviewTab === 'ALL_REQUESTS' ? 'text-blue-600' : 'text-slate-400'} />
+                  <Briefcase size={13} className={activeOverviewTab === 'ALL_REQUESTS' ? 'text-sky-600' : 'text-slate-400'} />
                   <span>คำขอของฉัน</span>
                 </button>
                 <button
                   onClick={() => { setActiveOverviewTab('ACTION_REQUIRED'); setActiveCardFilter(''); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer ${currentUser?.level <= 3 ? 'opacity-50 cursor-not-allowed' : ''} ${
+                  className={`h-8 px-3 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${currentUser?.level <= 3 ? 'opacity-50 cursor-not-allowed' : ''} ${
                     activeOverviewTab === 'ACTION_REQUIRED' 
-                      ? 'bg-white text-slate-900 shadow-2xs border border-slate-200' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold' 
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                   disabled={currentUser?.level <= 3}
                 >
-                  <Activity size={16} className={activeOverviewTab === 'ACTION_REQUIRED' ? 'text-blue-600' : 'text-slate-400'} />
+                  <Activity size={13} className={activeOverviewTab === 'ACTION_REQUIRED' ? 'text-sky-600' : 'text-slate-400'} />
                   <span>งานที่ต้องจัดการ</span>
                   {myTasks.length > 0 && (
-                    <span className="bg-rose-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono">
+                    <span className="bg-rose-500 text-white text-[10px] font-semibold px-1.5 py-0.2 rounded-full font-mono">
                       {myTasks.length}
                     </span>
                   )}
@@ -501,293 +506,279 @@ const Dashboard = () => {
           {activeCardFilter && (
             <button
               onClick={() => setActiveCardFilter('')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 self-start sm:self-auto cursor-pointer bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"
+              className="h-8 px-2.5 text-xs font-medium text-sky-700 hover:text-sky-800 flex items-center gap-1.5 cursor-pointer bg-sky-50 rounded-lg border border-sky-200 transition-colors"
             >
-              <FilterX size={14} />
+              <FilterX size={13} />
               <span>ล้างตัวกรองสถานะ</span>
             </button>
           )}
         </div>
 
-        {/* Tab 1: 5-Tile Bento Grid (My Requests / System Overview) */}
+        {/* Tab 1: Refined KPI Stat Cards 5-Tile Strip */}
         {activeOverviewTab === 'ALL_REQUESTS' && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             
             {/* Tile 1: Draft */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'MY_DRAFT' ? '' : 'MY_DRAFT')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34 card-surface-hover ${
+              className={`rounded-xl p-4 border transition-all group cursor-pointer flex flex-col justify-between shadow-2xs ${
                 activeCardFilter === 'MY_DRAFT' 
-                  ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-slate-400 ring-1 ring-slate-400/20 bg-slate-50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">ฉบับร่าง</span>
-                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 border border-slate-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Edit size={16} />
+                <span className="text-[13px] font-medium text-slate-600">ฉบับร่าง</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-100 text-slate-600">
+                  <Edit size={15} />
                 </div>
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline mt-3">
+                <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight leading-none">
                   {myDraftCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">ฉบับ</span>
+                <span className="text-xs font-normal text-slate-400 ml-1.5">ฉบับ</span>
               </div>
             </div>
 
             {/* Tile 2: In Progress */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'MY_IN_PROGRESS' ? '' : 'MY_IN_PROGRESS')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34 card-surface-hover ${
+              className={`rounded-xl p-4 border transition-all group cursor-pointer flex flex-col justify-between shadow-2xs ${
                 activeCardFilter === 'MY_IN_PROGRESS' 
-                  ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-blue-500 ring-1 ring-blue-500/20 bg-blue-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">กำลังดำเนินการ</span>
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Clock size={16} />
+                <span className="text-[13px] font-medium text-slate-600">กำลังดำเนินการ</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600">
+                  <Clock size={15} />
                 </div>
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline mt-3">
+                <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight leading-none">
                   {myInProgressCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">ฉบับ</span>
+                <span className="text-xs font-normal text-slate-400 ml-1.5">ฉบับ</span>
               </div>
             </div>
 
             {/* Tile 3: Returned for Revision */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'MY_RETURNED' ? '' : 'MY_RETURNED')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34 card-surface-hover ${
+              className={`rounded-xl p-4 border transition-all group cursor-pointer flex flex-col justify-between shadow-2xs ${
                 activeCardFilter === 'MY_RETURNED' 
-                  ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-amber-500 ring-1 ring-amber-500/20 bg-amber-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">ส่งกลับแก้ไข</span>
-                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <AlertCircle size={16} />
+                <span className="text-[13px] font-medium text-slate-600">ส่งกลับแก้ไข</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-50 text-amber-600">
+                  <AlertCircle size={15} />
                 </div>
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline mt-3">
+                <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight leading-none">
                   {myReturnedCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">ฉบับ</span>
+                <span className="text-xs font-normal text-slate-400 ml-1.5">ฉบับ</span>
               </div>
             </div>
 
             {/* Tile 4: Waiting Effective */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'MY_WAITING' ? '' : 'MY_WAITING')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34 card-surface-hover ${
+              className={`rounded-xl p-4 border transition-all group cursor-pointer flex flex-col justify-between shadow-2xs ${
                 activeCardFilter === 'MY_WAITING' 
-                  ? 'border-amber-400 ring-2 ring-amber-100 bg-amber-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-emerald-500 ring-1 ring-emerald-500/20 bg-emerald-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">รอประกาศใช้</span>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <CheckCircle size={16} />
+                <span className="text-[13px] font-medium text-slate-600">รอประกาศใช้</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-600">
+                  <CheckCircle size={15} />
                 </div>
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline mt-3">
+                <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight leading-none">
                   {myWaitingCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">ฉบับ</span>
+                <span className="text-xs font-normal text-slate-400 ml-1.5">ฉบับ</span>
               </div>
             </div>
 
             {/* Tile 5: Cancelled / Overdue */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'MY_CANCELLED' ? '' : 'MY_CANCELLED')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34 card-surface-hover ${
+              className={`rounded-xl p-4 border transition-all group cursor-pointer flex flex-col justify-between shadow-2xs ${
                 activeCardFilter === 'MY_CANCELLED' 
-                  ? 'border-slate-400 ring-2 ring-slate-100 bg-slate-50/60 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-rose-500 ring-1 ring-rose-500/20 bg-rose-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">ยกเลิก/หมดอายุ</span>
-                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 border border-slate-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Trash2 size={16} />
+                <span className="text-[13px] font-medium text-slate-600">ยกเลิก</span>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-rose-50 text-rose-600">
+                  <Trash2 size={15} />
                 </div>
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline mt-3">
+                <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight leading-none">
                   {myCancelledCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">ฉบับ</span>
+                <span className="text-xs font-normal text-slate-400 ml-1.5">ฉบับ</span>
               </div>
             </div>
 
           </div>
         )}
 
-        {/* Tab 2: 4-Tile Bento Grid (Action Required) */}
+        {/* Tab 2: Sleek Micro-Metrics 4-Tile Strip (Action Required) */}
         {(!isAdmin && activeOverviewTab === 'ACTION_REQUIRED') && (
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             
             {/* Tile 1: Review */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'ACTION_REVIEW' ? '' : 'ACTION_REVIEW')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 card-surface-hover group cursor-pointer flex flex-col justify-between h-34 ${
+              className={`rounded-xl px-3.5 py-2.5 border transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs ${
                 activeCardFilter === 'ACTION_REVIEW' 
-                  ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-sky-500 ring-1 ring-sky-500/20 bg-sky-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">รอการทบทวน</span>
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Clock size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">รอการทบทวน</span>
+                <Clock size={14} className="text-sky-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-blue-700 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-sky-700 font-mono tracking-tight leading-none">
                   {actionReviewCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">รายการ</span>
+                <span className="text-[11px] text-slate-400 font-medium">รายการ</span>
               </div>
             </div>
 
             {/* Tile 2: Approve */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'ACTION_APPROVE' ? '' : 'ACTION_APPROVE')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 card-surface-hover group cursor-pointer flex flex-col justify-between h-34 ${
+              className={`rounded-xl px-3.5 py-2.5 border transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs ${
                 activeCardFilter === 'ACTION_APPROVE' 
-                  ? 'border-violet-400 ring-2 ring-violet-100 bg-violet-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-indigo-400 ring-1 ring-indigo-400/20 bg-indigo-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">รอการอนุมัติ</span>
-                <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-700 border border-violet-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <CheckCircle size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">รอการอนุมัติ</span>
+                <CheckCircle size={14} className="text-indigo-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-violet-700 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-indigo-700 font-mono tracking-tight leading-none">
                   {actionApproveCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">รายการ</span>
+                <span className="text-[11px] text-slate-400 font-medium">รายการ</span>
               </div>
             </div>
 
             {/* Tile 3: Due Soon */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'ACTION_DUE_SOON' ? '' : 'ACTION_DUE_SOON')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 card-surface-hover group cursor-pointer flex flex-col justify-between h-34 ${
+              className={`rounded-xl px-3.5 py-2.5 border transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs ${
                 activeCardFilter === 'ACTION_DUE_SOON' 
-                  ? 'border-amber-400 ring-2 ring-amber-100 bg-amber-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-amber-400 ring-1 ring-amber-400/20 bg-amber-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">ใกล้ครบกำหนด</span>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Clock size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">ใกล้ครบกำหนด</span>
+                <Clock size={14} className="text-amber-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-amber-700 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-amber-700 font-mono tracking-tight leading-none">
                   {actionDueSoonCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">รายการ</span>
+                <span className="text-[11px] text-slate-400 font-medium">รายการ</span>
               </div>
             </div>
 
             {/* Tile 4: Overdue */}
             <div 
               onClick={() => setActiveCardFilter(activeCardFilter === 'ACTION_OVERDUE' ? '' : 'ACTION_OVERDUE')} 
-              className={`relative overflow-hidden rounded-xl p-5 border transition-all duration-200 card-surface-hover group cursor-pointer flex flex-col justify-between h-34 ${
+              className={`rounded-xl px-3.5 py-2.5 border transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs ${
                 activeCardFilter === 'ACTION_OVERDUE' 
-                  ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/40 shadow-xs' 
-                  : 'border-slate-200 bg-white'
+                  ? 'border-rose-400 ring-1 ring-rose-400/20 bg-rose-50/50' 
+                  : 'border-slate-200/80 bg-white hover:border-slate-300'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">เกินกำหนด</span>
-                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <AlertTriangle size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">เกินกำหนด</span>
+                <AlertTriangle size={14} className="text-rose-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-rose-700 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-rose-700 font-mono tracking-tight leading-none">
                   {actionOverdueCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">รายการ</span>
+                <span className="text-[11px] text-slate-400 font-medium">รายการ</span>
               </div>
             </div>
 
           </div>
         )}
 
-        {/* Tab 3: DCC Doc Control 3-Tile Bento Grid */}
+        {/* Tab 3: DCC Doc Control 3-Tile Strip */}
         {isAdmin && activeOverviewTab === 'DOC_CONTROL' && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             
             {/* Tile 1: Pending Print */}
             <div 
               onClick={() => navigate('/controlled-copy?tab=PENDING_ISSUE')}
-              className="relative overflow-hidden rounded-xl p-5 border border-slate-200 bg-white card-surface-hover transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34"
+              className="rounded-xl px-3.5 py-2.5 border border-slate-200/80 bg-white hover:border-slate-300 transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">รอพิมพ์แจกจ่าย</span>
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Printer size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">รอพิมพ์แจกจ่าย</span>
+                <Printer size={14} className="text-sky-600" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-slate-900 font-mono tracking-tight leading-none">
                   {pendingPrintCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">เล่ม</span>
+                <span className="text-[11px] text-slate-400 font-medium">เล่ม</span>
               </div>
             </div>
 
             {/* Tile 2: Pending Recall */}
             <div 
               onClick={() => navigate('/controlled-copy?tab=RECALL_CHECKLIST')}
-              className="relative overflow-hidden rounded-xl p-5 border border-slate-200 bg-white card-surface-hover transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34"
+              className="rounded-xl px-3.5 py-2.5 border border-slate-200/80 bg-white hover:border-slate-300 transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">รอเรียกคืน</span>
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <Clock size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">รอเรียกคืน</span>
+                <Clock size={14} className="text-amber-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-slate-900 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-slate-900 font-mono tracking-tight leading-none">
                   {pendingRecallCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">เล่ม</span>
+                <span className="text-[11px] text-slate-400 font-medium">เล่ม</span>
               </div>
             </div>
 
             {/* Tile 3: Replacement Requests */}
             <div 
               onClick={() => navigate('/tasks')}
-              className="relative overflow-hidden rounded-xl p-5 border border-slate-200 bg-white card-surface-hover transition-all duration-200 group cursor-pointer flex flex-col justify-between h-34"
+              className="rounded-xl px-3.5 py-2.5 border border-slate-200/80 bg-white hover:border-slate-300 transition-all group cursor-pointer flex flex-col justify-between min-h-[66px] shadow-2xs"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600 uppercase tracking-tight">คำขอทดแทน</span>
-                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-200/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <AlertTriangle size={16} />
-                </div>
+                <span className="text-[11px] font-medium text-slate-500">คำขอทดแทน</span>
+                <AlertTriangle size={14} className="text-rose-500" />
               </div>
-              <div>
-                <span className="text-3xl sm:text-4xl font-bold text-rose-700 font-mono tracking-tight">
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-xl sm:text-2xl font-bold text-rose-700 font-mono tracking-tight leading-none">
                   {replacementRequestCount}
                 </span>
-                <span className="text-xs text-slate-400 ml-1.5 font-medium">คำขอ</span>
+                <span className="text-[11px] text-slate-400 font-medium">คำขอ</span>
               </div>
             </div>
 
@@ -797,33 +788,31 @@ const Dashboard = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 3: ACTIVITY STREAM LEDGER (RECENT DARS TABLE)                     */}
+      {/* SECTION 3: ACTIVITY STREAM LEDGER (HIGH-DENSITY RECENT DARS TABLE)         */}
       {/* ========================================================================= */}
-      <div className="card-surface overflow-hidden">
+      <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs">
         
-        {/* Modern Toolbar */}
-        <div className="p-5 sm:p-6 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2.5 tracking-tight">
-              <FileText className="text-blue-600" size={20} />
-              <span>{activeOverviewTab === 'DOC_CONTROL' ? 'รายการงานควบคุมสำเนาและแจกจ่าย' : 'รายการคำร้อง DAR และงานล่าสุด'}</span>
+        {/* Compact Single-Row Table Toolbar */}
+        <div className="p-3 border-b border-slate-200 bg-white flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="text-sky-600 shrink-0" size={16} />
+            <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+              {activeOverviewTab === 'DOC_CONTROL' ? 'รายการงานควบคุมสำเนาและแจกจ่าย' : 'คำร้อง DAR ล่าสุด'}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {activeOverviewTab === 'DOC_CONTROL' 
-                ? 'ติดตามสำเนาควบคุมและเอกสารที่ต้องดำเนินการ' 
-                : 'ติดตามสถานะคำร้อง DAR ทั้งหมดในความรับผิดชอบของคุณ'}
-            </p>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+              {recentDars.length} รายการ
+            </span>
           </div>
           
-          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="relative flex-1 sm:w-56">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
               <input 
                 type="text"
                 placeholder="ค้นหา DAR No, ชื่อเอกสาร..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input-primary pl-9"
+                className="w-full h-8 pl-8 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
               />
             </div>
 
@@ -831,7 +820,7 @@ const Dashboard = () => {
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
               disabled={availableDarTypes.length === 0}
-              className="select-primary w-auto pr-8"
+              className="h-8 px-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none text-slate-700 cursor-pointer"
             >
               <option value="">ทุกประเภท</option>
               {availableDarTypes.map(t => (
@@ -849,35 +838,35 @@ const Dashboard = () => {
                   setActiveCardFilter('');
                 }}
                 title="ล้างตัวกรอง"
-                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                className="w-8 h-8 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
               >
-                <FilterX size={18} />
+                <FilterX size={14} />
               </button>
             )}
           </div>
         </div>
 
-        {/* Data Table */}
+        {/* High-Density Data Table */}
         <div className="overflow-x-auto w-full max-w-full">
           {recentDars.length > 0 ? (
-            <table className="w-full text-left text-xs sm:text-sm border-collapse min-w-[960px]">
-              <thead className="table-header">
+            <table className="w-full text-left text-sm border-collapse min-w-[960px]">
+              <thead className="bg-slate-50 text-slate-500 font-semibold text-[12px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                 <tr>
-                  <th className="px-4 py-3.5 w-20 min-w-[80px] text-center select-none">จัดการ</th>
-                  <th className="px-4 py-3.5 w-40 min-w-[140px] font-mono select-none">เลขที่ DAR</th>
-                  <th className="px-4 py-3.5 min-w-[220px] select-none">ชื่อเอกสาร / หัวข้อ</th>
-                  <th className="px-4 py-3.5 w-28 min-w-[100px] select-none">ประเภท</th>
-                  {isAdmin && <th className="px-4 py-3.5 w-24 min-w-[80px] select-none">แผนก</th>}
-                  <th className="px-4 py-3.5 w-36 min-w-[130px] select-none">สถานะ</th>
-                  <th className="px-4 py-3.5 w-48 min-w-[160px] select-none">ผู้รับผิดชอบปัจจุบัน</th>
-                  <th className="px-4 py-3.5 w-32 min-w-[110px] text-right font-mono select-none">วันที่ยื่น</th>
+                  <th className="py-2.5 px-4 w-16 text-center select-none bg-slate-50">จัดการ</th>
+                  <th className="py-2.5 px-4 w-36 font-mono select-none bg-slate-50">เลขที่ DAR</th>
+                  <th className="py-2.5 px-4 min-w-[220px] select-none bg-slate-50">ชื่อเอกสาร / หัวข้อ</th>
+                  <th className="py-2.5 px-4 w-28 select-none bg-slate-50">ประเภท</th>
+                  {isAdmin && <th className="py-2.5 px-4 w-20 select-none bg-slate-50">แผนก</th>}
+                  <th className="py-2.5 px-4 w-32 select-none bg-slate-50">สถานะ</th>
+                  <th className="py-2.5 px-4 w-44 select-none bg-slate-50">ผู้รับผิดชอบปัจจุบัน</th>
+                  <th className="py-2.5 px-4 w-28 text-right font-mono select-none bg-slate-50">วันที่ยื่น</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
                 {recentDars.map((dar) => (
                   <tr 
                     key={dar.id} 
-                    className="hover:bg-slate-50/80 border-b border-slate-100 transition-colors cursor-pointer group"
+                    className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
                     onClick={() => {
                       if (dar.isTask) {
                         navigate(`/tasks/approve-replacement/${dar.taskId}`);
@@ -893,10 +882,10 @@ const Dashboard = () => {
                       }
                     }}
                   >
-                    <td className="px-4 py-3.5 text-center">
+                    <td className="py-3 px-4 text-center">
                       {renderActionButtons(dar)}
                     </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       {isDraftDar(dar) ? (
                         <span 
                           onClick={(e) => {
@@ -908,43 +897,47 @@ const Dashboard = () => {
                               state: { draftId: dar.id, draftData: dar }
                             });
                           }}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors"
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors"
                           title="คลิกเพื่อแก้ไขแบบร่างต่อ"
                         >
                           ฉบับร่าง (Draft)
                         </span>
                       ) : (
                         <span 
-                          className="text-[#0D99FF] bg-[#E5F4FF] px-2 py-1 rounded-md border border-[#B8E1FF] inline-block font-mono font-bold text-xs sm:text-sm hover:underline cursor-pointer transition-all"
+                          className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200/80 inline-block font-mono font-semibold text-xs hover:underline cursor-pointer transition-colors"
                           onClick={(e) => {
                             e.stopPropagation();
-                            dar.isTask ? navigate(`/tasks/approve-replacement/${dar.taskId}`) : navigate(`/dar/${dar.id}`);
+                            if (dar.isTask) {
+                              navigate(`/tasks/approve-replacement/${dar.taskId}`);
+                            } else {
+                              navigate(`/dar/${dar.id}`);
+                            }
                           }}
                         >
                           {dar.darNumber || dar.dar_no || dar.darNo || (isDarDraft(dar) ? 'ฉบับร่าง (Draft)' : (dar.id || '-'))}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 font-medium text-[#1E1E1E] break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-[#0D99FF] transition-colors" title={dar.title}>
+                    <td className="py-3 px-4 font-medium text-slate-800 leading-relaxed break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-sky-600 transition-colors text-[13px] sm:text-sm" title={dar.title}>
                       {dar.title || '-'}
                     </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="px-2 py-0.5 bg-[#F5F5F5] text-[#666666] rounded-md font-mono text-[10px] font-medium uppercase tracking-wider border border-[#E5E5E5]">
-                          {({'NEW': 'จัดทำใหม่', 'NEW_DOCUMENT': 'จัดทำใหม่', 'REVISION': 'ขอแก้ไข', 'REVISE': 'ขอแก้ไข', 'OBSOLETE': 'ขอยกเลิก', 'REPLACEMENT': 'ขอสำเนาทดแทน'})[dar.type] || dar.type || '-'}
-                        </span>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-mono text-[11px] font-medium uppercase tracking-wider border border-slate-200">
+                        {({'NEW': 'จัดทำใหม่', 'NEW_DOCUMENT': 'จัดทำใหม่', 'REVISION': 'ขอแก้ไข', 'REVISE': 'ขอแก้ไข', 'OBSOLETE': 'ขอยกเลิก', 'REPLACEMENT': 'ขอสำเนาทดแทน'})[dar.type] || dar.type || '-'}
+                      </span>
                     </td>
                     {isAdmin && (
-                      <td className="px-4 py-3.5 text-[#444444] font-medium font-mono text-xs whitespace-nowrap">
+                      <td className="py-3 px-4 text-slate-600 font-mono text-xs whitespace-nowrap">
                         {dar.department || '-'}
                       </td>
                     )}
-                    <td className="px-4 py-3.5 whitespace-nowrap">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       {getStatusBadge(dar.status)}
                     </td>
-                    <td className="px-4 py-3.5 text-[#666666] whitespace-nowrap min-w-0 truncate text-xs sm:text-sm font-medium">
+                    <td className="py-3 px-4 text-slate-600 whitespace-nowrap min-w-0 truncate text-[13px] font-medium">
                       {dar.isTask ? 'ผู้จัดการแผนก' : getCurrentHandler(dar)}
                     </td>
-                    <td className="px-4 py-3.5 text-[#999999] text-right font-mono text-xs sm:text-sm whitespace-nowrap font-medium">
+                    <td className="py-3 px-4 text-slate-400 text-right font-mono text-xs whitespace-nowrap">
                       {dar.date || '-'}
                     </td>
                   </tr>

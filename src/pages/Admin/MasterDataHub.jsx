@@ -985,64 +985,67 @@ const MasterDataHub = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
-      {/* 1. Minimalist Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      {/* 1. Minimalist Page Header (Clean Single-Row <= 48px) */}
+      <div className="flex items-center justify-between gap-3 h-11">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={() => navigate('/dcc/dashboard')}
-            className="action-icon-btn text-[#666666] hover:text-[#1E1E1E] shrink-0 h-11 w-11 rounded-xl"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="กลับ Dashboard"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={16} />
           </button>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1E1E1E] leading-tight">
-              ศูนย์กลางจัดการข้อมูลหลัก (Master Data Management Hub)
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900 truncate">
+              จัดการข้อมูลหลัก (Master Data)
             </h1>
-            <p className="text-sm text-[#666666] mt-1 font-normal">
-              จัดการโครงสร้างข้อมูลพื้นฐานของระบบคุณภาพ ISO 9001 / FSSC 22000
-            </p>
+            <span className="hidden sm:inline-flex px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+              ADMIN CONFIG
+            </span>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
+
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => {
               seedComprehensiveQaMockData();
               toast.success('โหลดชุดข้อมูลจำลอง QA Workflow (DARs, Tasks, สำเนาควบคุม) เรียบร้อยแล้ว');
             }}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold text-[#0D99FF] bg-[#E5F4FF] hover:bg-[#D1EFFF] border border-[#B8E1FF] transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="โหลดชุดข้อมูลจำลองคำร้อง QA ครบทุก Flow สำหรับ Manual Testing"
+            className="h-8 px-2.5 rounded-lg text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200/80 transition-colors flex items-center gap-1.5"
+            title="โหลดชุดข้อมูลจำลองคำร้อง QA ครบทุก Flow"
           >
-            <Sparkles size={13} className="text-[#0D99FF]" />
-            <span>โหลด Mock Data (QA)</span>
+            <Sparkles size={12} className="text-sky-600" />
+            <span className="hidden md:inline">Mock Data (QA)</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsCleanSlateModalOpen(true)}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            title="ล้างข้อมูลจำลองเชิงธุรกรรมทั้งหมด เพื่อเริ่มทดสอบแบบ Clean Slate (คง Master Data ไว้ 100%)"
+            className="h-8 px-2.5 rounded-lg text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-colors flex items-center gap-1.5"
+            title="ล้างข้อมูลธุรกรรมจำลองทั้งหมด"
           >
-            <RotateCcw size={13} className="text-rose-600" />
-            <span>ล้างข้อมูลเพื่อเริ่มทดสอบใหม่ (Clean Slate)</span>
+            <RotateCcw size={12} className="text-rose-600" />
+            <span className="hidden md:inline">Clean Slate</span>
           </button>
 
-          <span className="bg-[#F5F5F5] text-slate-700 text-xs font-bold px-3.5 py-1.5 rounded-full border border-[#E5E5E5]/80 inline-flex items-center gap-2 font-mono shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            DCC ADMIN CENTER
+          <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
+
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-medium text-slate-600 bg-slate-50 border border-slate-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            ACTIVE
           </span>
         </div>
       </div>
 
-      {/* 2. Segmented Pill Floating Tabs (5 หมวดหมู่) */}
-      <div className="bg-[#F5F5F5]/80 p-1.5 rounded-xl flex gap-1.5 border border-[#E5E5E5]/60 overflow-x-auto scrollbar-none">
+      {/* 2. Modern Linear-Style Segmented Tabs */}
+      <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 overflow-x-auto scrollbar-none">
         {[
-          { id: 'users', label: '1. ผู้ใช้งานและสิทธิ์', icon: Users, count: (masterUsers || []).length },
-          { id: 'departments', label: '2. แผนกและโครงสร้าง', icon: Building2, count: departmentsList.length },
-          { id: 'docTypes', label: '3. ประเภทเอกสารและรหัส', icon: FileCode, count: (documentTypes || []).length },
-          { id: 'locations', label: '4. จุดใช้งานและไลน์ผลิต', icon: MapPin, count: (distributionLocations || []).length },
-          { id: 'sla', label: '5. สายการอนุมัติและ SLAs', icon: Clock }
+          { id: 'users', label: 'ผู้ใช้งาน (Users)', legacyLabel: '1. ผู้ใช้งานและสิทธิ์', icon: Users, count: (masterUsers || []).length },
+          { id: 'departments', label: 'แผนก (Departments)', legacyLabel: '2. แผนกและโครงสร้าง', icon: Building2, count: departmentsList.length },
+          { id: 'docTypes', label: 'ประเภทเอกสาร (Doc Types)', legacyLabel: '3. ประเภทเอกสารและรหัส', icon: FileCode, count: (documentTypes || []).length },
+          { id: 'locations', label: 'จุดใช้งาน (Stations)', legacyLabel: '4. จุดใช้งานและไลน์ผลิต', icon: MapPin, count: (distributionLocations || []).length },
+          { id: 'sla', label: 'สายอนุมัติ & SLA', legacyLabel: '5. สายการอนุมัติและ SLAs', icon: Clock }
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -1050,17 +1053,18 @@ const MasterDataHub = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-all whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
                 isActive
-                  ? 'bg-white text-[#1E1E1E] shadow-xs'
-                  : 'text-[#666666] hover:text-[#1E1E1E] hover:bg-white/50'
+                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
-              <Icon size={17} className={isActive ? 'text-[#0D99FF]' : 'text-slate-400'} />
+              <Icon size={14} className={isActive ? 'text-sky-600' : 'text-slate-400'} />
               <span>{tab.label}</span>
+              <span className="sr-only">{tab.legacyLabel}</span>
               {tab.count !== undefined && (
-                <span className={`text-xs font-mono px-2 py-0.5 rounded-full font-bold ${
-                  isActive ? 'bg-[#E5F4FF] text-[#007BE5]' : 'bg-slate-200/70 text-[#666666]'
+                <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full ${
+                  isActive ? 'bg-sky-100 text-sky-700 font-semibold' : 'bg-slate-200/70 text-slate-600'
                 }`}>
                   {tab.count}
                 </span>
@@ -1074,25 +1078,25 @@ const MasterDataHub = () => {
       <div className="w-full max-w-full overflow-hidden">
         {/* ================= TAB 1: USERS & ROLES ================= */}
         {activeTab === 'users' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Unified Action Toolbar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto flex-1 min-w-0">
-                <div className="relative flex-1 min-w-[220px]">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto flex-1 min-w-0">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อ, รหัสพนักงาน, อีเมล, ตำแหน่ง..."
-                    className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                    placeholder="ค้นหาชื่อ, รหัสพนักงาน, อีเมล..."
+                    className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                   />
                 </div>
 
                 <select
                   value={userDeptFilter}
                   onChange={(e) => setUserDeptFilter(e.target.value)}
-                  className="px-3 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none"
+                  className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none text-slate-700 cursor-pointer"
                 >
                   <option value="">ทุกแผนก (All Depts)</option>
                   {departmentsList.map(d => (
@@ -1103,7 +1107,7 @@ const MasterDataHub = () => {
                 <select
                   value={userRoleFilter}
                   onChange={(e) => setUserRoleFilter(e.target.value)}
-                  className="px-3 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none"
+                  className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none text-slate-700 cursor-pointer"
                 >
                   <option value="">ทุกบทบาท (All Roles)</option>
                   <option value="DCC_ADMIN">DCC Admin</option>
@@ -1114,42 +1118,42 @@ const MasterDataHub = () => {
 
               <button
                 onClick={() => handleOpenUserModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มผู้ใช้งานใหม่ (Add User)
+                <Plus size={14} /> เพิ่มผู้ใช้งานใหม่ (Add User)
               </button>
             </div>
 
             {/* Users Elevated Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[960px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 min-w-[240px] bg-[#F8FAFC]">ชื่อ-นามสกุล / อีเมล</th>
-                      <th className="px-4 py-3.5 w-28 whitespace-nowrap bg-[#F8FAFC]">แผนก</th>
-                      <th className="px-4 py-3.5 min-w-[140px] whitespace-nowrap bg-[#F8FAFC]">ตำแหน่งงาน</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">บทบาท (Role)</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">ระดับอนุมัติ</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-36 whitespace-nowrap bg-[#F8FAFC]">การจัดการ (Actions)</th>
+                      <th className="py-2.5 px-3 min-w-[240px] bg-slate-50">ชื่อ-นามสกุล / อีเมล</th>
+                      <th className="py-2.5 px-3 w-28 whitespace-nowrap bg-slate-50">แผนก</th>
+                      <th className="py-2.5 px-3 min-w-[140px] whitespace-nowrap bg-slate-50">ตำแหน่งงาน</th>
+                      <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">บทบาท (Role)</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">ระดับอนุมัติ</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-32 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {userPagination.paginatedData.map(user => (
-                      <tr key={user.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                        <td className="px-4 py-3 min-w-[240px]">
-                          <div className="font-bold text-[#1E1E1E] flex items-center gap-2 text-sm sm:text-[15px]">
+                      <tr key={user.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2 px-3 min-w-[240px]">
+                          <div className="font-semibold text-slate-900 flex items-center gap-1.5 text-xs">
                             <span>{user.name}</span>
                             {user.isLocked && (
-                              <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-xs rounded-md font-bold">LOCKED</span>
+                              <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[10px] rounded font-mono font-bold">LOCKED</span>
                             )}
                           </div>
-                          <div className="text-slate-400 text-xs font-mono mt-0.5">
+                          <div className="text-slate-400 text-[11px] font-mono leading-none mt-0.5">
                             {user.empId || user.id} • {user.email}
                           </div>
                         </td>
-                        <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
+                        <td className="py-2 px-3 font-semibold text-slate-800 whitespace-nowrap">
                           <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
                             {(user.affiliated_departments && user.affiliated_departments.length > 0
                               ? user.affiliated_departments
@@ -1159,10 +1163,10 @@ const MasterDataHub = () => {
                               return (
                                 <span 
                                   key={dept}
-                                  className={`px-2 py-0.5 rounded-md font-mono text-[11px] font-bold inline-flex items-center gap-1 ${
+                                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold inline-flex items-center gap-0.5 ${
                                     isPrimary 
-                                      ? 'bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF]' 
-                                      : 'bg-[#F5F5F5] text-slate-600 border border-slate-200'
+                                      ? 'bg-sky-50 text-sky-700 border border-sky-200' 
+                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
                                   }`}
                                   title={isPrimary ? 'แผนกหลัก (Primary Department)' : 'แผนกที่สังกัดร่วม (Affiliated)'}
                                 >
@@ -1173,62 +1177,62 @@ const MasterDataHub = () => {
                             })}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs sm:text-sm">
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
                           {user.position || '-'}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
                             user.role === 'DCC_ADMIN' || user.isDcc
                               ? 'bg-purple-50 text-purple-700 border border-purple-200'
                               : user.role === 'DEPT_ADMIN'
-                              ? 'bg-[#E5F4FF] text-[#007BE5] border border-[#E5F4FF]'
-                              : 'bg-[#F5F5F5] text-slate-700'
+                              ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                              : 'bg-slate-100 text-slate-600'
                           }`}>
                             {user.role || (user.isDcc ? 'DCC_ADMIN' : 'GENERAL_USER')}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] font-mono font-bold rounded-lg border border-indigo-100 text-xs">
-                            Level {user.level}
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-mono font-medium rounded text-xs border border-slate-200">
+                            L{user.level}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           <button
                             onClick={() => toggleUserStatus(user.id)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                               user.status === 'ACTIVE'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5] hover:bg-slate-200'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200'
                             }`}
                           >
                             {user.status === 'ACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => handleOpenSignatureModal(user)}
-                              className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                              className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                               title="จัดการลายเซ็นอิเล็กทรอนิกส์ (Signature Asset)"
                             >
-                              <PenTool size={14} />
+                              <PenTool size={13} />
                             </button>
                             <button
                               onClick={() => handleOpenUserModal(user)}
-                              className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                              className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                               title="แก้ไขข้อมูลผู้ใช้"
                             >
-                              <Edit size={14} />
+                              <Edit size={13} />
                             </button>
                             <button
                               onClick={() => {
                                 resetUserPassword(user.id);
                                 toast.success(`รีเซ็ตรหัสผ่านของ ${user.name} เรียบร้อยแล้ว`);
                               }}
-                              className="action-icon-btn text-[#666666] hover:text-amber-600 hover:bg-amber-50"
+                              className="w-7 h-7 rounded hover:bg-amber-50 flex items-center justify-center text-slate-500 hover:text-amber-600 transition-colors"
                               title="รีเซ็ตรหัสผ่านเริ่มต้น"
                             >
-                              <RotateCcw size={14} />
+                              <RotateCcw size={13} />
                             </button>
                             {user.isLocked && (
                               <button
@@ -1236,10 +1240,10 @@ const MasterDataHub = () => {
                                   unlockUserAccount(user.id);
                                   toast.success(`ปลดล็อกบัญชี ${user.name} เรียบร้อยแล้ว`);
                                 }}
-                                className="action-icon-btn text-emerald-600 hover:bg-emerald-50"
+                                className="w-7 h-7 rounded hover:bg-emerald-50 flex items-center justify-center text-emerald-600 transition-colors"
                                 title="ปลดล็อกบัญชี"
                               >
-                                <Unlock size={14} />
+                                <Unlock size={13} />
                               </button>
                             )}
                           </div>
@@ -1269,29 +1273,29 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 2: DEPARTMENTS ================= */}
         {activeTab === 'departments' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Action Bar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
               <div className="relative flex-1 w-full min-w-0">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={deptSearch}
                   onChange={(e) => setDeptSearch(e.target.value)}
                   placeholder="ค้นหารหัสแผนก หรือชื่อภาษาไทย/อังกฤษ..."
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                 />
               </div>
 
               {/* Status Filter Tabs */}
-              <div className="flex items-center bg-[#F5F5F5] p-1 rounded-xl border border-[#E5E5E5] text-xs shrink-0 self-stretch sm:self-auto">
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs shrink-0 self-stretch sm:self-auto">
                 <button
                   type="button"
                   onClick={() => setDeptStatusFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
                     deptStatusFilter === 'ALL'
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-[#666666] hover:text-slate-900'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   ทั้งหมด ({departmentsList.length})
@@ -1299,10 +1303,10 @@ const MasterDataHub = () => {
                 <button
                   type="button"
                   onClick={() => setDeptStatusFilter('ACTIVE')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
                     deptStatusFilter === 'ACTIVE'
-                      ? 'bg-white text-emerald-700 shadow-2xs'
-                      : 'text-[#666666] hover:text-emerald-700'
+                      ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-emerald-700'
                   }`}
                 >
                   🟢 ใช้งานอยู่ ({departmentsList.filter(d => d.status !== 'INACTIVE').length})
@@ -1310,10 +1314,10 @@ const MasterDataHub = () => {
                 <button
                   type="button"
                   onClick={() => setDeptStatusFilter('INACTIVE')}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  className={`h-7.5 px-2.5 rounded-md font-medium text-xs transition-all ${
                     deptStatusFilter === 'INACTIVE'
-                      ? 'bg-white text-slate-700 shadow-2xs'
-                      : 'text-[#666666] hover:text-slate-700'
+                      ? 'bg-white text-slate-700 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-700'
                   }`}
                 >
                   ⚪ ระงับแล้ว ({departmentsList.filter(d => d.status === 'INACTIVE').length})
@@ -1322,14 +1326,14 @@ const MasterDataHub = () => {
 
               <button
                 onClick={() => handleOpenDeptModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มแผนกใหม่ (Add Department)
+                <Plus size={14} /> เพิ่มแผนกใหม่ (Add Department)
               </button>
             </div>
 
-            {/* Departments Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* High-Density Departments Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {filteredDepartments.map(dept => {
                 const docCount = (documents || []).filter(d => d.department === dept.id || d.owner_dept === dept.id).length;
                 const copyCount = allCopies.filter(c => c.holder_dept === dept.id || c.department === dept.id).length;
@@ -1339,21 +1343,21 @@ const MasterDataHub = () => {
                 return (
                   <div 
                     key={dept.id}
-                    className={`card-surface p-5 hover:border-[#E5E5E5] hover:shadow-sm transition-all space-y-4 flex flex-col justify-between ${
+                    className={`card-surface bg-white p-3 rounded-xl border border-slate-200/80 hover:border-slate-300 transition-all flex flex-col justify-between space-y-2.5 shadow-2xs ${
                       isInactive ? 'opacity-80 bg-slate-50/70 border-dashed border-slate-300' : ''
                     }`}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-1.5">
                         <div className="flex items-center gap-1.5">
-                          <span className={`px-2.5 py-1 font-mono font-bold text-xs rounded-lg shadow-2xs ${
-                            isInactive ? 'bg-slate-400 text-white' : 'bg-[#0D99FF] text-white'
+                          <span className={`px-2 py-0.5 font-mono font-bold text-xs rounded-md ${
+                            isInactive ? 'bg-slate-400 text-white' : 'bg-sky-600 text-white'
                           }`}>
                             {dept.id}
                           </span>
                           {isCore && (
                             <span 
-                              className="px-2 py-0.5 bg-sky-100 text-sky-800 text-[10px] font-bold rounded-md flex items-center gap-1"
+                              className="px-1.5 py-0.2 bg-sky-100 text-sky-800 text-[10px] font-semibold rounded flex items-center gap-0.5"
                               title="แผนกหลักของระบบควบคุมคุณภาพ (ห้ามระงับ)"
                             >
                               🛡️ Core
@@ -1363,17 +1367,17 @@ const MasterDataHub = () => {
 
                         {/* Status / Deactivate / Reactivate Controls */}
                         {isCore ? (
-                          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
                             🟢 Active
                           </span>
                         ) : isInactive ? (
                           <div className="flex items-center gap-1">
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#F5F5F5] text-slate-500 border border-[#E5E5E5]">
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
                               ⚪ Inactive
                             </span>
                             <button
                               onClick={() => handleReactivateDept(dept.id)}
-                              className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors flex items-center gap-1"
+                              className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors flex items-center gap-1"
                               title="เปิดใช้งานแผนกนี้อีกครั้ง"
                             >
                               <RefreshCw size={10} /> เปิดใช้งาน
@@ -1382,48 +1386,52 @@ const MasterDataHub = () => {
                         ) : (
                           <button
                             onClick={() => handleInitiateDeactivateDept(dept)}
-                            className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-emerald-200 transition-colors group"
+                            className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-emerald-200 transition-colors group cursor-pointer"
                             title="คลิกเพื่อระงับการใช้งานแผนก (Deactivate)"
                           >
                             <span className="group-hover:hidden">🟢 Active</span>
-                            <span className="hidden group-hover:inline">⚠️ ระงับใช้งาน</span>
+                            <span className="hidden group-hover:inline">⚠️ ระงับ</span>
                           </button>
                         )}
                       </div>
 
                       <div>
-                        <h3 className={`font-bold text-base break-words ${isInactive ? 'text-slate-500 line-through' : 'text-[#1E1E1E]'}`}>
-                          {dept.nameTh || dept.name}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5 break-words">
+                        <div className="flex items-baseline gap-1.5">
+                          <h3 className={`font-semibold text-xs truncate ${isInactive ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
+                            {dept.nameTh || dept.name}
+                          </h3>
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">
                           {dept.nameEn || dept.name}
                         </p>
                       </div>
 
-                      <div className="p-3 bg-[#F5F5F5]/70 border border-slate-100 rounded-xl text-xs space-y-1">
-                        <span className="text-[#666666] font-medium block text-xs">หัวหน้าแผนก / ผู้ลงนามมาตรฐาน:</span>
-                        <span className="font-bold text-slate-800 block break-words text-sm">
+                      <div className="px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-xs flex items-center justify-between gap-1">
+                        <span className="text-slate-500 text-[11px] shrink-0">หัวหน้า:</span>
+                        <span className="font-medium text-slate-700 truncate text-[11px]" title={dept.headName || 'ยังไม่ได้กำหนด'}>
                           {dept.headName || 'ยังไม่ได้กำหนด'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 bg-[#F5F5F5] text-slate-700 rounded-lg font-medium text-xs" title="เอกสารแม่บทที่แผนกนี้เป็นเจ้าของ">
-                          📄 {docCount} เอกสาร
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px] font-medium font-mono inline-flex items-center gap-1" title="เอกสารแม่บท">
+                          <FileText size={11} strokeWidth={1.5} className="text-slate-400" />
+                          <span>{docCount}</span>
                         </span>
-                        <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] rounded-lg font-medium text-xs" title="สำเนาควบคุมที่ติดตั้งในแผนกนี้">
-                          📋 {copyCount} เล่มสำเนา
+                        <span className="px-2 py-0.5 bg-sky-50 text-sky-700 rounded text-[11px] font-medium font-mono inline-flex items-center gap-1" title="สำเนาควบคุม">
+                          <Layers size={11} strokeWidth={1.5} className="text-sky-500" />
+                          <span>{copyCount}</span>
                         </span>
                       </div>
 
                       <button
                         onClick={() => handleOpenDeptModal(dept)}
-                        className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF]"
+                        className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                         title="แก้ไขข้อมูลแผนก"
                       >
-                        <Edit size={14} />
+                        <Edit size={13} />
                       </button>
                     </div>
                   </div>
@@ -1435,118 +1443,115 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 3: DOCUMENT TYPES ================= */}
         {activeTab === 'docTypes' && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Action Bar */}
-            <div className="card-surface p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
               <div className="relative flex-1 w-full min-w-0">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={typeSearch}
                   onChange={(e) => setTypeSearch(e.target.value)}
                   placeholder="ค้นหารหัสประเภทเอกสาร เช่น QM, SOP, WI, FM..."
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
                 />
               </div>
 
               <button
                 onClick={() => handleOpenTypeModal()}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap"
+                className="h-9 px-3.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               >
-                <Plus size={15} /> เพิ่มประเภทเอกสาร (Add Document Type)
+                <Plus size={14} /> เพิ่มประเภทเอกสาร (Add Document Type)
               </button>
             </div>
 
             {/* Types Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[960px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 w-28 font-mono bg-[#F8FAFC]">Type Code</th>
-                      <th className="px-4 py-3.5 min-w-[220px] bg-[#F8FAFC]">ชื่อประเภทเอกสาร</th>
-                      <th className="px-4 py-3.5 min-w-[180px] font-mono bg-[#F8FAFC]">รูปแบบการตั้งรหัส (Pattern)</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">ขอบเขต & DAR</th>
-                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">Clean Form Bypass</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">รอบทบทวน</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">อายุจัดเก็บ</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-24 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                      <th className="py-2.5 px-3 w-28 font-mono bg-slate-50">Type Code</th>
+                      <th className="py-2.5 px-3 min-w-[200px] bg-slate-50">ชื่อประเภทเอกสาร</th>
+                      <th className="py-2.5 px-3 min-w-[160px] font-mono bg-slate-50">รูปแบบการตั้งรหัส</th>
+                      <th className="py-2.5 px-3 text-center w-28 whitespace-nowrap bg-slate-50">ขอบเขต & DAR</th>
+                      <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">Form Bypass</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">รอบทบทวน</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">อายุจัดเก็บ</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-20 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {docTypePagination.paginatedData.map(type => (
-                      <tr key={type.code || type.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-[#007BE5] whitespace-nowrap">
+                      <tr key={type.code || type.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2 px-3 font-mono font-bold text-sky-700 whitespace-nowrap">
                           {type.code || type.id}
                         </td>
-                        <td className="px-4 py-3 min-w-[220px]">
-                          <div className="font-bold text-[#1E1E1E] text-sm sm:text-[15px]">
+                        <td className="py-2 px-3 min-w-[200px]">
+                          <div className="font-medium text-slate-900 text-xs">
                             {type.nameTh || type.name}
                           </div>
-                          <div className="text-slate-400 text-xs mt-0.5">
-                            {type.description || type.name}
-                          </div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-700 whitespace-nowrap">
-                          <span className="bg-[#F5F5F5] px-2.5 py-1 rounded-lg border border-[#E5E5E5] font-bold text-xs">
+                        <td className="py-2 px-3 font-mono text-slate-700 whitespace-nowrap">
+                          <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-mono text-slate-600 border border-slate-200">
                             {type.namingPattern || `${type.code}-{Dept}-{##}`}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           {(type.allowDar !== false && type.category !== 'EXTERNAL' && type.code !== 'ED') ? (
-                            <span className="px-2.5 py-1 bg-[#E5F4FF] text-[#007BE5] font-bold rounded-full border border-[#E5F4FF] text-xs inline-flex items-center gap-1 shadow-2xs">
+                            <span className="px-2 py-0.5 bg-sky-50 text-sky-700 font-medium rounded-full border border-sky-200 text-[11px] inline-flex items-center gap-1">
                               📑 ภายใน (DAR)
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 bg-amber-50 text-amber-700 font-bold rounded-full border border-amber-200 text-xs inline-flex items-center gap-1 shadow-2xs">
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-medium rounded-full border border-amber-200 text-[11px] inline-flex items-center gap-1">
                               🌐 ภายนอก (External)
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           {type.is_form_type ? (
-                            <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-200 text-xs">
-                              ✅ Clean Bypass
+                            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded-full border border-emerald-200 text-[11px]">
+                              ✅ Bypass
                             </span>
                           ) : (
-                            <span className="px-3 py-1 bg-[#F5F5F5] text-[#666666] rounded-full text-xs">
-                              Watermark Normal
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">
+                              Watermark
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap font-medium text-slate-700 text-xs sm:text-sm">
-                          ทุก {type.reviewCycleMonths || 12} เดือน
+                        <td className="py-2 px-3 text-center whitespace-nowrap text-slate-700 text-xs font-mono">
+                          {type.reviewCycleMonths || 12} เดือน
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap font-medium text-slate-700 text-xs sm:text-sm">
+                        <td className="py-2 px-3 text-center whitespace-nowrap text-slate-700 text-xs font-mono">
                           {type.retentionPeriodYears || 3} ปี
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <td className="py-2 px-3 text-center whitespace-nowrap">
                           <button
                             onClick={() => toggleDocumentTypeStatus(type.code || type.id)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                               type.status !== 'INACTIVE'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5]'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200'
                             }`}
                           >
                             {type.status !== 'INACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
                           <button
                             onClick={() => handleOpenTypeModal(type)}
-                            className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                            className="w-7 h-7 rounded hover:bg-slate-100 inline-flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                             title="แก้ไขประเภทเอกสาร"
                           >
-                            <Edit size={14} />
+                            <Edit size={13} />
                           </button>
                         </td>
                       </tr>
                     ))}
                     {docTypePagination.paginatedData.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                        <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-xs">
                           ไม่พบข้อมูลประเภทเอกสารที่ค้นหา
                         </td>
                       </tr>
@@ -1567,29 +1572,29 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 4: LOCATIONS MATRIX ================= */}
         {activeTab === 'locations' && (
-          <div className="space-y-4">
-            {/* Unified Enterprise Search & Filter Toolbar (Figma UI3 Toolbar Pattern) */}
-            <div className="card-surface p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="space-y-3">
+            {/* Unified Enterprise Search & Filter Toolbar */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 shadow-2xs">
               {/* Left Section: Search Input + Searchable Department Combobox + Clear Filters */}
-              <div className="flex flex-1 flex-wrap items-center gap-2.5 min-w-0">
+              <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
                 {/* Station Free-text Search Field */}
-                <div className="relative flex-1 min-w-[200px] sm:min-w-[240px]">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="relative flex-1 min-w-[180px] sm:min-w-[220px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={locSearch}
                     onChange={(e) => setLocSearch(e.target.value)}
-                    placeholder="ค้นหาชื่อจุดใช้งาน, รหัสสถานีปฏิบัติงาน..."
-                    className="w-full h-10.5 pl-10 pr-9 py-2 text-xs sm:text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all placeholder:text-slate-400 font-normal"
+                    placeholder="ค้นหาชื่อจุดใช้งาน, รหัสสถานี..."
+                    className="w-full h-9 pl-9 pr-8 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-sky-500 outline-none transition-all placeholder:text-slate-400 font-normal"
                   />
                   {locSearch && (
                     <button
                       type="button"
                       onClick={() => setLocSearch('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
                       title="ล้างคำค้นหา"
                     >
-                      <X size={14} />
+                      <X size={12} />
                     </button>
                   )}
                 </div>
@@ -1602,40 +1607,40 @@ const MasterDataHub = () => {
                       setIsLocDeptDropdownOpen(prev => !prev);
                       setLocDeptSearchText('');
                     }}
-                    className={`h-10.5 px-3.5 rounded-xl border transition-all text-xs sm:text-sm font-medium flex items-center justify-between gap-2.5 min-w-[200px] sm:w-64 md:w-72 bg-white ${
-                      isLocDeptDropdownOpen ? 'border-[#0D99FF] ring-2 ring-[#0D99FF]/10' : 'border-[#E5E5E5] hover:border-slate-300'
+                    className={`h-9 px-3 rounded-lg border transition-all text-xs font-medium flex items-center justify-between gap-2 min-w-[180px] sm:w-60 bg-slate-50 ${
+                      isLocDeptDropdownOpen ? 'border-sky-500 bg-white ring-1 ring-sky-500/20' : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 truncate">
-                      <Building2 size={15} className="text-[#0D99FF] shrink-0" />
-                      <span className="truncate text-slate-800 font-medium">
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      <Building2 size={13} className="text-sky-600 shrink-0" />
+                      <span className="truncate text-slate-700 font-medium">
                         {selectedLocDept === 'ALL'
-                          ? 'ทุกแผนก (All Departments)'
+                          ? 'ทุกแผนก (All Depts)'
                           : `${selectedLocDept} — ${departmentsList.find(d => d.id === selectedLocDept)?.nameTh || departmentsList.find(d => d.id === selectedLocDept)?.name || selectedLocDept}`}
                       </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {selectedLocDept !== 'ALL' && (
-                        <span className="px-1.5 py-0.5 rounded-md bg-[#E5F4FF] text-[#007BE5] font-mono text-[11px] font-bold">
+                        <span className="px-1.5 py-0.2 rounded bg-sky-100 text-sky-700 font-mono text-[10px] font-bold">
                           {stationCountByDept[selectedLocDept] || 0}
                         </span>
                       )}
-                      <ChevronDown size={14} className={`text-slate-400 transition-transform ${isLocDeptDropdownOpen ? 'rotate-180 text-[#0D99FF]' : ''}`} />
+                      <ChevronDown size={13} className={`text-slate-400 transition-transform ${isLocDeptDropdownOpen ? 'rotate-180 text-sky-600' : ''}`} />
                     </div>
                   </button>
 
                   {/* Dropdown Popover */}
                   {isLocDeptDropdownOpen && (
-                    <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-[#E5E5E5] rounded-xl shadow-lg z-30 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-100">
                       <div className="relative">
-                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                           type="text"
                           autoFocus
                           value={locDeptSearchText}
                           onChange={(e) => setLocDeptSearchText(e.target.value)}
                           placeholder="พิมพ์ค้นหาชื่อ/รหัสแผนก..."
-                          className="w-full pl-8 pr-7 py-1.5 bg-[#F5F5F5] border border-[#E5E5E5] rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-[#0D99FF]"
+                          className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:bg-white focus:border-sky-500"
                         />
                         {locDeptSearchText && (
                           <button
@@ -1657,15 +1662,13 @@ const MasterDataHub = () => {
                               setSelectedLocDept('ALL');
                               setIsLocDeptDropdownOpen(false);
                             }}
-                            className={`w-full px-2.5 py-2 rounded-lg text-xs font-medium text-left flex items-center justify-between transition-colors ${
+                            className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-left flex items-center justify-between transition-colors ${
                               selectedLocDept === 'ALL'
-                                ? 'bg-[#E5F4FF] text-[#007BE5] font-bold'
-                                : 'text-slate-700 hover:bg-[#F5F5F5]'
+                                ? 'bg-sky-50 text-sky-700 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50'
                             }`}
                           >
-                            <span className="flex items-center gap-2">
-                              <span>ทุกแผนก (All Departments)</span>
-                            </span>
+                            <span>ทุกแผนก (All Departments)</span>
                             <span className="text-[11px] font-mono text-slate-400">
                               {(distributionLocations || []).length} จุด
                             </span>
@@ -1683,19 +1686,19 @@ const MasterDataHub = () => {
                                 setSelectedLocDept(dept.id);
                                 setIsLocDeptDropdownOpen(false);
                               }}
-                              className={`w-full px-2.5 py-2 rounded-lg text-xs text-left flex items-center justify-between transition-colors ${
+                              className={`w-full px-2.5 py-1.5 rounded-lg text-xs text-left flex items-center justify-between transition-colors ${
                                 isSelected
-                                  ? 'bg-[#E5F4FF] text-[#007BE5] font-bold'
-                                  : 'text-slate-700 hover:bg-[#F5F5F5]'
+                                  ? 'bg-sky-50 text-sky-700 font-bold'
+                                  : 'text-slate-700 hover:bg-slate-50'
                               }`}
                             >
                               <div className="flex items-center gap-2 min-w-0 truncate">
-                                <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 text-[11px]">
+                                <span className="font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 text-[10px]">
                                   {dept.id}
                                 </span>
                                 <span className="truncate">{dept.nameTh || dept.name || dept.nameEn}</span>
                               </div>
-                              <span className={`text-[11px] font-mono shrink-0 ${isSelected ? 'text-[#007BE5] font-bold' : 'text-slate-400'}`}>
+                              <span className={`text-[11px] font-mono shrink-0 ${isSelected ? 'text-sky-700 font-bold' : 'text-slate-400'}`}>
                                 {count} จุด
                               </span>
                             </button>
@@ -1703,7 +1706,7 @@ const MasterDataHub = () => {
                         })}
 
                         {filteredDeptOptions.length === 0 && (
-                          <div className="py-4 text-center text-xs text-slate-400">
+                          <div className="py-3 text-center text-xs text-slate-400">
                             ไม่พบแผนกที่ค้นหา
                           </div>
                         )}
@@ -1721,51 +1724,51 @@ const MasterDataHub = () => {
                       setLocSearch('');
                       setLocDeptSearchText('');
                     }}
-                    className="h-10.5 px-3.5 rounded-xl border border-[#E5E5E5] bg-white text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                    className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                     title="ล้างตัวกรองและคำค้นหาทั้งหมด"
                   >
-                    <RotateCcw size={13} className="text-slate-400 group-hover:text-rose-600" />
+                    <RotateCcw size={12} className="text-slate-400 group-hover:text-rose-600" />
                     <span>ล้างตัวกรอง</span>
                   </button>
                 )}
               </div>
 
               {/* Right Section: Counter Badge + Primary Action Button */}
-              <div className="flex items-center gap-3 shrink-0 self-end lg:self-auto flex-wrap justify-end">
+              <div className="flex items-center gap-2 shrink-0 self-end lg:self-auto flex-wrap justify-end">
                 <div 
                   data-testid="station-count-badge"
-                  className="text-xs font-mono font-semibold text-[#64748B] px-3 py-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]/80 whitespace-nowrap"
+                  className="text-xs font-mono font-medium text-slate-500 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 whitespace-nowrap"
                 >
-                  พบ <strong className="text-[#1E1E1E]">{filteredLocations.length}</strong> จาก {(distributionLocations || []).length} จุด
+                  พบ <strong className="text-slate-900">{filteredLocations.length}</strong> / {(distributionLocations || []).length} จุด
                 </div>
 
                 <button
                   type="button"
                   onClick={() => handleOpenLocModal()}
-                  className="h-10.5 px-4 rounded-xl bg-[#0D99FF] text-white hover:bg-[#007BE5] font-semibold text-xs sm:text-sm shadow-2xs transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                  className="h-9 px-3.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-semibold text-xs shadow-2xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} />
                   <span>เพิ่มจุดใช้งานใหม่ (Add Location)</span>
                 </button>
               </div>
             </div>
 
             {/* Locations Elevated Table */}
-            <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+            <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
               <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                 <table className="w-full text-left text-xs table-auto min-w-[980px] border-collapse">
-                  <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                     <tr>
-                      <th className="px-4 py-3.5 w-28 whitespace-nowrap bg-[#F8FAFC]">แผนก</th>
-                      <th className="px-4 py-3.5 w-32 font-mono whitespace-nowrap bg-[#F8FAFC]">Location ID</th>
-                      <th className="px-4 py-3.5 min-w-[260px] bg-[#F8FAFC]">ชื่อจุดใช้งานหน้างาน (Point of Use / Station)</th>
-                      <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">จุดคุมงานต้นทาง (Copy 01)</th>
-                      <th className="px-4 py-3.5 text-center w-32 whitespace-nowrap bg-[#F8FAFC]">สำเนาควบคุมผูกอยู่</th>
-                      <th className="px-4 py-3.5 text-center w-28 whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                      <th className="px-4 py-3.5 text-right w-28 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                      <th className="py-2.5 px-3 w-24 whitespace-nowrap bg-slate-50">แผนก</th>
+                      <th className="py-2.5 px-3 w-28 font-mono whitespace-nowrap bg-slate-50">Location ID</th>
+                      <th className="py-2.5 px-3 min-w-[260px] bg-slate-50">ชื่อจุดใช้งานหน้างาน (Station)</th>
+                      <th className="py-2.5 px-3 text-center w-36 whitespace-nowrap bg-slate-50">จุดคุมงานต้นทาง (Copy 01)</th>
+                      <th className="py-2.5 px-3 text-center w-28 whitespace-nowrap bg-slate-50">สำเนาผูกอยู่</th>
+                      <th className="py-2.5 px-3 text-center w-24 whitespace-nowrap bg-slate-50">สถานะ</th>
+                      <th className="py-2.5 px-3 text-right w-24 whitespace-nowrap bg-slate-50">การจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1F5F9]">
+                  <tbody className="divide-y divide-slate-100">
                     {locationPagination.paginatedData.map(loc => {
                       const activeCopies = allCopies.filter(c => 
                         (c.location_id === loc.id || c.locationId === loc.id || c.location === loc.name) &&
@@ -1773,70 +1776,65 @@ const MasterDataHub = () => {
                       );
 
                       return (
-                        <tr key={loc.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
-                            <span className="px-2.5 py-1 bg-[#F5F5F5] rounded-lg text-slate-700 font-mono text-xs font-bold">
+                        <tr key={loc.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2 px-3 font-semibold text-slate-800 whitespace-nowrap">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-mono text-xs font-bold">
                               {loc.departmentId}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-mono font-bold text-[#007BE5] whitespace-nowrap">
+                          <td className="py-2 px-3 font-mono font-bold text-sky-700 whitespace-nowrap">
                             {loc.id}
                           </td>
-                          <td className="px-4 py-3 min-w-[260px]">
-                            <div className="font-bold text-[#1E1E1E] text-sm sm:text-[15px]">
+                          <td className="py-2 px-3 min-w-[260px]">
+                            <div className="font-medium text-slate-900 text-xs">
                               {loc.name}
                             </div>
-                            {loc.description && (
-                              <div className="text-slate-400 text-xs mt-0.5">
-                                {loc.description}
-                              </div>
-                            )}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
                             {loc.isMasterOffice ? (
-                              <span className="bg-sky-50 text-sky-700 border border-sky-200/70 text-xs font-bold px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-2xs">
-                                <Crown size={14} className="text-sky-600" /> จุดคุมงานต้นทาง
+                              <span className="bg-sky-50 text-sky-700 border border-sky-200 text-[11px] font-medium px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <Crown size={12} className="text-sky-600" /> จุดคุมงานต้นทาง
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-xs">-</span>
+                              <span className="text-slate-400 text-xs font-mono">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold ${
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-medium ${
                               activeCopies.length > 0
                                 ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                : 'bg-[#F5F5F5] text-slate-400'
+                                : 'bg-slate-100 text-slate-400'
                             }`}>
                               {activeCopies.length} เล่ม
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
                             <button
                               onClick={() => toggleLocationStatus(loc.id)}
-                              className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors ${
                                 loc.status !== 'INACTIVE'
                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-[#F5F5F5] text-slate-400 border border-[#E5E5E5]'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200'
                               }`}
                             >
                               {loc.status !== 'INACTIVE' ? '🟢 Active' : '⚪ Inactive'}
                             </button>
                           </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="py-2 px-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => handleOpenLocModal(loc)}
-                                className="action-icon-btn text-[#666666] hover:text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                                 title="แก้ไขจุดใช้งาน"
                               >
-                                <Edit size={14} />
+                                <Edit size={13} />
                               </button>
                               <button
                                 onClick={() => handleDeleteLoc(loc.id)}
-                                className="action-icon-btn text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-rose-50 flex items-center justify-center text-slate-400 hover:text-rose-600 transition-colors"
                                 title="ลบจุดใช้งาน"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} />
                               </button>
                             </div>
                           </td>
@@ -1887,261 +1885,222 @@ const MasterDataHub = () => {
 
         {/* ================= TAB 5: APPROVAL MATRIX & SLAS ================= */}
         {activeTab === 'sla' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines) */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center font-bold">
-                    <Clock size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#1E1E1E]">ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines)</h2>
-                    <p className="text-xs text-[#666666]">กำหนดจำนวนวันทำการสูงสุดสำหรับการดำเนินการในแต่ละขั้นตอนตามมาตรฐาน ISO 9001</p>
-                  </div>
-                </div>
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <Clock size={15} className="text-sky-600" />
+                <h2 className="text-xs font-semibold text-slate-800 uppercase tracking-wide">ส่วนที่ 1: กำหนดกรอบเวลาการปฏิบัติงาน (SLA Timelines)</h2>
+                <span className="text-[11px] text-slate-400 font-normal">จำนวนวันทำการสูงสุดตามมาตรฐาน ISO 9001</span>
               </div>
 
               {/* Compact SLA Metric Cards with Stepper Controls */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {/* Card 1: Review SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-[#0D99FF]/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[#0D99FF] font-bold text-xs sm:text-sm">
-                      <Clock size={15} />
-                      <span>1. ทบทวนคำขอ (Review SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-[#E5F4FF] text-[#007BE5]">
+                    <span className="text-xs font-semibold text-slate-800">1. ทบทวนคำขอ (Review)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-200">
                       Review
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('reviewSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.reviewSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, reviewSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-[#0D99FF] outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-sky-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('reviewSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้ทบทวนประจำแผนกในการตรวจทาน DAR
-                  </div>
                 </div>
 
                 {/* Card 2: Approve SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-emerald-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs sm:text-sm">
-                      <ShieldCheck size={15} />
-                      <span>2. อนุมัติเอกสาร (Approve SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">
+                    <span className="text-xs font-semibold text-slate-800">2. อนุมัติเอกสาร (Approve)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Approve
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('approvalSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.approvalSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, approvalSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-emerald-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-emerald-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('approvalSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้อนุมัติขั้นสุดท้าย (Dept Head / General Manager)
-                  </div>
                 </div>
 
                 {/* Card 3: Receipt SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-amber-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-amber-600 font-bold text-xs sm:text-sm">
-                      <Layers size={15} />
-                      <span>3. ตรวจรับเล่ม (Receipt SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-amber-50 text-amber-700">
+                    <span className="text-xs font-semibold text-slate-800">3. ตรวจรับเล่ม (Receipt)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
                       Receipt
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('hardcopyReceiptSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.hardcopyReceiptSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, hardcopyReceiptSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-amber-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-amber-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('hardcopyReceiptSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับผู้ถือสำเนาประจำจุดตรวจสอบและยืนยันรับเล่มจริง
-                  </div>
                 </div>
 
                 {/* Card 4: Recall SLA */}
-                <div className="card-surface p-4 border border-[#E5E5E5]/80 hover:border-rose-500/40 rounded-2xl transition-all flex flex-col justify-between space-y-3 bg-white shadow-2xs">
+                <div className="bg-white p-3 border border-slate-200/80 rounded-xl transition-all flex flex-col justify-between space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-rose-600 font-bold text-xs sm:text-sm">
-                      <RotateCcw size={15} />
-                      <span>4. เรียกคืนและทำลาย (Recall SLA)</span>
-                    </div>
-                    <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-md bg-rose-50 text-rose-700">
+                    <span className="text-xs font-semibold text-slate-800">4. เรียกคืนทำลาย (Recall)</span>
+                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200">
                       Recall
                     </span>
                   </div>
 
-                  {/* Compact Stepper & Number Input */}
-                  <div className="flex items-center gap-2 justify-center py-1 bg-[#F8FAFC] p-2 rounded-xl border border-[#E2E8F0]/80">
+                  {/* Compact Stepper */}
+                  <div className="flex items-center gap-2 justify-center py-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('recallSlaDays', -1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="ลดจำนวนวัน"
                     >
                       -
                     </button>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min="1"
                         max="30"
                         value={slaForm.recallSlaDays}
                         onChange={(e) => setSlaForm({ ...slaForm, recallSlaDays: parseInt(e.target.value) || 1 })}
-                        className="w-12 h-7 text-center text-base font-bold font-mono text-[#1E1E1E] bg-white border border-[#E2E8F0] rounded-lg focus:border-rose-500 outline-none"
+                        className="w-10 h-6 text-center text-xs font-bold font-mono text-slate-900 bg-white border border-slate-200 rounded focus:border-rose-500 outline-none"
                       />
-                      <span className="text-xs text-slate-500 font-medium whitespace-nowrap">วันทำการ</span>
+                      <span className="text-[11px] text-slate-500 font-medium">วัน</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleAdjustSla('recallSlaDays', 1)}
-                      className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-700 font-bold text-base flex items-center justify-center transition-colors shadow-2xs border border-[#E2E8F0] cursor-pointer"
+                      className="w-6 h-6 rounded bg-white hover:bg-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center transition-colors shadow-2xs border border-slate-200 cursor-pointer"
                       title="เพิ่มจำนวนวัน"
                     >
                       +
                     </button>
                   </div>
-
-                  <div className="text-[11px] text-slate-500 text-center leading-snug">
-                    สำหรับ DCC จัดเก็บเล่มเดิมที่ยกเลิกเพื่อนำไปทำลาย
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร (Approval Matrix by Doc Type) */}
-            <div className="space-y-3">
+            {/* ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร */}
+            <div className="space-y-2.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                    <Sliders size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#1E1E1E]">ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติตามประเภทเอกสาร (Approval Routing Matrix by Doc Type)</h2>
-                    <p className="text-xs text-[#666666]">กำหนดระดับตำแหน่งขั้นต่ำ (Min Level) ของผู้ยื่น, ผู้ทบทวน, และผู้อนุมัติสำหรับเอกสารแต่ละประเภท</p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Sliders size={15} className="text-indigo-600" />
+                  <h2 className="text-xs font-semibold text-slate-800 uppercase tracking-wide">ส่วนที่ 2: ผังเมทริกซ์สายการอนุมัติ (Approval Matrix by Doc Type)</h2>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg text-xs border border-indigo-200/70 inline-flex items-center gap-1.5 shadow-2xs">
-                    <CheckCircle2 size={13} className="text-indigo-600" />
-                    <span>เชื่อมโยงจาก Tab 3 (Single Source of Truth)</span>
+                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-medium rounded-md text-[11px] border border-indigo-200 inline-flex items-center gap-1">
+                    <CheckCircle2 size={12} className="text-indigo-600" />
+                    <span>Single Source of Truth (Tab 3)</span>
                   </span>
                 </div>
               </div>
 
               {/* Elevated Matrix Table with Visual Workflow Pipeline */}
-              <div className="w-full max-w-full overflow-hidden bg-white border border-[#E2E8F0] rounded-xl shadow-2xs flex flex-col min-h-0">
+              <div className="w-full max-w-full overflow-hidden bg-white border border-slate-200/80 rounded-xl shadow-2xs flex flex-col min-h-0">
                 <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
                   <table className="w-full text-left text-xs table-auto min-w-[920px] border-collapse">
-                    <thead className="bg-[#F8FAFC] text-slate-700 font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] whitespace-nowrap sticky top-0 z-10 shadow-xs backdrop-blur-sm">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200 whitespace-nowrap sticky top-0 z-10">
                       <tr>
-                        <th className="px-4 py-3.5 w-60 bg-[#F8FAFC]">ประเภทเอกสาร (Doc Type)</th>
-                        <th className="px-4 py-3.5 min-w-[460px] bg-[#F8FAFC]">
+                        <th className="py-2.5 px-3 w-48 bg-slate-50">ประเภทเอกสาร (Doc Type)</th>
+                        <th className="py-2.5 px-3 min-w-[460px] bg-slate-50">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span>สายการอนุมัติ (Workflow Pipeline:</span>
-                            <span className="text-[11px] font-semibold text-slate-500 normal-case">ระดับผู้ยื่นขั้นต่ำ</span>
+                            <span>สายการอนุมัติ (Pipeline:</span>
+                            <span className="text-[11px] font-normal text-slate-500 normal-case">ผู้ยื่น</span>
                             <span className="text-slate-400">➔</span>
-                            <span className="text-[11px] font-semibold text-[#0D99FF] normal-case">ระดับผู้ทบทวน (Reviewer)</span>
+                            <span className="text-[11px] font-normal text-sky-600 normal-case">ผู้ทบทวน</span>
                             <span className="text-slate-400">➔</span>
-                            <span className="text-[11px] font-semibold text-indigo-600 normal-case">ระดับผู้อนุมัติ (Approver)</span>
+                            <span className="text-[11px] font-normal text-indigo-600 normal-case">ผู้อนุมัติ</span>
                             <span>)</span>
                           </div>
                         </th>
-                        <th className="px-4 py-3.5 text-center w-36 whitespace-nowrap bg-[#F8FAFC]">การรับทราบ (Default Ack)</th>
-                        <th className="px-4 py-3.5 text-right w-28 whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                        <th className="py-2.5 px-3 text-center w-32 whitespace-nowrap bg-slate-50">การรับทราบ (Default Ack)</th>
+                        <th className="py-2.5 px-3 text-right w-20 whitespace-nowrap bg-slate-50">การจัดการ</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#F1F5F9]">
+                    <tbody className="divide-y divide-slate-100">
                       {approvalMatrixPagination.paginatedData.map((item) => {
                         const code = item.code || item.docType || item.doc_type;
                         const minReq = item.minRequesterLevel ?? item.min_requester_level ?? 1;
@@ -2150,75 +2109,71 @@ const MasterDataHub = () => {
                         const isAck = item.requireAckDefault ?? item.require_ack_default ?? false;
 
                         return (
-                          <tr key={code} className="hover:bg-[#F8FAFC]/80 transition-colors">
+                          <tr key={code} className="hover:bg-slate-50/70 transition-colors">
                             {/* Document Type Column */}
-                            <td className="px-4 py-3.5 align-middle">
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-md bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF] shadow-2xs">
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
                                   {code}
                                 </span>
                                 <div className="min-w-0">
-                                  <div className="font-bold text-sm text-slate-800 truncate">{item.name || code}</div>
-                                  {item.description && item.description !== item.name && (
-                                    <div className="text-[11px] text-slate-400 truncate max-w-[220px]">{item.description}</div>
-                                  )}
+                                  <div className="font-medium text-xs text-slate-800 truncate">{item.name || code}</div>
                                 </div>
                               </div>
                             </td>
 
-                            {/* Visual Workflow Pipeline Column (1. Requester ➔ 2. Reviewer ➔ 3. Approver) */}
-                            <td className="px-4 py-3.5 align-middle">
-                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                            {/* Visual Workflow Pipeline Column */}
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap text-xs">
                                 {/* Step 1: Requester */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-slate-500 font-sans">1. ผู้ยื่น:</span>
-                                  <span className="font-bold text-slate-800">L{minReq}+</span>
-                                  <span className="text-[11px] text-slate-600 font-sans font-normal opacity-90">({minReq === 1 ? 'ทุกคน' : 'Sup+'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-slate-500 font-sans">ผู้ยื่น:</span>
+                                  <span className="font-bold">L{minReq}+</span>
+                                  <span className="text-[10px] text-slate-500 font-sans">({minReq === 1 ? 'ทุกคน' : 'Sup+'})</span>
                                 </div>
 
-                                <span className="text-slate-400 font-bold shrink-0">➔</span>
+                                <span className="text-slate-400 text-xs shrink-0">➔</span>
 
                                 {/* Step 2: Reviewer */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#E5F4FF] text-[#007BE5] border border-[#B8E1FF] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-[#0D99FF] font-sans">2. ผู้ทบทวน:</span>
-                                  <span className="font-bold text-[#007BE5]">L{reqRev}+</span>
-                                  <span className="text-[11px] text-[#007BE5] font-sans font-normal opacity-90">({reqRev >= 6 ? 'GM' : reqRev >= 5 ? 'Mgr' : 'Sup'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-sky-600 font-sans">ทบทวน:</span>
+                                  <span className="font-bold">L{reqRev}+</span>
+                                  <span className="text-[10px] text-sky-600 font-sans">({reqRev >= 6 ? 'GM' : reqRev >= 5 ? 'Mgr' : 'Sup'})</span>
                                 </div>
 
-                                <span className="text-slate-400 font-bold shrink-0">➔</span>
+                                <span className="text-slate-400 text-xs shrink-0">➔</span>
 
                                 {/* Step 3: Approver */}
-                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE] font-mono text-xs font-semibold shadow-2xs whitespace-nowrap">
-                                  <span className="text-[10px] uppercase font-bold text-indigo-500 font-sans">3. ผู้อนุมัติ:</span>
-                                  <span className="font-bold text-[#4F46E5]">L{reqApp}+</span>
-                                  <span className="text-[11px] text-[#4F46E5] font-sans font-normal opacity-90">({reqApp >= 8 ? 'MD/กรรมการ' : reqApp >= 6 ? 'GM' : 'Mgr'})</span>
+                                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono text-[11px] whitespace-nowrap">
+                                  <span className="text-[10px] text-indigo-600 font-sans">อนุมัติ:</span>
+                                  <span className="font-bold">L{reqApp}+</span>
+                                  <span className="text-[10px] text-indigo-600 font-sans">({reqApp >= 8 ? 'MD' : reqApp >= 6 ? 'GM' : 'Mgr'})</span>
                                 </div>
                               </div>
                             </td>
 
                             {/* Default Ack Column */}
-                            <td className="px-4 py-3.5 text-center align-middle whitespace-nowrap">
+                            <td className="py-2 px-3 text-center align-middle whitespace-nowrap">
                               {isAck ? (
-                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-lg text-[11px] border border-emerald-200 inline-flex items-center gap-1">
-                                  <Check size={12} /> บังคับรับทราบ
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-medium rounded-full text-[11px] border border-emerald-200 inline-flex items-center gap-1">
+                                  <Check size={11} /> บังคับรับทราบ
                                 </span>
                               ) : (
-                                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-medium rounded-lg text-[11px] inline-flex items-center gap-1">
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">
                                   ไม่ต้องรับทราบ
                                 </span>
                               )}
                             </td>
 
                             {/* Action Button */}
-                            <td className="px-4 py-3.5 text-right align-middle whitespace-nowrap">
+                            <td className="py-2 px-3 text-right align-middle whitespace-nowrap">
                               <button
                                 type="button"
                                 onClick={() => handleOpenMatrixModal(item)}
-                                className="px-3 py-1.5 bg-[#E5F4FF] hover:bg-[#D1EFFF] text-[#0D99FF] rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                                className="w-7 h-7 rounded hover:bg-slate-100 inline-flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors"
                                 title={`แก้ไขผังสายการอนุมัติของ ${code}`}
                               >
                                 <Edit size={13} />
-                                <span>แก้ไข</span>
                               </button>
                             </td>
                           </tr>
@@ -2245,18 +2200,18 @@ const MasterDataHub = () => {
             </div>
 
             {/* Unified Save Card */}
-            <div className="card-surface p-5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-[#E5E5E5] rounded-xl shadow-xs">
+            <div className="bg-white p-3 flex flex-col sm:flex-row items-center justify-between gap-3 border border-slate-200/80 rounded-xl shadow-2xs">
               <div>
-                <h3 className="font-bold text-[#1E1E1E] text-sm">บันทึกการตั้งค่าสายการอนุมัติและ SLAs ทั้งหมด</h3>
-                <p className="text-xs text-slate-500 mt-0.5">ระบบจะนำ SLA และ Routing Matrix ที่ตั้งค่าไปใช้คำนวณวันครบกำหนดและคัดเลือกผู้ทบทวน/อนุมัติอัตโนมัติ</p>
+                <h3 className="font-semibold text-slate-900 text-xs">บันทึกการตั้งค่าสายการอนุมัติและ SLAs</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">ระบบจะนำ SLA และ Routing Matrix ไปใช้คำนวณวันครบกำหนดและคัดเลือกผู้มีสิทธิ์อัตโนมัติ</p>
               </div>
 
               <button
                 type="button"
                 onClick={handleSaveAllSlaAndMatrix}
-                className="btn-primary text-xs shrink-0 whitespace-nowrap px-5 py-2.5 flex items-center gap-2 shadow-xs cursor-pointer"
+                className="h-9 px-4 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shrink-0 whitespace-nowrap flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
               >
-                <Save size={16} /> บันทึกการตั้งค่าสายการอนุมัติและ SLAs
+                <Save size={14} /> บันทึกการตั้งค่า
               </button>
             </div>
           </div>
@@ -3439,7 +3394,10 @@ const MasterDataHub = () => {
                   <div className="text-right text-[11px] text-slate-500 space-y-0.5">
                     <div><strong className="text-slate-800">ผู้ลงนาม:</strong> {selectedUserForSignature.name}</div>
                     <div><strong className="text-slate-800">สังกัด:</strong> {selectedUserForSignature.department}</div>
-                    <div className="text-emerald-600 font-bold">✓ Active Signature Asset</div>
+                    <div className="text-emerald-600 font-bold inline-flex items-center gap-1 justify-end">
+                      <CheckCircle2 size={13} strokeWidth={1.5} className="text-emerald-600" />
+                      <span>Active Signature Asset</span>
+                    </div>
                   </div>
                 </div>
               </div>

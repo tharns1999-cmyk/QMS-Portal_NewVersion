@@ -12,13 +12,13 @@ import {
   FileDown, 
   X, 
   Layers, 
-  ShieldCheck, 
   PlusCircle, 
   Check,
   History,
   FolderOpen,
   Archive,
-  Flame
+  Flame,
+  Copy
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
@@ -239,40 +239,40 @@ const ControlledCopyRegister = () => {
     { 
       id: 'PENDING_ISSUE', 
       aliases: ['PENDING_PRINT', 'PENDING_ISSUE'],
-      label: '1. รายการรอออกสำเนา', 
-      sublabel: 'รอพิมพ์และส่งมอบ', 
+      label: 'รอออกสำเนา', 
+      legacyLabel: '1. รายการรอออกสำเนา',
       count: counts.pendingIssue,
       icon: Printer
     },
     { 
       id: 'DISPATCHED_TRACKING', 
       aliases: ['DISPATCHED', 'DISPATCHED_TRACKING'],
-      label: '2. ติดตามการส่งมอบ', 
-      sublabel: 'อยู่ระหว่างส่งมอบ', 
+      label: 'ติดตามส่งมอบ', 
+      legacyLabel: '2. ติดตามการส่งมอบ',
       count: counts.dispatched,
       icon: Clock
     },
     { 
       id: 'RECALL_CHECKLIST', 
       aliases: ['RECALL', 'RECALL_CHECKLIST'],
-      label: '3. เช็กลิสต์เรียกคืนเอกสาร', 
-      sublabel: 'เรียกคืนเอกสารเดิม', 
+      label: 'เรียกคืน/ทำลาย', 
+      legacyLabel: '3. เช็กลิสต์เรียกคืนเอกสาร',
       count: counts.recall,
       icon: AlertTriangle
     },
     { 
       id: 'ACTIVE_REGISTER', 
       aliases: ['ACTIVE', 'ACTIVE_REGISTER'],
-      label: '4. สำเนาใช้งานจริง', 
-      sublabel: 'ทะเบียนสำเนาที่ใช้งาน', 
+      label: 'สำเนาในจุดใช้งาน', 
+      legacyLabel: '4. สำเนาใช้งานจริง',
       count: counts.active,
       icon: Layers
     },
     { 
       id: 'AUDIT_TRAIL', 
       aliases: ['HISTORY', 'AUDIT_TRAIL'],
-      label: '5. ประวัติการทำงาน', 
-      sublabel: 'บันทึกประวัติการทำงาน', 
+      label: 'ประวัติและสมุดทะเบียน', 
+      legacyLabel: '5. ประวัติการทำงาน',
       count: dccHistoryLogs.length,
       icon: History
     }
@@ -390,6 +390,24 @@ const ControlledCopyRegister = () => {
 
     return Object.values(groups);
   }, [allCopies, documents, externalDocuments, tasks]);
+
+  // Filtered List for Tab 3: RECALL_CHECKLIST
+  const filteredRecallGroups = useMemo(() => {
+    return recallGroups.filter(g => {
+      const q = (searchTerm || '').trim().toLowerCase();
+      const matchSearch = !q ||
+        (g.docCode || '').toLowerCase().includes(q) ||
+        (g.docTitle || '').toLowerCase().includes(q) ||
+        g.copies?.some(c => 
+          String(c.copy_no || c.ccNumber || '').toLowerCase().includes(q) ||
+          (c.holder_dept || c.department || '').toLowerCase().includes(q) ||
+          (c.location || c.locationName || '').toLowerCase().includes(q)
+        );
+      const matchDept = selectedDeptFilter === 'ALL' ||
+        g.copies?.some(c => (c.holder_dept || c.department) === selectedDeptFilter);
+      return matchSearch && matchDept;
+    });
+  }, [recallGroups, searchTerm, selectedDeptFilter]);
 
   // Filtered List for Tab 4: ACTIVE_REGISTER
   const activeCopies = useMemo(() => {
@@ -720,38 +738,33 @@ const ControlledCopyRegister = () => {
   };
 
   return (
-    <div className="space-y-6 pb-16 max-w-7xl mx-auto w-full max-w-full overflow-hidden">
-      {/* Top Banner / Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-[#E5E5E5] shadow-none">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-[#E5F4FF] text-[#0D99FF] rounded-lg">
-              <ShieldCheck size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#1E1E1E] tracking-tight">
-                ศูนย์ควบคุมสำเนาและวงจรเอกสาร
-              </h1>
-              <p className="text-xs text-[#666666] font-medium mt-0.5">
-                บริหารจัดการสำเนาควบคุม พิมพ์ลายน้ำ 45° ส่งมอบเล่มจริง และเช็กลิสต์เรียกคืนเอกสาร (ISO 9001 / FSSC 22000)
-              </p>
-            </div>
+    <div className="space-y-4 pb-16 max-w-7xl mx-auto w-full max-w-full overflow-hidden">
+      {/* Top Header - Standardized Page Header */}
+      <div className="flex items-center justify-between gap-3 px-6 py-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs">
+        <div className="flex items-center gap-3">
+          <Copy className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              ทะเบียนสำเนาควบคุม
+            </h1>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-blue-50 text-[#0D99FF] border border-blue-100">
+              ISO 9001 / FSSC 22000
+            </span>
           </div>
         </div>
 
         {/* Quick Action Button */}
-        <div className="flex items-center gap-2 self-stretch sm:self-auto">
-          <button
-            onClick={() => setIssueModalOpen(true)}
-            className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold text-white bg-[#0D99FF] hover:bg-[#007BE5] rounded-lg shadow-none transition-all flex items-center justify-center gap-1.5"
-          >
-            <PlusCircle size={16} /> ออกสำเนาใหม่
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIssueModalOpen(true)}
+          className="h-9 px-3.5 text-xs font-bold text-white bg-[#0D99FF] hover:bg-[#007BE5] rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+        >
+          <PlusCircle size={15} /> <span>ออกสำเนาใหม่</span>
+        </button>
       </div>
 
-      {/* Figma UI3 Unified 5-Stage Interactive Workflow Navigator */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 bg-[#FAFAFA] p-1.5 border border-[#E5E5E5] rounded-xl mb-4">
+      {/* Modern Segmented Control / Compact Pill Tabs (height <= 44px) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5 p-1 bg-slate-100/80 border border-slate-200/80 rounded-xl mb-3">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id || (tab.aliases && tab.aliases.includes(activeTab));
           const TabIcon = tab.icon;
@@ -759,20 +772,22 @@ const ControlledCopyRegister = () => {
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex items-center justify-between px-3.5 py-3 rounded-lg transition-all cursor-pointer ${
+              className={`flex items-center justify-between px-3.5 py-2.5 md:py-2 rounded-lg transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-white border-2 border-[#0D99FF] text-[#0D99FF] font-semibold shadow-xs'
-                  : 'bg-white border border-[#E5E5E5] text-[#555555] hover:border-[#CCCCCC] hover:text-[#1E1E1E] shadow-2xs'
+                  ? 'bg-white border border-[#0D99FF]/40 text-[#0D99FF] font-semibold shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
+              {/* px-3.5 py-3 rounded-lg transition-all cursor-pointer */}
               <div className="flex items-center gap-2 min-w-0 pr-1">
-                <TabIcon size={16} strokeWidth={isActive ? 2 : 1.75} className={isActive ? 'text-[#0D99FF]' : 'text-[#666666]'} />
+                <TabIcon size={15} strokeWidth={1.5} className={isActive ? 'text-[#0D99FF]' : 'text-slate-400'} />
                 <span className="text-sm truncate font-medium">{tab.label}</span>
+                <span className="sr-only">{tab.legacyLabel}</span>
               </div>
-              <span className={`px-2 py-0.5 rounded font-mono text-xs shrink-0 ${
+              <span className={`px-2 py-0.5 rounded-full font-mono text-xs shrink-0 ${
                 isActive 
                   ? 'bg-[#E5F4FF] text-[#0D99FF] font-bold' 
-                  : 'bg-[#F0F0F0] text-[#666666] font-semibold'
+                  : 'bg-slate-200/80 text-slate-600 font-semibold'
               }`}>
                 {tab.count}
               </span>
@@ -781,77 +796,67 @@ const ControlledCopyRegister = () => {
         })}
       </div>
 
-      {/* Search & Global Filter Bar (for tabs 1, 2, 4) */}
-      {activeTab !== 'AUDIT_TRAIL' && activeTab !== 'HISTORY' && (
-        <div className="bg-white p-4 rounded-xl border border-[#E5E5E5] flex flex-col sm:flex-row gap-3 items-center justify-between shadow-none">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#999999]" size={18} />
-            <input
-              type="text"
-              placeholder="ค้นหารหัส, ชื่อเอกสาร, หมายเลขสำเนา..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 h-10 text-sm bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all font-medium placeholder:text-[#999999]"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <select
-              value={selectedDeptFilter}
-              onChange={(e) => setSelectedDeptFilter(e.target.value)}
-              className="w-full sm:w-auto px-4 py-2 h-10 text-sm bg-white border border-[#E5E5E5] rounded-lg font-medium text-[#333333] focus:outline-none focus:border-[#0D99FF]"
-            >
-              <option value="ALL">ทุกแผนก (All Departments)</option>
-              {departmentList.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
       {/* ========================================================================= */}
       {/* TAB 1: รายการรอออกสำเนา (PENDING_ISSUE) */}
       {/* ========================================================================= */}
       {(activeTab === 'PENDING_ISSUE' || activeTab === 'PENDING_PRINT') && (
-        <div className="w-full bg-white rounded-xl border border-[#E5E5E5] shadow-2xs overflow-hidden space-y-4 h-auto">
-          {/* Tab Actions Header */}
-          <div className="p-6 border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E1E1E] flex items-center gap-2">
-                <Printer size={20} className="text-[#0D99FF]" /> รายการสำเนาที่รอพิมพ์และส่งมอบ ({pendingIssueCopies.length} รายการ)
-              </h2>
-              <p className="text-xs text-[#666666] mt-0.5">
-                สำเนาที่อนุมัติจาก DAR แยกตาม Copy No. และจุดใช้งานจริง พร้อมประทับลายน้ำ 45°
-              </p>
+        <div className="w-full bg-white rounded-xl border border-[#E5E5E5] shadow-2xs overflow-hidden h-auto">
+          {/* Unified Action Toolbar */}
+          <div className="p-3 border-b border-[#E5E5E5] flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 bg-white">
+            {/* Left: Compact Search & Department Select */}
+            <div className="flex items-center gap-2 flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="ค้นหารหัส, ชื่อเอกสาร, หมายเลขสำเนา..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all placeholder:text-slate-400"
+                />
+              </div>
+              <select
+                value={selectedDeptFilter}
+                onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                className="px-2.5 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg font-medium text-slate-700 focus:outline-none focus:border-[#0D99FF] shrink-0"
+              >
+                <option value="ALL">ทุกแผนก</option>
+                {departmentList.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Batch Action Buttons */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Right: Items Count & Action Buttons */}
+            <div className="flex items-center gap-2 justify-end shrink-0">
+              <span className="text-xs font-mono text-slate-500 whitespace-nowrap">
+                {pendingIssueCopies.length} รายการ
+              </span>
+
               <button
                 onClick={handleBatchPrint}
                 disabled={isBatchPrinting || pendingIssueCopies.length === 0}
-                className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-200 rounded-xl transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-200 rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
                 {isBatchPrinting ? (
                   <div className="w-3.5 h-3.5 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <Printer size={15} />
+                  <Printer size={14} />
                 )}
-                {selectedCopyIds.length > 0 ? `พิมพ์ที่เลือก (${selectedCopyIds.length})` : '📑 Batch Print All'}
+                {selectedCopyIds.length > 0 ? `พิมพ์ที่เลือก (${selectedCopyIds.length})` : 'พิมพ์ทั้งหมด'}
               </button>
 
               <button
                 onClick={handleBatchDispatch}
                 disabled={isBatchDispatching || pendingIssueCopies.length === 0}
-                className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 {isBatchDispatching ? (
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <Send size={15} />
+                  <Send size={14} />
                 )}
-                {selectedCopyIds.length > 0 ? `ส่งมอบที่เลือก (${selectedCopyIds.length})` : '📤 บันทึกส่งมอบทั้งหมด (Dispatch All)'}
+                {selectedCopyIds.length > 0 ? `ส่งมอบที่เลือก (${selectedCopyIds.length})` : 'บันทึกส่งมอบทั้งหมด'}
               </button>
             </div>
           </div>
@@ -991,15 +996,39 @@ const ControlledCopyRegister = () => {
       {/* TAB 2: ติดตามการส่งมอบ (DISPATCHED_TRACKING) */}
       {/* ========================================================================= */}
       {(activeTab === 'DISPATCHED_TRACKING' || activeTab === 'DISPATCHED') && (
-        <div className="w-full bg-white rounded-xl border border-[#E5E5E5] shadow-2xs overflow-hidden space-y-4 h-auto">
-          <div className="p-6 border-b border-[#E5E5E5] flex justify-between items-center bg-white">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E1E1E] flex items-center gap-2">
-                <Clock size={20} className="text-[#F59E0B]" /> ติดตามการส่งมอบและรอตรวจรับ ({dispatchedCopies.length} รายการ)
-              </h2>
-              <p className="text-xs text-[#666666] mt-0.5">
-                สำเนาที่ DCC นำส่งแล้ว อยู่ระหว่างรอแผนกปลายทางตรวจรับด้วย E-Signature PIN 6 หลัก
-              </p>
+        <div className="w-full bg-white rounded-xl border border-[#E5E5E5] shadow-2xs overflow-hidden h-auto">
+          {/* Unified Action Toolbar */}
+          <div className="p-3 border-b border-[#E5E5E5] flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 bg-white">
+            {/* Left: Compact Search & Department Select */}
+            <div className="flex items-center gap-2 flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="ค้นหารหัส, ชื่อเอกสาร, หมายเลขสำเนา..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all placeholder:text-slate-400"
+                />
+              </div>
+              <select
+                value={selectedDeptFilter}
+                onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                className="px-2.5 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg font-medium text-slate-700 focus:outline-none focus:border-[#0D99FF] shrink-0"
+              >
+                <option value="ALL">ทุกแผนก</option>
+                {departmentList.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Right: Items Count & Status */}
+            <div className="flex items-center gap-2 justify-end shrink-0">
+              <span className="text-xs font-mono text-slate-500 whitespace-nowrap">
+                รอตรวจรับ {dispatchedCopies.length} รายการ
+              </span>
+              <span className="sr-only">ติดตามการส่งมอบและรอตรวจรับ</span>
             </div>
           </div>
 
@@ -1090,23 +1119,47 @@ const ControlledCopyRegister = () => {
       {/* TAB 3: เช็กลิสต์เรียกคืนเอกสาร (RECALL_CHECKLIST) */}
       {/* ========================================================================= */}
       {(activeTab === 'RECALL_CHECKLIST' || activeTab === 'RECALL') && (
-        <div className="space-y-6">
-          <div className="bg-gradient-to-r from-rose-600 via-rose-700 to-red-800 text-white p-6 rounded-3xl shadow-lg shadow-rose-600/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-white/20 text-white text-xs font-bold font-mono">
-                  ISO 9001: 7.5.3.2
-                </span>
-                <span className="text-xs text-rose-100 font-medium">Control of Obsolete Documents</span>
+        <div className="space-y-4">
+          {/* Unified Action Toolbar */}
+          <div className="bg-white p-3 rounded-xl border border-[#E5E5E5] flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 shadow-2xs">
+            {/* Left: Compact Search & Department Select */}
+            <div className="flex items-center gap-2 flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="ค้นหารหัส, ชื่อเอกสาร, หมายเลขสำเนา..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all placeholder:text-slate-400"
+                />
               </div>
-              <h2 className="text-xl font-bold mt-1">
-                เช็กลิสต์การเรียกคืนเอกสารฉบับเดิม (Recall Checklist)
-              </h2>
-              <p className="text-xs text-rose-100 mt-0.5">
-                ติดตามการเก็บคืนสำเนาฉบับเก่าจากทุกจุดใช้งานเมื่อเอกสารมีการ Revise หรือประกาศยกเลิก (Obsolete)
-              </p>
+              <select
+                value={selectedDeptFilter}
+                onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                className="px-2.5 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg font-medium text-slate-700 focus:outline-none focus:border-[#0D99FF] shrink-0"
+              >
+                <option value="ALL">ทุกแผนก</option>
+                {departmentList.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+
+            {/* Right: Alert Tag / Badge + Disposition Button */}
+            <div className="flex items-center gap-2.5 justify-end shrink-0">
+              {filteredRecallGroups.length > 0 ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  <AlertTriangle size={13} className="text-rose-600" />
+                  <span>ต้องเรียกคืน {filteredRecallGroups.length} เอกสาร</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span>ไม่มีเอกสารค้างเรียกคืน</span>
+                </span>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -1114,21 +1167,17 @@ const ControlledCopyRegister = () => {
                   setAuditSubTab('DISPOSITION');
                   setSearchParams({ tab: 'AUDIT_TRAIL' });
                 }}
-                className="px-3.5 py-2 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold backdrop-blur-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
                 title="ดูประวัติการทำลายและจัดเก็บสำเนาควบคุม"
               >
                 <Archive size={14} />
-                <span>ดูทะเบียนประวัติการทำลายสำเนา (Disposal Audit Report)</span>
+                <span>ทะเบียนทำลายสำเนา</span>
               </button>
-              <div className="text-right bg-white/10 border border-white/20 rounded-2xl px-4 py-2.5 backdrop-blur-sm">
-                <div className="text-xs text-rose-200">เอกสารที่ต้องเรียกคืน</div>
-                <div className="text-xl font-black font-mono">{recallGroups.length} เอกสาร</div>
-              </div>
             </div>
           </div>
 
           {/* Grouped Document Recall Cards */}
-          {recallGroups.map(group => {
+          {filteredRecallGroups.map(group => {
             const receivedCopies = group.copies.filter(c => 
               c.status === 'RECALLED' || 
               c.status === 'RECEIVED_AT_DCC' || 
@@ -1146,10 +1195,10 @@ const ControlledCopyRegister = () => {
             return (
               <div 
                 key={group.docId}
-                className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
+                className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden"
               >
                 {/* Header of Document Group */}
-                <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/70">
+                <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50/70">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-base text-slate-900 font-mono">{group.docCode}</span>
@@ -1336,11 +1385,11 @@ const ControlledCopyRegister = () => {
             );
           })}
 
-          {recallGroups.length === 0 && (
-            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center text-slate-400 shadow-sm">
-              <CheckCircle2 className="mx-auto text-emerald-400 mb-2" size={40} />
-              <div className="font-bold text-slate-800 text-lg">ไม่มีเอกสารฉบับเก่าค้างเรียกคืน</div>
-              <p className="text-xs text-slate-400 mt-1">สำเนาฉบับก่อนหน้าทั้งหมดได้รับการเก็บคืนและทำลายอย่างสมบูรณ์</p>
+          {filteredRecallGroups.length === 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 shadow-2xs">
+              <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={32} />
+              <div className="font-bold text-slate-800 text-sm">ไม่มีเอกสารฉบับเก่าค้างเรียกคืน</div>
+              <p className="text-xs text-slate-400 mt-0.5">สำเนาฉบับก่อนหน้าทั้งหมดได้รับการเก็บคืนและทำลายอย่างสมบูรณ์</p>
             </div>
           )}
         </div>
@@ -1459,22 +1508,22 @@ const ControlledCopyRegister = () => {
       {/* TAB 5: ประวัติและบันทึกการทำงาน (AUDIT_TRAIL / HISTORY) */}
       {/* ========================================================================= */}
       {(activeTab === 'AUDIT_TRAIL' || activeTab === 'HISTORY') && (
-        <div className="w-full bg-white border border-[#E5E5E5] rounded-2xl overflow-hidden shadow-xs space-y-0 h-auto">
+        <div className="w-full bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-2xs space-y-0 h-auto">
           {/* Sub-Tabs Selector */}
-          <div className="px-5 pt-4 pb-0 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="px-4 pt-3 pb-0 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setAuditSubTab('ACTIVITY')}
-                className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 transition-all cursor-pointer ${
+                className={`pb-2.5 px-2.5 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
                   auditSubTab === 'ACTIVITY'
                     ? 'border-[#0D99FF] text-[#0D99FF]'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Clock size={16} />
-                <span>บันทึกกิจกรรมทั่วไป (Activity Logs)</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold ${
+                <Clock size={15} />
+                <span>บันทึกกิจกรรมทั่วไป</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-semibold ${
                   auditSubTab === 'ACTIVITY' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'
                 }`}>
                   {filteredAuditLogs.length}
@@ -1484,15 +1533,15 @@ const ControlledCopyRegister = () => {
               <button
                 type="button"
                 onClick={() => setAuditSubTab('DISPOSITION')}
-                className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 flex items-center gap-2 transition-all cursor-pointer ${
+                className={`pb-2.5 px-2.5 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
                   auditSubTab === 'DISPOSITION'
                     ? 'border-rose-600 text-rose-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Archive size={16} />
-                <span>ทะเบียนประวัติการทำลายสำเนา (Disposition Ledger)</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold ${
+                <Archive size={15} />
+                <span>ทะเบียนทำลายสำเนา</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-semibold ${
                   auditSubTab === 'DISPOSITION' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-600'
                 }`}>
                   {filteredDispositionRecords.length}
@@ -1500,45 +1549,52 @@ const ControlledCopyRegister = () => {
               </button>
             </div>
             
-            <div className="pb-3 text-xs text-slate-400 font-mono hidden md:block">
+            <div className="pb-2 text-[11px] text-slate-400 font-mono hidden md:block">
               ISO 9001: 7.5.3.2 Retention &amp; Disposition
+            </div>
+          </div>
+
+          {/* Unified Action Toolbar for Tab 5 */}
+          <div className="p-3 bg-white border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <span className="sr-only">บันทึกประวัติการจัดการสำเนาและวงจรเอกสาร (DCC Activity Logs)</span>
+            {/* Single Search Bar controlling active subtab */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <input
+                type="text"
+                placeholder={auditSubTab === 'ACTIVITY' ? "ค้นหา Log, เอกสาร, ผู้ดำเนินการ..." : "ค้นหารหัส, เล่ม, ผู้ทำลาย, อ้างอิง..."}
+                value={auditSubTab === 'ACTIVITY' ? auditSearchTerm : dispositionSearchTerm}
+                onChange={(e) => {
+                  if (auditSubTab === 'ACTIVITY') {
+                    setAuditSearchTerm(e.target.value);
+                  } else {
+                    setDispositionSearchTerm(e.target.value);
+                  }
+                }}
+                className="w-full pl-9 pr-3 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] placeholder:text-slate-400"
+              />
+            </div>
+
+            {/* Right: Items Count & Export CSV Button */}
+            <div className="flex items-center gap-3 justify-end shrink-0">
+              <span className="text-xs font-mono text-slate-500 whitespace-nowrap">
+                ทั้งหมด {auditSubTab === 'ACTIVITY' ? (filteredAuditLogs || []).length : (filteredDispositionRecords || []).length} รายการ
+              </span>
+
+              <button
+                type="button"
+                onClick={auditSubTab === 'ACTIVITY' ? handleExportAuditCsv : handleExportDispositionCsv}
+                className="px-3.5 py-1.5 h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                title="Export CSV"
+              >
+                <FileDown size={14} /> <span>Export CSV</span>
+              </button>
             </div>
           </div>
 
           {/* Sub-Tab 1: Activity Logs */}
           {auditSubTab === 'ACTIVITY' && (
             <div>
-              {/* Header & Controls */}
-              <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="text-xs text-slate-600 font-medium">
-                  บันทึกกิจกรรมการพิมพ์, จ่ายแจก, ยืนยันรับเล่ม และตรวจรับของเจ้าหน้าที่ DCC
-                </div>
-                
-                <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" size={15} />
-                    <input
-                      type="text"
-                      placeholder="ค้นหา Log / เอกสาร / ผู้ดำเนินการ..."
-                      value={auditSearchTerm}
-                      onChange={(e) => setAuditSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 h-9 text-xs sm:text-sm bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] placeholder:text-[#999999]"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleExportAuditCsv}
-                    className="px-3.5 py-1.5 h-9 bg-[#1E1E1E] hover:bg-[#333333] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
-                    title="Export CSV"
-                  >
-                    <FileDown size={14} /> <span>Export CSV</span>
-                  </button>
-
-                  <span className="text-xs font-mono text-[#666666] hidden sm:inline whitespace-nowrap">
-                    ทั้งหมด {(filteredAuditLogs || []).length} รายการ
-                  </span>
-                </div>
-              </div>
 
               {/* Table / List */}
               {(!auditPagination.paginatedData || auditPagination.paginatedData.length === 0) ? (
@@ -1626,45 +1682,6 @@ const ControlledCopyRegister = () => {
           {/* Sub-Tab 2: Dedicated Disposition Ledger (ISO 9001 Compliance) */}
           {auditSubTab === 'DISPOSITION' && (
             <div>
-              {/* Header & Controls */}
-              <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#E5E5E5] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div>
-                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-mono">
-                      ISO 9001: 7.5.3.2
-                    </span>
-                    <span>ทะเบียนประวัติการทำลายและจัดเก็บสำเนาควบคุมถาวร (Disposition Ledger)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    หลักฐานการทำลาย (Shred/Burn) หรือการประทับตรา Obsolete เพื่อจัดเก็บเข้าคลังประวัติ สำหรับการตรวจประเมิน Auditor
-                  </p>
-                </div>
-                
-                <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" size={15} />
-                    <input
-                      type="text"
-                      placeholder="ค้นหารหัส / เล่ม / ผู้ทำลาย / อ้างอิง..."
-                      value={dispositionSearchTerm}
-                      onChange={(e) => setDispositionSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 h-9 text-xs sm:text-sm bg-white border border-[#E5E5E5] rounded-lg outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 placeholder:text-[#999999]"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleExportDispositionCsv}
-                    className="px-3.5 py-1.5 h-9 bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs shadow-rose-700/20"
-                    title="Export Disposition Ledger CSV"
-                  >
-                    <FileDown size={14} /> <span>Export CSV</span>
-                  </button>
-
-                  <span className="text-xs font-mono text-[#666666] hidden sm:inline whitespace-nowrap">
-                    ทั้งหมด {(filteredDispositionRecords || []).length} รายการ
-                  </span>
-                </div>
-              </div>
 
               {/* Disposition Table */}
               {(!dispositionPagination.paginatedData || dispositionPagination.paginatedData.length === 0) ? (
