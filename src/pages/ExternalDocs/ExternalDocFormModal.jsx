@@ -410,6 +410,7 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       distributions: formData.isPhysicalCopy ? formData.distributions : [],
       physical_distribution: formData.isPhysicalCopy ? formData.distributions : [],
       is_physical_copy: Boolean(formData.isPhysicalCopy && (formData.distributions || []).length > 0),
+      edition: formData.sourceVersion || formData.edition || '1.0',
       fileName,
       updatedAt: new Date().toISOString()
     };
@@ -445,7 +446,8 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       toast.success(`ส่งคำร้องเอกสารภายนอก ${previewEdCode} อีกครั้งเรียบร้อยแล้ว`);
     } else if (documentToEdit) {
       updateExternalDoc(documentToEdit.id, payloadToSubmit);
-      toast.success(`ส่งคำขออัปเดตเอกสาร ${previewEdCode} (Rev.${revisionInfo.targetRev}) สำเร็จ`);
+      const edLabel = payloadToSubmit.sourceVersion ? `(${payloadToSubmit.sourceVersion})` : '';
+      toast.success(`ส่งคำขออัปเดตเอกสาร ${previewEdCode} ${edLabel} สำเร็จ`);
     } else {
       registerExternalDoc(payloadToSubmit);
       toast.success(`ลงทะเบียนเอกสารภายนอก ${previewEdCode} เรียบร้อยแล้ว`);
@@ -498,18 +500,18 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
                       {previewEdrNumber}
                     </span>
                     {isReviseMode ? (
-                      <div className="flex items-center gap-1.5 font-mono text-xs">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                          {formData?.originalRevision || prevRev || 'Rev.00'}
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                          ฉบับเดิม: {documentToEdit?.sourceVersion || documentToEdit?.edition || 'ฉบับแรก'}
                         </span>
                         <span className="text-slate-400">➔</span>
-                        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
-                          {formData?.targetRevision || nextRev || 'Rev.01'}
+                        <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+                          ฉบับใหม่: {formData?.sourceVersion || 'ระบุฉบับใหม่'}
                         </span>
                       </div>
                     ) : (
-                      <span className="text-xs font-semibold bg-stone-100 text-stone-700 px-2 py-0.5 rounded-md border border-stone-200 font-mono">
-                        {documentToEdit ? (formData?.originalRevision || prevRev || 'Rev.00') : 'Rev.00'}
+                      <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-lg border border-indigo-200 uppercase tracking-wide">
+                        EXTERNAL DOCUMENT
                       </span>
                     )}
                   </div>

@@ -151,20 +151,19 @@ const ExternalDocConfirmModal = ({
                   <span>{data.edCode || data.docNo}</span>
                 </span>
 
-                {documentToEdit && !isResubmit && data.originalRevision ? (
-                  <span className="inline-flex items-center gap-1.5 bg-white/90 border border-blue-200 text-blue-900 px-2.5 py-1 rounded-xl text-xs font-semibold shadow-2xs font-mono">
-                    {data.sourceVersion && <span className="text-slate-500 font-sans font-normal">Ver/Ed: {data.sourceVersion} • </span>}
-                    <span className="text-slate-600">Rev.{data.originalRevision}</span>
+                {documentToEdit && !isResubmit ? (
+                  <span className="inline-flex items-center gap-1.5 bg-white/90 border border-indigo-200 text-indigo-900 px-2.5 py-1 rounded-xl text-xs font-semibold shadow-2xs">
+                    <span className="text-slate-500 font-sans font-normal">ฉบับเดิม: {documentToEdit.sourceVersion || documentToEdit.edition || 'ฉบับแรก'}</span>
                     <span className="text-slate-400 font-sans">➔</span>
-                    <span className="text-blue-700 font-bold">Rev.{data.targetRevision || data.rev || '01'}</span>
+                    <span className="text-indigo-700 font-bold">ฉบับใหม่: {data.sourceVersion || 'ระบุฉบับใหม่'}</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center bg-white/90 border border-amber-300/80 text-amber-900 px-2.5 py-1 rounded-xl text-xs font-semibold shadow-2xs">
-                    {data.sourceVersion ? `Ver/Ed: ${data.sourceVersion} • Rev.${data.rev || '00'}` : `Rev.${data.rev || '00'}`}
+                  <span className="inline-flex items-center bg-white/90 border border-indigo-300/80 text-indigo-900 px-2.5 py-1 rounded-xl text-xs font-semibold shadow-2xs">
+                    {data.sourceVersion ? `เวอร์ชัน/ครั้งที่พิมพ์: ${data.sourceVersion}` : 'ฉบับตั้งต้น (Initial Edition)'}
                   </span>
                 )}
 
-                <span className="inline-flex items-center bg-amber-100/80 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-xl text-xs font-medium">
+                <span className="inline-flex items-center bg-indigo-50 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-xl text-xs font-bold uppercase tracking-wide">
                   เอกสารภายนอก (External Document)
                 </span>
               </div>

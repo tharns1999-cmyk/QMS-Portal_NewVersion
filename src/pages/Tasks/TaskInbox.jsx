@@ -384,8 +384,8 @@ export const getTaskOrigin = (task) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const getRevisionTransition = (task, matchedDar, matchedDoc) => {
   if (!task) return null;
-
-  // 1. Identify source (previous) and target (new) revisions with robust fallbacks
+  // ISO 9001 Clause 7.5.3.2: External documents must NOT inherit internal revision logic
+  if (getTaskOrigin(task) === 'EXTERNAL') return null;
   const prevRev = 
     task.sourceRevision ||
     task.source_revision ||
@@ -1411,8 +1411,14 @@ const TaskInbox = () => {
                         {displayDocCode}
                       </span>
 
-                      {/* 2. แท็ก Revision (ถ้ามี) */}
-                      {revTransition ? (
+                      {/* 2. แท็ก Revision หรือ Edition (ถ้ามี) */}
+                      {isExternal ? (
+                        (extDoc?.sourceVersion || task.sourceVersion || task.edition) ? (
+                          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap font-bold">
+                            Ver/Ed: {extDoc?.sourceVersion || task.sourceVersion || task.edition}
+                          </span>
+                        ) : null
+                      ) : revTransition ? (
                         revTransition.type === 'TRANSITION' ? (
                           <span className={`inline-flex items-center gap-1 font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap ${revTransition.badgeClass || ''}`}>
                             Rev.{revTransition.prev} <span className="text-slate-400">→</span> Rev.{revTransition.next}

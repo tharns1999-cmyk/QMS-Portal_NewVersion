@@ -50,7 +50,7 @@ const ExternalCopyDispositionModal = ({
 
   const docCode = doc.edCode || doc.doc_code || doc.docNo || doc.id || 'ED-DOC';
   const docTitle = doc.title || doc.name || 'เอกสารภายนอก';
-  const docRev = doc.rev || doc.sourceVersion || '01';
+  const docEdition = doc.edition || doc.sourceVersion || 'ฉบับต้นทาง';
 
   const handleToggleSelectCopy = (id) => {
     const strId = String(id);
@@ -140,7 +140,7 @@ const ExternalCopyDispositionModal = ({
                       {docCode}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold font-mono">
-                      Rev.{docRev}
+                      {docEdition}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold">
                       DCC Disposition

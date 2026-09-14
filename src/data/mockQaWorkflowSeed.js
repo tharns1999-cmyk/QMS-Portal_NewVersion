@@ -599,6 +599,7 @@ export const getMockQaSeedData = () => {
       is_superseded: true,
       supersededAt: '2026-08-01T08:00:00.000Z',
       supersededByRev: '01',
+      superseded_by_edition: '5th Edition (2015) + Amd 1:2024',
       supersededByDocId: 'ED-QA-01',
       supersededByCode: 'ED-QA-01',
       supersededByRequestId: 'EDR-2026-0002',

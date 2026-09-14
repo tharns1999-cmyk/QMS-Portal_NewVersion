@@ -2441,6 +2441,8 @@ const useStore = create(persist((set, get) => ({
 
     const requestId = updates.requestNo || updates.requestId || updates.edrNumber || generateNextEdrNumber(state.externalRequests || []);
 
+    const newEditionValue = updates.sourceVersion || updates.edition || oldDoc.sourceVersion || oldDoc.edition || '';
+
     const newDoc = {
       ...oldDoc,
       ...updates,
@@ -2448,8 +2450,8 @@ const useStore = create(persist((set, get) => ({
       edCode,
       doc_code: edCode,
       docNo: edCode,
-      rev: newRevStr,
-      revision: `Rev.${newRevStr}`,
+      edition: newEditionValue,
+      sourceVersion: newEditionValue,
       source: issuerValue,
       issuer: issuerValue,
       officialIssuer: issuerValue,
@@ -2477,7 +2479,7 @@ const useStore = create(persist((set, get) => ({
         doc_code: edCode,
         docTitle: newDoc.title,
         docName: newDoc.title,
-        title: `${edCode}: ${newDoc.title} (Rev.${newRevStr})`,
+        title: `${edCode}: ${newDoc.title}${newDoc.sourceVersion ? ` (${newDoc.sourceVersion})` : ''}`,
         type: 'EXTERNAL_REVIEW',
         taskType: 'EXTERNAL_REVIEW',
         assigneeId: newDoc.reviewerId,
@@ -2512,7 +2514,7 @@ const useStore = create(persist((set, get) => ({
         doc_code: edCode,
         docTitle: newDoc.title,
         docName: newDoc.title,
-        title: `${edCode}: ${newDoc.title} (Rev.${newRevStr})`,
+        title: `${edCode}: ${newDoc.title}${newDoc.sourceVersion ? ` (${newDoc.sourceVersion})` : ''}`,
         type: 'EXTERNAL_APPROVAL',
         taskType: 'EXTERNAL_APPROVAL',
         assigneeId: newDoc.approverId,
@@ -2560,15 +2562,12 @@ const useStore = create(persist((set, get) => ({
       source: issuerValue,
       issuer: issuerValue,
       officialIssuer: issuerValue,
+      edition: updates.edition || updates.sourceVersion || oldDoc.edition || oldDoc.sourceVersion || '',
       sourceVersion: updates.sourceVersion || updates.edition || oldDoc.sourceVersion || oldDoc.edition || '',
       requestType: 'REVISION',
       type: 'REVISION',
       actionType: 'REVISION',
       extAction: 'UPDATE',
-      originalRevision: originalRevStr,
-      targetRevision: targetRevStr,
-      rev: targetRevStr,
-      revision: `Rev.${targetRevStr}`,
       effectiveDate: effectiveDate,
       nextReviewDate: nextReviewDate,
       reviewCycleMonths: reviewCycleMonths,
@@ -2603,7 +2602,7 @@ const useStore = create(persist((set, get) => ({
           userRole: state.currentUser?.position || 'Requester',
           status: 'COMPLETED',
           date: nowIso,
-          comment: updates.reason || `ขอปรับปรุงเอกสารฉบับใหม่เป็น Rev.${newRevStr}`
+          comment: updates.reason || (updates.sourceVersion || updates.edition ? `ขอปรับปรุงเอกสารเป็นฉบับ ${updates.sourceVersion || updates.edition}` : 'ขอปรับปรุงเอกสารฉบับใหม่')
         },
         {
           step: 'REVIEW',
@@ -2638,7 +2637,7 @@ const useStore = create(persist((set, get) => ({
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         actionType: 'EXT_DOC_REVISE_REQUEST',
-        details: `Requested update for external document: ${edCode} - ${newDoc.title} to Rev ${newRevStr}`,
+        details: `Requested update for external document: ${edCode} - ${newDoc.title} to edition ${newDoc.edition || newDoc.sourceVersion || '-'}`,
         actor: state.currentUser?.name || 'User',
         actorId: state.currentUser?.id || 'U001',
         actorRole: state.currentUser?.role || state.currentUser?.position,
@@ -3208,57 +3207,80 @@ const useStore = create(persist((set, get) => ({
 
       // ─── REVISION Lifecycle: Retire prior revision to SUPERSEDED ───────────
       // When a REVISION request is fully approved:
-      //   1. Prior document record → SUPERSEDED (not OBSOLETE) with audit metadata
-      //   2. Prior controlled copies → PENDING_RECALL
-      //   3. Create DCC recall task for physical copy retrieval
-      //   4. Notify requester of successful revision publication
+      //   1. Prior active document record → Cloned to immutable SUPERSEDED snapshot (id: [UNIQUE_ID], status: 'SUPERSEDED')
+      //   2. Idempotency guard: prevent duplicate snapshot creation if edition is already active
+      //   3. Prior controlled copies → PENDING_RECALL
+      //   4. Create DCC recall task for physical copy retrieval
+      //   5. Notify requester of successful revision publication
       if (newDocStatus === 'ACTIVE' && isRevision) {
         const resolvedPrevDocId = String(
           matchingReq?.previousDocId || doc.previousDocId || doc.previousRevDocId || ''
         );
+        const targetDocNo = String(doc.edCode || doc.doc_code || doc.docNo || matchingReq?.edCode || task.docCode || '').trim();
+        const newEdition = String(matchingReq?.sourceVersion || matchingReq?.edition || doc?.sourceVersion || doc?.edition || 'ฉบับใหม่').trim();
+
+        // 1. Find existing active record matching docNo (or previousDocId)
         const priorDoc = (state.externalDocuments || []).find(d =>
-          (resolvedPrevDocId && String(d.id) === resolvedPrevDocId) ||
-          (d.edCode && (d.edCode === (doc.edCode || docCode) || d.doc_code === (doc.edCode || docCode)) && d.status === 'ACTIVE' && String(d.id) !== String(doc.id))
+          (
+            (resolvedPrevDocId && String(d.id) === resolvedPrevDocId) ||
+            (targetDocNo && (String(d.edCode || d.doc_code || d.docNo || '').trim() === targetDocNo))
+          ) &&
+          (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') &&
+          !d.is_superseded &&
+          !d.is_obsolete &&
+          d.status !== 'SUPERSEDED' &&
+          d.status !== 'OBSOLETE'
         );
-        const prevDocId = priorDoc ? String(priorDoc.id) : resolvedPrevDocId;
+
+        // 2. Idempotency Guard: Verify that an active record with the target edition does not already exist
+        const alreadyHasActiveEdition = (state.externalDocuments || []).some(d =>
+          (targetDocNo && String(d.edCode || d.doc_code || d.docNo || d.id).trim() === targetDocNo) &&
+          (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') &&
+          !d.is_superseded &&
+          !d.is_obsolete &&
+          String(d.edition || d.sourceVersion || '').trim() === newEdition
+        );
+
         const supersededAt = new Date().toISOString();
+        const priorEdLabel = priorDoc?.edition || priorDoc?.sourceVersion || 'ฉบับเดิม';
 
-        const priorRevNum = parseInt(String(matchingReq?.originalRevision || priorDoc?.rev || priorDoc?.revision || '0').replace(/\D/g, '') || '0', 10);
-        const priorRevStr = String(priorRevNum).padStart(2, '0');
-        const nextRevNum = matchingReq?.targetRevision
-          ? parseInt(String(matchingReq.targetRevision).replace(/\D/g, '') || '1', 10)
-          : (matchingReq?.rev ? parseInt(String(matchingReq.rev).replace(/\D/g, '') || '1', 10) : priorRevNum + 1);
-        const newRevLabel = String(nextRevNum).padStart(2, '0');
+        let snapshotId = null;
+        if (priorDoc && !alreadyHasActiveEdition) {
+          snapshotId = `${priorDoc.id}-SUPERSEDED-${Date.now()}`;
+          const supersededSnapshot = {
+            ...priorDoc,
+            id: snapshotId,
+            status: 'SUPERSEDED',
+            is_superseded: true,
+            supersededAt,
+            supersededDate: supersededAt,
+            supersededByEdition: newEdition,
+            supersededByDocId: doc.id || `EXT-${Date.now()}`,
+            supersededByCode: targetDocNo,
+            supersededByRequestId: matchingReq?.id || matchingReq?.requestId || task.referenceId,
+            supersededByEdrNumber: matchingReq?.requestNo || matchingReq?.edrNumber || reqNo
+          };
 
-        // Step 1: Mark prior revision as SUPERSEDED
-        if (prevDocId) {
-          updatedDocs = updatedDocs.map(d => {
-            if (String(d.id) === prevDocId) {
-              return {
-                ...d,
-                status: 'SUPERSEDED',
-                is_superseded: true,
-                supersededAt,
-                supersededByRev: newRevLabel,
-                supersededByDocId: doc.id,
-                supersededByCode: doc.edCode || doc.doc_code || doc.docNo || docCode,
-                supersededByRequestId: matchingReq?.id || matchingReq?.requestId || task.referenceId,
-                supersededByEdrNumber: matchingReq?.requestNo || matchingReq?.edrNumber || reqNo
-              };
-            }
-            return d;
-          });
+          // In updatedDocs, replace priorDoc with supersededSnapshot
+          const priorIdx = updatedDocs.findIndex(d => String(d.id) === String(priorDoc.id));
+          if (priorIdx >= 0) {
+            updatedDocs[priorIdx] = supersededSnapshot;
+          } else {
+            updatedDocs.push(supersededSnapshot);
+          }
 
-          // Step 2: Recall physical controlled copies of prior revision
+          // Step 2: Recall physical controlled copies of prior edition
           const prevActiveCopiesForRevision = currentCopies.filter(c =>
-            (String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId) === prevDocId) &&
+            (String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId) === String(priorDoc.id) ||
+             String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId) === snapshotId) &&
             (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'DISPATCHED_PENDING_RECEIPT')
           );
 
           if (prevActiveCopiesForRevision.length > 0) {
             currentCopies = currentCopies.map(c => {
+              const cId = String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId);
               if (
-                String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId) === prevDocId &&
+                (cId === String(priorDoc.id) || cId === snapshotId) &&
                 c.status !== 'DESTROYED' && c.status !== 'RECALLED' && c.status !== 'ARCHIVED_OBSOLETE'
               ) {
                 return { ...c, status: 'PENDING_RECALL' };
@@ -3267,25 +3289,22 @@ const useStore = create(persist((set, get) => ({
             });
 
             // Step 3: Create DCC recall task for superseded copy retrieval
-            const supersededDoc = priorDoc || state.externalDocuments.find(d => String(d.id) === prevDocId);
-            const supersededCode = supersededDoc?.edCode || supersededDoc?.doc_code || docCode;
-            const nowIsoRevision = new Date().toISOString();
             newTasks.push({
-              id: `task-dcc-recall-revision-${prevDocId}-${Date.now()}`,
+              id: `task-dcc-recall-revision-${priorDoc.id}-${Date.now()}`,
               referenceType: 'EXTERNAL_DOC',
               type: 'DCC_RECALL_WITH_CHECKLIST',
               taskType: 'DCC_RECALL_WITH_CHECKLIST',
-              title: `เรียกคืนเอกสารภายนอกฉบับ Superseded: ${supersededCode} (Rev.${supersededDoc?.rev || priorRevStr}) จำนวน ${prevActiveCopiesForRevision.length} จุด`,
-              description: `เอกสาร ${docCode} ได้ออก Rev.${newRevLabel} ใหม่แล้ว ฉบับเดิม Rev.${supersededDoc?.rev || priorRevStr} ถูกเปลี่ยนสถานะเป็น Superseded กรุณาเรียกคืนตาม Checklist`,
-              docId: prevDocId,
-              externalDocId: prevDocId,
-              doc_code: supersededCode,
-              docCode: supersededCode,
-              docTitle: supersededDoc?.title || supersededDoc?.name || supersededCode,
-              docName: supersededDoc?.title || supersededDoc?.name || supersededCode,
+              title: `เรียกคืนเอกสารภายนอกฉบับ Superseded: ${targetDocNo} (${priorEdLabel}) จำนวน ${prevActiveCopiesForRevision.length} จุด`,
+              description: `เอกสาร ${targetDocNo} มีฉบับใหม่ (${newEdition}) แล้ว ฉบับเดิม (${priorEdLabel}) ถูกเปลี่ยนสถานะเป็น Superseded กรุณาเรียกคืนตาม Checklist`,
+              docId: snapshotId,
+              externalDocId: snapshotId,
+              doc_code: targetDocNo,
+              docCode: targetDocNo,
+              docTitle: priorDoc.title || docTitle,
+              docName: priorDoc.title || docTitle,
               department: 'DC',
               target_department: 'DC',
-              doc_version: supersededDoc?.rev || priorRevStr,
+              doc_version: priorEdLabel,
               assigneeId: resolveDccAdminUserId(state.masterUsers),
               assignedToRole: 'DCC_ADMIN',
               targetRole: 'DCC_ADMIN',
@@ -3294,7 +3313,7 @@ const useStore = create(persist((set, get) => ({
               status: 'PENDING',
               priority: 'HIGH',
               dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              createdAt: nowIsoRevision
+              createdAt: supersededAt
             });
 
             // Notify DCC Admin about superseded recall task
@@ -3305,15 +3324,15 @@ const useStore = create(persist((set, get) => ({
                 userId: dccAdminId,
                 targetUserIds: [dccAdminId],
                 title: 'ภาระงานเรียกคืนสำเนาเอกสารภายนอกตกรุ่น',
-                message: `เอกสาร ${docCode} ได้ออก Rev.${newRevLabel} แล้ว กรุณาเรียกคืนสำเนาเดิม Rev.${supersededDoc?.rev || priorRevStr} (${prevActiveCopiesForRevision.length} จุด)`,
+                message: `เอกสาร ${targetDocNo} มีฉบับใหม่ (${newEdition}) แล้ว กรุณาเรียกคืนสำเนาเดิม (${priorEdLabel}) (${prevActiveCopiesForRevision.length} จุด)`,
                 link: '/controlled-copy',
                 type: 'TASK_ASSIGNED',
                 category: 'CONTROLLED_COPY',
                 isRead: false,
                 read: false,
                 readBy: [],
-                timestamp: nowIsoRevision,
-                docCode: docCode
+                timestamp: supersededAt,
+                docCode: targetDocNo
               });
             }
 
@@ -3324,16 +3343,16 @@ const useStore = create(persist((set, get) => ({
                 id: `notif-edr-recall-dept-${hDept}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
                 targetDepartment: hDept,
                 isGlobal: false,
-                title: `แจ้งเตือนเรียกคืนสำเนาเอกสารภายนอก: ${docCode}`,
-                message: `เอกสาร ${docCode} มีการปรับปรุงฉบับใหม่ กรุณาส่งคืนสำเนาเดิมต่อเจ้าหน้าที่ DCC`,
+                title: `แจ้งเตือนเรียกคืนสำเนาเอกสารภายนอก: ${targetDocNo}`,
+                message: `เอกสาร ${targetDocNo} มีการปรับปรุงฉบับใหม่ (${newEdition}) กรุณาส่งคืนสำเนาเดิม (${priorEdLabel}) ต่อเจ้าหน้าที่ DCC`,
                 link: '/controlled-copy',
                 type: 'ACTION_REQUIRED',
                 category: 'CONTROLLED_COPY',
                 isRead: false,
                 read: false,
                 readBy: [],
-                timestamp: nowIsoRevision,
-                docCode: docCode
+                timestamp: supersededAt,
+                docCode: targetDocNo
               });
             });
           }
@@ -3345,7 +3364,7 @@ const useStore = create(persist((set, get) => ({
           userId: requesterId,
           targetUserIds: [requesterId],
           title: 'เอกสารภายนอกฉบับปรับปรุงได้รับการอนุมัติแล้ว',
-          message: `เอกสาร ${docCode} Rev.${newRevLabel} (${docTitle}) ได้รับการอนุมัติเรียบร้อยแล้ว ฉบับก่อนหน้าถูกเปลี่ยนสถานะเป็น Superseded โดยอัตโนมัติ`,
+          message: `เอกสาร ${targetDocNo} (${newEdition}) ได้รับการอนุมัติเรียบร้อยแล้ว ฉบับก่อนหน้า (${priorEdLabel}) ถูกเปลี่ยนสถานะเป็น Superseded โดยอัตโนมัติ`,
           link: `/dcc/external/my-requests?id=${reqId}`,
           type: 'SUCCESS',
           category: 'EXTERNAL_DOC',
@@ -3353,7 +3372,7 @@ const useStore = create(persist((set, get) => ({
           read: false,
           readBy: [],
           timestamp: new Date().toISOString(),
-          docCode: docCode,
+          docCode: targetDocNo,
           refId: reqId
         });
       }
@@ -3670,35 +3689,28 @@ const useStore = create(persist((set, get) => ({
 
         if (isRevision) {
           // REVISION: create or update the distinct new ACTIVE record
+          const targetDocNo = String(doc.edCode || doc.doc_code || doc.docNo || resolvedRequest?.edCode || task.docCode || '').trim();
+          const newEdition = String(resolvedRequest?.sourceVersion || resolvedRequest?.edition || doc.sourceVersion || doc.edition || 'ฉบับใหม่').trim();
           const priorDocId = String(resolvedRequest?.previousDocId || doc.previousDocId || doc.previousRevDocId || '');
           const priorDoc = (state.externalDocuments || []).find(d =>
             (priorDocId && String(d.id) === priorDocId) ||
-            (d.edCode && (d.edCode === (doc.edCode || docCode) || d.doc_code === (doc.edCode || docCode)) && String(d.id) !== String(doc.id))
+            (targetDocNo && (String(d.edCode || d.doc_code || d.docNo || '').trim() === targetDocNo))
           );
           const finalPrevDocId = priorDoc ? String(priorDoc.id) : priorDocId;
+          const supersededSnapshotInUpdated = updatedDocs.find(d => 
+            (targetDocNo && String(d.edCode || d.doc_code || d.docNo || '').trim() === targetDocNo) &&
+            (d.status === 'SUPERSEDED' || d.is_superseded) &&
+            String(d.id).includes('SUPERSEDED')
+          );
+          const snapshotId = supersededSnapshotInUpdated ? String(supersededSnapshotInUpdated.id) : finalPrevDocId;
 
-          const priorRevNum = parseInt(String(resolvedRequest?.originalRevision || priorDoc?.rev || priorDoc?.revision || '0').replace(/\D/g, '') || '0', 10);
-          const nextRevNum = resolvedRequest?.targetRevision
-            ? parseInt(String(resolvedRequest.targetRevision).replace(/\D/g, '') || '1', 10)
-            : (resolvedRequest?.rev ? parseInt(String(resolvedRequest.rev).replace(/\D/g, '') || '1', 10) : priorRevNum + 1);
-          const targetRevStr = String(nextRevNum).padStart(2, '0');
+          // ISO 9001 Immutability Guard: Distinct unique ID for the new active edition (never reusing superseded ID)
+          let candidateId = (doc.id && String(doc.id) !== snapshotId && (!priorDoc || String(doc.id) !== String(priorDoc.id)))
+            ? String(doc.id)
+            : (resolvedRequest?.docId && String(resolvedRequest.docId) !== snapshotId && (!priorDoc || String(resolvedRequest.docId) !== String(priorDoc.id))
+              ? String(resolvedRequest.docId)
+              : `EXT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
 
-          // ISO 9001 Immutability Guard: A new revision MUST NEVER overwrite a historical (superseded/obsolete) record or its prior revision
-          let candidateId = (doc.id && String(doc.id) !== finalPrevDocId) 
-            ? String(doc.id) 
-            : (resolvedRequest?.docId && String(resolvedRequest.docId) !== finalPrevDocId ? String(resolvedRequest.docId) : '');
-
-          const isHistoricalRecord = (idToCheck) => {
-            if (!idToCheck) return false;
-            return updatedDocs.some(d => 
-              String(d.id) === String(idToCheck) && 
-              (d.status === 'SUPERSEDED' || d.status === 'OBSOLETE' || d.is_superseded || d.is_obsolete || String(d.id) === String(finalPrevDocId))
-            );
-          };
-
-          if (!candidateId || isHistoricalRecord(candidateId)) {
-            candidateId = `EXT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-          }
           const newDocRecordId = candidateId;
 
           const reqId = resolvedRequest?.id || resolvedRequest?.requestId || task.referenceId;
@@ -3712,17 +3724,16 @@ const useStore = create(persist((set, get) => ({
             ...(priorDoc || {}),
             ...doc,
             id: newDocRecordId,
-            edCode: docCode,
-            doc_code: docCode,
-            docNo: docCode,
+            edCode: targetDocNo,
+            doc_code: targetDocNo,
+            docNo: targetDocNo,
             title: resolvedRequest?.title || doc.title || priorDoc?.title || docTitle,
             status: 'ACTIVE',
             is_superseded: false,
             is_obsolete: false,
-            rev: targetRevStr,
-            revision: `Rev.${targetRevStr}`,
-            sourceVersion: resolvedRequest?.sourceVersion || doc.sourceVersion || `Rev.${targetRevStr}`,
-            previousDocId: finalPrevDocId,
+            edition: newEdition,
+            sourceVersion: newEdition,
+            previousDocId: snapshotId || finalPrevDocId,
             effectiveDate: resolvedEffectiveDate,
             issuer: resolvedIssuer,
             officialIssuer: resolvedIssuer,
@@ -3745,6 +3756,11 @@ const useStore = create(persist((set, get) => ({
             createdAt: doc.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
+
+          if (supersededSnapshotInUpdated) {
+            supersededSnapshotInUpdated.supersededByDocId = newDocRecordId;
+            supersededSnapshotInUpdated.supersededByEdition = newEdition;
+          }
 
           const existingIdx = updatedDocs.findIndex(d => 
             String(d.id) === String(newDocRecordId) &&

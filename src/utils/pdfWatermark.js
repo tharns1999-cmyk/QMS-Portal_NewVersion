@@ -18,14 +18,65 @@ import {
  * Strict separation: OBSOLETE (Cancelled) vs SUPERSEDED (Outdated revision)
  */
 export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED', options = {}) => {
-  const docCode = doc.document_code || doc.doc_code || doc.title || doc.id || '-';
+  const isExternal = Boolean(
+    options.isExternal ||
+    doc?.isExternal ||
+    doc?.is_external ||
+    doc?.documentCategory === 'EXTERNAL' ||
+    doc?.docCategory === 'EXTERNAL' ||
+    doc?.category === 'EXTERNAL' ||
+    doc?.type === 'EXTERNAL' ||
+    (doc?.edCode && !doc?.doc_code)
+  );
+
+  const docCode = doc.document_code || doc.doc_code || doc.edCode || doc.title || doc.id || '-';
   const docRev = String(doc.revision || doc.rev || doc.doc_version || '00').replace(/^REV\.?/i, '').padStart(2, '0');
+  const extVersion = doc?.sourceVersion || doc?.source_version || doc?.edition || doc?.version || doc?.externalVersion || '-';
+  const extIssueDate = doc?.effectiveDate || doc?.effective_date || doc?.issueDate || doc?.issue_date || '-';
   const nowStr = (options.timestamp || getBangkokFormattedTimestamp(new Date())).split(' ')[0] || new Date().toISOString().split('T')[0];
   const userStr = options.currentUser?.name 
     ? `${options.currentUser.name} (${options.currentUser.department || options.currentUser.dept || 'HQ'})` 
     : (options.userName ? `${options.userName} (${options.userDept || 'HQ'})` : 'QMS System');
 
   const normalizedType = (watermarkType || '').toUpperCase();
+
+  // 🌐 EXTERNAL DOCUMENT BRANCH (No internal Rev whatsoever)
+  if (isExternal) {
+    if (
+      normalizedType === 'OBSOLETE' || 
+      doc.status?.toUpperCase().startsWith('OBSOLETE') || 
+      doc.is_obsolete
+    ) {
+      return [
+        'เอกสารภายนอก - ยกเลิกใช้งาน (OBSOLETE EXTERNAL DOCUMENT)',
+        `Doc: ${docCode} | Ver/Ed: ${extVersion}`,
+        `วันที่ออกเอกสารต้นทาง: ${extIssueDate} | วันที่บันทึกยกเลิก: ${nowStr}`,
+        `Printed By: ${userStr}`,
+      ];
+    }
+
+    if (
+      normalizedType === 'SUPERSEDED' || 
+      doc.status?.toUpperCase().startsWith('SUPERSEDED') || 
+      doc.is_superseded || 
+      options.isHistoricalRev
+    ) {
+      const nextEd = doc?.superseded_by_edition || doc?.superseded_by_rev || options.supersededByRev || doc?.nextVersion || 'ฉบับใหม่';
+      return [
+        'เอกสารภายนอกฉบับเดิมตกรุ่น (SUPERSEDED EXTERNAL DOCUMENT)',
+        `Doc: ${docCode} | Ver/Ed: ${extVersion}`,
+        `แทนที่โดยฉบับ: ${nextEd} | วันที่: ${nowStr}`,
+        `Printed By: ${userStr}`,
+      ];
+    }
+
+    return [
+      'เอกสารภายนอกสำหรับอ้างอิง (EXTERNAL DOCUMENT - FOR REFERENCE ONLY)',
+      `Doc: ${docCode} | Ver/Ed: ${extVersion} | ปรับปรุงล่าสุด: ${extIssueDate}`,
+      `Downloaded By: ${userStr} | Date: ${nowStr}`,
+      '*ขึ้นทะเบียนควบคุมแล้ว (REGISTERED) - FOR REFERENCE ONLY*'
+    ];
+  }
 
   // 🚫 1. กรณีเอกสารยกเลิก (OBSOLETE) — ห้ามมีคำว่า "Superseded By" เด็ดขาด 100%!
   if (
@@ -103,18 +154,29 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
  * @returns {Object} การตั้งค่าลายน้ำ (type, watermarkType, mainText, color, subLines, metadata)
  */
 export const resolveWatermarkConfig = (doc = {}, options = {}) => {
+  const isExternal = Boolean(
+    options.isExternal ||
+    doc?.isExternal ||
+    doc?.is_external ||
+    doc?.documentCategory === 'EXTERNAL' ||
+    doc?.docCategory === 'EXTERNAL' ||
+    doc?.category === 'EXTERNAL' ||
+    doc?.type === 'EXTERNAL' ||
+    (doc?.edCode && !doc?.doc_code)
+  );
   const status = (doc?.status || '').toUpperCase();
   const currentUser = options.currentUser || {};
   const copyInfo = options.copyInfo || null;
   const nowStr = getBangkokFormattedTimestamp(new Date());
 
   const docCode = doc?.document_code || doc?.doc_code || doc?.docCode || doc?.title || doc?.edCode || 'DOC-001';
-  const docVersion = String(doc?.revision || doc?.rev || doc?.doc_version || doc?.docVersion || '00').replace(/^REV\.?/i, '').padStart(2, '0');
+  const extVersion = doc?.sourceVersion || doc?.source_version || doc?.edition || doc?.version || doc?.externalVersion || '-';
+  const docVersion = isExternal ? extVersion : String(doc?.revision || doc?.rev || doc?.doc_version || doc?.docVersion || '00').replace(/^REV\.?/i, '').padStart(2, '0');
   const userDisplayName = currentUser.name || currentUser.username || options.userName || 'User';
   const userDept = currentUser.department || currentUser.dept || options.userDept || doc?.department || 'HQ';
 
-  // 1. กรณีเป็นสำเนาควบคุม (Controlled Copy)
-  if (copyInfo && (copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || options.isControlledCopy)) {
+  // 1. กรณีเป็นสำเนาควบคุม (Controlled Copy - internal documents only)
+  if (!isExternal && copyInfo && (copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || options.isControlledCopy)) {
     const copyNum = copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || '01';
     const copyDept = copyInfo.holder_dept || copyInfo.department || copyInfo.holderDept || '-';
     const station = copyInfo.station_name || copyInfo.location || copyInfo.locationName || copyInfo.station || '-';
@@ -125,7 +187,7 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
       watermarkType: WATERMARK_TYPES.CONTROLLED_COPY,
       mainText: 'CONTROLLED COPY',
       color: '#2563EB', // Cobalt Blue
-      subLines: buildWatermarkSubLines(doc, 'CONTROLLED', { ...options, copyInfo, currentUser }),
+      subLines: buildWatermarkSubLines(doc, 'CONTROLLED', { ...options, copyInfo, currentUser, isExternal }),
       metadata: {
         docCode,
         docVersion,
@@ -147,14 +209,14 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
     status.startsWith('OBSOLETE') ||
     doc?.is_obsolete
   ) {
-    const obsoleteDarRef = doc?.obsolete_dar_id || doc?.obsolete_dar_no || doc?.dar_id || doc?.darId || doc?.darNo || 'DAR-OBSOLETE';
+    const obsoleteDarRef = doc?.obsolete_dar_id || doc?.obsolete_dar_no || doc?.dar_id || doc?.darId || doc?.darNo || (isExternal ? 'ED-OBSOLETE' : 'DAR-OBSOLETE');
 
     return {
       type: 'OBSOLETE',
       watermarkType: WATERMARK_TYPES.OBSOLETE,
-      mainText: 'OBSOLETE - DO NOT USE',
+      mainText: isExternal ? 'OBSOLETE (CANCELLED)' : 'OBSOLETE - DO NOT USE',
       color: '#DC2626', // Crimson Red
-      subLines: buildWatermarkSubLines(doc, 'OBSOLETE', { ...options, currentUser }),
+      subLines: buildWatermarkSubLines(doc, 'OBSOLETE', { ...options, currentUser, isExternal }),
       metadata: {
         docCode,
         docVersion,
@@ -162,12 +224,13 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
         darNo: obsoleteDarRef,
         userName: userDisplayName,
         userDept,
-        timestamp: nowStr
+        timestamp: nowStr,
+        isExternal
       }
     };
   }
 
-  // 3. กรณีเป็นฉบับเดิมตกรุ่นจากการ Revise (SUPERSEDED)
+  // 3. กรณีเป็นฉบับเดิมตกรุ่นจากการ Revise / Update (SUPERSEDED)
   if (
     status === 'SUPERSEDED' ||
     status === 'SUPERSEDED_ARCHIVED' ||
@@ -175,14 +238,14 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
     Boolean(doc?.is_superseded) ||
     options.isHistoricalRev
   ) {
-    const nextRev = doc?.superseded_by_rev || doc?.nextVersion || 'Latest';
+    const nextRev = doc?.superseded_by_edition || doc?.superseded_by_rev || doc?.nextVersion || (isExternal ? 'ฉบับใหม่' : 'Latest');
 
     return {
       type: 'SUPERSEDED',
       watermarkType: WATERMARK_TYPES.SUPERSEDED,
       mainText: 'SUPERSEDED - FOR REFERENCE ONLY',
       color: '#D97706', // Amber / Orange
-      subLines: buildWatermarkSubLines(doc, 'SUPERSEDED', { ...options, currentUser }),
+      subLines: buildWatermarkSubLines(doc, 'SUPERSEDED', { ...options, currentUser, isExternal }),
       metadata: {
         docCode,
         docVersion,
@@ -190,12 +253,32 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
         nextVersion: nextRev,
         userName: userDisplayName,
         userDept,
-        timestamp: nowStr
+        timestamp: nowStr,
+        isExternal
       }
     };
   }
 
-  // 4. ค่าตั้งต้น: เอกสารใช้งานทั่วไป (UNCONTROLLED COPY)
+  // 4. External Registered or Default: Active / Reference Uncontrolled Copy
+  if (isExternal) {
+    return {
+      type: 'EXTERNAL_ACTIVE',
+      watermarkType: WATERMARK_TYPES.EXTERNAL_ACTIVE || 'EXTERNAL_ACTIVE',
+      mainText: 'EXTERNAL DOCUMENT - FOR REFERENCE ONLY',
+      color: '#4F46E5', // Indigo
+      subLines: buildWatermarkSubLines(doc, 'EXTERNAL_ACTIVE', { ...options, currentUser, isExternal }),
+      metadata: {
+        docCode,
+        docVersion,
+        sourceVersion: extVersion,
+        userName: userDisplayName,
+        userDept,
+        timestamp: nowStr,
+        isExternal: true
+      }
+    };
+  }
+
   return {
     type: 'UNCONTROLLED',
     watermarkType: WATERMARK_TYPES.UNCONTROLLED_COPY,

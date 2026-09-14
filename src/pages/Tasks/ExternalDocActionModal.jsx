@@ -193,7 +193,7 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
     doc?.effectiveDate      || doc?.targetEffectiveDate || doc?.enforceDate     || doc?.effective_date ||
     request?.effectiveDate  || request?.targetEffectiveDate || request?.enforceDate ||
     task?.effectiveDate     || task?.metadata?.effectiveDate || null;
-  const extActionMap = { UPDATE: "ปรับปรุงฉบับ (Revision)", OBSOLETE: "ขอยกเลิก (Obsolete)", REGISTER: "ขึ้นทะเบียนใหม่ (New)" };
+  const extActionMap = { UPDATE: "ปรับปรุงฉบับ (Update Edition)", OBSOLETE: "ขอยกเลิก (Obsolete)", REGISTER: "ขึ้นทะเบียนใหม่ (New)" };
   const actionLabel = extActionMap[task.extAction] || "ขึ้นทะเบียนใหม่ (New)";
   const controlledCopies = doc?.distributions || doc?.physical_distribution || [];
 
@@ -320,20 +320,20 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                     <InfoRow label="รหัสเอกสาร (ED Code)"><span className="font-mono font-bold text-blue-600">{edCode}</span></InfoRow>
-                    <InfoRow label="ฉบับที่ / Version">
+                    <InfoRow label="เวอร์ชันต้นทาง / Edition">
                       {isRevision ? (
-                        <div className="flex items-center gap-1.5 font-mono text-xs font-bold">
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
                           <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
-                            Rev.{originalRevStr}
+                            {doc?.sourceVersion || doc?.edition || 'ฉบับแรก'}
                           </span>
                           <span className="text-slate-400 font-sans">➔</span>
-                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200 font-bold">
-                            Rev.{targetRevStr}
+                          <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200 font-bold">
+                            {request?.sourceVersion || request?.edition || 'ฉบับใหม่'}
                           </span>
                         </div>
                       ) : (
-                        <span className="font-mono text-slate-700">
-                          {doc?.sourceVersion ? `${doc.sourceVersion} (Rev.${originalRevStr})` : `Rev.${originalRevStr}`}
+                        <span className="font-mono text-slate-700 font-bold">
+                          {doc?.sourceVersion || doc?.edition || 'ฉบับต้นทาง'}
                         </span>
                       )}
                     </InfoRow>
@@ -465,20 +465,20 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
           { label: "รหัสคำร้อง",         value: reqCode },
           { label: "ชื่อเอกสาร",         value: docTitle },
           {
-            label: "ฉบับที่",
+            label: "ฉบับที่ (Edition)",
             value: isRevision ? (
               <div className="flex items-center gap-2 font-mono text-sm font-bold">
                 <span className="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md border border-slate-200">
-                  Rev.{originalRevStr}
+                  {doc?.sourceVersion || doc?.edition || 'ฉบับเดิม'}
                 </span>
                 <span className="text-slate-400 font-sans">➔</span>
                 <span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200 font-bold">
-                  Rev.{targetRevStr}
+                  {request?.sourceVersion || request?.edition || 'ฉบับใหม่'}
                 </span>
               </div>
             ) : (
               <span className="font-mono font-bold text-slate-800">
-                Rev.{originalRevStr}
+                {doc?.sourceVersion || doc?.edition || request?.sourceVersion || request?.edition || 'ฉบับต้นทาง'}
               </span>
             )
           },

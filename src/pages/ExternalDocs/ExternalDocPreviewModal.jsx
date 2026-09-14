@@ -73,7 +73,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
         {/* Backdrop */}
         <motion.div 
           initial={{ opacity: 0 }}
@@ -99,8 +99,8 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-slate-900 text-lg sm:text-xl font-bold tracking-tight">{docCode}</h2>
-                  <span className="bg-[#f9f8f6] text-[#da7756] border border-stone-200 px-2 py-0.5 rounded-md text-xs font-mono font-bold">
-                    Rev.{doc.rev || '00'}
+                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-md text-xs font-mono font-bold">
+                    {doc.sourceVersion ? `Ver/Ed: ${doc.sourceVersion}` : 'EXTERNAL DOC'}
                   </span>
                   {doc.accessScope === 'Restricted' && (
                     <span className="bg-[#f5e6e6] text-[#a94442] border border-[#e5cdcd] px-2 py-0.5 rounded-md text-xs font-bold flex items-center gap-1">
@@ -173,7 +173,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-mono font-bold bg-[#f9f8f6] border border-stone-200 text-stone-600 px-2 py-0.5 rounded">
-                      Rev.{doc.rev || '01'}
+                      {doc.sourceVersion || doc.edition || 'ฉบับต้นทาง'}
                     </span>
                     <p className="text-[11px] text-stone-400 mt-1 font-mono">{doc.effectiveDate}</p>
                   </div>

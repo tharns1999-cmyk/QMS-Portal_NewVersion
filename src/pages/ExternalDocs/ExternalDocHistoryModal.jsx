@@ -95,8 +95,10 @@ const ExternalDocHistoryModal = ({
     const matched = (externalDocuments || []).filter(d => {
       const c = String(d.documentCode || d.edCode || d.doc_code || d.docCode || d.docNo || d.id || '').trim().toUpperCase();
       if (c === upperTarget) return true;
-      if (c.startsWith(`${upperTarget}-R`) || c.startsWith(`${upperTarget}_R`)) return true;
+      if (c.startsWith(`${upperTarget}-R`) || c.startsWith(`${upperTarget}_R`) || c.startsWith(`${upperTarget}-SUPERSEDED`)) return true;
       if (String(d.id || '').toUpperCase().startsWith(upperTarget)) return true;
+      if (doc?.id && (d.previousDocId === doc.id || d.supersededByDocId === doc.id)) return true;
+      if (doc?.previousDocId && (d.id === doc.previousDocId || d.previousDocId === doc.previousDocId)) return true;
       if (doc?.title && String(d.title || '').trim().toLowerCase() === String(doc.title).trim().toLowerCase()) return true;
       return false;
     });
@@ -255,10 +257,9 @@ const ExternalDocHistoryModal = ({
 
     const isObs = item.status === 'OBSOLETE' || item.status === 'OBSOLETE_ARCHIVED' || item.is_obsolete;
     const watermarkPreset = isObs ? WATERMARK_TYPES.OBSOLETE : WATERMARK_TYPES.SUPERSEDED;
-    const currentDocCode = item.edCode || item.doc_code || item.docNo || targetCode || 'ED-DOC-001';
-    const revLabel = item.rev || '00';
+    const edLabel = item.sourceVersion || item.edition || 'ฉบับประวัติ';
 
-    const toastId = toast.loading(`กำลังประทับลายน้ำเอกสารย้อนหลัง ${currentDocCode} (Rev.${revLabel})...`);
+    const toastId = toast.loading(`กำลังประทับลายน้ำเอกสารย้อนหลัง ${currentDocCode} (${edLabel})...`);
 
     try {
       await UniversalWatermarkService.downloadWatermarkedPdf(
@@ -280,14 +281,14 @@ const ExternalDocHistoryModal = ({
           watermarkType: watermarkPreset,
           isRestricted: item.accessScope === 'Restricted',
           accessScope: item.accessScope,
-          supersededByRev: item.supersededByRev || activeDoc?.rev || 'Latest',
+          supersededByRev: item.supersededByRev || item.superseded_by_edition || activeDoc?.sourceVersion || 'Latest',
           obsoleteDate: item.obsoleteDate || item.supersededAt || '-'
         },
         false
       );
 
       toast.dismiss(toastId);
-      toast.success(`ดาวน์โหลดเอกสารประวัติ ${currentDocCode} (Rev.${revLabel}) สำเร็จ`);
+      toast.success(`ดาวน์โหลดเอกสารประวัติ ${currentDocCode} (${edLabel}) สำเร็จ`);
 
       if (logExternalDownload) {
         logExternalDownload(item.id);
@@ -327,7 +328,7 @@ const ExternalDocHistoryModal = ({
       if (isActive) statusLabel = 'ใช้งานปัจจุบัน (ACTIVE)';
       else if (isObs) statusLabel = 'ยกเลิกถาวร (OBSOLETE)';
 
-      const revLabel = `Rev.${item.rev || item.sourceVersion || '00'}`;
+      const edLabel = item.sourceVersion || item.edition || 'ฉบับแรก';
       const matchedReq = getRequestForRevision(item);
       const reqNumber = matchedReq?.requestNo || matchedReq?.edrNumber || 
         ((item.edrNumber && item.edrNumber !== item.supersededByEdrNumber) ? item.edrNumber : null) || 
@@ -355,8 +356,8 @@ const ExternalDocHistoryModal = ({
         'ชื่อเอกสารทางการ (Document Title)': item.title || docTitle || '-',
         'แผนกผู้รับผิดชอบ (Department)': item.department || item.dept || docDept || '-',
         'หน่วยงานผู้ออกเอกสาร (Official Issuer / Source)': item.issuer || item.officialIssuer || item.source || docIssuer || '-',
-        'ฉบับที่ (Revision)': revLabel,
-        'สถานะฉบับ (Revision Status)': statusLabel,
+        'เวอร์ชันต้นทาง (Edition / Version)': edLabel,
+        'สถานะฉบับ (Status)': statusLabel,
         'เลขที่คำร้องที่เกี่ยวข้อง (EDR Reference No.)': reqNumber,
         'วันที่มีผลบังคับใช้ (Effective Date)': item.effectiveDate || '-',
         'วันที่ปลดระวาง/ตกรุ่น (Superseded/Obsolete Date)': obsoleteOrSupersededDate,
@@ -590,7 +591,7 @@ const ExternalDocHistoryModal = ({
                         ฉบับใช้งานปัจจุบัน (Current Active Edition):
                       </span>
                       <span className="font-mono text-xs font-bold text-emerald-900 bg-white px-2 py-0.5 rounded-md border border-emerald-300 shadow-2xs">
-                        Rev.{activeDoc.rev || activeDoc.sourceVersion || '01'}
+                        {activeDoc.sourceVersion || activeDoc.edition || 'ฉบับปัจจุบัน'}
                       </span>
                       {(() => {
                         const activeReq = getRequestForRevision(activeDoc);
@@ -734,7 +735,7 @@ const ExternalDocHistoryModal = ({
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                             <div className="flex items-center gap-2.5 flex-wrap">
                               <span className="font-mono font-bold text-sm text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg shadow-2xs">
-                                Rev.{revCode}
+                                ฉบับที่นำเข้า: {item.sourceVersion || item.edition || 'ฉบับต้นทาง'}
                               </span>
 
                               {isObs ? (
@@ -964,7 +965,7 @@ const ExternalDocHistoryModal = ({
                 <div className="p-8 bg-white border border-slate-200 rounded-2xl text-center text-slate-400 space-y-1">
                   <Info size={28} className="mx-auto text-slate-300 mb-1" />
                   <p className="font-bold text-xs text-slate-700">ไม่พบข้อมูลประวัติฉบับย้อนหลัง</p>
-                  <p className="text-xs text-slate-400">เอกสารรหัสนี้อาจเป็นฉบับแรก (Rev.00/Rev.01) หรือยังไม่มีการตกรุ่น/ยกเลิก</p>
+                  <p className="text-xs text-slate-400">เอกสารรหัสนี้อาจเป็นฉบับแรก (Initial Edition) หรือยังไม่มีการตกรุ่น/ยกเลิก</p>
                 </div>
               )}
             </div>

@@ -53,9 +53,21 @@ const ExternalDocDetailModal = ({
   // Sync internal document state when initialDoc changes
   useEffect(() => {
     if (initialDoc) {
-      // Look up freshest record from store if possible
-      const freshDoc = (externalDocuments || []).find(d => d.id === initialDoc.id) || initialDoc;
-      setCurrentDoc(freshDoc);
+      // If initialDoc is an immutable snapshot (e.g. from Superseded Editions modal), preserve its snapshot attributes
+      const isHistoricalSnapshot = Boolean(
+        initialDoc.status === 'SUPERSEDED' || 
+        initialDoc.is_superseded || 
+        initialDoc.supersededAt || 
+        initialDoc.supersededByEdition
+      );
+
+      if (isHistoricalSnapshot) {
+        setCurrentDoc(initialDoc);
+      } else {
+        // Look up freshest record from store if possible for active documents
+        const freshDoc = (externalDocuments || []).find(d => d.id === initialDoc.id) || initialDoc;
+        setCurrentDoc(freshDoc);
+      }
     }
   }, [initialDoc, externalDocuments]);
 
@@ -271,7 +283,7 @@ const ExternalDocDetailModal = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
         {/* Backdrop */}
         <motion.div 
           initial={{ opacity: 0 }}
@@ -303,8 +315,8 @@ const ExternalDocDetailModal = ({
                   </span>
 
                   {/* Source Edition Badge */}
-                  <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold font-mono">
-                    {sourceEdition !== '-' ? `Source: ${sourceEdition}` : `Rev.${currentDoc.rev || '01'}`}
+                  <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold font-mono">
+                    {sourceEdition !== '-' ? `เวอร์ชันต้นทาง: ${sourceEdition}` : 'ฉบับต้นทาง (External Edition)'}
                   </span>
 
                   {/* Status Badge */}
@@ -350,7 +362,7 @@ const ExternalDocDetailModal = ({
                   onClick={() => setCurrentDoc(latestActiveEdition)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white text-xs font-bold transition-all shadow-xs shrink-0 self-start sm:self-auto cursor-pointer"
                 >
-                  <span>ดูฉบับล่าสุด ({latestActiveEdition.sourceVersion || `Rev.${latestActiveEdition.rev}`})</span>
+                  <span>ดูฉบับล่าสุด ({latestActiveEdition.sourceVersion || latestActiveEdition.edition || 'ฉบับที่มีผลบังคับใช้'})</span>
                   <ArrowRight size={13} />
                 </button>
               )}
@@ -430,9 +442,9 @@ const ExternalDocDetailModal = ({
                           <span className="font-mono font-bold text-[#0D99FF] text-sm">{edCode}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[11px] mb-0.5">ฉบับที่ (Rev. / Edition)</span>
+                          <span className="text-slate-400 block text-[11px] mb-0.5">เวอร์ชันต้นทาง (Edition / Version)</span>
                           <span className="font-mono font-bold text-slate-800">
-                            Rev.{currentDoc.rev || '01'} {sourceEdition !== '-' && `(${sourceEdition})`}
+                            {sourceEdition !== '-' ? sourceEdition : 'ฉบับต้นทาง'}
                           </span>
                         </div>
                         <div className="sm:col-span-2">

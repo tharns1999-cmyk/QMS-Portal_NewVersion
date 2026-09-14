@@ -158,7 +158,7 @@ const ExternalRequestDetail = () => {
         department: taskDoc.department || taskDoc.requesterDepartment || 'QA',
         status: taskDoc.status === 'PENDING' ? 'PENDING_EXT_REVIEW' : 'ACTIVE',
         source: 'Official Standard Body',
-        sourceVersion: 'Rev. 2026',
+        sourceVersion: 'Edition 2026',
         accessScope: 'General',
         reviewCycleMonths: 12,
         effectiveDate: new Date().toISOString().split('T')[0]
@@ -179,7 +179,7 @@ const ExternalRequestDetail = () => {
         department: deptPart,
         status: 'ACTIVE',
         source: 'Official Standard Body',
-        sourceVersion: 'Rev. 2026',
+        sourceVersion: 'Edition 2026',
         accessScope: 'General',
         reviewCycleMonths: 12,
         effectiveDate: new Date().toISOString().split('T')[0]
@@ -513,10 +513,10 @@ const ExternalRequestDetail = () => {
               </span>
               {renderTypeBadge(reqData.requestType)}
               {isRevisionReq && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
-                  <span className="text-slate-500">Rev.{origRevStr}</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs">
+                  <span className="text-slate-500">ฉบับเดิม: {matchingDoc?.sourceVersion || matchingDoc?.edition || 'ฉบับแรก'}</span>
                   <span className="text-slate-400 font-sans">➔</span>
-                  <span className="text-blue-700 font-bold">Rev.{targetRevStr}</span>
+                  <span className="text-indigo-700 font-bold">ฉบับใหม่: {reqData?.sourceVersion || reqData?.edition || 'ระบุฉบับใหม่'}</span>
                 </span>
               )}
               {renderStatusBadge(reqData.status)}
@@ -622,20 +622,20 @@ const ExternalRequestDetail = () => {
               </div>
 
               <div>
-                <p className="text-slate-400 font-medium">ฉบับที่ / รุ่น (Version / Rev)</p>
+                <p className="text-slate-400 font-medium">เวอร์ชันต้นทาง (Edition / Version)</p>
                 {isRevisionReq ? (
-                  <div className="flex items-center gap-2 mt-1 font-mono text-xs font-bold">
-                    <span className="bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md border border-slate-200 shadow-2xs">
-                      Rev.{origRevStr}
+                  <div className="flex items-center gap-1.5 mt-1 text-xs font-bold">
+                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                      {matchingDoc?.sourceVersion || matchingDoc?.edition || 'ฉบับแรก'}
                     </span>
                     <span className="text-slate-400 font-sans">➔</span>
-                    <span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md border border-blue-200 shadow-2xs font-bold">
-                      Rev.{targetRevStr}
+                    <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200 shadow-2xs font-bold">
+                      {reqData?.sourceVersion || reqData?.edition || 'ระบุฉบับใหม่'}
                     </span>
                   </div>
                 ) : (
                   <p className="text-xs font-mono font-bold text-slate-800 mt-1">
-                    {matchingDoc?.sourceVersion ? `${matchingDoc.sourceVersion} (Rev.${origRevStr})` : `Rev.${origRevStr}`}
+                    {reqData?.sourceVersion || matchingDoc?.sourceVersion || reqData?.edition || matchingDoc?.edition || 'ฉบับต้นทาง'}
                   </p>
                 )}
               </div>
