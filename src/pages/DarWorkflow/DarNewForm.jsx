@@ -44,12 +44,14 @@ const DarNewForm = () => {
     dars, 
     darRequests, 
     documents, 
+    masterDocuments,
+    tasks,
     masterUsers, 
     reviewUsers, 
     approveUsers, 
     documentTypes, 
-    departments,
-    masterDepartments,
+    departments, 
+    masterDepartments, 
     simulatedDate 
   } = useStore();
   
@@ -189,10 +191,12 @@ const DarNewForm = () => {
 
   const getPreviewCode = () => {
     if (!formData?.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
-    const dept = currentUser?.department || formData?.department || 'PD';
+    const dept = formData?.department || currentUser?.department || 'PD';
     const selectedTypeObj = (documentTypes || []).find(t => t && (t.code || t.id) === formData.docType);
     const pattern = selectedTypeObj?.namingPattern || `${formData.docType}-{Dept}-{###}`;
-    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, documents || [], dars || []);
+    const allDocs = [...(documents || []), ...(masterDocuments || [])];
+    const allDars = [...(dars || []), ...(darRequests || [])];
+    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, allDocs, allDars, tasks || []);
     const seqFormatted = formatDocumentRunningNumber(nextSeq || 1);
     
     if (pattern && (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}'))) {

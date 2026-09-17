@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
-import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Zap, Globe, Lock, Building2, X, RotateCcw, Check, AlertCircle, ArrowLeft } from 'lucide-react';
+import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Zap, Globe, Lock, Building2, X, RotateCcw, Check, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
@@ -12,7 +12,7 @@ import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 const TaskApprove = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { masterDepartments = [], tasks = [], dars = [], documents = [], timeline = [], processWorkflow, currentUser, canDownloadDocument, masterUsers = [] } = useStore();
+  const { masterDepartments = [], tasks = [], completedTasks = [], dars = [], documents = [], timeline = [], processWorkflow, currentUser, canDownloadDocument, masterUsers = [] } = useStore();
   
   const [comment, setComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
@@ -21,8 +21,14 @@ const TaskApprove = () => {
   const [pendingAction, setPendingAction] = useState(null);
   const scrollRef = useRef(null);
 
-  const task = (tasks || []).find(t => String(t.id) === String(id) || String(t.taskId) === String(id));
-  const dar = task ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) : null;
+  const allTasks = useMemo(() => {
+    return [...(tasks || []), ...(completedTasks || [])];
+  }, [tasks, completedTasks]);
+
+  const task = allTasks.find(t => String(t.id) === String(id) || String(t.taskId) === String(id));
+  const dar = task 
+    ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) 
+    : (dars || []).find(d => String(d.id) === String(id) || d.darNo === id || d.darNumber === id);
   const darTimeline = dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
 
   // Dynamic extraction and assembly of approvalWorkflow for DAR
@@ -68,16 +74,89 @@ const TaskApprove = () => {
     };
   }, [dar, currentUser, masterUsers]);
 
-  const nextSignatory = useMemo(() => {
-    const currentDar = darWithWorkflow || dar;
-    if (!currentDar || !currentDar.approvalWorkflow) return null;
+  // Harmonized workflow signatories list
+  const workflowSignatories = useMemo(() => {
+    const list = darWithWorkflow?.approvalWorkflow || dar?.approvalWorkflow;
+    return (list && Array.isArray(list)) ? list : [];
+  }, [darWithWorkflow, dar]);
+
+  // Find index of current step / Approver
+  const approverStepIndex = useMemo(() => {
+    return workflowSignatories.findIndex(s => 
+      s.roleKey === 'APPROVER' || 
+      (currentUser && (s.id === currentUser.id || s.name === currentUser.name || s.assignedTo === currentUser.name))
+    );
+  }, [workflowSignatories, currentUser]);
+
+  const subsequentSteps = useMemo(() => {
+    return approverStepIndex >= 0 
+      ? workflowSignatories.slice(approverStepIndex + 1)
+      : workflowSignatories.filter(s => s.roleKey !== 'REQUESTER' && s.roleKey !== 'REVIEWER' && s.roleKey !== 'APPROVER');
+  }, [workflowSignatories, approverStepIndex]);
+
+  // Check if DCC step is configured
+  const dccStep = useMemo(() => {
+    return subsequentSteps.find(s => 
+      s.roleKey === 'DCC' || 
+      s.roleKey === 'DCC_ADMIN' || 
+      s.role === 'DCC' || 
+      (typeof s.role === 'string' && s.role.toUpperCase().includes('DCC'))
+    );
+  }, [subsequentSteps]);
+
+  const isFinalStep = subsequentSteps.length === 0 || (!dccStep && subsequentSteps.every(s => s.roleKey === 'COMPLETED' || !s.roleKey));
+
+  // Determine next destination details preventing self-targeting
+  const nextDestination = useMemo(() => {
     if (pendingAction !== 'APPROVE') return null;
 
-    return currentDar.approvalWorkflow.find(step => step.roleKey === 'DCC' || step.roleKey === 'ACKNOWLEDGEMENT');
-  }, [darWithWorkflow, dar, pendingAction]);
+    if (dccStep) {
+      return {
+        type: 'DCC',
+        label: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+        title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+        subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+        name: dccStep.name || dccStep.assignedTo || 'Document Control Center (DCC)',
+        role: dccStep.role || 'DCC'
+      };
+    }
 
-  const nextActorName = nextSignatory?.name || nextSignatory?.assignedTo || 'เจ้าหน้าที่ DCC';
-  const nextActorRole = nextSignatory?.role || 'ตรวจสอบและประกาศใช้';
+    if (isFinalStep) {
+      return {
+        type: 'COMPLETED',
+        label: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+        name: 'Approval Completed',
+        role: 'มีผลบังคับใช้ (Active)'
+      };
+    }
+
+    // Safety check: ensure next signatory is NOT the current actor
+    const nextValid = subsequentSteps.find(s => 
+      (!currentUser?.id || s.id !== currentUser.id) &&
+      (!currentUser?.name || (s.name !== currentUser.name && s.assignedTo !== currentUser.name))
+    );
+
+    if (nextValid) {
+      return {
+        type: 'SIGNATORY',
+        label: `ส่งต่อไปยัง: ${nextValid.name} (${nextValid.role})`,
+        title: 'ส่งต่อเพื่อพิจารณาขั้นถัดไป',
+        name: nextValid.name || nextValid.assignedTo,
+        role: nextValid.role
+      };
+    }
+
+    return {
+      type: 'COMPLETED',
+      label: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+      title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+      subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+      name: 'Approval Completed',
+      role: 'มีผลบังคับใช้ (Active)'
+    };
+  }, [pendingAction, dccStep, isFinalStep, subsequentSteps, currentUser]);
 
   useEffect(() => {
     // If PDF container is small enough that it doesn't scroll, unlock immediately
@@ -99,6 +178,56 @@ const TaskApprove = () => {
     }
   };
 
+  const isCompletedTask = Boolean(
+    task && (
+      task.status === 'COMPLETED' || 
+      task.status === 'RESOLVED' || 
+      task.status === 'APPROVED' || 
+      task.is_completed === true
+    )
+  );
+
+  if (isCompletedTask) {
+    const completedActor = task?.completedBy || task?.assigneeName || currentUser?.name || 'ผู้อนุมัติ';
+    const completedTime = task?.completedAt || task?.updatedAt || task?.timestamp;
+
+    return (
+      <div className="flex h-[80vh] items-center justify-center p-6">
+        <div className="card-surface p-8 text-center max-w-md shadow-xs border border-emerald-200/80 rounded-2xl bg-white animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center mx-auto mb-4 text-emerald-600 shadow-2xs">
+            <CheckCircle2 size={28} className="text-emerald-600" />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/90 mb-3">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            คำร้องนี้ได้รับการอนุมัติเสร็จสิ้นแล้ว
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mb-1 leading-snug">
+            {dar?.title || task?.title || 'งานอนุมัติเอกสารเสร็จสมบูรณ์'}
+          </h2>
+          <p className="text-xs text-slate-500 font-mono mb-2">
+            รหัสงาน: <span className="font-bold text-slate-700">{task?.id || id}</span>
+            {dar?.darNumber && <span> • DAR: <span className="font-bold text-slate-700">{dar.darNumber}</span></span>}
+          </p>
+          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+            อนุมัติเสร็จสิ้นโดย <span className="font-semibold text-slate-700">{completedActor}</span>
+            {completedTime && (
+              <span className="block mt-0.5 text-[11px] text-slate-400">
+                เมื่อ {new Date(completedTime).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })} น.
+              </span>
+            )}
+          </p>
+          <button 
+            type="button"
+            onClick={() => navigate('/dcc/tasks', { replace: true })} 
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+          >
+            <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!task || !dar) {
     return (
       <div className="flex h-[80vh] items-center justify-center p-6">
@@ -115,7 +244,7 @@ const TaskApprove = () => {
           </p>
           <button 
             type="button"
-            onClick={() => navigate('/tasks')} 
+            onClick={() => navigate('/dcc/tasks', { replace: true })} 
             className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
           >
             <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
@@ -146,7 +275,7 @@ const TaskApprove = () => {
           </p>
           <button 
             type="button"
-            onClick={() => navigate('/tasks')} 
+            onClick={() => navigate('/dcc/tasks', { replace: true })} 
             className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
           >
             <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
@@ -177,16 +306,20 @@ const TaskApprove = () => {
     setShowConfirm(true);
   };
 
-  const executeAction = () => {
+  const executeAction = async () => {
+    setShowConfirm(false);
     try {
-      processWorkflow(task.id, pendingAction, comment);
-      toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'อนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ไม่อนุมัติเอกสาร' : 'ส่งกลับแก้ไข'} สำเร็จ`);
-      setShowConfirm(false);
-      navigate('/tasks');
+      await processWorkflow(task.id, pendingAction, comment);
+      const actionText = pendingAction === 'APPROVE' 
+        ? 'อนุมัติเอกสารสำเร็จแล้ว' 
+        : pendingAction === 'REJECT' 
+          ? 'ไม่อนุมัติคำร้องเรียบร้อยแล้ว' 
+          : 'ส่งกลับแก้ไขเรียบร้อยแล้ว';
+      toast.success(actionText);
+      navigate('/dcc/tasks', { replace: true });
     } catch (error) {
       console.error('Approval Crash:', error);
       toast.error(`เกิดข้อผิดพลาด: ${error.message || 'ระบบขัดข้อง'}`);
-      setShowConfirm(false);
     }
   };
 
@@ -198,7 +331,7 @@ const TaskApprove = () => {
       <div className="w-[40%] flex flex-col card-surface overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 bg-[#F5F5F5]/80 flex items-center justify-between shadow-xs z-10">
-           <button onClick={() => navigate('/tasks')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors">
+           <button onClick={() => navigate('/dcc/tasks')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors">
              <ChevronLeft className="mr-1" size={16} /> ย้อนกลับ
            </button>
             <div className="flex items-center gap-2">
@@ -445,6 +578,9 @@ const TaskApprove = () => {
         confirmText={pendingAction === 'APPROVE' ? 'ยืนยันการอนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ยืนยันไม่อนุมัติคำร้อง' : 'ยืนยันส่งกลับแก้ไข'}
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
         dar={darWithWorkflow}
+        currentActor={currentUser}
+        currentStep="APPROVER"
+        workflowSignatories={workflowSignatories}
         summaryData={[
           { label: 'ผู้อนุมัติ', value: `${currentUser?.name || 'ผู้อนุมัติ'} (${currentUser?.department || '-'})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
@@ -453,7 +589,7 @@ const TaskApprove = () => {
           { 
             label: 'สายการอนุมัติถัดไป', 
             value: pendingAction === 'APPROVE' 
-              ? `ส่งต่อไปยัง: ${nextActorName} (${nextActorRole})` 
+              ? (nextDestination?.label || (dccStep ? 'ส่งมอบงานต่อให้ Document Control Center (DCC)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)'))
               : pendingAction === 'REJECT' 
                 ? 'สิ้นสุดคำร้อง: ส่งเข้าคลังประวัติ (ไม่อนุมัติ)' 
                 : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' 

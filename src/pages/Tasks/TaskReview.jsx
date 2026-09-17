@@ -4,7 +4,7 @@ import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
-import { FileText, CheckCircle, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, ExternalLink, Zap, Globe, Lock, Building2, RotateCcw, Check, X } from 'lucide-react';
+import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Zap, Globe, Lock, Building2, RotateCcw, Check } from 'lucide-react';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
@@ -464,6 +464,9 @@ const TaskReview = () => {
         confirmText={pendingAction === 'APPROVE' ? 'ยืนยันผ่านการทบทวน' : 'ยืนยันส่งกลับแก้ไข'}
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
         dar={darWithWorkflow}
+        currentActor={currentUser}
+        currentStep="REVIEWER"
+        workflowSignatories={darWithWorkflow?.approvalWorkflow || dar?.approvalWorkflow || []}
         summaryData={[
           { label: 'ผู้ดำเนินการ', value: `${currentUser?.name || 'ผู้ทบทวน'} (${currentUser?.department || '-'})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },

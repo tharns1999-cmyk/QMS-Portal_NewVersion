@@ -432,104 +432,22 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
     totalCopies: allAllocations.length
   };
 };
+import {
+  formatDocumentRunningNumber,
+  generateDocumentCode,
+  calculateNextDocumentSequence,
+  calculateNextExternalDocSequence,
+  getNextSequenceNumber,
+  checkDocumentCodeCollision
+} from './numberingService';
 
-/**
- * จัดรูปแบบเลขรหัสเอกสารตามมาตรฐาน 2 หลักขั้นต่ำ (01-99 ➔ 100+):
- * 1-99   => "01", "02", ..., "99" (2 หลัก)
- * 100+   => "100", "101", ... (3 หลักขึ้นไป)
- */
-export const formatDocumentRunningNumber = (num) => {
-  const parsed = parseInt(num, 10) || 1;
-  return parsed < 100 ? String(parsed).padStart(2, '0') : String(parsed);
-};
-
-/**
- * สร้างรหัสเอกสารตาม Pattern ของ Master Data:
- * แทนที่ {Type}, {Dept}, {###}, {##} ด้วยค่าจริง
- */
-export const generateDocumentCode = (pattern, typeCode, deptCode, seqNumber) => {
-  const pat = pattern || `${typeCode}-{Dept}-{##}`;
-  const seqFormatted = formatDocumentRunningNumber(seqNumber);
-  return pat
-    .replace('{Type}', typeCode)
-    .replace('{Dept}', deptCode)
-    .replace('{###}', seqFormatted)
-    .replace('{##}', seqFormatted);
-};
-
-/**
- * คำนวณลำดับหมายเลขเอกสารถัดไป (Max Historical Sequence + 1)
- * ตามมาตรฐาน ISO 9001:2015 Clause 7.5.3:
- * - สแกนหาตัวเลขลำดับสูงสุดตลอดกาลจากเอกสารทุกสถานะ (ACTIVE, EFFECTIVE, OBSOLETE, SUPERSEDED, ARCHIVED)
- * - รวมทั้งคำร้อง DAR ที่อยู่ระหว่างดำเนินการหรือแบบร่าง (DRAFT, PENDING_REVIEW, PENDING_APPROVAL)
- * - ป้องกันการ Recycle เลขเอกสารที่เคยยกเลิก (OBSOLETE) ไปแล้วกลับมาใช้ซ้ำ 100%
- */
-export const calculateNextDocumentSequence = (docType, deptCode, documents = [], dars = []) => {
-  if (!docType || !deptCode) return 1;
-  const docPrefix = `${docType}-${deptCode}-`;
-  let maxSeq = 0;
-
-  // 1. Scan all historical internal documents across all statuses
-  (documents || []).forEach(doc => {
-    if (!doc) return;
-    const codeCandidates = [doc.docCode, doc.doc_code, doc.docNo, doc.code, doc.title, doc.id];
-    for (const code of codeCandidates) {
-      if (typeof code === 'string' && code.startsWith(docPrefix)) {
-        const seqStr = code.replace(docPrefix, '').split(/[^0-9]/)[0];
-        const seq = parseInt(seqStr, 10);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
-        }
-        break;
-      }
-    }
-  });
-
-  // 2. Scan all DAR requests (Drafts, In-Progress, Pending Approval)
-  (dars || []).forEach(dar => {
-    if (!dar) return;
-    if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT' || dar.docType === docType) {
-      const codeCandidates = [dar.docIdInput, dar.docCode, dar.doc_code, dar.docNo];
-      for (const code of codeCandidates) {
-        if (typeof code === 'string' && code.startsWith(docPrefix)) {
-          const seqStr = code.replace(docPrefix, '').split(/[^0-9]/)[0];
-          const seq = parseInt(seqStr, 10);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
-          break;
-        }
-      }
-    }
-  });
-
-  return maxSeq + 1;
-};
-
-/**
- * คำนวณลำดับหมายเลขเอกสารภายนอกถัดไป (Max Historical Sequence + 1 สำหรับ ED)
- */
-export const calculateNextExternalDocSequence = (deptCode, externalDocuments = []) => {
-  if (!deptCode) return 1;
-  const docPrefix = `ED-${deptCode}-`;
-  let maxSeq = 0;
-
-  (externalDocuments || []).forEach(doc => {
-    if (!doc) return;
-    const codeCandidates = [doc.edCode, doc.doc_code, doc.docNo, doc.id, doc.title];
-    for (const code of codeCandidates) {
-      if (typeof code === 'string' && code.startsWith(docPrefix)) {
-        const seqStr = code.replace(docPrefix, '').split(/[^0-9]/)[0];
-        const seq = parseInt(seqStr, 10);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
-        }
-        break;
-      }
-    }
-  });
-
-  return maxSeq + 1;
+export {
+  formatDocumentRunningNumber,
+  generateDocumentCode,
+  calculateNextDocumentSequence,
+  calculateNextExternalDocSequence,
+  getNextSequenceNumber,
+  checkDocumentCodeCollision
 };
 
 export default {
@@ -543,5 +461,7 @@ export default {
   formatDocumentRunningNumber,
   generateDocumentCode,
   calculateNextDocumentSequence,
-  calculateNextExternalDocSequence
+  calculateNextExternalDocSequence,
+  getNextSequenceNumber,
+  checkDocumentCodeCollision
 };

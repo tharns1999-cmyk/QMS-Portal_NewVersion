@@ -7,7 +7,11 @@ import UserSelector from '../../components/UserSelector';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import ExternalDocConfirmModal from './ExternalDocConfirmModal';
-import { formatDocumentRunningNumber, calculateNextExternalDocSequence } from '../../services/MasterDataService';
+import { 
+  formatDocumentRunningNumber, 
+  calculateNextExternalDocSequence,
+  checkDocumentCodeCollision 
+} from '../../services/MasterDataService';
 import { isLevel6Plus } from '../../utils/taskFilter';
 
 const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmitTaskId = null }) => {
@@ -15,12 +19,13 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     currentUser, 
     registerExternalDoc, 
     updateExternalDoc, 
-    resubmitExternalDoc,
+    resubmitExternalDoc, 
     masterDepartments, 
     departments: storeDepts,
     documentTypes,
     externalDocuments,
-    externalRequests 
+    externalRequests,
+    tasks
   } = useStore();
 
   const isResubmit = Boolean(resubmitTaskId || documentToEdit?.status === 'REVISE_REQUESTED');
@@ -164,14 +169,14 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     const edType = (documentTypes || []).find(t => t.code === 'ED' || t.id === 'ED');
     const pattern = edType?.namingPattern || 'ED-{Dept}-{##}';
 
-    const nextSeq = calculateNextExternalDocSequence(dept, externalDocuments);
+    const nextSeq = calculateNextExternalDocSequence(dept, externalDocuments, externalRequests, tasks);
     const seqNum = formatDocumentRunningNumber(nextSeq);
     return pattern
       .replace('{Type}', 'ED')
       .replace('{Dept}', dept)
       .replace('{###}', seqNum)
       .replace('{##}', seqNum);
-  }, [documentToEdit, formData.department, userDept, externalDocuments, documentTypes]);
+  }, [documentToEdit, formData.department, userDept, externalDocuments, externalRequests, tasks, documentTypes]);
 
   // Auto-Running EDR Number Preview (ISO 9001 Year Sequence Compliance)
   const previewEdrNumber = useMemo(() => {
@@ -449,8 +454,32 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       const edLabel = payloadToSubmit.sourceVersion ? `(${payloadToSubmit.sourceVersion})` : '';
       toast.success(`ส่งคำขออัปเดตเอกสาร ${previewEdCode} ${edLabel} สำเร็จ`);
     } else {
-      registerExternalDoc(payloadToSubmit);
-      toast.success(`ลงทะเบียนเอกสารภายนอก ${previewEdCode} เรียบร้อยแล้ว`);
+      // Omni-Status Monotonic Sequence Collision Guard
+      let finalPayload = { ...payloadToSubmit };
+      const dept = formData.department || userDept || 'QA';
+      const omniPool = [...(externalDocuments || []), ...(externalRequests || []), ...(tasks || [])];
+      
+      if (checkDocumentCodeCollision(finalPayload.edCode, omniPool)) {
+        const nextSafeSeq = calculateNextExternalDocSequence(dept, externalDocuments, externalRequests, tasks);
+        const edType = (documentTypes || []).find(t => t.code === 'ED' || t.id === 'ED');
+        const pattern = edType?.namingPattern || 'ED-{Dept}-{##}';
+        const seqNum = formatDocumentRunningNumber(nextSafeSeq);
+        const safeEdCode = pattern
+          .replace('{Type}', 'ED')
+          .replace('{Dept}', dept)
+          .replace('{###}', seqNum)
+          .replace('{##}', seqNum);
+          
+        finalPayload = {
+          ...finalPayload,
+          edCode: safeEdCode,
+          doc_code: safeEdCode,
+          docNo: safeEdCode
+        };
+      }
+
+      registerExternalDoc(finalPayload);
+      toast.success(`ลงทะเบียนเอกสารภายนอก ${finalPayload.edCode} เรียบร้อยแล้ว`);
     }
     setShowConfirmModal(false);
     onClose();

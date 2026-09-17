@@ -16,7 +16,8 @@ import {
   cleanLocationName,
   formatDocumentRunningNumber, 
   calculateNextDocumentSequence,
-  calculateNextExternalDocSequence
+  calculateNextExternalDocSequence,
+  checkDocumentCodeCollision
 } from '../services/MasterDataService';
 import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
 import { hasDocumentAccess, canUserAccessDocument } from '../utils/accessControl';
@@ -1461,6 +1462,7 @@ export const getInitialStoreState = () => ({
   dars: [],
   darRequests: [],
   tasks: [],
+  completedTasks: [],
   timeline: [],
   documents: [],
   masterDocuments: [],
@@ -2072,13 +2074,32 @@ const useStore = create(persist((set, get) => ({
     const dept = doc.department || doc.dept || (state.currentUser ? (state.currentUser.department || 'QA/QC') : 'QA/QC');
     const edType = (state.documentTypes || []).find(t => t.code === 'ED' || t.id === 'ED');
     const pattern = edType?.namingPattern || 'ED-{Dept}-{##}';
-    const nextSeq = calculateNextExternalDocSequence(dept, state.externalDocuments);
+    
+    // Omni-Status Monotonic Sequence: scan externalDocuments (including OBSOLETE), externalRequests, and tasks
+    const nextSeq = calculateNextExternalDocSequence(dept, state.externalDocuments, state.externalRequests, state.tasks);
     const seqNum = formatDocumentRunningNumber(nextSeq);
-    const edCode = doc.edCode || doc.doc_code || doc.docNo || pattern
+    const autoCode = pattern
       .replace('{Type}', 'ED')
       .replace('{Dept}', dept)
       .replace('{###}', seqNum)
       .replace('{##}', seqNum);
+      
+    let edCode = doc.edCode || doc.doc_code || doc.docNo || autoCode;
+    
+    // Omni-Status Collision Guard: if passed code collides with any existing doc across all statuses, assign next monotonic sequence
+    const omniPool = [...(state.externalDocuments || []), ...(state.externalRequests || []), ...(state.tasks || [])];
+    if (doc.edCode && checkDocumentCodeCollision(doc.edCode, omniPool)) {
+      edCode = autoCode;
+      if (checkDocumentCodeCollision(edCode, omniPool)) {
+        const safeSeq = nextSeq + 1;
+        const safeSeqNum = formatDocumentRunningNumber(safeSeq);
+        edCode = pattern
+          .replace('{Type}', 'ED')
+          .replace('{Dept}', dept)
+          .replace('{###}', safeSeqNum)
+          .replace('{##}', safeSeqNum);
+      }
+    }
     const newId = doc.id || edCode || `EXT-${Date.now()}`;
 
     // Review Cycle & Validity
@@ -2109,8 +2130,8 @@ const useStore = create(persist((set, get) => ({
         docTitle: doc.title,
         docName: doc.title,
         title: `${edCode}: ${doc.title}`,
-        type: 'EXTERNAL_REVIEW',
-        taskType: 'EXTERNAL_REVIEW',
+        type: 'EXT_REVIEW',
+        taskType: 'EXT_REVIEW',
         assigneeId: doc.reviewerId,
         requesterId: ownerId,
         requesterName: requesterName,
@@ -2148,8 +2169,8 @@ const useStore = create(persist((set, get) => ({
         docTitle: doc.title,
         docName: doc.title,
         title: `${edCode}: ${doc.title}`,
-        type: 'EXTERNAL_APPROVAL',
-        taskType: 'EXTERNAL_APPROVAL',
+        type: 'EXT_APPROVAL',
+        taskType: 'EXT_APPROVAL',
         assigneeId: doc.approverId,
         requesterId: ownerId,
         requesterName: requesterName,
@@ -2386,7 +2407,7 @@ const useStore = create(persist((set, get) => ({
     };
 
     return {
-      externalDocuments: initialStatus === 'ACTIVE' ? [newExternalDoc, ...state.externalDocuments] : state.externalDocuments,
+      externalDocuments: [newExternalDoc, ...state.externalDocuments],
       externalRequests: [newExternalRequest, ...(state.externalRequests || [])],
       documentControlledCopies: finalCopies,
       controlledCopyInstances: finalCopies,
@@ -3169,8 +3190,8 @@ const useStore = create(persist((set, get) => ({
             docTitle: doc.title,
             docName: doc.title,
             title: `${edCode}: ${doc.title}`,
-            type: 'EXTERNAL_APPROVAL',
-            taskType: 'EXTERNAL_APPROVAL',
+            type: 'EXT_APPROVAL',
+            taskType: 'EXT_APPROVAL',
             assigneeId: approverId,
             requesterId: requesterId,
             requesterName: task.requesterName || doc.ownerName || 'User',
@@ -4289,6 +4310,39 @@ const useStore = create(persist((set, get) => ({
       const distributions = dar.distributions || [];
       const newDar = { ...dar, id: newDarId, distributions };
 
+      if (newDar.type === 'NEW' || newDar.type === 'NEW_DOCUMENT') {
+        const selectedTypeObj = (state.documentTypes || []).find(t => (t.code || t.id) === newDar.docType);
+        const pattern = selectedTypeObj?.namingPattern || `${newDar.docType}-{Dept}-{##}`;
+        const allDocs = [...(state.documents || []), ...(state.masterDocuments || [])];
+        const allDars = [...(state.dars || []), ...(state.darRequests || [])];
+        const dept = newDar.department || 'PD';
+        const nextSeq = calculateNextDocumentSequence(newDar.docType, dept, allDocs, allDars, state.tasks);
+        const seqFormatted = formatDocumentRunningNumber(nextSeq);
+        let calculatedCode = '';
+        if (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}')) {
+          calculatedCode = pattern
+            .replace('{Type}', newDar.docType)
+            .replace('{Dept}', dept)
+            .replace('{###}', seqFormatted)
+            .replace('{##}', seqFormatted);
+        } else {
+          calculatedCode = `${newDar.docType}-${dept}-${seqFormatted}`;
+        }
+        const omniPool = [...allDocs, ...allDars, ...(state.tasks || [])];
+        if (!newDar.docIdInput || checkDocumentCodeCollision(newDar.docIdInput, omniPool)) {
+          newDar.docIdInput = calculatedCode;
+        }
+        if (checkDocumentCodeCollision(newDar.docIdInput, omniPool)) {
+          const safeSeq = nextSeq + 1;
+          const safeSeqFormatted = formatDocumentRunningNumber(safeSeq);
+          newDar.docIdInput = pattern
+            .replace('{Type}', newDar.docType)
+            .replace('{Dept}', dept)
+            .replace('{###}', safeSeqFormatted)
+            .replace('{##}', safeSeqFormatted);
+        }
+      }
+
       const today = new Date();
       today.setDate(today.getDate() + state.mockDateOffset);
       const todayStr = today.toISOString().split('T')[0];
@@ -4409,16 +4463,36 @@ const useStore = create(persist((set, get) => ({
     if (newDar.type === 'NEW' || newDar.type === 'NEW_DOCUMENT') {
       const selectedTypeObj = (state.documentTypes || []).find(t => (t.code || t.id) === newDar.docType);
       const pattern = selectedTypeObj?.namingPattern || `${newDar.docType}-{Dept}-{##}`;
-      const nextSeq = calculateNextDocumentSequence(newDar.docType, newDar.department, state.documents, state.dars);
+      const allDocs = [...(state.documents || []), ...(state.masterDocuments || [])];
+      const allDars = [...(state.dars || []), ...(state.darRequests || [])];
+      const nextSeq = calculateNextDocumentSequence(newDar.docType, newDar.department, allDocs, allDars, state.tasks);
       const seqFormatted = formatDocumentRunningNumber(nextSeq);
+      let calculatedCode = '';
       if (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}')) {
-        newDar.docIdInput = pattern
+        calculatedCode = pattern
           .replace('{Type}', newDar.docType)
           .replace('{Dept}', newDar.department)
           .replace('{###}', seqFormatted)
           .replace('{##}', seqFormatted);
       } else {
-        newDar.docIdInput = `${newDar.docType}-${newDar.department}-${seqFormatted}`;
+        calculatedCode = `${newDar.docType}-${newDar.department}-${seqFormatted}`;
+      }
+
+      // Omni-Status Monotonic Collision Guard
+      const omniPool = [...allDocs, ...allDars, ...(state.tasks || [])];
+      if (newDar.docIdInput && checkDocumentCodeCollision(newDar.docIdInput, omniPool)) {
+        newDar.docIdInput = calculatedCode;
+      } else if (!newDar.docIdInput) {
+        newDar.docIdInput = calculatedCode;
+      }
+      if (checkDocumentCodeCollision(newDar.docIdInput, omniPool)) {
+        const safeSeq = nextSeq + 1;
+        const safeSeqFormatted = formatDocumentRunningNumber(safeSeq);
+        newDar.docIdInput = pattern
+          .replace('{Type}', newDar.docType)
+          .replace('{Dept}', newDar.department)
+          .replace('{###}', safeSeqFormatted)
+          .replace('{##}', safeSeqFormatted);
       }
     }
 
@@ -5024,10 +5098,25 @@ const useStore = create(persist((set, get) => ({
       });
     }
 
+    const completedRecord = targetTask ? {
+      ...targetTask,
+      status: 'COMPLETED',
+      is_completed: true,
+      completedAt: new Date().toISOString(),
+      completedBy: state.currentUser?.name || 'ผู้ใช้งาน',
+      completedAction: action,
+      comment: comment || '-'
+    } : null;
+
+    const updatedCompletedTasks = completedRecord 
+      ? [completedRecord, ...(state.completedTasks || []).filter(t => t.id !== taskId)]
+      : (state.completedTasks || []);
+
     const newState = {
       documents: updatedDocs,
       masterDocuments: updatedDocs,
       tasks: newTasks,
+      completedTasks: updatedCompletedTasks,
       notifications: newNotifications,
       dars: updatedDars,
       darRequests: updatedDarRequests,

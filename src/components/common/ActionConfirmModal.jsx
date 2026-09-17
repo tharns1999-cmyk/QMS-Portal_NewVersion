@@ -7,7 +7,10 @@ import {
   ArrowRight, 
   X, 
   Loader2, 
-  Send
+  Send,
+  Building2,
+  FileCheck,
+  RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -59,7 +62,10 @@ const ActionConfirmModal = ({
   confirmText,
   cancelText,
   confirmLabel, // backward compatibility
-  dar = null
+  dar = null,
+  currentActor = null,
+  currentStep = null,
+  workflowSignatories = null
 }) => {
   const [typedConfirmation, setTypedConfirmation] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -245,61 +251,262 @@ const ActionConfirmModal = ({
     };
   }, [items]);
 
-  // หาข้อมูล Approver จาก approvalWorkflow array (Dynamic Workflow Binding)
-  const nextSignatory = useMemo(() => {
-    if (!dar || !dar.approvalWorkflow) return null;
-    
-    // หากเป็นโหมด Review -> ขั้นต่อไปคือ APPROVER
-    return dar.approvalWorkflow.find(step => step.roleKey === 'APPROVER');
-  }, [dar]);
+  // Workflow Signatories List (Harmonized)
+  const workflowList = useMemo(() => {
+    const list = workflowSignatories || dar?.approvalWorkflow || dar?.workflowSignatories;
+    return (list && Array.isArray(list)) ? list : [];
+  }, [workflowSignatories, dar]);
 
-  const nextActorNameFromWorkflow = nextSignatory?.name || nextSignatory?.assignedTo;
-  const nextActorRoleFromWorkflow = nextSignatory?.role;
+  // Infer effective current step & current actor
+  const effectiveCurrentStep = useMemo(() => {
+    if (currentStep) return String(currentStep).toUpperCase();
+    if (actionType === 'approve' || (typeof title === 'string' && title.includes('อนุมัติ'))) return 'APPROVER';
+    if (actionType === 'review' || (typeof title === 'string' && title.includes('ทบทวน'))) return 'REVIEWER';
+    if (actionType === 'submit') return 'REQUESTER';
+    if (items.some(i => i.label && i.label.includes('ผู้อนุมัติ'))) return 'APPROVER';
+    if (items.some(i => i.label && i.label.includes('ผู้ทบทวน'))) return 'REVIEWER';
+    return null;
+  }, [currentStep, actionType, title, items]);
 
-  // Helper to parse Next Step actor details
-  const nextActorData = useMemo(() => {
-    if (!categorized.nextStepItem && !nextSignatory) return null;
-    const rawVal = categorized.nextStepItem?.value;
-    const rawText = rawVal ? extractTextContent(rawVal) : '';
-    
-    // Extract name & role
-    let title = 'ส่งต่อเพื่อพิจารณาขั้นถัดไป';
-    let name = nextActorNameFromWorkflow || rawText;
-    let role = nextActorRoleFromWorkflow || '';
+  const currentActorInfo = useMemo(() => {
+    if (currentActor) {
+      return {
+        id: currentActor.id || currentActor.empId || null,
+        name: currentActor.name || currentActor.fullName || null
+      };
+    }
+    const actorItem = items.find(i => i.label && (i.label.includes('ผู้อนุมัติ') || i.label.includes('ผู้ทบทวน') || i.label.includes('ผู้ดำเนินการ')));
+    if (actorItem) {
+      const text = extractTextContent(actorItem.value);
+      const nameMatch = text.match(/^(.*?)\s*\(/);
+      return { id: null, name: nameMatch ? nameMatch[1].trim() : text.trim() };
+    }
+    return { id: null, name: null };
+  }, [currentActor, items]);
 
-    if (!nextSignatory) {
-      if (rawText.includes('ส่งต่อไปยัง:')) {
-        name = rawText.replace(/.*ส่งต่อไปยัง:\s*/, '').trim();
-      } else if (rawText.includes('ส่งต่อให้:')) {
-        name = rawText.replace(/.*ส่งต่อให้:\s*/, '').trim();
-      } else if (rawText.includes('ส่งกลับไปยัง:')) {
-        title = 'ส่งกลับเพื่อดำเนินการแก้ไข';
-        name = rawText.replace(/.*ส่งกลับไปยัง:\s*/, '').trim();
-      } else if (rawText.includes('สิ้นสุดคำร้อง:')) {
-        title = 'สิ้นสุดกระบวนการคำร้อง';
-        name = rawText.replace(/.*สิ้นสุดคำร้อง:\s*/, '').trim();
+  // คำนวณขั้นตอนถัดไป (Next Signatory / Workflow Destination) พร้อมป้องกัน Self-Targeting
+  const calculatedNextWorkflowStep = useMemo(() => {
+    if (workflowList.length === 0) return null;
+
+    // ถ้าขั้นตอนปัจจุบันคือ APPROVER (ผู้อนุมัติ)
+    if (effectiveCurrentStep === 'APPROVER') {
+      const approverIndex = workflowList.findIndex(s => 
+        s.roleKey === 'APPROVER' || 
+        (currentActorInfo.id && s.id === currentActorInfo.id) ||
+        (currentActorInfo.name && (s.name === currentActorInfo.name || s.assignedTo === currentActorInfo.name))
+      );
+
+      const subsequent = approverIndex >= 0 
+        ? workflowList.slice(approverIndex + 1)
+        : workflowList.filter(s => s.roleKey !== 'REQUESTER' && s.roleKey !== 'REVIEWER' && s.roleKey !== 'APPROVER');
+
+      // ตรวจสอบว่ามีขั้นตอน DCC หรือไม่
+      const dcc = subsequent.find(s => 
+        s.roleKey === 'DCC' || 
+        s.roleKey === 'DCC_ADMIN' || 
+        s.role === 'DCC' || 
+        (typeof s.role === 'string' && s.role.toUpperCase().includes('DCC'))
+      );
+
+      if (dcc) {
+        return {
+          type: 'DCC',
+          title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+          subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+          name: dcc.name || dcc.assignedTo || 'Document Control Center (DCC)',
+          role: 'DCC'
+        };
       }
 
-      // Check if contains (Role)
-      const parenMatch = name.match(/^(.*?)\s*\((.*?)\)$/);
-      if (parenMatch) {
-        name = parenMatch[1];
-        role = parenMatch[2];
+      // ตรวจสอบว่ามีผู้พิจารณาขั้นต่อไปที่ไม่ใช่ตัวเองหรือไม่ (Strictly prevent self-targeting)
+      const otherNext = subsequent.find(s => 
+        (!currentActorInfo.id || s.id !== currentActorInfo.id) &&
+        (!currentActorInfo.name || (s.name !== currentActorInfo.name && s.assignedTo !== currentActorInfo.name))
+      );
+
+      if (otherNext) {
+        return {
+          type: 'SIGNATORY',
+          title: 'ส่งต่อเพื่อพิจารณาขั้นถัดไป',
+          name: otherNext.name || otherNext.assignedTo || 'ผู้พิจารณาขั้นถัดไป',
+          role: otherNext.role || ''
+        };
+      }
+
+      // ผู้อนุมัติเป็นขั้นตอนสุดท้าย (Approver is the absolute final step)
+      return {
+        type: 'COMPLETED',
+        title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+        name: 'Approval Completed',
+        role: 'มีผลบังคับใช้ (Active)'
+      };
+    }
+
+    // ถ้าขั้นตอนปัจจุบันคือ REVIEWER (ผู้ทบทวน) -> ขั้นต่อไปคือ APPROVER
+    if (effectiveCurrentStep === 'REVIEWER') {
+      const approverStep = workflowList.find(s => 
+        s.roleKey === 'APPROVER' &&
+        (!currentActorInfo.id || s.id !== currentActorInfo.id) &&
+        (!currentActorInfo.name || (s.name !== currentActorInfo.name && s.assignedTo !== currentActorInfo.name))
+      );
+      if (approverStep) {
+        return {
+          type: 'SIGNATORY',
+          title: 'ส่งต่อเพื่อพิจารณาขั้นถัดไป',
+          name: approverStep.name || approverStep.assignedTo || 'ผู้อนุมัติ (Approver)',
+          role: approverStep.role || 'Approver'
+        };
       }
     }
 
-    const nextActorInitials = (name && name.length > 0) 
-      ? name.trim().substring(0, 1) 
-      : 'ผ';
+    // ถ้าขั้นตอนปัจจุบันคือ REQUESTER -> ขั้นต่อไปคือ REVIEWER
+    if (effectiveCurrentStep === 'REQUESTER') {
+      const reviewerStep = workflowList.find(s => s.roleKey === 'REVIEWER');
+      if (reviewerStep) {
+        return {
+          type: 'SIGNATORY',
+          title: 'ส่งต่อเพื่อพิจารณาขั้นถัดไป',
+          name: reviewerStep.name || reviewerStep.assignedTo || 'ผู้ทบทวน (Reviewer)',
+          role: reviewerStep.role || 'Reviewer'
+        };
+      }
+    }
 
+    return null;
+  }, [workflowList, effectiveCurrentStep, currentActorInfo]);
+
+  // Helper to parse Next Step actor details
+  const nextActorData = useMemo(() => {
+    const rawVal = categorized.nextStepItem?.value;
+    const rawText = rawVal ? extractTextContent(rawVal) : '';
+
+    if (!categorized.nextStepItem && !calculatedNextWorkflowStep) return null;
+
+    // 1. ตรวจสอบการตีกลับ (RETURN) หรือ ไม่อนุมัติ (REJECT)
+    if (rawText.includes('สิ้นสุดคำร้อง:') || rawText.includes('สิ้นสุดกระบวนการคำร้อง') || rawText.includes('ส่งเข้าคลังประวัติ')) {
+      return {
+        type: 'REJECTED',
+        title: 'สิ้นสุดกระบวนการคำร้อง',
+        subtitle: 'คำร้องจะถูกปฏิเสธและส่งเข้าคลังประวัติ (ไม่อนุมัติ)',
+        name: rawText.replace(/.*(?:สิ้นสุดคำร้อง|สิ้นสุดกระบวนการคำร้อง):\s*/, '').trim() || 'ส่งเข้าคลังประวัติ (ไม่อนุมัติ)',
+        role: 'Rejected',
+        originalValue: rawVal
+      };
+    }
+
+    if (rawText.includes('ส่งกลับไปยัง:') || rawText.includes('ส่งกลับเพื่อดำเนินการแก้ไข') || rawText.includes('แก้ไขคำร้อง')) {
+      return {
+        type: 'RETURNED',
+        title: 'ส่งกลับเพื่อดำเนินการแก้ไข',
+        subtitle: 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)',
+        name: rawText.replace(/.*ส่งกลับไปยัง:\s*/, '').trim() || 'ผู้ร้องขอ (แก้ไขคำร้อง)',
+        role: 'Revision Required',
+        originalValue: rawVal
+      };
+    }
+
+    // 2. ตรวจสอบข้อความชัดเจนจาก summaryData
+    if (rawText.includes('ส่งมอบงานต่อให้ Document Control Center') || rawText.includes('ส่งมอบงานต่อให้ DCC') || rawText.includes('Document Control Center (DCC)')) {
+      return {
+        type: 'DCC',
+        title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+        subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+        name: 'Document Control Center (DCC)',
+        role: 'ขึ้นทะเบียนและแจกจ่ายสำเนาควบคุม',
+        originalValue: rawVal
+      };
+    }
+
+    if (rawText.includes('สิ้นสุดขั้นตอนการอนุมัติ') || rawText.includes('Approval Completed') || rawText.includes('มีผลบังคับใช้ (Active)')) {
+      return {
+        type: 'COMPLETED',
+        title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+        name: 'Approval Completed',
+        role: 'มีผลบังคับใช้ (Active)',
+        originalValue: rawVal
+      };
+    }
+
+    // 3. ผลลัพธ์จาก workflow resolution
+    if (calculatedNextWorkflowStep) {
+      if (calculatedNextWorkflowStep.type === 'DCC') {
+        return {
+          type: 'DCC',
+          title: calculatedNextWorkflowStep.title,
+          subtitle: calculatedNextWorkflowStep.subtitle,
+          name: calculatedNextWorkflowStep.name,
+          role: calculatedNextWorkflowStep.role,
+          originalValue: rawVal
+        };
+      }
+      if (calculatedNextWorkflowStep.type === 'COMPLETED') {
+        return {
+          type: 'COMPLETED',
+          title: calculatedNextWorkflowStep.title,
+          subtitle: calculatedNextWorkflowStep.subtitle,
+          name: calculatedNextWorkflowStep.name,
+          role: calculatedNextWorkflowStep.role,
+          originalValue: rawVal
+        };
+      }
+      if (calculatedNextWorkflowStep.type === 'SIGNATORY') {
+        const name = calculatedNextWorkflowStep.name;
+        const role = calculatedNextWorkflowStep.role;
+        const initials = (name && name.length > 0) ? name.trim().substring(0, 1) : 'ผ';
+        return {
+          type: 'SIGNATORY',
+          title: calculatedNextWorkflowStep.title,
+          name,
+          role,
+          initials,
+          originalValue: rawVal
+        };
+      }
+    }
+
+    // 4. Fallback parsing จาก rawText
+    let title = 'ส่งต่อเพื่อพิจารณาขั้นถัดไป';
+    let name = rawText;
+    let role = '';
+
+    if (rawText.includes('ส่งต่อไปยัง:')) {
+      name = rawText.replace(/.*ส่งต่อไปยัง:\s*/, '').trim();
+    } else if (rawText.includes('ส่งต่อให้:')) {
+      name = rawText.replace(/.*ส่งต่อให้:\s*/, '').trim();
+    }
+
+    const parenMatch = name.match(/^(.*?)\s*\((.*?)\)$/);
+    if (parenMatch) {
+      name = parenMatch[1];
+      role = parenMatch[2];
+    }
+
+    // ป้องกัน Self-Targeting fallback: ถ้าชื่อตรงกับ Actor ตัวเอง ไม่ส่งต่อให้ตัวเอง
+    if (currentActorInfo.name && (name === currentActorInfo.name || name.includes(currentActorInfo.name))) {
+      if (effectiveCurrentStep === 'APPROVER') {
+        return {
+          type: 'COMPLETED',
+          title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+          subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+          name: 'Approval Completed',
+          role: 'มีผลบังคับใช้ (Active)',
+          originalValue: rawVal
+        };
+      }
+    }
+
+    const initials = (name && name.length > 0) ? name.trim().substring(0, 1) : 'ผ';
     return {
+      type: 'SIGNATORY',
       title,
-      name: name || 'ผู้อนุมัติ (Approver)',
-      role: role || (nextSignatory ? 'Approver' : ''),
-      initials: nextActorInitials,
+      name: name || 'ผู้พิจารณาขั้นถัดไป',
+      role,
+      initials,
       originalValue: rawVal
     };
-  }, [categorized.nextStepItem, nextSignatory, nextActorNameFromWorkflow, nextActorRoleFromWorkflow]);
+  }, [categorized.nextStepItem, calculatedNextWorkflowStep, currentActorInfo, effectiveCurrentStep]);
 
   // Helper to render values with proper typography
   const renderItemValue = (item) => {
@@ -455,19 +662,69 @@ const ActionConfirmModal = ({
                 </div>
               )}
 
-              {/* Next Signatory Pathway Card (Gen-Z SaaS Style) */}
+              {/* Next Signatory / Pathway Card (Dynamic Presentation) */}
               {nextActorData && (
-                <div className="mx-6 my-4 p-3 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-xs transition-all">
+                <div className={`mx-6 my-4 p-3 rounded-xl border flex items-center justify-between text-xs transition-all ${
+                  nextActorData.type === 'COMPLETED'
+                    ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-900'
+                    : nextActorData.type === 'DCC'
+                      ? 'bg-blue-50/70 border-blue-200/80 text-blue-900'
+                      : nextActorData.type === 'REJECTED'
+                        ? 'bg-rose-50/70 border-rose-200/80 text-rose-900'
+                        : nextActorData.type === 'RETURNED'
+                          ? 'bg-amber-50/70 border-amber-200/80 text-amber-900'
+                          : 'bg-blue-50/60 border-blue-100 text-slate-900'
+                }`}>
                   <div className="flex items-center gap-3 min-w-0">
-                    {/* Avatar อิงจากตัวอักษรแรกของชื่อจริง */}
-                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[13px] shadow-sm shrink-0">
-                      {nextActorData.initials}
-                    </div>
+                    {/* Left Icon / Avatar */}
+                    {nextActorData.type === 'COMPLETED' ? (
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <CheckCircle size={18} strokeWidth={2.2} />
+                      </div>
+                    ) : nextActorData.type === 'DCC' ? (
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <Building2 size={18} strokeWidth={2} />
+                      </div>
+                    ) : nextActorData.type === 'REJECTED' ? (
+                      <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <XCircle size={18} strokeWidth={2} />
+                      </div>
+                    ) : nextActorData.type === 'RETURNED' ? (
+                      <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <RotateCcw size={18} strokeWidth={2} />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[13px] shadow-xs shrink-0">
+                        {nextActorData.initials}
+                      </div>
+                    )}
+
                     <div className="min-w-0">
-                      <p className="text-[11px] text-blue-600 font-medium mb-0.5">
+                      <p className={`text-[11px] font-semibold mb-0.5 ${
+                        nextActorData.type === 'COMPLETED'
+                          ? 'text-emerald-800'
+                          : nextActorData.type === 'DCC'
+                            ? 'text-blue-900'
+                            : nextActorData.type === 'REJECTED'
+                              ? 'text-rose-800'
+                              : nextActorData.type === 'RETURNED'
+                                ? 'text-amber-800'
+                                : 'text-blue-600'
+                      }`}>
                         {nextActorData.title}
                       </p>
-                      {React.isValidElement(nextActorData.originalValue) && nextActorData.originalValue.props?.['data-testid'] ? (
+
+                      {nextActorData.subtitle ? (
+                        <p className={`text-xs ${
+                          nextActorData.type === 'COMPLETED'
+                            ? 'text-emerald-700 font-medium'
+                            : nextActorData.type === 'DCC'
+                              ? 'text-blue-700 font-medium'
+                              : 'text-slate-600'
+                        }`}>
+                          {nextActorData.subtitle}
+                        </p>
+                      ) : React.isValidElement(nextActorData.originalValue) && nextActorData.originalValue.props?.['data-testid'] ? (
                         nextActorData.originalValue
                       ) : (
                         <p className="text-slate-900 font-semibold text-[13px] truncate">
@@ -481,8 +738,26 @@ const ActionConfirmModal = ({
                       )}
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-white border border-blue-100 flex items-center justify-center shadow-sm shrink-0">
-                    <Send className="w-4 h-4 text-blue-600 shrink-0 relative -left-px mt-px" strokeWidth={2}/>
+
+                  {/* Right Status / Action Icon */}
+                  <div className={`w-8 h-8 rounded-full bg-white border flex items-center justify-center shadow-xs shrink-0 ${
+                    nextActorData.type === 'COMPLETED'
+                      ? 'border-emerald-200 text-emerald-600'
+                      : nextActorData.type === 'DCC'
+                        ? 'border-blue-200 text-blue-600'
+                        : nextActorData.type === 'REJECTED'
+                          ? 'border-rose-200 text-rose-600'
+                          : nextActorData.type === 'RETURNED'
+                            ? 'border-amber-200 text-amber-600'
+                            : 'border-blue-100 text-blue-600'
+                  }`}>
+                    {nextActorData.type === 'COMPLETED' ? (
+                      <CheckCircle className="w-4 h-4" strokeWidth={2.2} />
+                    ) : nextActorData.type === 'DCC' ? (
+                      <FileCheck className="w-4 h-4" strokeWidth={2} />
+                    ) : (
+                      <Send className="w-4 h-4 relative -left-px mt-px" strokeWidth={2} />
+                    )}
                   </div>
                 </div>
               )}
