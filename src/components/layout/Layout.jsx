@@ -1,6 +1,8 @@
 import React from 'react';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import { ErrorBoundary } from '../ErrorBoundary';
+
 const Layout = () => {
   const location = useLocation();
 
@@ -18,7 +20,9 @@ const Layout = () => {
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-50">
           {/* Spacing & Scroll Container */}
           <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 w-full max-w-full min-w-0 h-full scroll-smooth custom-scrollbar">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
       </div>

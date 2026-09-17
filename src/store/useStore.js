@@ -2844,6 +2844,17 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
+  // ─── External Document Family Lineage Selector ──────────────────────────────
+  getExternalDocumentFamily: (docNoOrId) => {
+    const state = get();
+    if (!docNoOrId) return [];
+    const target = String(docNoOrId).split('-SUPERSEDED')[0].split('_SUPERSEDED')[0].trim().toUpperCase();
+    return (state.externalDocuments || []).filter(d => {
+      const code = String(d.docNo || d.edCode || d.doc_code || d.docCode || d.id || '').split('-SUPERSEDED')[0].split('_SUPERSEDED')[0].trim().toUpperCase();
+      return code === target || String(d.id) === String(docNoOrId);
+    });
+  },
+
   // ─── External Document Controlled Copy Disposition Handler ────────────────
   recordExternalCopyDisposition: (docId, copyNumber, dispositionData = {}) => set((state) => {
     const {
@@ -3814,22 +3825,39 @@ const useStore = create(persist((set, get) => ({
         }
       } else if (newDocStatus === 'OBSOLETE_ARCHIVED' || newDocStatus === 'OBSOLETE') {
         const obsEffDate = matchingReq?.effectiveDate || matchingReq?.obsoleteEffectiveDate || doc.obsoleteEffectiveDate || doc.effectiveDate || new Date().toISOString().split('T')[0];
-        updatedDocs = updatedDocs.map(d => (d.id === doc.id || (doc.edCode && (d.edCode === doc.edCode || d.doc_code === doc.edCode))) ? {
-          ...d,
-          status: 'OBSOLETE',
-          is_obsolete: true,
-          obsoletedAt: new Date().toISOString(),
-          obsoleteDate: obsEffDate,
-          effectiveDate: obsEffDate,
-          obsoleteEffectiveDate: obsEffDate,
-          obsoleteApproverId: state.currentUser?.id || doc.approverId,
-          controlledCopies: (d.controlledCopies || []).map(c => {
-            if (c.status !== 'DESTROYED' && c.status !== 'RECALLED' && c.status !== 'ARCHIVED_OBSOLETE') {
-              return { ...c, status: 'PENDING_RECALL' };
-            }
-            return c;
-          })
-        } : d);
+        const canonicalTargetCode = String(doc.edCode || doc.doc_code || doc.docNo || matchingReq?.edCode || task.docCode || '').trim();
+        const baseTargetId = String(doc.id).split('-SUPERSEDED')[0].split('_SUPERSEDED')[0].trim();
+
+        // 1. Cascade Obsolete: Mark EVERY revision/edition sharing this document code as OBSOLETE
+        updatedDocs = updatedDocs.map(d => {
+          const dCode = String(d.edCode || d.doc_code || d.docNo || '').trim();
+          const dId = String(d.id || '').trim();
+          const isMatch = (canonicalTargetCode && dCode === canonicalTargetCode) ||
+                          (baseTargetId && dId.startsWith(baseTargetId)) ||
+                          d.id === doc.id;
+
+          if (isMatch) {
+            return {
+              ...d,
+              status: 'OBSOLETE_ARCHIVED',
+              is_obsolete: true,
+              is_superseded: false,
+              obsoletedAt: new Date().toISOString(),
+              obsoleteDate: obsEffDate,
+              effectiveDate: obsEffDate,
+              obsoleteEffectiveDate: obsEffDate,
+              obsoleteApproverId: state.currentUser?.id || doc.approverId,
+              archivedReason: matchingReq?.changeReason || matchingReq?.reason || doc.obsoleteReason || 'เอกสารถูกยกเลิกการใช้งาน (OBSOLETE)',
+              controlledCopies: (d.controlledCopies || []).map(c => {
+                if (c.status !== 'DESTROYED' && c.status !== 'RECALLED' && c.status !== 'ARCHIVED_OBSOLETE') {
+                  return { ...c, status: 'PENDING_RECALL' };
+                }
+                return c;
+              })
+            };
+          }
+          return d;
+        });
 
         // Notify Requester
         if (requesterId) {

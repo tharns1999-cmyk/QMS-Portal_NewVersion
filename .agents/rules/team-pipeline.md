@@ -1,5 +1,5 @@
 ---
-trigger: model_decision
+trigger: manual
 description: Use this rule when writing, refactoring, modifying, or fixing code in the web application.
 ---
 

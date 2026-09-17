@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   X, Check, XCircle, FileText, ShieldCheck, Eye, Bell,
   Clock, CheckCircle2, AlertCircle, AlertTriangle,
@@ -76,8 +76,12 @@ const TimelineNode = ({ item, isLast }) => {
           <span className="font-bold text-slate-800 text-[11px]">{item.stepName || item.step}</span>
           <span className="text-[10px] font-mono text-slate-400 shrink-0">{item.date ? fmtDateTime(item.date) : "รอดำเนินการ"}</span>
         </div>
-        <p className="text-[11px] text-slate-600">โดย: <span className="font-bold text-slate-700">{item.userName || "-"}</span>{item.userRole ? <span className="text-slate-400"> ({item.userRole})</span> : null}</p>
-        {item.comment && <p className="text-[11px] text-slate-500 bg-white p-2 rounded-lg border border-slate-200/60 mt-1 leading-relaxed italic">&ldquo;{item.comment}&rdquo;</p>}
+        <p className="text-[11px] text-slate-600 truncate">โดย: <span className="font-bold text-slate-700">{item.userName || "-"}</span>{item.userRole ? <span className="text-slate-400"> ({item.userRole})</span> : null}</p>
+        {item.comment && (
+          <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200/80 mt-1 leading-relaxed italic break-words [overflow-wrap:anywhere] whitespace-pre-wrap min-w-0 max-w-full">
+            &ldquo;{item.comment}&rdquo;
+          </p>
+        )}
       </div>
     </div>
   );
@@ -125,6 +129,13 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
   const [returnReasonError, setReturnReasonError] = useState("");
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   const isReview   = task.type === "EXT_REVIEW"    || task.type === "EXTERNAL_REVIEW";
   const isApproval = task.type === "EXT_APPROVAL"  || task.type === "EXTERNAL_APPROVAL";
@@ -266,7 +277,7 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
   if (!doc) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-slate-950/50 backdrop-blur-xs overflow-hidden">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0" />
 
       <motion.div
@@ -275,30 +286,29 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.97, opacity: 0, y: 16 }}
         transition={{ type: "spring", stiffness: 340, damping: 32 }}
-        className="relative w-full max-w-5xl bg-slate-50 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 my-4"
-        style={{ maxHeight: "calc(100vh - 2rem)" }}
+        className="relative w-full max-w-5xl h-[88vh] max-h-[850px] min-h-[550px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200/80 z-10"
       >
         {/* HEADER */}
-        <div className={`bg-gradient-to-r ${hp.bg} px-6 py-4 shrink-0`}>
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0"><hp.Icon size={22} className="text-white" /></div>
-              <div className="min-w-0">
-                <h2 className="text-white font-bold text-lg leading-tight tracking-tight">{hp.label}</h2>
-                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${hp.badge}`}>{hp.sub}</span>
-                  <span className="text-xs font-mono text-white/70">{reqCode}</span>
-                  <span className="text-white/40">·</span>
-                  <TypeBadge type={task.extAction === "UPDATE" ? "REVISION" : task.extAction || "NEW"} />
-                </div>
+        <div className="bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+               <hp.Icon size={20} className="text-slate-700" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-slate-800 font-bold text-base leading-tight tracking-tight">{hp.label}</h2>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">{hp.sub}</span>
+                <span className="text-[11px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{reqCode}</span>
+                <span className="text-slate-300">·</span>
+                <TypeBadge type={task.extAction === "UPDATE" ? "REVISION" : task.extAction || "NEW"} />
               </div>
             </div>
-            <button type="button" onClick={onClose} className="text-white/70 hover:text-white hover:bg-white/15 p-2 rounded-xl transition-colors shrink-0 cursor-pointer" title="ปิดหน้าต่าง"><X size={20} /></button>
           </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700 hover:bg-slate-50 p-2 rounded-xl transition-colors shrink-0 cursor-pointer border border-transparent hover:border-slate-200" title="ปิดหน้าต่าง"><X size={20} /></button>
         </div>
 
         {/* BODY */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/40 custom-scrollbar space-y-5">
           {returnFeedback && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
               <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0"><AlertTriangle size={18} /></div>
@@ -407,7 +417,7 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
                 {returnFeedback ? (
                   <div className="p-3.5 bg-orange-50 border border-orange-200 rounded-xl space-y-2 text-xs">
                     <div className="flex items-center gap-2 font-bold text-orange-800"><AlertTriangle size={14} className="text-orange-600 shrink-0" />บันทึกเหตุผลจากผู้ตรวจสอบ:</div>
-                    <p className="text-slate-700 leading-relaxed pl-4 italic">&ldquo;{returnFeedback}&rdquo;</p>
+                    <p className="text-slate-700 leading-relaxed pl-4 italic break-words [overflow-wrap:anywhere] whitespace-pre-wrap min-w-0 max-w-full">&ldquo;{returnFeedback}&rdquo;</p>
                     <p className="text-slate-400 pl-4">บันทึกโดย: {doc?.reviewerName || doc?.approverName || request?.reviewerName || request?.approverName || "ผู้มีอำนาจลงนาม"}</p>
                   </div>
                 ) : (
@@ -422,9 +432,9 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
                       id="ext-action-comment"
                       value={comment}
                       onChange={(e) => { setComment(e.target.value); if (returnReasonError) setReturnReasonError(""); }}
-                      placeholder={isReview ? "ระบุความเห็นหรือข้อสังเกตจากการทบทวน…" : "ระบุความเห็นประกอบการพิจารณาอนุมัติ…"}
-                      rows={4}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all outline-none resize-none text-sm text-slate-800 placeholder:text-slate-400 font-medium leading-relaxed shadow-sm"
+                      placeholder="ระบุเหตุผล ข้อเสนอแนะ หรือสิ่งที่ต้องปรับปรุงเพิ่มเติม..."
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all outline-hidden resize-none min-h-[88px]"
                     />
                     {returnReasonError && <p className="text-xs text-rose-600 font-semibold flex items-center gap-1"><AlertCircle size={13} /> {returnReasonError}</p>}
                     <p className="text-[11px] text-slate-400">* หากต้องการส่งกลับแก้ไข กรุณาระบุเหตุผลอย่างน้อย 5 ตัวอักษร</p>
@@ -436,15 +446,15 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
         </div>
 
         {/* FOOTER */}
-        <div className="bg-white border-t border-slate-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
-          <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition-colors cursor-pointer">ยกเลิก (Cancel)</button>
-          <div className="flex items-center gap-3">
+        <div className="shrink-0 px-6 py-3.5 bg-white border-t border-slate-200/80 flex items-center justify-between">
+          <button type="button" onClick={onClose} className="inline-flex items-center h-9 px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 bg-transparent hover:bg-slate-50 rounded-xl transition-colors cursor-pointer whitespace-nowrap">ยกเลิก (Cancel)</button>
+          <div className="flex items-center gap-2.5">
             {isAck ? (
-              <button type="button" onClick={() => handleAction("APPROVE")} className="px-6 py-2.5 text-sm font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"><Bell size={16} /> รับทราบ (Acknowledge)</button>
+              <button type="button" onClick={() => handleAction("APPROVE")} className="inline-flex items-center gap-1.5 h-9 px-5 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 active:bg-sky-800 rounded-xl shadow-xs transition-all cursor-pointer whitespace-nowrap"><Bell size={14} /> รับทราบ (Acknowledge)</button>
             ) : (
               <>
-                <button type="button" onClick={() => handleAction("REJECT")} className="px-5 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer"><XCircle size={16} /> ส่งกลับแก้ไข</button>
-                <button type="button" onClick={() => handleAction("APPROVE")} className={`px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-sm transition-all flex items-center gap-2 cursor-pointer ${isReview ? "bg-indigo-600 hover:bg-indigo-700" : "bg-emerald-600 hover:bg-emerald-700"}`}><Check size={16} />{isReview ? "ยืนยันผลการทบทวน (Submit Review)" : "อนุมัติ (Approve)"}</button>
+                <button type="button" onClick={() => handleAction("REJECT")} className="inline-flex items-center gap-1.5 h-9 px-4 py-2 rounded-xl text-xs font-medium text-amber-700 bg-amber-50/80 hover:bg-amber-100/80 border border-amber-200/80 transition-all whitespace-nowrap shadow-2xs cursor-pointer"><RotateCcw size={14} /> ส่งกลับแก้ไข (Return)</button>
+                <button type="button" onClick={() => handleAction("APPROVE")} className={`inline-flex items-center gap-1.5 h-9 px-5 py-2 rounded-xl text-xs font-medium text-white shadow-xs transition-all cursor-pointer whitespace-nowrap ${isReview ? "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-indigo-600/20" : "bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-emerald-600/20"}`}><Check size={15} />{isReview ? "ยืนยันผลการทบทวน (Submit Review)" : "อนุมัติ (Approve)"}</button>
               </>
             )}
           </div>

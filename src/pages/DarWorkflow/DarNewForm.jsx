@@ -703,7 +703,7 @@ const DarNewForm = () => {
             isOpen={showConfirm}
             onClose={() => setShowConfirm(false)}
             onConfirm={executeSubmit}
-            title="ยืนยันการส่งคำร้องขอขึ้นทะเบียนเอกสารใหม่ (New Document DAR)"
+            title="ยืนยันการส่งคำร้องขอขึ้นทะเบียนเอกสารใหม่ (Confirm New Document Registration)"
             actionType="submit"
             confirmText="ยืนยันการส่งคำร้องขอ"
             cancelText="ยกเลิก / กลับไปแก้ไข"
@@ -711,83 +711,73 @@ const DarNewForm = () => {
               {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
-                  <span className="font-medium text-slate-800">
-                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
-                  </span>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-800 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    <span>{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} • แผนก {currentUser?.department || 'PD'}</span>
+                  </div>
                 )
               },
               {
                 label: 'รหัสเอกสาร',
                 value: (
-                  <span className="font-mono font-bold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-indigo-100">
+                  <span className="font-mono text-xs font-semibold px-2.5 py-1 bg-white text-blue-600 border border-blue-200 rounded-lg shadow-2xs">
                     {getPreviewCode()}
                   </span>
                 )
               },
               {
-                label: 'ชนิดและประเภทเอกสาร',
+                label: 'ชนิดเอกสาร',
                 value: (
-                  <span className="font-medium text-slate-700">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-slate-100/90 text-slate-700 border border-slate-200 text-xs font-medium">
                     {selectedDocTypeObj?.nameTh || formData.docType} ({formData.docType})
                   </span>
                 )
               },
               {
                 label: 'ชื่อเอกสาร',
-                value: (
-                  <span className="text-sm sm:text-[15px] font-bold text-[#1E1E1E] leading-relaxed">
-                    {formData.title}
-                  </span>
-                )
+                value: formData.title
               },
               {
                 label: 'รายละเอียดคำร้องขอ',
-                value: (
-                  <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.requestDetail}
-                  </div>
-                )
+                value: formData.requestDetail
               },
               {
                 label: 'เหตุผลการร้องขอ',
-                value: (
-                  <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.requestReason}
-                  </div>
-                )
+                value: formData.requestReason
               },
               {
                 label: 'มาตรฐานที่เกี่ยวข้อง',
                 value: (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <div className="flex flex-wrap gap-1.5 pt-0.5 break-words leading-normal">
                     {(formData.relatedStandards || []).length > 0 ? (
                       formData.relatedStandards.map((std, idx) => (
-                        <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#F5F5F5] text-slate-700 border border-[#E5E5E5]">
+                        <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100/80 text-slate-700 border border-slate-200 whitespace-nowrap">
                           {std === 'อื่น ๆ (Others)' ? `อื่นๆ: ${formData.otherStandardDetail || '-'}` : std}
                         </span>
                       ))
                     ) : (
-                      <span className="text-slate-400 text-xs">ระเบียบปฏิบัติการทั่วไป (General Operation)</span>
+                      <span className="text-slate-500 text-xs break-words leading-normal">ระเบียบปฏิบัติการทั่วไป (General Operation)</span>
                     )}
                   </div>
                 )
               },
               {
-                label: 'ระดับชั้นความลับและการเข้าถึง',
+                label: 'ระดับชั้นความลับ',
                 value: (() => {
                   const scopeMeta = ACCESS_SCOPE_METADATA[formData.access_control?.scope || 'GENERAL'] || ACCESS_SCOPE_METADATA.GENERAL || { label: 'ทั่วไป (General)', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                   return (
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         {scopeMeta.label}
                       </span>
                       {formData.access_control?.scope === 'TARGETED' && (
-                        <span className="text-xs text-[#666666] font-mono">
+                        <span className="text-xs text-slate-500 font-mono">
                           ({(formData.access_control?.authorized_depts || []).join(', ')})
                         </span>
                       )}
                       {formData.access_control?.scope === 'RESTRICTED' && (
-                        <span className="text-xs text-[#666666] font-mono">
+                        <span className="text-xs text-slate-500 font-mono">
                           (Min Level: {formData.access_control?.min_access_level || 4})
                         </span>
                       )}
@@ -798,10 +788,16 @@ const DarNewForm = () => {
               {
                 label: 'ไฟล์เอกสารแนบ',
                 value: formData.file ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F5F5F5] border border-[#E5E5E5] text-slate-700 text-xs font-medium">
-                    <FileText size={15} className="text-rose-500 shrink-0" />
-                    <span className="font-medium truncate">{formData.file.name}</span>
-                    <span className="text-slate-400">({(formData.file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                  <div className="inline-flex items-center justify-between p-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors w-full sm:w-auto min-w-[240px]">
+                    <div className="flex items-center gap-2 min-w-0 mr-2">
+                      <FileText size={16} className="text-rose-500 shrink-0" />
+                      <span className="max-w-[180px] truncate text-xs font-medium text-slate-800" title={formData.file.name}>
+                        {formData.file.name}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400 ml-2 whitespace-nowrap shrink-0">
+                      {(formData.file.size / (1024 * 1024)).toFixed(2)} MB
+                    </span>
                   </div>
                 ) : (
                   <span className="text-slate-400 text-xs">ไม่มีไฟล์แนบ</span>
@@ -812,30 +808,31 @@ const DarNewForm = () => {
                 value: isFormDocument ? (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
                     <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                    <span>แบบฟอร์มเปล่า (FM) ดิจิทัล - Bypass การออกเล่มสำเนาควบคุม (ดาวน์โหลดตามระดับสิทธิ์การเข้าถึง)</span>
+                    <span>แบบฟอร์มเปล่า (FM) ดิจิทัล - Bypass การออกเล่มสำเนาควบคุม</span>
                   </div>
                 ) : (() => {
                   const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
                   const allList = allocs?.allAllocations || [];
                   return (
-                    <div className="space-y-1.5 pt-0.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {allList.map((d, idx) => {
-                          const isOrigin = d.copyNo === '01' || d.isOwner || idx === 0;
-                          return (
-                            <span 
-                              key={idx} 
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${
-                                isOrigin
-                                  ? 'bg-indigo-50 text-indigo-800 border-indigo-200 font-bold shadow-2xs'
-                                  : 'bg-[#E5F4FF] text-[#007BE5] border-indigo-100'
-                              }`}
-                            >
-                              Copy {d.copyNo || String(idx + 1).padStart(2, '0')} (เล่มควบคุม): {cleanLocationName(d.station_name || d.locationName || d.name || d.location || 'จุดหน้างาน')}
-                            </span>
-                          );
-                        })}
-                      </div>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {allList.map((d, idx) => {
+                        const isOrigin = d.copyNo === '01' || d.isOwner || idx === 0;
+                        const copyNum = d.copyNo || String(idx + 1).padStart(2, '0');
+                        const locName = cleanLocationName(d.station_name || d.locationName || d.name || d.location || 'จุดหน้างาน');
+                        return (
+                          <span 
+                            key={idx} 
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap border ${
+                              isOrigin
+                                ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200/80 font-semibold shadow-2xs'
+                                : 'bg-slate-100/80 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            <span>📄</span>
+                            <span>Copy {copyNum}: {locName}</span>
+                          </span>
+                        );
+                      })}
                     </div>
                   );
                 })()

@@ -152,7 +152,7 @@ const ActionConfirmModal = ({
       default:
         return {
           icon: <FileText className="w-5 h-5 text-blue-600" />,
-          btn: 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20 active:scale-[0.98]',
+          btn: 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs shadow-blue-500/20 active:scale-[0.98]',
           confirmDefault: 'ยืนยันการส่งคำร้องขอ',
           badgeBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
           accentBorder: 'border-blue-200/60'
@@ -170,7 +170,7 @@ const ActionConfirmModal = ({
     let docTitleItem = null;
     let revItem = null;
     let nextStepItem = null;
-    let detailItem = null;
+    const detailItems = [];
     const metadataItems = [];
 
     items.forEach((item) => {
@@ -205,13 +205,6 @@ const ActionConfirmModal = ({
       ) {
         docTitleItem = item;
       }
-      // Detail or summary textarea blocks
-      else if (
-        !detailItem &&
-        (label.includes('รายละเอียด') || label.includes('สรุปการแก้ไข') || label.includes('ผลกระทบ') || label.includes('ความเห็นประกอบ'))
-      ) {
-        detailItem = item;
-      }
       // Combined document field (e.g. "[SOP-QA-01] Work Instruction...")
       else if (!docCodeItem && (label.includes('เอกสาร') || label.includes('เอกสารที่ขอยกเลิก')) && textVal.startsWith('[')) {
         const match = textVal.match(/^\[(.*?)\]\s*(.*)$/);
@@ -224,6 +217,17 @@ const ActionConfirmModal = ({
           docCodeItem = item;
         }
       }
+      // Detail or summary callout blocks (Unified Purpose & Justification)
+      else if (
+        label.includes('รายละเอียด') ||
+        label.includes('เหตุผล') ||
+        label.includes('วัตถุประสงค์') ||
+        label.includes('สรุปการแก้ไข') ||
+        label.includes('ผลกระทบ') ||
+        label.includes('ความเห็นประกอบ')
+      ) {
+        detailItems.push(item);
+      }
       // Standard metadata
       else {
         metadataItems.push(item);
@@ -235,7 +239,8 @@ const ActionConfirmModal = ({
       docTitleItem,
       revItem,
       nextStepItem,
-      detailItem,
+      detailItems,
+      detailItem: detailItems[0] || null, // backward compatibility
       metadataItems
     };
   }, [items]);
@@ -323,6 +328,16 @@ const ActionConfirmModal = ({
     return item.value;
   };
 
+  // Parse title into main heading and subtext if contains parentheses
+  const titleParts = useMemo(() => {
+    if (typeof title !== 'string') return { main: title, sub: null };
+    const match = title.match(/^(.*?)\s*(\(.*?\))$/);
+    if (match) {
+      return { main: match[1], sub: match[2] };
+    }
+    return { main: title, sub: null };
+  }, [title]);
+
   const hasHeroSection = !!(categorized.docCodeItem || categorized.docTitleItem || categorized.revItem);
 
   return (
@@ -334,7 +349,7 @@ const ActionConfirmModal = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 6 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col transition-all animate-in fade-in zoom-in-95 duration-150"
+            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col transition-all animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Strip */}
@@ -344,8 +359,13 @@ const ActionConfirmModal = ({
                   {theme.icon}
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-base font-bold tracking-tight text-slate-900 truncate">
-                    {title}
+                  <h2 className="text-base font-bold tracking-tight text-slate-900 leading-snug break-words flex flex-wrap items-baseline gap-1.5">
+                    <span>{titleParts.main}</span>
+                    {titleParts.sub && (
+                      <span className="text-xs font-normal text-slate-500">
+                        {titleParts.sub}
+                      </span>
+                    )}
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5 font-normal">
                     กรุณาตรวจสอบรายละเอียดสรุปก่อนดำเนินการยืนยัน
@@ -367,43 +387,48 @@ const ActionConfirmModal = ({
             <div className="overflow-y-auto flex-1 p-0 custom-scrollbar divide-y divide-slate-100">
               {/* Hero Document Identity Card */}
               {hasHeroSection && (
-                <div className="mx-6 mt-4 p-4 rounded-xl bg-slate-50/80 border border-slate-200/70 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    {categorized.docCodeItem && (
-                      <div className="flex items-center gap-2">
-                        {React.isValidElement(categorized.docCodeItem.value) ? (
-                          categorized.docCodeItem.value
-                        ) : (
-                          <span className="font-mono font-bold text-xs text-blue-600 bg-blue-50/80 px-2.5 py-1 rounded-md border border-blue-200/50">
-                            {renderItemValue(categorized.docCodeItem)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {categorized.revItem && (
-                      <div className="flex items-center">
-                        {renderItemValue(categorized.revItem)}
-                      </div>
+                <div className="mx-6 mt-4 p-4 rounded-xl bg-slate-50/70 border border-slate-200/80 mb-3 flex items-start gap-3.5">
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200/60 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                    <FileText size={18} strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {categorized.docCodeItem && (
+                        <div className="flex items-center gap-2">
+                          {React.isValidElement(categorized.docCodeItem.value) ? (
+                            categorized.docCodeItem.value
+                          ) : (
+                            <span className="font-mono text-xs font-semibold px-2.5 py-1 bg-white text-blue-600 border border-blue-200 rounded-lg shadow-2xs">
+                              {renderItemValue(categorized.docCodeItem)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {categorized.revItem && (
+                        <div className="flex items-center">
+                          {renderItemValue(categorized.revItem)}
+                        </div>
+                      )}
+                    </div>
+
+                    {categorized.docTitleItem && (
+                      <h3 className="text-base font-semibold text-slate-900 leading-snug break-words">
+                        {renderItemValue(categorized.docTitleItem)}
+                      </h3>
                     )}
                   </div>
-
-                  {categorized.docTitleItem && (
-                    <div className="text-sm font-semibold text-slate-900 leading-snug line-clamp-2">
-                      {renderItemValue(categorized.docTitleItem)}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* Compact Metadata Grid (2-Column Key-Value) */}
+              {/* Compact Spec-Sheet Grid (2-Column Key-Value) */}
               {categorized.metadataItems.length > 0 && (
-                <div className="px-6 py-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="px-6 py-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3.5 text-xs">
                   {categorized.metadataItems.map((item, idx) => (
                     <div key={idx} className="space-y-1 min-w-0">
                       <p className="text-slate-400 font-medium text-[11px] tracking-wide">
                         {item.label}
                       </p>
-                      <div className="text-slate-800 font-semibold break-all break-words min-w-0 [overflow-wrap:anywhere] leading-snug">
+                      <div className="text-slate-800 font-medium break-words leading-normal min-w-0">
                         {renderItemValue(item)}
                       </div>
                     </div>
@@ -411,23 +436,28 @@ const ActionConfirmModal = ({
                 </div>
               )}
 
-              {/* Details / Comments Card (if present) */}
-              {categorized.detailItem && (
-                <div className="px-6 py-3">
-                  <div className="p-3 rounded-xl bg-slate-50/60 border border-slate-200/60 space-y-1">
-                    <p className="text-[11px] font-medium text-slate-400">
-                      {categorized.detailItem.label}
-                    </p>
-                    <div className="text-xs text-slate-700 leading-relaxed break-all break-words [overflow-wrap:anywhere]">
-                      {renderItemValue(categorized.detailItem)}
-                    </div>
+              {/* Unified Purpose & Justification Callout */}
+              {(categorized.detailItems?.length > 0 || categorized.detailItem) && (
+                <div className="px-6 py-2">
+                  <div className="bg-slate-50/60 border border-slate-200/80 rounded-xl p-3.5 mt-2 space-y-3">
+                    {(categorized.detailItems?.length > 0 ? categorized.detailItems : [categorized.detailItem]).map((item, idx) => (
+                      <div key={idx} className={idx > 0 ? "pt-2.5 border-t border-slate-200/60" : ""}>
+                        <p className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1.5">
+                          <FileText size={13} className="text-slate-400 shrink-0" />
+                          <span>{item.label}</span>
+                        </p>
+                        <div className="text-xs text-slate-700 leading-relaxed break-words whitespace-pre-wrap pl-3 border-l-2 border-slate-300/70">
+                          {renderItemValue(item)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
               {/* Next Signatory Pathway Card (Gen-Z SaaS Style) */}
               {nextActorData && (
-                <div className="mx-6 mb-5 p-3 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-xs transition-all">
+                <div className="mx-6 my-4 p-3 rounded-xl bg-blue-50/60 border border-blue-100 flex items-center justify-between text-xs transition-all">
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Avatar อิงจากตัวอักษรแรกของชื่อจริง */}
                     <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[13px] shadow-sm shrink-0">
@@ -480,11 +510,11 @@ const ActionConfirmModal = ({
             </div>
 
             {/* Action Footer Buttons (Linear-Grade Polish) */}
-            <div className="px-6 py-3.5 bg-slate-50/80 border-t border-slate-150 flex items-center justify-end gap-2.5 shrink-0">
+            <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
-                className="h-9 px-4 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-colors cursor-pointer outline-none"
+                className="text-xs font-medium text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer outline-none"
                 disabled={isLoading || isSuccess}
               >
                 {cancelText || 'ยกเลิก / กลับไปแก้ไข'}
@@ -493,7 +523,7 @@ const ActionConfirmModal = ({
                 type="button"
                 onClick={handleConfirmClick}
                 disabled={isConfirmDisabled}
-                className={`h-9 px-4 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 min-w-[130px] cursor-pointer outline-none ${
+                className={`text-xs font-medium px-5 py-2.5 rounded-xl shadow-xs shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 min-w-[140px] cursor-pointer outline-none ${
                   isConfirmDisabled
                     ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none'
                     : theme.btn

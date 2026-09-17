@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
-import toast from 'react-hot-toast';
-import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Sparkles, Zap, Globe, Lock, Building2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { FileText, CheckCircle, XCircle, Ban, ChevronLeft, Download, MessageSquare, ShieldAlert, Layers, Zap, Globe, Lock, Building2, X, RotateCcw, Check, AlertCircle, ArrowLeft } from 'lucide-react';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
@@ -13,7 +12,7 @@ import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 const TaskApprove = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { masterDepartments, tasks, dars, documents, timeline, processWorkflow, currentUser, canDownloadDocument, masterUsers } = useStore();
+  const { masterDepartments = [], tasks = [], dars = [], documents = [], timeline = [], processWorkflow, currentUser, canDownloadDocument, masterUsers = [] } = useStore();
   
   const [comment, setComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
@@ -22,9 +21,9 @@ const TaskApprove = () => {
   const [pendingAction, setPendingAction] = useState(null);
   const scrollRef = useRef(null);
 
-  const task = tasks.find(t => t.id === id);
-  const dar = task ? dars.find(d => d.id === task.darId) : null;
-  const darTimeline = dar ? timeline.filter(t => t.darId === dar.id) : [];
+  const task = (tasks || []).find(t => String(t.id) === String(id) || String(t.taskId) === String(id));
+  const dar = task ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) : null;
+  const darTimeline = dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
 
   // Dynamic extraction and assembly of approvalWorkflow for DAR
   const darWithWorkflow = useMemo(() => {
@@ -101,17 +100,57 @@ const TaskApprove = () => {
   };
 
   if (!task || !dar) {
-    return <div className="p-6 text-[#666666] font-medium">ไม่พบรายการงานที่ระบุ</div>;
+    return (
+      <div className="flex h-[80vh] items-center justify-center p-6">
+        <div className="card-surface p-8 text-center max-w-md shadow-xs border border-slate-200 rounded-2xl bg-white">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center mx-auto mb-4 text-amber-600">
+            <AlertCircle size={28} />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1.5">ไม่พบข้อมูลคำร้องหรือภารกิจนี้</h2>
+          <p className="text-xs text-slate-500 leading-relaxed mb-1">
+            รหัสงาน: <span className="font-mono font-bold text-slate-700">{id || '-'}</span>
+          </p>
+          <p className="text-xs text-slate-400 leading-relaxed mb-6">
+            คำร้องนี้อาจถูกประมวลผลเสร็จสิ้นแล้ว หรือไม่มีอยู่ในระบบฐานข้อมูลปัจจุบัน
+          </p>
+          <button 
+            type="button"
+            onClick={() => navigate('/tasks')} 
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+          >
+            <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  if (task.assigneeId !== currentUser.id) {
+  const isAssignee = !currentUser || !task.assigneeId || 
+    task.assigneeId === currentUser?.id || 
+    task.assigneeId === currentUser?.empId || 
+    task.assigneeName === currentUser?.name ||
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.role === 'DCC_ADMIN' ||
+    currentUser?.isDcc;
+
+  if (!isAssignee) {
     return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <div className="card-surface p-8 text-center max-w-md shadow-none border-rose-200">
-          <XCircle className="mx-auto mb-4 text-rose-500" size={56} strokeWidth={1.5}/>
-          <h2 className="text-xl font-bold mb-2 text-[#1E1E1E]">ไม่มีสิทธิ์เข้าถึงงานนี้</h2>
-          <p className="text-xs text-[#666666] leading-relaxed">คุณไม่มีสิทธิ์เข้าถึงงานนี้ หรือเป็นงานที่ถูกมอบหมายให้เจ้าหน้าที่ท่านอื่น</p>
-          <button onClick={() => navigate('/tasks')} className="mt-6 btn-primary w-full justify-center">กลับหน้า Inbox</button>
+      <div className="flex h-[80vh] items-center justify-center p-6">
+        <div className="card-surface p-8 text-center max-w-md shadow-xs border border-rose-200 rounded-2xl bg-white">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center mx-auto mb-4 text-rose-500">
+            <XCircle size={28} />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1.5">ไม่มีสิทธิ์เข้าถึงงานนี้</h2>
+          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+            งานนี้ถูกมอบหมายให้ผู้อนุมัติท่านอื่น หรือคุณไม่มีสิทธิ์เข้าถึงงานในขั้นตอนนี้
+          </p>
+          <button 
+            type="button"
+            onClick={() => navigate('/tasks')} 
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+          >
+            <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
+          </button>
         </div>
       </div>
     );
@@ -119,9 +158,9 @@ const TaskApprove = () => {
 
   // Use a pseudo-document for access rules since DAR is not in documents array yet
   const pseudoDoc = { department: dar.department, distributedTo: dar.distributedDepts || [] };
-  const canDownload = canDownloadDocument(pseudoDoc, currentUser);
-  const docInfo = getDarDocInfo(dar, documents);
-  const requesterName = getRequesterName(dar, masterUsers);
+  const canDownload = canDownloadDocument ? canDownloadDocument(pseudoDoc, currentUser) : false;
+  const docInfo = getDarDocInfo(dar, documents) || { docCode: '-', docType: '-', docRev: '-' };
+  const requesterName = getRequesterName(dar, masterUsers) || 'ผู้ร้องขอ';
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 
@@ -152,11 +191,8 @@ const TaskApprove = () => {
   };
 
   return (
-    <motion.div 
-      initial={{ x: 20, opacity: 0 }} 
-      animate={{ x: 0, opacity: 1 }} 
-      transition={{ duration: 0.2 }} 
-      className="h-[calc(100vh-100px)] flex gap-4 overflow-hidden -mx-4 -mb-8 px-4 pb-4"
+    <div 
+      className="h-[calc(100vh-100px)] flex gap-4 overflow-hidden -mx-4 -mb-8 px-4 pb-4 transition-all duration-200 ease-out"
     >
       {/* LEFT COLUMN: Details & Chat (40%) */}
       <div className="w-[40%] flex flex-col card-surface overflow-hidden">
@@ -165,15 +201,15 @@ const TaskApprove = () => {
            <button onClick={() => navigate('/tasks')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors">
              <ChevronLeft className="mr-1" size={16} /> ย้อนกลับ
            </button>
-           <div className="flex items-center gap-2">
-             <button
-               onClick={() => setIsInspectorOpen(true)}
-               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition-all cursor-pointer"
-               title="เปิดหน้าต่างตรวจสอบข้อมูลคำร้องครบถ้วน 6 มิติ"
-             >
-               <Sparkles size={13} /> ตรวจสอบ 6 มิติ
-             </button>
-             <h2 className="font-bold text-[#1E1E1E] text-sm flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsInspectorOpen(true)}
+                className="flex items-center px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition-all cursor-pointer"
+                title="เปิดหน้าต่างเอกสารฉบับเต็ม"
+              >
+                เอกสารฉบับเต็ม
+              </button>
+              <h2 className="font-bold text-[#1E1E1E] text-sm flex items-center gap-2">
                <FileText className="text-purple-600" size={16} /> อนุมัติเอกสาร
              </h2>
            </div>
@@ -271,17 +307,17 @@ const TaskApprove = () => {
                <MessageSquare size={16} /> ประวัติและข้อคิดเห็น (Workflow History)
              </h4>
              {darTimeline.map(tl => (
-               <div key={tl.id} className={`flex flex-col ${tl.userId === currentUser.id ? 'items-end' : 'items-start'}`}>
+               <div key={tl.id} className={`flex flex-col ${tl.userId === currentUser?.id ? 'items-end' : 'items-start'}`}>
                  <div className="flex items-baseline gap-1.5 mb-1 px-1">
                    <span className="text-xs font-bold text-slate-700">{tl.user}</span>
                    <span className="text-xs text-slate-400 font-mono">{tl.date}</span>
                  </div>
-                 <div className={`p-3.5 rounded-xl max-w-[90%] text-sm shadow-xs leading-relaxed ${tl.userId === currentUser.id ? 'bg-[#0D99FF] text-white rounded-tr-sm' : 'bg-white border border-[#E5E5E5] text-slate-800 rounded-tl-sm'}`}>
+                 <div className={`p-3.5 rounded-xl max-w-[90%] text-sm shadow-xs leading-relaxed ${tl.userId === currentUser?.id ? 'bg-[#0D99FF] text-white rounded-tr-sm' : 'bg-white border border-[#E5E5E5] text-slate-800 rounded-tl-sm'}`}>
                     {tl.isChat ? (
                       <p>{tl.comment}</p>
                     ) : (
                       <div>
-                        <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold mb-1 ${tl.userId === currentUser.id ? 'bg-white/20 text-white' : 'bg-[#F5F5F5] text-slate-700'}`}>
+                        <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold mb-1 ${tl.userId === currentUser?.id ? 'bg-white/20 text-white' : 'bg-[#F5F5F5] text-slate-700'}`}>
                            {tl.action}
                         </span>
                         <p>{tl.comment}</p>
@@ -296,37 +332,42 @@ const TaskApprove = () => {
         {/* Action Panel (Fixed Bottom) */}
         <div className="p-4 bg-white border-t border-slate-100 shadow-xs z-10">
           <textarea
-            rows="2"
+            rows="3"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full input-primary text-sm py-2.5 mb-3 bg-[#F5F5F5] focus:bg-white resize-none"
-            placeholder="พิมพ์ความคิดเห็น หรือเหตุผลประกอบการพิจารณาอนุมัติ..."
+            className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all outline-hidden resize-none min-h-[88px]"
+            placeholder="ระบุเหตุผล ข้อเสนอแนะ หรือสิ่งที่ต้องปรับปรุงเพิ่มเติม..."
           />
-          <div className="flex gap-2">
+          <div className="flex items-center justify-between gap-3 pt-3 mt-2 border-t border-slate-100">
+            {/* Left: Destructive Action */}
             <button
               disabled={!hasReadToBottom}
               onClick={() => handleAction('REJECT')}
-              className="flex-1 btn-secondary border-rose-200 text-rose-700 hover:bg-rose-50 justify-center disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold h-11"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 py-2 rounded-xl text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               title="ไม่อนุมัติและยกเลิกคำขอนี้ทันที"
             >
-              <Ban size={16} /> ไม่อนุมัติ (Reject)
+              <X size={15} /> ไม่อนุมัติ (Reject)
             </button>
-            <button
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('RETURN')}
-              className="flex-1 btn-secondary border-amber-200 text-amber-700 hover:bg-amber-50 justify-center disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold h-11"
-              title="ส่งกลับไปให้ Requester แก้ไข"
-            >
-              <XCircle size={16} /> ส่งกลับแก้ไข (Return)
-            </button>
-            <button
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('APPROVE')}
-              className="flex-[1.5] btn-primary bg-emerald-600 hover:bg-emerald-700 justify-center disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold h-11"
-              title="อนุมัติคำขอ"
-            >
-              <CheckCircle size={16} /> อนุมัติ (Approve)
-            </button>
+
+            {/* Right: Primary & Revision Actions */}
+            <div className="flex items-center gap-2.5">
+              <button
+                disabled={!hasReadToBottom}
+                onClick={() => handleAction('RETURN')}
+                className="inline-flex items-center gap-1.5 h-9 px-4 py-2 rounded-xl text-xs font-medium text-amber-700 bg-amber-50/80 hover:bg-amber-100/80 border border-amber-200/80 transition-all whitespace-nowrap shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="ส่งกลับไปให้ Requester แก้ไข"
+              >
+                <RotateCcw size={14} /> ส่งกลับแก้ไข (Return)
+              </button>
+              <button
+                disabled={!hasReadToBottom}
+                onClick={() => handleAction('APPROVE')}
+                className="inline-flex items-center gap-1.5 h-9 px-5 py-2 rounded-xl text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-all shadow-xs shadow-emerald-600/20 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="อนุมัติคำขอ"
+              >
+                <Check size={15} /> อนุมัติ (Approve)
+              </button>
+            </div>
           </div>
           {!hasReadToBottom && (
             <p className="text-xs text-rose-500 text-center mt-2 font-medium">⚠️ กรุณาเลื่อนอ่านเอกสารทางขวาให้จบเพื่อปลดล็อคปุ่ม</p>
@@ -405,7 +446,7 @@ const TaskApprove = () => {
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
         dar={darWithWorkflow}
         summaryData={[
-          { label: 'ผู้อนุมัติ', value: `${currentUser.name} (${currentUser.department})` },
+          { label: 'ผู้อนุมัติ', value: `${currentUser?.name || 'ผู้อนุมัติ'} (${currentUser?.department || '-'})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
           { label: 'ผลการพิจารณา', value: pendingAction === 'APPROVE' ? 'อนุมัติประกาศใช้ (Approved)' : pendingAction === 'REJECT' ? 'ไม่อนุมัติคำร้อง (Rejected)' : 'ส่งกลับแก้ไข (Revision Required)' },
           { label: 'ความเห็นประกอบ', value: comment || '-' },
@@ -444,7 +485,7 @@ const TaskApprove = () => {
           setShowConfirm(true);
         }}
       />
-    </motion.div>
+    </div>
   );
 };
 

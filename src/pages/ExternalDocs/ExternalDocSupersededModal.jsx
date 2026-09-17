@@ -58,6 +58,13 @@ const ExternalDocSupersededModal = ({
     return dateB - dateA;
   });
 
+  const isObsoleteStack = Boolean(
+    docGroup.isStackObsolete ||
+    docGroup.stackStatus === 'OBSOLETE' ||
+    docGroup.primaryDoc?.status === 'OBSOLETE' ||
+    docGroup.primaryDoc?.is_obsolete
+  );
+
   return (
     <AnimatePresence>
       <div 
@@ -83,14 +90,23 @@ const ExternalDocSupersededModal = ({
                 <span className="font-mono font-bold text-sm text-[#0D99FF] bg-[#E5F4FF] border border-[#B8E1FF] px-2.5 py-0.5 rounded-md shadow-2xs">
                   {docNo}
                 </span>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                  <Package size={12} className="text-amber-600" />
-                  <span>{supersededEditions.length} ฉบับตกรุ่น</span>
-                </span>
-                {activeEdition && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    Active: {activeEdition}
+                {isObsoleteStack ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                    <span>เอกสารถูกยกเลิกใช้งานแล้วทั้งระบบ (OBSOLETE)</span>
                   </span>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                      <Package size={12} className="text-amber-600" />
+                      <span>{supersededEditions.length} ฉบับตกรุ่น</span>
+                    </span>
+                    {activeEdition && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Active: {activeEdition}
+                      </span>
+                    )}
+                  </>
                 )}
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
                   <ShieldCheck size={12} className="text-slate-500" />
@@ -158,10 +174,17 @@ const ExternalDocSupersededModal = ({
                             {editionTag}
                           </span>
 
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100/70 text-amber-800 border border-amber-200">
-                            <Clock size={11} className="text-amber-600" />
-                            <span>ตกรุ่น (Superseded)</span>
-                          </span>
+                          {isObsoleteStack || editionDoc.status === 'OBSOLETE' || editionDoc.is_obsolete ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              <span>ยกเลิกถาวร (Obsolete)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100/70 text-amber-800 border border-amber-200">
+                              <Clock size={11} className="text-amber-600" />
+                              <span>ตกรุ่น (Superseded)</span>
+                            </span>
+                          )}
 
                           {replacedBy !== '-' && (
                             <span className="text-[11px] font-mono font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-flex items-center gap-1">

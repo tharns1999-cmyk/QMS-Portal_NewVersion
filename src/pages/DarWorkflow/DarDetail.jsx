@@ -148,10 +148,10 @@ const DarDetail = () => {
         <button
           type="button"
           onClick={() => setIsInspectorOpen(true)}
-          className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition-colors self-start sm:self-auto cursor-pointer"
+          className="inline-flex items-center h-8 px-3 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition-colors self-start sm:self-auto cursor-pointer"
+          title="เปิดหน้าต่างเอกสารฉบับเต็ม"
         >
-          <Sparkles size={14} strokeWidth={1.5} className="text-amber-500" />
-          <span>ตรวจสอบคำร้องครบ 6 มิติ (Inspector)</span>
+          <span>เอกสารฉบับเต็ม</span>
         </button>
       </div>
 

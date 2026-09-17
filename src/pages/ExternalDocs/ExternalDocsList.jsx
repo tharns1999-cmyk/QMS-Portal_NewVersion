@@ -658,8 +658,17 @@ const ExternalDocsList = () => {
           return dateB - dateA;
         });
 
+      // Determine overall stack lifecycle status:
+      // If ANY record in this stack is active, stack is ACTIVE.
+      // If there are NO active editions and at least one is OBSOLETE (or all are OBSOLETE), stack is OBSOLETE.
+      // Otherwise, if only superseded editions exist without an active or obsolete edition, it's SUPERSEDED.
+      const isStackObsolete = !activeEdition && obsoleteEditions.length > 0;
+      const stackStatus = activeEdition ? 'ACTIVE' : isStackObsolete ? 'OBSOLETE' : 'SUPERSEDED';
+
       // Authoritative representative doc for header display & fallback actions
-      const primaryDoc = activeEdition || obsoleteEditions[0] || supersededEditions[0] || sortedEditions[0];
+      const primaryDoc = isStackObsolete 
+        ? (obsoleteEditions[0] || sortedEditions[0]) 
+        : (activeEdition || supersededEditions[0] || sortedEditions[0]);
 
       stacks.push({
         docNo,
@@ -677,6 +686,8 @@ const ExternalDocsList = () => {
         obsoleteEditions,
         allEditions: sortedEditions,
         totalEditionsCount: sortedEditions.length,
+        stackStatus,
+        isStackObsolete,
         primaryDoc
       });
     });
@@ -686,13 +697,15 @@ const ExternalDocsList = () => {
 
   // Level 2 Compact Status Pill Badge Counts (Derived from Stacks + Total Copies)
   const statusCounts = useMemo(() => {
-    const active = docStacks.filter(s => Boolean(s.activeEdition)).length;
-    const superseded = docStacks.filter(s => s.supersededEditions.length > 0).length;
-    const obsolete = docStacks.filter(s => s.obsoleteEditions.length > 0).length;
+    const active = docStacks.filter(s => s.stackStatus === 'ACTIVE').length;
+    // Superseded tab ONLY counts documents that are NOT obsolete and have superseded editions
+    const superseded = docStacks.filter(s => s.stackStatus !== 'OBSOLETE' && s.supersededEditions.length > 0).length;
+    const obsolete = docStacks.filter(s => s.stackStatus === 'OBSOLETE').length;
     const total = docStacks.length;
 
     const totalSupersededCopies = categoryDocs.filter(d => 
-      d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded
+      (d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded) &&
+      d.status !== 'OBSOLETE' && d.status !== 'OBSOLETE_ARCHIVED' && !d.is_obsolete
     ).length;
 
     return { 
@@ -712,8 +725,8 @@ const ExternalDocsList = () => {
 
     allExternalDocs.forEach(doc => {
       if ((doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE') && !doc.is_superseded && !doc.is_obsolete && doc.status !== 'SUPERSEDED' && doc.status !== 'OBSOLETE') active++;
-      else if (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.is_superseded) superseded++;
       else if (doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED' || doc.is_obsolete) obsolete++;
+      else if (doc.status === 'SUPERSEDED' || doc.status === 'SUPERSEDED_ARCHIVED' || doc.is_superseded) superseded++;
     });
 
     const total = active + superseded + obsolete;
@@ -731,14 +744,16 @@ const ExternalDocsList = () => {
     return docStacks.filter(stack => {
       // 1. Status Filter in MY_DEPT (or Active in other main tabs)
       if (activeMainTab !== TAB_MY_DEPT) {
-        if (!stack.activeEdition) return false;
+        if (stack.stackStatus !== 'ACTIVE') return false;
       } else {
         if (statusFilter === 'ACTIVE') {
-          if (!stack.activeEdition) return false;
+          if (stack.stackStatus !== 'ACTIVE') return false;
         } else if (statusFilter === 'SUPERSEDED') {
-          if (stack.supersededEditions.length === 0) return false;
+          // Strictly exclude OBSOLETE documents from SUPERSEDED tab
+          if (stack.stackStatus === 'OBSOLETE' || stack.supersededEditions.length === 0) return false;
         } else if (statusFilter === 'OBSOLETE') {
-          if (stack.obsoleteEditions.length === 0) return false;
+          // Obsolete tab shows stacks that are OBSOLETE
+          if (stack.stackStatus !== 'OBSOLETE') return false;
         } else if (statusFilter === 'ALL') {
           // Keep all stacks
         }
@@ -1308,13 +1323,7 @@ const ExternalDocsList = () => {
                 <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
                   {[
                     { id: 'ACTIVE', label: 'มีผลบังคับใช้ (Active)', count: statusCounts.active },
-                    { 
-                      id: 'SUPERSEDED', 
-                      label: 'ฉบับตกรุ่น (Superseded)', 
-                      count: statusCounts.totalSupersededCopies > statusCounts.superseded
-                        ? `${statusCounts.superseded} (${statusCounts.totalSupersededCopies} ฉบับ)`
-                        : statusCounts.superseded 
-                    },
+                    { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
                     { id: 'OBSOLETE', label: 'ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
                     { id: 'ALL', label: 'ทั้งหมด (All Records)', count: statusCounts.total },
                   ].map((tab) => (
@@ -1397,7 +1406,9 @@ const ExternalDocsList = () => {
                 <th className={`${statusFilter === 'OBSOLETE' ? 'w-[36%]' : 'w-[32%]' } min-w-[240px] py-3 px-3.5 select-none bg-[#F8FAFC]`}>รหัสและชื่อเอกสาร</th>
                 <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">แผนกและสิทธิ์</th>
                 <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">เวอร์ชันต้นทาง (Edition / Ver.)</th>
-                <th className="w-[18%] min-w-[150px] py-3 px-3.5 select-none bg-[#F8FAFC]">รอบทบทวนและความถูกต้อง</th>
+                <th className="w-[18%] min-w-[150px] py-3 px-3.5 select-none bg-[#F8FAFC]">
+                  {statusFilter === 'SUPERSEDED' ? 'การแทนที่และประวัติ' : 'รอบทบทวนและความถูกต้อง'}
+                </th>
                 <th className="w-[14%] min-w-[130px] py-3 px-3.5 text-center select-none bg-[#F8FAFC]">สถานะเอกสาร</th>
               </tr>
             </thead>
@@ -1593,83 +1604,40 @@ const ExternalDocsList = () => {
                       {/* 2. รหัสและชื่อเอกสาร (Document Identity & Stack Badge) */}
                       <td className="py-3 px-3.5 align-middle">
                         <div className="flex flex-col gap-1">
+                          {/* ชั้นที่ 1 (Identity & History) */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono font-bold text-sm text-[#0D99FF] bg-[#E5F4FF] border border-[#B8E1FF] px-2.5 py-0.5 rounded-md inline-block shadow-2xs">
                               {stack.docNo}
                             </span>
-                            <span className="bg-[#F1F5F9] text-[#475569] px-2 py-0.5 rounded text-xs font-mono font-bold border border-[#E2E8F0]">
-                              ED
-                            </span>
 
-                            {/* Document Stacking Badges - Clickable to open Superseded Editions Modal */}
-                            {statusFilter === 'SUPERSEDED' ? (
+                            {/* แสดงเฉพาะรายการที่มีฉบับประวัติ/ตกรุ่นเท่านั้น ถ้าไม่มีให้ซ่อน */}
+                            {stack.supersededEditions?.length > 0 && (
                               <button
                                 type="button"
                                 onClick={(e) => handleOpenSupersededModal(stack, e)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200/90 shadow-2xs hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer"
-                                title="คลิกเพื่อดูรายการฉบับตกรุ่นทั้งหมด"
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200/80 hover:text-slate-800 transition-all cursor-pointer"
+                                title={`คลิกเพื่อดูรายการฉบับประวัติ/ตกรุ่นทั้งหมด (${stack.supersededEditions.length} ฉบับ)`}
                               >
-                                <Package size={12} className="text-amber-600" />
-                                <span>รวม {stack.supersededEditions.length} ฉบับตกรุ่น</span>
+                                <Package size={12} className="text-slate-500" />
+                                <span>{stack.supersededEditions.length} ฉบับประวัติ</span>
                               </button>
-                            ) : statusFilter === 'ALL' ? (
-                              <>
-                                {stack.activeEdition ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Active: {stack.activeEdition.sourceVersion || stack.activeEdition.edition || 'ฉบับหลัก'}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                                    {doc.sourceVersion || doc.edition || 'ฉบับล่าสุด'}
-                                  </span>
-                                )}
-                                {stack.supersededEditions.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleOpenSupersededModal(stack, e)}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200/80 hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer"
-                                    title="คลิกเพื่อดูรายการฉบับตกรุ่นทั้งหมด"
-                                  >
-                                    +{stack.supersededEditions.length} ฉบับประวัติ
-                                  </button>
-                                )}
-                              </>
-                            ) : statusFilter === 'ACTIVE' ? (
-                              <>
-                                <span className="text-[11px] text-indigo-700 font-mono font-bold bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-                                  {stack.activeEdition?.sourceVersion || stack.activeEdition?.edition || 'ฉบับต้นทาง'}
-                                </span>
-                                {stack.supersededEditions.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleOpenSupersededModal(stack, e)}
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 transition-all cursor-pointer"
-                                    title={`คลิกเพื่อดูรายการฉบับตกรุ่นทั้งหมด (${stack.supersededEditions.length} ฉบับ)`}
-                                  >
-                                    <Layers size={10} className="text-slate-400" />
-                                    <span>{stack.supersededEditions.length} ฉบับประวัติ</span>
-                                  </button>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-[11px] text-rose-700 font-mono font-bold bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
-                                {doc.sourceVersion || doc.edition || 'ฉบับยกเลิก'}
-                              </span>
                             )}
                           </div>
+
+                          {/* ชั้นที่ 2 (Document Title) */}
                           <div 
-                            className="font-medium text-[#1E293B] text-sm leading-relaxed truncate max-w-md group-hover:text-[#0D99FF] transition-colors" 
+                            className="font-semibold text-slate-900 text-sm leading-relaxed truncate max-w-md group-hover:text-[#0D99FF] transition-colors" 
                             title={stack.title}
                           >
                             {stack.title}
                           </div>
-                          <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
+
+                          {/* ชั้นที่ 3 (Issuer Metadata) */}
+                          <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
                             <span className="inline-flex items-center gap-1 font-medium">
-                              <Building2 size={12} className="text-[#94A3B8]" />
+                              <Building2 size={12} className="text-slate-400" />
                               {stack.issuer}
                             </span>
-                            <span>•</span>
-                            <span>หมวด: {doc.category || 'เอกสารภายนอก'}</span>
                           </div>
                         </div>
                       </td>
@@ -1699,13 +1667,13 @@ const ExternalDocsList = () => {
                               <button
                                 type="button"
                                 onClick={(e) => handleOpenSupersededModal(stack, e)}
-                                className="font-mono font-bold text-xs text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer"
+                                className="font-mono font-bold text-xs text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/90 hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer"
                                 title="คลิกเพื่อดูรายการฉบับตกรุ่นทั้งหมด"
                               >
-                                ล่าสุด: {stack.supersededEditions[0]?.sourceVersion || stack.supersededEditions[0]?.edition || 'ฉบับตกรุ่น'}
+                                {stack.supersededEditions[0]?.sourceVersion || stack.supersededEditions[0]?.edition || 'ฉบับตกรุ่น'}
                               </button>
-                              <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่ปลดระวาง/ตกรุ่นของฉบับล่าสุด">
-                                ตกรุ่นล่าสุด: {fmtDate(stack.supersededEditions[0]?.supersededAt || stack.supersededEditions[0]?.effectiveDate)}
+                              <span className="font-mono text-xs text-slate-500 mt-1" title="วันที่ปลดระวาง/ตกรุ่น">
+                                {fmtDate(stack.supersededEditions[0]?.supersededAt || stack.supersededEditions[0]?.effectiveDate)}
                               </span>
                             </>
                           ) : (
@@ -1715,7 +1683,7 @@ const ExternalDocsList = () => {
                               </span>
                               <span className="font-mono text-xs text-slate-500 mt-1" title={doc.status === 'SUPERSEDED' || doc.is_superseded ? "วันที่ปลดระวาง/ตกรุ่น" : doc.status === 'OBSOLETE' || doc.is_obsolete ? "วันที่ยกเลิก" : "วันที่ออกเอกสารต้นทาง (Issue Date)"}>
                                 {doc.status === 'SUPERSEDED' || doc.is_superseded
-                                  ? `ตกรุ่น: ${fmtDate(doc.supersededAt || doc.effectiveDate)}`
+                                  ? fmtDate(doc.supersededAt || doc.effectiveDate)
                                   : doc.status === 'OBSOLETE' || doc.is_obsolete
                                     ? `ยกเลิก: ${fmtDate(doc.obsoleteDate || doc.effectiveDate)}`
                                     : fmtDate(doc.effectiveDate)}
@@ -1725,34 +1693,34 @@ const ExternalDocsList = () => {
                         </div>
                       </td>
 
-                      {/* 5. รอบทบทวนและความถูกต้อง */}
+                      {/* 5. รอบทบทวนและความถูกต้อง / การแทนที่และประวัติ */}
                       <td className="py-3 px-3.5 align-middle">
-                        {statusFilter === 'SUPERSEDED' || doc.status === 'SUPERSEDED' || doc.is_superseded ? (
-                          <div className="flex flex-col items-start gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => handleOpenSupersededModal(stack, e)}
-                              className="text-xs text-slate-700 hover:text-amber-800 font-medium cursor-pointer underline-offset-2 hover:underline"
-                            >
-                              จัดเก็บประวัติ ({stack.supersededEditions.length} ฉบับ)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleOpenSupersededModal(stack, e)}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
-                            >
-                              <Clock size={11} strokeWidth={1.5} className="text-amber-600" />
-                              <span>ฉบับตกรุ่น (Superseded)</span>
-                            </button>
-                          </div>
-                        ) : doc.status === 'OBSOLETE' || doc.is_obsolete ? (
+                        {stack.isStackObsolete || stack.stackStatus === 'OBSOLETE' || doc.status === 'OBSOLETE' || doc.is_obsolete ? (
                           <div className="flex flex-col items-start gap-1">
                             <span className="text-xs text-slate-700 font-medium">
-                              ยกเลิกถาวร
+                              ยกเลิกการใช้งานแล้ว
                             </span>
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200">
                               <Archive size={11} strokeWidth={1.5} className="text-rose-600" />
                               <span>ยกเลิกถาวร (Obsolete)</span>
+                            </span>
+                          </div>
+                        ) : statusFilter === 'SUPERSEDED' || doc.status === 'SUPERSEDED' || doc.is_superseded ? (
+                          <div className="flex flex-col items-start gap-0.5 text-xs">
+                            {stack.activeEdition ? (
+                              <span className="font-semibold text-slate-800 flex items-center gap-1">
+                                <span className="text-slate-400 font-normal">แทนที่โดย:</span>
+                                <span className="font-mono text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80">
+                                  {stack.activeEdition.sourceVersion || stack.activeEdition.edition || 'ฉบับปัจจุบัน'}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="font-medium text-slate-700">
+                                ฉบับตกรุ่นสะสม
+                              </span>
+                            )}
+                            <span className="text-[11px] text-slate-400">
+                              {stack.activeEdition?.effectiveDate ? `มีผล: ${fmtDate(stack.activeEdition.effectiveDate)}` : 'จัดเก็บในประวัติถาวร'}
                             </span>
                           </div>
                         ) : (
@@ -1772,16 +1740,18 @@ const ExternalDocsList = () => {
 
                       {/* 6. สถานะเอกสาร */}
                       <td className="py-3 px-3.5 align-middle text-center whitespace-nowrap">
-                        {statusFilter === 'SUPERSEDED' ? (
-                          <button
-                            type="button"
-                            onClick={(e) => handleOpenSupersededModal(stack, e)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs hover:bg-amber-100 hover:border-amber-300 transition-all cursor-pointer"
-                            title="คลิกเพื่อดูรายการฉบับตกรุ่นทั้งหมด"
+                        {stack.isStackObsolete || stack.stackStatus === 'OBSOLETE' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5] whitespace-nowrap shadow-2xs">
+                            <XCircle size={13} strokeWidth={1.5} />
+                            <span>ยกเลิกถาวร</span>
+                          </span>
+                        ) : statusFilter === 'SUPERSEDED' ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] whitespace-nowrap shadow-2xs"
                           >
                             <Clock size={13} strokeWidth={1.5} />
-                            <span>ฉบับตกรุ่น ({stack.supersededEditions.length})</span>
-                          </button>
+                            <span>ตกรุ่น (Superseded)</span>
+                          </span>
                         ) : (
                           getStatusBadge(doc)
                         )}
@@ -2046,8 +2016,8 @@ const ExternalDocsList = () => {
           setDocToDetail(null);
         }}
         document={docToDetail}
+        documentFamily={docToDetail ? docStacks.find(s => s.docNo === getCanonicalDocNo(docToDetail))?.allEditions : null}
         onOpenViewer={(d) => {
-          setIsDetailOpen(false);
           handlePreview(d || docToDetail);
         }}
         onOpenRevise={(d) => {
