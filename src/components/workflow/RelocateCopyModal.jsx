@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, MapPin, Info, Send } from 'lucide-react';
 import useStore from '../../store/useStore';
@@ -20,14 +20,6 @@ const RelocateCopyModal = ({ isOpen, onClose, copy }) => {
   const [customLocation, setCustomLocation] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!copy) return null;
-
-  const rawNo = copy.copy_no || copy.ccNumber || '01';
-  const docCode = copy.doc_code || copy.docTitle || copy.docCode || 'เอกสารควบคุม';
-  const docName = copy.docName || copy.name || docCode;
-  const currentLocation = copy.location || copy.locationName || copy.station_name || copy.holder_dept || '-';
-  const currentDept = copy.holder_dept || copy.department || '-';
-
   const stationOptions = React.useMemo(() => {
     const fromStandard = (STANDARD_STATIONS || []).map(s =>
       typeof s === 'string' ? { label: s, value: s } : { label: s.name || s.label || s.value, value: s.name || s.value }
@@ -43,6 +35,14 @@ const RelocateCopyModal = ({ isOpen, onClose, copy }) => {
       return true;
     });
   }, [masterDepartments]);
+
+  if (!copy) return null;
+
+  const rawNo = copy.copy_no || copy.ccNumber || '01';
+  const docCode = copy.doc_code || copy.docTitle || copy.docCode || 'เอกสารควบคุม';
+  const docName = copy.docName || copy.name || docCode;
+  const currentLocation = copy.location || copy.locationName || copy.station_name || copy.holder_dept || '-';
+  const currentDept = copy.holder_dept || copy.department || '-';
 
   const effectiveLocation = newLocation === '__custom__' ? customLocation : newLocation;
   const canSubmit = effectiveLocation.trim() && reason.trim();

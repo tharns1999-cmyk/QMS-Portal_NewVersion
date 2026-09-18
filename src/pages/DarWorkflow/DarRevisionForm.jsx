@@ -17,6 +17,7 @@ import {
   isDocumentEligibleForRevision 
 } from '../../utils/darHelper';
 import { cleanLocationName, getMasterStationForDept, normalizeDepartmentId, calculateCopyAllocations } from '../../services/MasterDataService';
+import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -149,8 +150,8 @@ const DarRevisionForm = () => {
   }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs]);
 
   const filteredDocs = effectiveDocs.filter(d => {
-    const docCode = d.document_code || d.doc_code || d.code || d.docCode || d.title || '';
-    const docTitle = d.title || '';
+    const docCode = resolveDocCode(d);
+    const docTitle = resolveDocTitle(d);
     const docName = d.name || d.docName || '';
     const docType = d.type || d.docType || d.category || '';
 
@@ -426,7 +427,7 @@ const DarRevisionForm = () => {
     setFormData(prev => ({
       ...prev,
       docId: doc.id,
-      title: doc.name,
+      title: resolveDocTitle(doc) || doc.name || doc.title,
       distributions: initialDistributions,
       relatedStandards: doc.relatedStandards ? [...doc.relatedStandards] : [],
       otherStandardDetail: doc.otherStandardDetail || '',
@@ -946,8 +947,8 @@ const DarRevisionForm = () => {
                 ) : selectedDoc ? (
                   <div className="h-10.5 px-3 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-mono font-bold text-[#0D99FF] text-xs bg-[#E5F4FF] px-2 py-0.5 rounded shrink-0">{selectedDoc.title}</span>
-                      <span className="text-xs text-[#334155] truncate font-medium">{selectedDoc.name}</span>
+                      <span className="font-mono font-bold text-[#0D99FF] text-xs bg-[#E5F4FF] px-2 py-0.5 rounded shrink-0">{resolveDocCode(selectedDoc)}</span>
+                      <span className="text-xs text-[#334155] truncate font-medium">{resolveDocTitle(selectedDoc)}</span>
                     </div>
                     <button
                       type="button"
@@ -1009,12 +1010,12 @@ const DarRevisionForm = () => {
                             >
                               <div className="min-w-0 pr-2">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-bold text-[#0D99FF]">{doc.title}</span>
-                                  <span className="text-slate-400 font-mono text-[10px]">Rev.{doc.rev}</span>
+                                  <span className="font-mono font-bold text-[#0D99FF]">{resolveDocCode(doc)}</span>
+                                  <span className="text-slate-400 font-mono text-[10px]">Rev.{doc.rev || '01'}</span>
                                 </div>
-                                <p className="text-[#334155] font-medium truncate mt-0.5">{doc.name}</p>
+                                <p className="text-[#334155] font-medium truncate mt-0.5">{resolveDocTitle(doc)}</p>
                               </div>
-                              <span className="text-[10px] font-bold text-[#64748B] font-mono shrink-0">{doc.department}</span>
+                              <span className="text-[10px] font-bold text-[#64748B] font-mono shrink-0">{doc.department || doc.dept || 'QC'}</span>
                             </div>
                           ))
                         ) : (

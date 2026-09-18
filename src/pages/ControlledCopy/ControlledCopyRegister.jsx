@@ -18,7 +18,9 @@ import {
   FolderOpen,
   Archive,
   Flame,
-  Copy
+  Copy,
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
@@ -27,6 +29,23 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import DccRecallActionModal from '../../components/modals/DccRecallActionModal';
+import {
+  isThaiText,
+  resolveCopyDoc,
+  resolveDocCode,
+  resolveDocTitle,
+  resolveDocVersion,
+  resolveOwnerDept
+} from '../../utils/documentUtils';
+
+export {
+  isThaiText,
+  resolveCopyDoc,
+  resolveDocCode,
+  resolveDocTitle,
+  resolveDocVersion,
+  resolveOwnerDept
+};
 
 const ControlledCopyRegister = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -409,28 +428,121 @@ const ControlledCopyRegister = () => {
     });
   }, [recallGroups, searchTerm, selectedDeptFilter]);
 
-  // Filtered List for Tab 4: ACTIVE_REGISTER
+  // Raw Active Copies for Tab 4: ACTIVE_REGISTER
+  const rawActiveCopies = useMemo(() => {
+    return allCopies.filter(c => c && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE'));
+  }, [allCopies]);
+
+  // Group active copies by document code (Master-Detail Accordion)
+  const activeDocGroups = useMemo(() => {
+    const groups = {};
+
+    rawActiveCopies.forEach(copy => {
+      if (!copy) return;
+      const doc = resolveCopyDoc(copy, documents, externalDocuments);
+      const docCode = resolveDocCode(copy, doc);
+      const docId = String(copy.doc_id || copy.docId || (doc ? doc.id : docCode));
+      const groupKey = docCode || docId;
+
+      if (!groups[groupKey]) {
+        const docTitle = resolveDocTitle(copy, doc);
+        const docVersion = resolveDocVersion(copy, doc);
+        const ownerDept = resolveOwnerDept(copy, doc);
+
+        groups[groupKey] = {
+          key: groupKey,
+          docId,
+          docCode,
+          docTitle,
+          docVersion,
+          ownerDept,
+          copies: []
+        };
+      }
+      groups[groupKey].copies.push(copy);
+    });
+
+    // Sort copies within each group by copy_no ascending (e.g. 01, 02)
+    Object.values(groups).forEach(g => {
+      g.copies.sort((a, b) => {
+        const numA = parseInt(String(a.copy_no || a.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(String(b.copy_no || b.ccNumber || '0').replace(/\D/g, ''), 10) || 0;
+        return numA - numB;
+      });
+    });
+
+    // Return groups sorted alphabetically by document code
+    return Object.values(groups).sort((a, b) => (a.docCode || '').localeCompare(b.docCode || ''));
+  }, [rawActiveCopies, documents, externalDocuments]);
+
+  // Filtered Groups for Tab 4: ACTIVE_REGISTER
+  const filteredActiveDocGroups = useMemo(() => {
+    return activeDocGroups.filter(g => {
+      const q = (searchTerm || '').trim().toLowerCase();
+
+      // Department filter: matches if document ownerDept is selected OR any copy's holder department matches
+      const matchDept = selectedDeptFilter === 'ALL' ||
+        g.ownerDept === selectedDeptFilter ||
+        g.copies.some(c => (c.holder_dept || c.department) === selectedDeptFilter);
+
+      if (!matchDept) return false;
+      if (!q) return true;
+
+      // Search matching: docCode, docTitle, ownerDept, or any copy's copy_no, location, holder_dept, receiver
+      const matchDoc = (g.docCode || '').toLowerCase().includes(q) ||
+        (g.docTitle || '').toLowerCase().includes(q) ||
+        (g.ownerDept || '').toLowerCase().includes(q);
+
+      if (matchDoc) return true;
+
+      const matchCopies = g.copies.some(c => {
+        const copyNo = String(c.copy_no || c.ccNumber || '').toLowerCase();
+        const holderDept = String(c.holder_dept || c.department || '').toLowerCase();
+        const loc = String(c.location || c.locationName || c.station_name || '').toLowerCase();
+        const receiver = String(c.receipt_confirmed_by || '').toLowerCase();
+        return copyNo.includes(q) || holderDept.includes(q) || loc.includes(q) || receiver.includes(q);
+      });
+
+      return matchCopies;
+    });
+  }, [activeDocGroups, searchTerm, selectedDeptFilter]);
+
+  // Filtered Active Copies flattened (keeps backward-compatible count & access)
   const activeCopies = useMemo(() => {
-    return allCopies.filter(c => {
-      if (!c) return false;
-      const isActive = c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE';
-      if (!isActive) return false;
+    return filteredActiveDocGroups.flatMap(g => g.copies);
+  }, [filteredActiveDocGroups]);
 
-      const docCode = (c.doc_code || c.docTitle || '').toLowerCase();
-      const dept = (c.holder_dept || c.department || '').toLowerCase();
-      const loc = (c.location || c.locationName || '').toLowerCase();
-      const copyNo = (c.copy_no || c.ccNumber || '').toLowerCase();
-      const query = searchTerm.toLowerCase();
+  // Accordion expansion state for Tab 4
+  const [expandedDocKeys, setExpandedDocKeys] = useState(() => new Set());
 
-      if (searchTerm && !docCode.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
-        return false;
+  const toggleExpandDoc = (groupKey) => {
+    setExpandedDocKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
       }
-      if (selectedDeptFilter !== 'ALL' && (c.holder_dept || c.department) !== selectedDeptFilter) {
-        return false;
-      }
-      return true;
-    }).sort((a, b) => new Date(b.dateIssued || 0) - new Date(a.dateIssued || 0));
-  }, [allCopies, searchTerm, selectedDeptFilter]);
+      return next;
+    });
+  };
+
+  const allExpanded = filteredActiveDocGroups.length > 0 && filteredActiveDocGroups.every(g => expandedDocKeys.has(g.key));
+
+  const toggleAllDocs = () => {
+    if (allExpanded) {
+      setExpandedDocKeys(new Set());
+    } else {
+      setExpandedDocKeys(new Set(filteredActiveDocGroups.map(g => g.key)));
+    }
+  };
+
+  // Auto-expand all filtered groups when searching
+  React.useEffect(() => {
+    if (searchTerm && searchTerm.trim()) {
+      setExpandedDocKeys(new Set(filteredActiveDocGroups.map(g => g.key)));
+    }
+  }, [searchTerm, filteredActiveDocGroups]);
 
   // Tab 5: Audit Trail filter
   const filteredAuditLogs = useMemo(() => {
@@ -485,7 +597,7 @@ const ControlledCopyRegister = () => {
   // Universal Pagination Hook Instances for all tabs
   const pendingIssuePagination = useTablePagination(pendingIssueCopies, 10);
   const dispatchedPagination = useTablePagination(dispatchedCopies, 10);
-  const activePagination = useTablePagination(activeCopies, 10);
+  const activePagination = useTablePagination(filteredActiveDocGroups, 10);
   const auditPagination = useTablePagination(filteredAuditLogs, 10);
   const dispositionPagination = useTablePagination(filteredDispositionRecords, 10);
 
@@ -1324,7 +1436,7 @@ const ControlledCopyRegister = () => {
                                 <span>Copy {copy.copy_no || copy.ccNumber || '01'}</span>
                                 {isDamaged && (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                                    ชำรุด
+                                    เล่มชำรุดรอเรียกคืน
                                   </span>
                                 )}
                               </div>
@@ -1411,82 +1523,228 @@ const ControlledCopyRegister = () => {
       {/* ========================================================================= */}
       {(activeTab === 'ACTIVE_REGISTER' || activeTab === 'ACTIVE') && (
         <div className="w-full bg-white rounded-xl border border-[#E5E5E5] shadow-2xs overflow-hidden space-y-4 h-auto">
-          <div className="p-6 border-b border-[#E5E5E5] flex justify-between items-center bg-white">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E1E1E] flex items-center gap-2">
-                <Layers size={20} className="text-[#10B981]" /> ทะเบียนสำเนาควบคุมที่ใช้งานอยู่จริง ({activeCopies.length} เล่ม)
-              </h2>
-              <p className="text-xs text-[#666666] mt-0.5">
-                ทะเบียนเอกสารควบคุมฉบับจริงที่ติดตั้งประจำจุดปฏิบัติงานในโรงงาน
-              </p>
+          <div className="p-6 border-b border-[#E5E5E5] bg-white">
+            <h2 className="text-lg font-bold text-[#1E1E1E] flex items-center gap-2">
+              <Layers size={20} className="text-[#10B981]" /> ทะเบียนสำเนาควบคุมที่ใช้งานอยู่จริง ({activeCopies.length} เล่ม)
+            </h2>
+            <p className="text-xs text-[#666666] mt-0.5">
+              ทะเบียนเอกสารควบคุมฉบับจริงที่ติดตั้งประจำจุดปฏิบัติงานในโรงงาน ({filteredActiveDocGroups.length} รายการเอกสาร)
+            </p>
+          </div>
+
+          {/* Search & Department Filter Bar */}
+          <div className="px-6 py-3 border-b border-[#E5E5E5] flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 bg-white">
+            <div className="flex items-center gap-2 flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="ค้นหารหัส, ชื่อเอกสาร, จุดติดตั้ง, หมายเลขสำเนา..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none transition-all placeholder:text-slate-400"
+                />
+              </div>
+              <select
+                value={selectedDeptFilter}
+                onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                className="px-2.5 py-1.5 h-9 text-xs bg-white border border-[#E5E5E5] rounded-lg font-medium text-slate-700 focus:outline-none focus:border-[#0D99FF] shrink-0"
+              >
+                <option value="ALL">ทุกแผนก</option>
+                {departmentList.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
             </div>
+
+            {filteredActiveDocGroups.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAllDocs}
+                className="text-xs font-semibold text-[#0D99FF] hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start md:self-auto flex items-center gap-1.5 shrink-0"
+              >
+                {allExpanded ? 'ยุบรายละเอียดทั้งหมด' : 'ขยายรายละเอียดทั้งหมด'}
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full scrollbar-thin">
             <table className="w-full text-left text-sm text-[#1E293B] border-collapse">
               <thead className="bg-[#F8FAFC] text-[#374151] uppercase font-bold text-xs tracking-wider border-b border-[#E2E8F0] sticky top-0 z-10 shadow-xs backdrop-blur-sm whitespace-nowrap">
                 <tr>
-                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">รหัสเอกสาร</th>
+                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">รหัสและชื่อเอกสาร</th>
                   <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">ฉบับ (Rev.)</th>
-                  <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">หมายเลขสำเนา</th>
-                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">แผนกผู้ครอบครอง</th>
-                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">จุดติดตั้ง (Location)</th>
-                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">วันที่ตรวจรับ</th>
-                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">ผู้ตรวจรับ</th>
-                  <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">รายงานปัญหา</th>
+                  <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">แผนกเจ้าของ</th>
+                  <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">จำนวนสำเนา</th>
+                  <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">แผนกที่ครอบครอง</th>
+                  <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {activePagination.paginatedData.map(copy => (
-                  <tr key={copy.id} className="hover:bg-[#F8FAFC] transition-colors">
-                    <td className="py-3.5 px-3.5 align-middle">
-                      <div className="font-bold text-sm font-mono text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-[#B8E1FF] inline-block mb-1">{copy.doc_code || copy.docTitle}</div>
-                      <div className="text-sm font-medium text-[#1E293B] truncate max-w-xs leading-snug">{copy.docName || copy.docTitle}</div>
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center font-mono font-bold text-slate-700 text-sm align-middle">
-                      Rev.{copy.doc_version || copy.rev || '01'}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center align-middle">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="px-2.5 py-1 bg-[#E6F7ED] text-[#14AE5C] font-semibold font-mono text-xs rounded-md border border-[#B3E7C9] whitespace-nowrap">
-                          Copy {copy.copy_no || copy.ccNumber || '01'}
-                        </span>
-                        {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
-                          <span className="px-2 py-0.5 rounded-md bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-xs whitespace-nowrap font-sans">
-                            Issue {copy.issue_no || '02'} (ทดแทน)
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3.5 font-semibold text-[#1E293B] text-sm align-middle">
-                      {copy.holder_dept || copy.department}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-slate-700 text-sm align-middle">
-                      <span className="flex items-center gap-1.5">
-                        <MapPin size={14} className="text-[#14AE5C]" />
-                        {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3.5 text-xs font-mono text-slate-600 align-middle">
-                      {copy.receipt_confirmed_at ? new Date(copy.receipt_confirmed_at).toLocaleDateString('th-TH') : '-'}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-sm font-medium text-slate-800 align-middle">
-                      {copy.receipt_confirmed_by || '-'}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center align-middle">
-                      <button
-                        onClick={() => { setSelectedInstance(copy); setReportModalOpen(true); }}
-                        className="px-3 py-1.5 text-xs font-semibold text-[#F24822] bg-[#FEECE8] hover:bg-[#FFE5E0] rounded-lg border border-[#FAD3CC] transition-colors flex items-center gap-1.5 mx-auto cursor-pointer"
-                        title="แจ้งชำรุด หรือสูญหาย"
+                {activePagination.paginatedData.map(group => {
+                  const isExpanded = expandedDocKeys.has(group.key);
+                  const holderDepts = Array.from(new Set(group.copies.map(c => c.holder_dept || c.department).filter(Boolean)));
+
+                  return (
+                    <React.Fragment key={group.key}>
+                      {/* Master Document Row */}
+                      <tr 
+                        onClick={() => toggleExpandDoc(group.key)}
+                        className={`hover:bg-[#F8FAFC] transition-colors cursor-pointer select-none ${isExpanded ? 'bg-blue-50/20' : ''}`}
                       >
-                        <AlertTriangle size={13} /> แจ้งชำรุด/หาย
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                        <td className="py-3.5 px-3.5 align-middle">
+                          <div className="flex items-start gap-2.5">
+                            <div className={`mt-1 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-90 text-[#0D99FF]' : ''}`}>
+                              <ChevronRight size={16} />
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm font-mono text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-[#B8E1FF] inline-block mb-1">
+                                {group.docCode}
+                              </div>
+                              <div className="text-sm font-medium text-[#1E293B] truncate max-w-sm leading-snug" title={group.docTitle}>
+                                {group.docTitle}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3.5 text-center align-middle font-mono font-bold text-slate-700 text-sm whitespace-nowrap">
+                          {group.docVersion}
+                        </td>
+                        <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 font-semibold text-xs rounded-md border border-slate-200">
+                            {group.ownerDept}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                          <span className="px-2.5 py-1 bg-[#E6F7ED] text-[#14AE5C] font-semibold text-xs rounded-full border border-[#B3E7C9] inline-flex items-center gap-1.5">
+                            <Layers size={13} className="text-[#14AE5C]" /> {group.copies.length} เล่มในจุดใช้งาน
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3.5 text-left align-middle">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {holderDepts.length > 0 ? (
+                              holderDepts.map(d => (
+                                <span key={d} className="px-2 py-0.5 bg-blue-50 text-blue-700 font-semibold text-xs rounded border border-blue-200">
+                                  {d}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-400">-</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleExpandDoc(group.key);
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-300 transition-colors inline-flex items-center gap-1.5 mx-auto cursor-pointer"
+                          >
+                            {isExpanded ? (
+                              <>ย่อรายละเอียด <ChevronDown size={14} /></>
+                            ) : (
+                              <>ดูสำเนา ({group.copies.length}) <ChevronRight size={14} /></>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Expanded Sub-table for Copies under this Document */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/70 border-b border-slate-200">
+                          <td colSpan={6} className="p-0">
+                            <div className="py-3.5 px-4 pl-11 pr-6 border-l-4 border-l-[#0D99FF] bg-slate-50/70 space-y-2">
+                              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+                                <span>รายการสำเนาควบคุมประจำจุดปฏิบัติงานของ {group.docCode} ({group.copies.length} เล่ม)</span>
+                                <span className="text-[11px] text-slate-400 font-normal">คลิก "แจ้งชำรุด/หาย" เพื่อบันทึกคำร้องขอทดแทน</span>
+                              </div>
+                              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-2xs">
+                                <table className="w-full text-left text-xs text-slate-700">
+                                  <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                                    <tr>
+                                      <th className="py-2.5 px-3">หมายเลขสำเนา</th>
+                                      <th className="py-2.5 px-3">แผนกผู้ครอบครอง</th>
+                                      <th className="py-2.5 px-3">จุดติดตั้ง (Location)</th>
+                                      <th className="py-2.5 px-3">วันที่ตรวจรับ</th>
+                                      <th className="py-2.5 px-3">ผู้ตรวจรับ</th>
+                                      <th className="py-2.5 px-3 text-center">การจัดการ</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {group.copies.map(copy => {
+                                      const copyNoStr = copy.copy_no || copy.ccNumber || '01';
+                                      const isCopy01 = copyNoStr === '01' || copyNoStr === '1' || copyNoStr === 'CC-001' || copyNoStr === 'Copy 01';
+                                      const isReplacement = copy.is_replacement || (copy.issue_no && copy.issue_no !== '01' && copy.issue_no !== 1);
+
+                                      return (
+                                        <tr key={copy.id || `${group.key}-${copyNoStr}`} className="hover:bg-slate-50/80 transition-colors">
+                                          <td className="py-2.5 px-3 align-middle">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="px-2 py-0.5 bg-[#E6F7ED] text-[#14AE5C] font-semibold font-mono text-xs rounded-md border border-[#B3E7C9] whitespace-nowrap">
+                                                Copy {copyNoStr}
+                                              </span>
+                                              {isCopy01 && (
+                                                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold border border-blue-200 text-[11px] whitespace-nowrap">
+                                                  เล่มควบคุมจุดต้นทาง
+                                                </span>
+                                              )}
+                                              {isReplacement && (
+                                                <span className="px-2 py-0.5 rounded-md bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-[11px] whitespace-nowrap font-sans">
+                                                  Issue {copy.issue_no || '02'} (ทดแทน)
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="py-2.5 px-3 font-semibold text-slate-800 align-middle whitespace-nowrap">
+                                            {copy.holder_dept || copy.department || '-'}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-slate-600 align-middle">
+                                            <span className="flex items-center gap-1.5">
+                                              <MapPin size={13} className="text-[#14AE5C] shrink-0" />
+                                              <span>{copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}</span>
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 font-mono text-slate-600 align-middle whitespace-nowrap">
+                                            {copy.receipt_confirmed_at 
+                                              ? new Date(copy.receipt_confirmed_at).toLocaleDateString('th-TH') 
+                                              : (copy.dateIssued ? new Date(copy.dateIssued).toLocaleDateString('th-TH') : '-')}
+                                          </td>
+                                          <td className="py-2.5 px-3 font-medium text-slate-800 align-middle whitespace-nowrap">
+                                            {copy.receipt_confirmed_by || copy.holder_name || '-'}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center align-middle whitespace-nowrap">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedInstance(copy);
+                                                setReportModalOpen(true);
+                                              }}
+                                              className="px-2.5 py-1 text-xs font-semibold text-[#F24822] bg-[#FEECE8] hover:bg-[#FFE5E0] rounded-lg border border-[#FAD3CC] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                                              title="แจ้งชำรุด หรือสูญหาย"
+                                            >
+                                              <AlertTriangle size={12} /> แจ้งชำรุด/หาย
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+
                 {activePagination.paginatedData.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                       <div className="font-bold text-slate-700">ไม่พบข้อมูลสำเนาควบคุมที่ใช้งาน</div>
                     </td>
                   </tr>

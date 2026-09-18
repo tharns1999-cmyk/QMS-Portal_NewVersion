@@ -4,8 +4,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentDetailModal from '../components/workflow/DocumentDetailModal';
 import useStore from '../store/useStore';
 import { ACCESS_SCOPES } from '../utils/accessControl';
+import { getRevisionIndex, compareRevisions, resolveDocCode } from '../utils/documentUtils';
 
-describe('Strict Revision-Scoped DAR History Binding Invariant Tests', () => {
+describe('Cumulative DAR History Lineage (Audit Trail <= Current Revision) Tests', () => {
   const currentUser = {
     id: 'U005',
     name: 'บีม (QA)',
@@ -52,6 +53,24 @@ describe('Strict Revision-Scoped DAR History Binding Invariant Tests', () => {
       reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
       approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
       require_ack: true
+    },
+    {
+      id: 'DAR-2026-099',
+      dar_no: 'DAR-2026-099',
+      doc_code: 'SOP-QA-001',
+      docRev: '02',
+      rev: '02',
+      revision: '02',
+      request_type: 'REVISION',
+      type: 'REVISION',
+      status: 'EFFECTIVE',
+      effectiveDate: '2026-12-01',
+      reason: 'ปรับปรุงขั้นตอนการทำงานสำหรับอนาคต (Future Rev.02)',
+      description: 'คำร้องแก้ไขสำหรับรอบถัดไป',
+      requester_name: 'บีม (QA Lv.4 Supervisor)',
+      reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
+      approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
+      require_ack: true
     }
   ];
 
@@ -94,170 +113,145 @@ describe('Strict Revision-Scoped DAR History Binding Invariant Tests', () => {
     });
   });
 
-  it('1. Revision Isolation Invariant (Rev.01 Active): displays ONLY Rev.01 DAR and strictly isolates Rev.00', () => {
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={effectiveDocRev01}
-      />
-    );
+  describe('1. Revision Index & Comparison Helpers', () => {
+    it('accurately parses revision strings to numeric indices', () => {
+      expect(getRevisionIndex('00')).toBe(0);
+      expect(getRevisionIndex('01')).toBe(1);
+      expect(getRevisionIndex('Rev.01')).toBe(1);
+      expect(getRevisionIndex('Rev. 02')).toBe(2);
+      expect(getRevisionIndex('A')).toBe(0);
+      expect(getRevisionIndex('B')).toBe(1);
+      expect(getRevisionIndex(0)).toBe(0);
+      expect(getRevisionIndex(null)).toBe(0);
+    });
 
-    // Tab badge must show exact count (1), NOT the aggregate count (2)
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    expect(historyTabBtn).toBeInTheDocument();
-    expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
-
-    fireEvent.click(historyTabBtn);
-
-    // Header counter should state 1 item found
-    expect(screen.getByText(/พบทั้งหมด 1 ฉบับ/i)).toBeInTheDocument();
-
-    // Rev.01 DAR must be displayed
-    expect(screen.getByText('DAR-2026-055')).toBeInTheDocument();
-    expect(screen.getAllByText(/Rev\.01/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/ปรับปรุงขั้นตอนการสุ่มตรวจให้ครอบคลุม FSSC 22000/i)).toBeInTheDocument();
-    expect(screen.getByText('บีม (QA Lv.4 Supervisor)')).toBeInTheDocument();
-
-    // Active document shows "ฉบับล่าสุด" badge
-    expect(screen.getByText('ฉบับล่าสุด')).toBeInTheDocument();
-
-    // Invariant: Historical Rev.00 DAR MUST NOT leak into Rev.01
-    expect(screen.queryByText('DAR-2025-001')).not.toBeInTheDocument();
-    expect(screen.queryByText(/จัดทำระเบียบปฏิบัติการเริ่มต้นฉบับปฐมฤกษ์ Genesis/i)).not.toBeInTheDocument();
-    expect(screen.queryByText('สมหญิง ตรวจสอบ (QA Lv.3)')).not.toBeInTheDocument();
+    it('correctly compares revision orders', () => {
+      expect(compareRevisions('00', '01')).toBeLessThan(0);
+      expect(compareRevisions('01', '00')).toBeGreaterThan(0);
+      expect(compareRevisions('Rev.01', '01')).toBe(0);
+    });
   });
 
-  it('2. Revision Isolation Invariant (Rev.00 Superseded): displays ONLY Rev.00 DAR, isolates Rev.01, and suppresses "ฉบับล่าสุด"', () => {
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={supersededDocRev00}
-      />
-    );
+  describe('2. Modal Header & Cumulative Timeline Display', () => {
+    it('renders genuine document code in header badge and correct document name', () => {
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={effectiveDocRev01}
+        />
+      );
 
-    // Tab badge must show exact count (1), NOT the aggregate count (2)
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    expect(historyTabBtn).toBeInTheDocument();
-    expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
+      // Header code badge
+      const headerBadges = screen.getAllByText('SOP-QA-001');
+      expect(headerBadges.length).toBeGreaterThan(0);
 
-    fireEvent.click(historyTabBtn);
+      // Document name
+      expect(screen.getAllByText('ระเบียบการตรวจประเมินคุณภาพภายในประจำปี').length).toBeGreaterThan(0);
+    });
 
-    // Header counter should state 1 item found
-    expect(screen.getByText(/พบทั้งหมด 1 ฉบับ/i)).toBeInTheDocument();
+    it('displays Cumulative Lineage for Rev.01: shows (2) items (Rev.01 + Rev.00) and suppresses future Rev.02', () => {
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={effectiveDocRev01}
+        />
+      );
 
-    // Rev.00 DAR must be displayed
-    expect(screen.getByText('DAR-2025-001')).toBeInTheDocument();
-    expect(screen.getAllByText(/Rev\.00/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/จัดทำระเบียบปฏิบัติการเริ่มต้นฉบับปฐมฤกษ์ Genesis/i)).toBeInTheDocument();
-    expect(screen.getByText('สมหญิง ตรวจสอบ (QA Lv.3)')).toBeInTheDocument();
+      // Tab badge must show exact count (2) representing Rev.01 and Rev.00
+      const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
+      expect(historyTabBtn).toBeInTheDocument();
+      expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(2\)/i)).toBeInTheDocument();
 
-    // Invariant: "ฉบับล่าสุด" MUST NOT be present in superseded documents
-    expect(screen.queryByText('ฉบับล่าสุด')).not.toBeInTheDocument();
+      fireEvent.click(historyTabBtn);
 
-    // Invariant: Future Rev.01 DAR MUST NOT leak into Rev.00
-    expect(screen.queryByText('DAR-2026-055')).not.toBeInTheDocument();
-    expect(screen.queryByText(/ปรับปรุงขั้นตอนการสุ่มตรวจให้ครอบคลุม FSSC 22000/i)).not.toBeInTheDocument();
-    expect(screen.queryByText('บีม (QA Lv.4 Supervisor)')).not.toBeInTheDocument();
-  });
+      // Header counter states 2 items found
+      expect(screen.getByText(/พบทั้งหมด 2 ฉบับ/i)).toBeInTheDocument();
 
-  it('3. Direct ID Binding: binds explicitly when doc.darId / doc.darNo is set', () => {
-    const directBoundDoc = {
-      ...effectiveDocRev01,
-      darId: 'DAR-2026-055',
-      rev: 'Rev.01'
-    };
+      // Both Rev.01 and Rev.00 DARs must be displayed
+      expect(screen.getByText('DAR-2026-055')).toBeInTheDocument();
+      expect(screen.getByText('DAR-2025-001')).toBeInTheDocument();
 
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={directBoundDoc}
-      />
-    );
+      // Top item (Rev.01) has "ฉบับล่าสุด" badge in active mode
+      expect(screen.getByText('ฉบับล่าสุด')).toBeInTheDocument();
 
-    expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    fireEvent.click(historyTabBtn);
+      // Future Rev.02 DAR must be strictly suppressed
+      expect(screen.queryByText('DAR-2026-099')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Future Rev\.02/i)).not.toBeInTheDocument();
+    });
 
-    expect(screen.getByText('DAR-2026-055')).toBeInTheDocument();
-    expect(screen.queryByText('DAR-2025-001')).not.toBeInTheDocument();
-  });
+    it('displays ONLY Rev.00 for Rev.00 document: shows (1) item and suppresses Rev.01/Rev.02 and "ฉบับล่าสุด"', () => {
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={supersededDocRev00}
+        />
+      );
 
-  it('4. Type Mismatch Normalization: properly matches numeric 1, "01", and "Rev.01"', () => {
-    const numericRevDoc = {
-      ...effectiveDocRev01,
-      rev: 1 // numeric type
-    };
+      // Tab badge must show exact count (1)
+      const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
+      expect(historyTabBtn).toBeInTheDocument();
+      expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
 
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={numericRevDoc}
-      />
-    );
+      fireEvent.click(historyTabBtn);
 
-    expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    fireEvent.click(historyTabBtn);
+      // Header counter states 1 item found
+      expect(screen.getByText(/พบทั้งหมด 1 ฉบับ/i)).toBeInTheDocument();
 
-    expect(screen.getByText('DAR-2026-055')).toBeInTheDocument();
-  });
+      // Only Rev.00 DAR must be displayed
+      expect(screen.getByText('DAR-2025-001')).toBeInTheDocument();
+      expect(screen.queryByText('DAR-2026-055')).not.toBeInTheDocument();
+      expect(screen.queryByText('DAR-2026-099')).not.toBeInTheDocument();
 
-  it('5. Fallback 1:1 Revision Snapshot: constructs a clean isolated snapshot when no DAR is in store for current rev', () => {
-    const unrecordedDoc = {
-      id: 'doc-sop-en-002',
-      title: 'SOP-EN-002',
-      name: 'ระเบียบการซ่อมบำรุงเชิงป้องกันเครื่องจักรประจำสัปดาห์',
-      department: 'EN',
-      owner_dept: 'EN',
-      rev: '03',
-      effectiveDate: '2026-09-01',
-      status: 'EFFECTIVE',
-      reason: 'ปรับรอบการตรวจเช็คมอเตอร์และระบบไฮดรอลิกส์'
-    };
+      // Superseded document suppresses "ฉบับล่าสุด"
+      expect(screen.queryByText('ฉบับล่าสุด')).not.toBeInTheDocument();
+    });
 
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={unrecordedDoc}
-      />
-    );
+    it('handles numeric revision types without breakage (e.g. rev: 1)', () => {
+      const numericRevDoc = {
+        ...effectiveDocRev01,
+        rev: 1
+      };
 
-    expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    fireEvent.click(historyTabBtn);
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={numericRevDoc}
+        />
+      );
 
-    expect(screen.getAllByText(/Rev\.03/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/ปรับรอบการตรวจเช็คมอเตอร์และระบบไฮดรอลิกส์/i)).toBeInTheDocument();
-    // Does not synthesize Rev.00 or any other revision
-    expect(screen.queryByText(/Rev\.00/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Rev\.01/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Rev\.02/i)).not.toBeInTheDocument();
-  });
+      expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(2\)/i)).toBeInTheDocument();
+    });
 
-  it('6. Scoped CSV Export: exports only current revision DAR data', () => {
-    const createObjectURLMock = vi.fn().mockImplementation(() => 'blob:mock-csv-url');
-    global.URL.createObjectURL = createObjectURLMock;
-    global.URL.revokeObjectURL = vi.fn();
+    it('constructs cumulative synthetic lineage down to 0 when no explicit DAR in store', () => {
+      const unrecordedDoc = {
+        id: 'doc-sop-en-002',
+        title: 'SOP-EN-002',
+        name: 'ระเบียบการซ่อมบำรุงเครื่องจักร',
+        department: 'EN',
+        rev: '01',
+        effectiveDate: '2026-09-01',
+        status: 'EFFECTIVE'
+      };
 
-    render(
-      <DocumentDetailModal
-        isOpen={true}
-        onClose={() => {}}
-        document={effectiveDocRev01}
-      />
-    );
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={unrecordedDoc}
+        />
+      );
 
-    const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
-    fireEvent.click(historyTabBtn);
+      // Should synthesize Rev.01 and Rev.00 (2 items)
+      expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(2\)/i)).toBeInTheDocument();
+      const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
+      fireEvent.click(historyTabBtn);
 
-    const exportBtn = screen.getByRole('button', { name: /ส่งออกประวัติ \(CSV\)/i });
-    fireEvent.click(exportBtn);
-
-    expect(createObjectURLMock).toHaveBeenCalled();
+      expect(screen.getAllByText(/Rev\.01/i).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText(/Rev\.00/i)).toBeInTheDocument();
+    });
   });
 });

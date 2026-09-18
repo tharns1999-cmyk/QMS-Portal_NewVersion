@@ -42,6 +42,7 @@ import {
   getApproverName, 
   getAckNames 
 } from '../../utils/darHelper';
+import { getRevisionIndex, resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import toast from 'react-hot-toast';
 
 /**
@@ -169,10 +170,24 @@ const DocumentDetailModal = ({
     controlledCopyInstances, 
     documentControlledCopies,
     dars,
+    darRequests,
     timeline,
     masterUsers,
     reportCcDamagedLost
   } = useStore();
+
+  const allDars = useMemo(() => {
+    const raw = [...(dars || []), ...(darRequests || [])];
+    const map = new Map();
+    raw.forEach(d => {
+      if (!d) return;
+      const key = String(d.id || d.dar_no || d.darNo);
+      if (!map.has(key)) {
+        map.set(key, d);
+      }
+    });
+    return Array.from(map.values());
+  }, [dars, darRequests]);
 
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'history'
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -659,76 +674,101 @@ const DocumentDetailModal = ({
     }
   };
 
-  // Strict Revision-Scoped DAR History Binding (1:1 Revision Snapshot)
-  // Ensures viewing Rev.01 shows only Rev.01 DAR, viewing Rev.00 shows only Rev.00 DAR.
+  // Cumulative Document Lineage Filter (Audit Trail <= Current Revision)
+  // Ensures viewing Rev.01 shows Rev.01 and Rev.00 DARs, viewing Rev.00 shows only Rev.00 DAR.
+  const currentDocRevIndex = getRevisionIndex(doc?.rev ?? doc?.revision ?? doc?.doc_version ?? '00');
+
   const scopedDarHistory = useMemo(() => {
     if (!doc) return [];
 
-    const docRevNorm = normalizeRev(doc.rev ?? doc.revision ?? doc.doc_version ?? doc.currentRevision ?? '00');
-    const docCode = (doc.title || doc.document_code || doc.doc_code || doc.code || String(doc.id || '')).trim().toUpperCase();
+    const currentDocCode = resolveDocCode(doc);
+    const currentDocCodeUpper = currentDocCode.toUpperCase();
+    const currentDocTitle = String(doc.title || '').trim().toUpperCase();
     const docIdStr = String(doc.id || '');
-    const docDarId = doc.darId || doc.dar_id || doc.darNo || doc.dar_no;
 
-    // 1. Direct DAR matches from dars in store
-    const matchedDars = (dars || []).filter(dar => {
-      // Priority 1: Direct ID binding if specified
-      if (docDarId) {
-        const darIdStr = String(dar.id || '');
-        const darNoStr = String(dar.dar_no || dar.darNo || '');
-        if (darIdStr === String(docDarId) || darNoStr === String(docDarId)) {
-          return true;
-        }
-      }
+    // 1. ดึง DAR ทั้งหมดที่เป็นของเอกสารรหัสเดียวกัน
+    const docDars = allDars.filter((dar) => {
+      if (!dar) return false;
+      const darDocCode = resolveDocCode(dar).toUpperCase();
+      const darTitle = String(dar.title || '').trim().toUpperCase();
+      const darDocCodeField = String(dar.doc_code || dar.docCode || dar.docNo || '').trim().toUpperCase();
 
-      // Priority 2: Document Code / ID match AND strict normalized revision equality
-      const darCode = (dar.doc_code || dar.docCode || dar.docNo || dar.title || '').trim().toUpperCase();
-      const matchDocCode = Boolean(darCode && docCode && darCode === docCode);
-      const matchDocId = Boolean(dar.docIdRef && String(dar.docIdRef) === docIdStr);
-      const matchDocIdDirect = Boolean((dar.docId || dar.doc_id) && String(dar.docId || dar.doc_id) === docIdStr);
+      const matchCode = Boolean(
+        (currentDocCodeUpper && currentDocCodeUpper !== '-' && (darDocCode === currentDocCodeUpper || darDocCodeField === currentDocCodeUpper)) ||
+        (currentDocTitle && (darTitle === currentDocTitle || darDocCodeField === currentDocTitle))
+      );
 
-      const isDocMatch = matchDocCode || matchDocId || matchDocIdDirect;
-      if (!isDocMatch) return false;
+      const matchId = Boolean(
+        (dar.doc_id && String(dar.doc_id) === docIdStr) ||
+        (dar.docId && String(dar.docId) === docIdStr) ||
+        (dar.docIdRef && String(dar.docIdRef) === docIdStr) ||
+        (dar.targetDocumentId && String(dar.targetDocumentId) === docIdStr)
+      );
 
-      const darRevRaw = dar.targetRevision ?? dar.docRev ?? dar.rev ?? dar.revision ?? dar.target_revision;
-      const darRevNorm = normalizeRev(darRevRaw);
+      const matchDirectDarId = Boolean(
+        (doc.darId && (String(dar.id) === String(doc.darId) || String(dar.dar_no) === String(doc.darId))) ||
+        (doc.dar_id && (String(dar.id) === String(doc.dar_id) || String(dar.dar_no) === String(doc.dar_id)))
+      );
 
-      return darRevNorm === docRevNorm;
+      return matchCode || matchId || matchDirectDarId;
     });
 
-    if (matchedDars.length > 0) {
-      return matchedDars.sort((a, b) => new Date(b.createdAt || b.effectiveDate || 0) - new Date(a.createdAt || a.effectiveDate || 0));
+    // 2. กรองเฉพาะ DAR ที่มี Revision <= Current Revision (ห้ามดึงอนาคตเข้ามา)
+    const filtered = docDars.filter((dar) => {
+      const darRevRaw = dar.targetRevision ?? dar.docRev ?? dar.rev ?? dar.revision ?? dar.target_revision ?? '00';
+      const darRevIndex = getRevisionIndex(darRevRaw);
+      return darRevIndex <= currentDocRevIndex;
+    });
+
+    if (filtered.length > 0) {
+      // 3. จัดเรียงตามลำดับเวลาจากล่าสุดลงไปหาอดีต (Descending)
+      return filtered.sort((a, b) => {
+        const revA = getRevisionIndex(a.targetRevision ?? a.docRev ?? a.rev ?? a.revision ?? a.target_revision ?? '00');
+        const revB = getRevisionIndex(b.targetRevision ?? b.docRev ?? b.rev ?? b.revision ?? b.target_revision ?? '00');
+        const revDiff = revB - revA;
+        if (revDiff !== 0) return revDiff;
+        return new Date(b.createdAt || b.effectiveDate || 0) - new Date(a.createdAt || a.effectiveDate || 0);
+      });
     }
 
-    // 2. Fallback: If no explicit DAR found in store for this document revision, construct 1:1 revision snapshot
+    // 4. Fallback: If no explicit DAR found in store, construct cumulative lineage down to 0
+    const docRevNorm = normalizeRev(doc.rev ?? doc.revision ?? doc.doc_version ?? '00');
     const curRevNum = parseInt(docRevNorm, 10);
-    const rStr = docRevNorm || '00';
-    const isGenesis = curRevNum === 0;
+    const maxRev = !isNaN(curRevNum) ? curRevNum : currentDocRevIndex;
     const isObs = Boolean(doc.status?.toUpperCase() === 'OBSOLETE' || doc.is_obsolete || isObsoleteDoc);
 
-    const fallbackDarNo = doc.darNo || doc.dar_no || doc.darId || `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String((isNaN(curRevNum) ? 0 : curRevNum) + 1).padStart(3, '0')}`;
+    const fallbacks = [];
+    for (let r = maxRev; r >= 0; r--) {
+      const rStr = String(r).padStart(2, '0');
+      const isGenesis = r === 0;
+      const isCurrent = r === maxRev;
+      const isItemObs = isCurrent && isObs;
 
-    return [{
-      id: doc.darId || doc.dar_id || `DAR-${docCode}-R${rStr}`,
-      dar_no: fallbackDarNo,
-      doc_code: doc.document_code || doc.doc_code || doc.title || docCode,
-      title: doc.title || docCode,
-      revision: rStr,
-      rev: rStr,
-      docRev: rStr,
-      type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
-      request_type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
-      status: isObs ? 'OBSOLETE' : 'EFFECTIVE',
-      effectiveDate: doc.effectiveDate || doc.effective_date || '2025-01-01',
-      effective_date_requested: doc.effectiveDate || doc.effective_date || '2025-01-01',
-      createdAt: doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`,
-      reason: doc.reason || doc.revisionNote || doc.changeReason || (isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง'),
-      description: doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ และจุดตรวจสอบสำหรับการปฏิบัติงานประจำวัน',
-      requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
-      reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
-      approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
-      require_ack: true
-    }];
-  }, [dars, doc, isObsoleteDoc]);
+      fallbacks.push({
+        id: (isCurrent && (doc.darId || doc.dar_id)) ? (doc.darId || doc.dar_id) : `DAR-${currentDocCode}-R${rStr}`,
+        dar_no: (isCurrent && (doc.darNo || doc.dar_no)) ? (doc.darNo || doc.dar_no) : `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String(r + 1).padStart(3, '0')}`,
+        doc_code: currentDocCode,
+        title: doc.name || doc.title || currentDocCode,
+        revision: rStr,
+        rev: rStr,
+        docRev: rStr,
+        type: isItemObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+        request_type: isItemObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+        status: isItemObs ? 'OBSOLETE' : (isCurrent && isSupersededDoc ? 'SUPERSEDED' : 'EFFECTIVE'),
+        effectiveDate: isCurrent ? (doc.effectiveDate || doc.effective_date || '2025-01-01') : '2025-01-01',
+        effective_date_requested: isCurrent ? (doc.effectiveDate || doc.effective_date || '2025-01-01') : '2025-01-01',
+        createdAt: isCurrent ? (doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`) : '2025-01-01T08:30:00.000Z',
+        reason: isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : (isCurrent ? (doc.reason || doc.revisionNote || doc.changeReason || 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง') : 'ปรับปรุงขั้นตอนการทำงาน'),
+        description: isCurrent ? (doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ') : 'กำหนดขั้นตอนการทำงานเริ่มต้น',
+        requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
+        reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
+        approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
+        require_ack: true
+      });
+    }
+
+    return fallbacks;
+  }, [allDars, doc, currentDocRevIndex, isObsoleteDoc, isSupersededDoc]);
 
   // State ควบคุมการกาง/พับ (Collapsible Timeline - ใบแรกกางออกเป็นค่าเริ่มต้น)
   const [expandedDarItems, setExpandedDarItems] = useState([]);
@@ -971,7 +1011,7 @@ const DocumentDetailModal = ({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className="px-2.5 py-0.5 rounded-md bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] text-xs font-bold font-mono">
-                      {doc.title || doc.document_code}
+                      {resolveDocCode(doc)}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-md bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9] text-xs font-bold font-mono">
                       Rev.{doc.rev || '00'}

@@ -9,6 +9,7 @@ import Button from '../../components/ui/Button';
 import { resolveReviewer } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
 import { isUserAuthorizedForDocDept } from '../../utils/darHelper';
+import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 
 const DarObsoleteForm = () => {
   const navigate = useNavigate();
@@ -202,7 +203,7 @@ const DarObsoleteForm = () => {
       dar_no: formData.darNo || formData.id,
       type: 'OBSOLETE',
       status: isDraft ? 'DRAFT' : 'UNDER_REVIEW',
-      title: selectedDoc ? `[OBSOLETE] ${selectedDoc.title}` : (formData.title || 'Untitled Draft'),
+      title: selectedDoc ? `[OBSOLETE] ${resolveDocCode(selectedDoc)}` : (formData.title || 'Untitled Draft'),
       requesterId: currentUser?.id,
       requester_id: currentUser?.id,
       requester_name: currentUser?.name,
@@ -211,7 +212,7 @@ const DarObsoleteForm = () => {
       docIdRef: formData.docId,
       doc_id: formData.docId,
       targetDocumentId: formData.docId,
-      document_code: selectedDoc?.title || formData.docCode || formData.docId,
+      document_code: selectedDoc ? resolveDocCode(selectedDoc) : (formData.docCode || formData.docId),
       obsoleteReason: formData.obsoleteReason,
       obsolete_reason: formData.obsoleteReason,
       reasonCategory: formData.obsoleteReason,
@@ -360,7 +361,7 @@ const DarObsoleteForm = () => {
                     >
                       <option value="">-- เลือกเอกสารที่ต้องการยกเลิก --</option>
                       {effectiveDocs.map(d => (
-                        <option key={d.id} value={d.id}>[{d.title}] {d.name} (Rev. {d.rev})</option>
+                        <option key={d.id} value={d.id}>[{resolveDocCode(d)}] {resolveDocTitle(d)} (Rev. {d.rev})</option>
                       ))}
                     </select>
                     {errors.docId && <p className="text-rose-500 text-xs mt-1">{errors.docId}</p>}
@@ -370,8 +371,8 @@ const DarObsoleteForm = () => {
                 {!lockedSource && selectedDoc && (
                   <div className="mt-2.5 bg-[#F8FAFC] p-3 rounded-lg border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-[11px]">{selectedDoc.title}</span>
-                      <span className="font-medium text-[#1E293B] truncate max-w-[280px]">{selectedDoc.name}</span>
+                      <span className="font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-[11px]">{resolveDocCode(selectedDoc)}</span>
+                      <span className="font-medium text-[#1E293B] truncate max-w-[280px]">{resolveDocTitle(selectedDoc)}</span>
                       <span className="text-slate-500 font-mono text-[11px]">Rev. {selectedDoc.rev}</span>
                     </div>
                     <div className="flex items-center gap-1 font-medium text-slate-600">
@@ -677,10 +678,10 @@ const DarObsoleteForm = () => {
                 value: (
                   <div className="space-y-1">
                     <span className="font-mono font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-md border border-rose-100 mr-2">
-                      {selectedDoc?.title || formData.docId}
+                      {selectedDoc ? resolveDocCode(selectedDoc) : formData.docId}
                     </span>
                     <span className="text-sm font-bold text-[#1E1E1E]">
-                      {selectedDoc?.name}
+                      {resolveDocTitle(selectedDoc)}
                     </span>
                   </div>
                 )

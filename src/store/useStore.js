@@ -8631,7 +8631,7 @@ const useStore = create(persist((set, get) => ({
       oldStatus: inst.status,
       newStatus: newStatus,
       remarks: isDamaged 
-        ? `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งชำรุดโดย ${reporterName} (${copyDept || inst.department}) -> สร้างงานเรียกคืนเล่มเดิม (DAMAGED_PENDING_RECALL) และตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
+        ? `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งชำรุดโดย ${reporterName} (${copyDept || inst.department}) -> สร้างงานเรียกคืนเล่มเดิมและตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
         : `สำเนาชุดที่ ${inst.copy_no || inst.ccNumber || '01'} ได้รับการแจ้งสูญหายโดย ${reporterName} (${copyDept || inst.department}) -> ปลดออกจากทะเบียนสำเนาใช้งาน (LOST) และตั้งเรื่องออกสำเนาทดแทน (เหตุผล: ${reason})`
     };
 
@@ -8726,7 +8726,7 @@ const useStore = create(persist((set, get) => ({
         type: 'DCC_RECALL',
         taskType: 'RECALL',
         task_type: 'RECALL',
-        title: `เรียกคืนสำเนาชำรุด: ${docOfficialTitle} (${docCode}) (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`,
+        title: `เรียกคืนสำเนาชำรุด: ${docCode}${docOfficialTitle && docOfficialTitle !== docCode ? ` (${docOfficialTitle})` : ''} (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`,
         description: `แผนก ${copyDept || inst.department} แจ้งชำรุด ประจำจุด ${inst.location || inst.locationName || copyDept} เหตุผล: ${reason} (กรุณาเรียกคืนเล่มชำรุดมาทำลายตามระเบียบ ISO 9001)`,
         docId: inst.doc_id || inst.docId,
         doc_id: inst.doc_id || inst.docId,
@@ -8740,7 +8740,7 @@ const useStore = create(persist((set, get) => ({
         instanceId: inst.id,
         copy_no: inst.copy_no || inst.ccNumber || '01',
         location: inst.location || inst.locationName || copyDept,
-        department: 'DC',
+        department: copyDept || inst.department || 'PD',
         holder_dept: copyDept || inst.department,
         target_department: 'DC',
         targetDepartment: 'DC',
