@@ -10,6 +10,8 @@ import {
 import EmptyState from '../../components/EmptyState';
 import { isActionableTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';
 import { isDarDraft, isDarRequester } from '../../utils/darHelper';
+import DashboardHeader from './components/DashboardHeader';
+import { isMyDepartment } from '../../services/darService';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -31,7 +33,8 @@ const Dashboard = () => {
   const [activeCardFilter, setActiveCardFilter] = useState('');
   const [activeOverviewTab, setActiveOverviewTab] = useState('ALL_REQUESTS'); // Tabs for System Overview
 
-  const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
+  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001' || currentUser?.empId === 'EMP-001');
+  const isQmrApprover = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR' || (currentUser?.position && currentUser.position.toUpperCase().includes('QMR')) || currentUser?.id === 'U004' || (currentUser?.level >= 6 && !currentUser?.isDcc));
 
   // 1. Calculate Stats (Split into Group 1 and Group 2)
   const isMyTask = (t) => {
@@ -42,13 +45,45 @@ const Dashboard = () => {
 
   const myTasks = (tasks || []).filter(t => isMyTask(t));
 
-  // Tab 1: Group 1: My Requests (คำขอของฉัน - Strict Personal Scoping)
-  const userDars = (dars || []).filter(d => isDarRequester(d, currentUser));
-  const myDraftCount = userDars.filter(d => isDarDraft(d)).length;
-  const myInProgressCount = userDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status)).length;
-  const myReturnedCount = userDars.filter(d => d.status === 'RETURNED_FOR_REVISION').length;
-  const myWaitingCount = userDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE'].includes(d.status)).length;
-  const myCancelledCount = userDars.filter(d => d.status === 'CANCELLED_OVERDUE').length;
+  // Strict Draft Isolation & Role-based Data Scoping
+  const scopedDars = (dars || []).filter((dar) => {
+    // 1. Strict Draft Isolation: Drafts can ONLY ever be viewed by their creator/requester
+    if (isDarDraft(dar)) {
+      return isDarRequester(dar, currentUser);
+    }
+
+    // 2. DCC Supervisor / Admin (คุณธนาวุฒิ): Shows all submitted DAR requests organization-wide
+    if (isAdmin) {
+      return true;
+    }
+
+    // 3. GM / QMR / Approver (คุณเรย์):
+    //    - Actionable items (tasks awaiting Ray's review/approval)
+    //    - Completed/approved requests organization-wide
+    //    - Requests submitted by Ray himself
+    if (isQmrApprover) {
+      const isActionableForRay = myTasks.some(t => t.darId === dar.id);
+      const isCompletedOrgWide = ['APPROVED_WAITING_EFFECTIVE', 'WAITING_EFFECTIVE', 'EFFECTIVE', 'COMPLETED', 'OBSOLETE'].includes(dar.status);
+      const isRequestedByRay = isDarRequester(dar, currentUser);
+      return isActionableForRay || isCompletedOrgWide || isRequestedByRay;
+    }
+
+    // 4. General Employee / Dept Head (เช่น บีม - QC):
+    //    - Requests created by user
+    //    - Requests within user's department
+    //    - Tasks assigned to user to review/action
+    const isMyRequest = isDarRequester(dar, currentUser);
+    const isMyDept = isMyDepartment(dar.department || dar.dept || dar.owner_dept || dar.docNo || dar.code, currentUser);
+    const hasMyTask = myTasks.some(t => t.darId === dar.id);
+    return isMyRequest || isMyDept || hasMyTask;
+  });
+
+  // Tab 1: Group 1: Scoped Requests Stats
+  const myDraftCount = scopedDars.filter(d => isDarDraft(d)).length;
+  const myInProgressCount = scopedDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT', 'IN_PROGRESS'].includes(d.status)).length;
+  const myReturnedCount = scopedDars.filter(d => d.status === 'RETURNED_FOR_REVISION').length;
+  const myWaitingCount = scopedDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE', 'EFFECTIVE'].includes(d.status)).length;
+  const myCancelledCount = scopedDars.filter(d => ['CANCELLED_OVERDUE', 'CANCELLED'].includes(d.status)).length;
 
   // Tab 2: Group 2: Action Required (งานที่ต้องจัดการ)
   const actionReviewTasks = myTasks.filter(t => t.type === 'Review');
@@ -73,30 +108,16 @@ const Dashboard = () => {
   }).length;
   const replacementRequestCount = (controlledCopyInstances || []).filter(i => i.status === 'REPLACEMENT_REQUESTED').length;
 
-  // 2. Recent DARs Filtering Logic (Enforcing Universal Draft Privacy)
-  let recentDars = (dars || []).filter(d => {
-    // Universal Draft Privacy: drafts are visible ONLY to their creator
-    if (isDarDraft(d)) {
-      return isDarRequester(d, currentUser);
-    }
-    return true;
-  });
-
-  if (!isAdmin) {
-    if (currentUser?.level <= 3) {
-      recentDars = recentDars.filter(d => isDarRequester(d, currentUser));
-    } else {
-      const myTaskDarIds = myTasks.map(t => t.darId).filter(Boolean);
-      recentDars = recentDars.filter(d => isDarRequester(d, currentUser) || myTaskDarIds.includes(d.id));
-    }
-  }
+  // 2. Recent DARs Filtering Logic (Enforcing Universal Draft Privacy & Role Scoping)
+  let recentDars = [...scopedDars];
 
   if (searchTerm) {
     const term = searchTerm.toLowerCase();
     recentDars = recentDars.filter(d => 
       (d.id || '').toLowerCase().includes(term) ||
       (d.title || '').toLowerCase().includes(term) ||
-      (d.department || '').toLowerCase().includes(term)
+      (d.department || '').toLowerCase().includes(term) ||
+      (d.darNumber || d.dar_no || d.darNo || '').toLowerCase().includes(term)
     );
   }
 
@@ -104,13 +125,13 @@ const Dashboard = () => {
     if (activeCardFilter === 'MY_DRAFT') {
       recentDars = recentDars.filter(d => isDarDraft(d) && isDarRequester(d, currentUser));
     } else if (activeCardFilter === 'MY_IN_PROGRESS') {
-      recentDars = recentDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && isDarRequester(d, currentUser));
+      recentDars = recentDars.filter(d => ['UNDER_REVIEW', 'PENDING_APPROVAL', 'WAITING_ACKNOWLEDGEMENT', 'IN_PROGRESS'].includes(d.status));
     } else if (activeCardFilter === 'MY_RETURNED') {
-      recentDars = recentDars.filter(d => d.status === 'RETURNED_FOR_REVISION' && isDarRequester(d, currentUser));
+      recentDars = recentDars.filter(d => d.status === 'RETURNED_FOR_REVISION');
     } else if (activeCardFilter === 'MY_WAITING') {
-      recentDars = recentDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE', 'WAITING_ACKNOWLEDGEMENT'].includes(d.status) && isDarRequester(d, currentUser));
+      recentDars = recentDars.filter(d => ['WAITING_EFFECTIVE', 'APPROVED_WAITING_EFFECTIVE', 'EFFECTIVE'].includes(d.status));
     } else if (activeCardFilter === 'MY_CANCELLED') {
-      recentDars = recentDars.filter(d => d.status === 'CANCELLED_OVERDUE' && isDarRequester(d, currentUser));
+      recentDars = recentDars.filter(d => ['CANCELLED_OVERDUE', 'CANCELLED'].includes(d.status));
     } else if (activeCardFilter === 'ACTION_REVIEW') {
       const matchingDarIds = isAdmin ? (dars || []).filter(d => d.status === 'UNDER_REVIEW').map(d => d.id) : actionReviewTasks.map(t => t.darId);
       recentDars = recentDars.filter(d => matchingDarIds.includes(d.id));
@@ -124,7 +145,7 @@ const Dashboard = () => {
       const matchingDarIds = isAdmin ? (tasks || []).filter(t => t.status === 'OVERDUE').map(t => t.darId) : myTasks.filter(t => t.status === 'OVERDUE').map(t => t.darId);
       recentDars = recentDars.filter(d => matchingDarIds.includes(d.id));
     } else if (activeCardFilter === 'DCC_PENDING') {
-      recentDars = recentDars.filter(d => d.status === 'APPROVED_WAITING_EFFECTIVE');
+      recentDars = recentDars.filter(d => ['APPROVED_WAITING_EFFECTIVE', 'WAITING_EFFECTIVE'].includes(d.status));
     }
   }
 
@@ -337,99 +358,10 @@ const Dashboard = () => {
       {/* ========================================================================= */}
       {/* SECTION 1: COMPACT SINGLE-ROW HERO BAR (<= 48px)                          */}
       {/* ========================================================================= */}
-      <div className="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-h-[44px]">
-        {/* Left: User greeting and department/role info */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-sm sm:text-[15px] text-slate-900 truncate">
-            สวัสดีคุณ {currentUser?.name || 'ผู้ใช้งาน'}
-          </span>
-          <span className="text-slate-300 shrink-0">•</span>
-          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
-            {currentUser?.department || 'PD'}
-          </span>
-          {currentUser?.position && (
-            <span className="text-xs text-slate-500 hidden md:inline truncate">
-              ({currentUser.position})
-            </span>
-          )}
-          {isAdmin && (
-            <span className="text-[11px] font-mono font-medium text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded hidden lg:inline shrink-0">
-              SLA: {simulatedDate}
-            </span>
-          )}
-        </div>
-
-        {/* Right: Modern Compact Action Buttons (h-8 text-xs) */}
-        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto flex-wrap">
-          {isAdmin ? (
-            <>
-              <button
-                onClick={() => navigate('/dcc/library')}
-                className="h-8 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-              >
-                <Library size={13} />
-                <span>คลังเอกสารแม่บท</span>
-              </button>
-              <button
-                onClick={simulateNextDay}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="จำลองวันเพื่อทดสอบระบบ SLA"
-              >
-                <Clock size={13} className="text-amber-600" />
-                <span>จำลองข้ามวัน</span>
-              </button>
-              <button
-                onClick={() => navigate('/controlled-copy?tab=ACTION_REQUIRED')}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <span>ประวัติแจกจ่าย</span>
-                <ChevronRight size={13} className="text-slate-400" />
-              </button>
-            </>
-          ) : currentUser?.level <= 3 ? (
-            <>
-              <button
-                onClick={() => navigate('/dar/new')}
-                className="h-8 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-              >
-                <Plus size={13} />
-                <span>สร้างเอกสารใหม่</span>
-              </button>
-              <button
-                onClick={() => navigate('/dar/new/revision')}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <FileEdit size={13} className="text-sky-600" />
-                <span>ขอแก้ไขเอกสาร</span>
-              </button>
-              <button
-                onClick={() => navigate('/library')}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Library size={13} className="text-slate-400" />
-                <span>คลังเอกสาร</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => navigate('/tasks')}
-                className="h-8 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
-              >
-                <Activity size={13} />
-                <span>ตรวจสอบคิวงาน</span>
-              </button>
-              <button
-                onClick={() => navigate('/library')}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Library size={13} className="text-slate-400" />
-                <span>คลังเอกสารแผนก</span>
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      <DashboardHeader 
+        simulatedDate={simulatedDate}
+        simulateNextDay={simulateNextDay}
+      />
 
       {/* ========================================================================= */}
       {/* SECTION 2: COMPACT KPI STRIP & TABS                                      */}

@@ -8,6 +8,7 @@ import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Z
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
+import { resolveApprover } from '../../utils/workflowResolver';
 
 const TaskReview = () => {
   const { id } = useParams();
@@ -44,19 +45,23 @@ const TaskReview = () => {
     }
 
     if (!approverName) {
-      const resolved = resolveApprover(
-        dar.requesterId || dar.requester_id,
-        task?.assigneeId || currentUser?.id,
-        dar.department || 'PD',
-        masterUsers || [],
-        masterUsers || [],
-        dar.docType || dar.doc_type,
-        null
-      );
-      if (resolved) {
-        const user = (masterUsers || []).find(u => u && u.id === (resolved.id || resolved));
-        approverName = user ? (user.name || user.fullName) : (resolved.name || 'ผู้อนุมัติ (Approver)');
-        approverRole = user?.position || approverRole;
+      try {
+        const resolved = typeof resolveApprover === 'function' ? resolveApprover(
+          dar.requesterId || dar.requester_id,
+          task?.assigneeId || currentUser?.id,
+          dar.department || 'PD',
+          masterUsers || [],
+          masterUsers || [],
+          dar.docType || dar.doc_type,
+          null
+        ) : null;
+        if (resolved) {
+          const user = (masterUsers || []).find(u => u && u.id === (resolved.id || resolved));
+          approverName = user ? (user.name || user.fullName) : (resolved.name || 'ผู้อนุมัติ (Approver)');
+          approverRole = user?.position || approverRole;
+        }
+      } catch (err) {
+        console.warn('Could not auto-resolve approver in TaskReview:', err);
       }
     }
 

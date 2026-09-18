@@ -1,24 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import useStore from '../../store/useStore';
-import { motion, AnimatePresence } from 'framer-motion';
+import useStore, { isNotificationVisibleToUser, isNotificationReadByUser } from '../../store/useStore';
 import { 
   Home, 
-  FilePlus, 
-  List, 
-  CheckSquare, 
-  Library, 
-  Copy, 
+  Inbox, 
+  BookOpen, 
+  FilePlus2, 
+  FileText, 
   Globe, 
-  FileText,
+  FolderGit2, 
+  CalendarDays, 
+  Files, 
+  SlidersHorizontal, 
   History, 
-  Bell, 
-  Calendar, 
-  Settings,
-  RotateCcw,
-  Trash2,
-  Sparkles,
-  CheckCircle2,
+  Sparkles, 
+  RotateCcw, 
+  Trash2, 
+  CheckCircle2, 
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -30,8 +28,8 @@ const Sidebar = () => {
   const location = useLocation();
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
-    masterUsers, setCurrentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, externalRequests, externalDocuments
+    masterUsers, setCurrentUser, switchUser, notifications,
+    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, externalRequests
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -93,14 +91,29 @@ const Sidebar = () => {
     return reviseDocIds.size;
   }, [tasks, externalRequests, currentUser]);
 
-  const NavItem = ({ to, icon: IconComponent, label, badgeCount }) => (
+  // Unread notifications count
+  const unreadNotificationCount = useMemo(() => {
+    return (notifications || [])
+      .filter(n => isNotificationVisibleToUser(n, currentUser))
+      .filter(n => !isNotificationReadByUser(n, currentUser?.id)).length;
+  }, [notifications, currentUser]);
+
+  const SectionHeader = ({ title }) => (
+    <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 pt-4 pb-1 select-none">
+      {title}
+    </div>
+  );
+
+  const NavItem = ({ to, icon: IconComponent, label, badgeCount, badgeColor = 'blue', isHighlight = false }) => (
     <NavLink 
       to={to} 
       className={({ isActive }) => 
-        `group relative flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 ${
+        `group relative flex items-center justify-between px-3 py-2 text-xs rounded-xl font-medium gap-2.5 transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 ${
           isActive 
             ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs' 
-            : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
+            : isHighlight
+              ? 'text-blue-600 bg-blue-50/40 hover:bg-blue-50/80 hover:text-blue-700'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
         }`
       }
     >
@@ -110,29 +123,37 @@ const Sidebar = () => {
           {isActive && (
             <span 
               aria-hidden="true"
-              className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-blue-600 transition-all" 
+              className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-blue-600 transition-all" 
             />
           )}
 
-          <div className="flex items-center gap-3 min-w-0 flex-1 pl-1">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-0.5">
             <IconComponent 
-              className={`w-4.5 h-4.5 shrink-0 transition-colors duration-200 ${
-                isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
+              className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                isActive 
+                  ? 'text-blue-600' 
+                  : isHighlight
+                    ? 'text-blue-500 group-hover:text-blue-600'
+                    : 'text-slate-400 group-hover:text-slate-600'
               }`} 
               strokeWidth={1.5} 
             />
-            <span className="truncate leading-normal tracking-tight text-[13.5px]">{label}</span>
+            <span className="truncate leading-normal tracking-tight text-[13px]">{label}</span>
           </div>
 
           {badgeCount > 0 && (
             <span 
-              className={`ml-2 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
-                isActive 
-                  ? 'bg-blue-100 text-blue-700 border border-blue-200' 
-                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+              className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
+                badgeColor === 'red'
+                  ? 'bg-rose-500 text-white shadow-2xs'
+                  : badgeColor === 'amber'
+                    ? 'bg-amber-500 text-white shadow-2xs'
+                    : isActive 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-100 text-blue-700 border border-blue-200'
               }`}
             >
-              {badgeCount}
+              {badgeCount > 99 ? '99+' : badgeCount}
             </span>
           )}
         </>
@@ -141,123 +162,166 @@ const Sidebar = () => {
   );
 
   return (
-    <aside className="w-64 sm:w-[270px] h-full bg-white border-r border-slate-200 flex flex-col justify-between p-4 sm:p-5 select-none shrink-0 z-30 shadow-none">
-      {/* ================= TOP SECTION: Brand Header & Notifications ================= */}
-      <div className="space-y-3.5 shrink-0">
-        {/* Brand Header */}
+    <aside className="w-64 sm:w-[264px] h-screen flex flex-col justify-between overflow-hidden bg-white border-r border-slate-200/80 select-none shrink-0 z-30 shadow-none">
+      {/* ================= TOP BRAND HEADER & NOTIFICATION WIDGET ================= */}
+      <div className="p-3.5 pb-2 shrink-0 border-b border-slate-100 space-y-1">
         <div 
           onClick={() => navigate('/portal')}
-          className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-all duration-200 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+          className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-50 transition-all duration-150 cursor-pointer group outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
           title="ไปยังหน้าหลักพอร์ทัล"
         >
-          <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0 group-hover:scale-105 transition-transform">
+          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0 group-hover:scale-105 transition-transform">
             Q
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-[16px] font-black text-slate-900 tracking-tight leading-tight truncate">
+              <h1 className="text-[15px] font-black text-slate-900 tracking-tight leading-tight truncate">
                 QMS
               </h1>
-              <span className="px-1.5 py-0.5 text-[9.5px] font-black font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded shrink-0 uppercase tracking-wider">
-                Enterprise
+              <span className="px-1.5 py-0.2 text-[9px] font-black font-mono bg-blue-50 text-blue-700 border border-blue-200 rounded shrink-0 uppercase tracking-wider">
+                Portal
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium tracking-tight truncate mt-0.5">
-              Document Control
+            <p className="text-[10.5px] text-slate-500 font-medium tracking-tight truncate mt-0.5">
+              Enterprise Quality Suite
             </p>
           </div>
         </div>
 
-        {/* Notifications Quick Bar */}
-        <NotificationPopover />
+        {/* Top Notification Trigger Widget */}
+        <NotificationPopover unreadCount={unreadNotificationCount} />
       </div>
 
-      <div className="my-3 border-b border-slate-200" />
+      {/* ================= CENTER SECTION: Grouped Navigation Links ================= */}
+      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1 scrollbar-none">
+        {/* GROUP 1: WORKSPACE (พื้นที่ทำงาน) */}
+        <SectionHeader title="WORKSPACE" />
+        <NavItem 
+          to="/portal" 
+          icon={Home} 
+          label="ภาพรวมพอร์ทัล" 
+        />
+        {isReviewerOrApprover && (
+          <NavItem 
+            to="/dcc/tasks" 
+            icon={Inbox} 
+            label="กล่องงานที่ต้องทำ" 
+            badgeCount={myTaskCount}
+            badgeColor={myTaskCount > 0 ? 'amber' : 'blue'}
+          />
+        )}
 
-      {/* ================= CENTER SECTION: Navigation Links ================= */}
-      <nav className="flex-1 overflow-y-auto space-y-1 pr-1.5 -mr-1.5 custom-scrollbar">
-        <NavItem to="/portal" icon={Home} label="หน้าหลักพอร์ทัล" />
-        
-        {isDcc && (
+        {/* GROUP 2: INTERNAL DOCS / DAR (เอกสารภายใน) */}
+        <SectionHeader title="เอกสารภายใน" />
+        <NavItem 
+          to="/dcc/library" 
+          icon={BookOpen} 
+          label="คลังเอกสารแม่บท" 
+        />
+        {isRequester && (
           <>
-            <div className="pt-4 pb-2 px-3 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>ระบบควบคุมเอกสาร</span>
-              <span className="text-[9.5px] font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">DCC</span>
-            </div>
-            
-            <NavItem to="/dcc/dashboard" icon={Library} label="แดชบอร์ดภาพรวม" />
-            
-            {isRequester && (
-              <>
-                <NavItem to="/dcc/dar/new" icon={FilePlus} label="สร้างคำร้อง DAR" />
-                <NavItem to="/dcc/dar/list" icon={List} label="คำร้อง DAR ของฉัน" />
-              </>
-            )}
-            
-            {isReviewerOrApprover && (
-              <NavItem to="/dcc/tasks" icon={CheckSquare} label="กล่องงานที่ต้องทำ" badgeCount={myTaskCount} />
-            )}
-            
+            <NavItem 
+              to="/dcc/dar/new" 
+              icon={FilePlus2} 
+              label="ยื่นคำร้อง DAR" 
+              isHighlight={true}
+            />
+            <NavItem 
+              to="/dcc/dar/list" 
+              icon={FileText} 
+              label="ติดตามคำร้องของฉัน" 
+            />
+          </>
+        )}
+
+        {/* GROUP 3: EXTERNAL DOCS / EDR (เอกสารภายนอก) */}
+        <SectionHeader title="เอกสารภายนอก" />
+        <NavItem 
+          to="/dcc/external-docs" 
+          icon={Globe} 
+          label="คลังเอกสารภายนอก" 
+        />
+        <NavItem 
+          to="/dcc/external/my-requests" 
+          icon={FolderGit2} 
+          label="คำร้องของฉัน" 
+          badgeCount={myExternalReviseCount}
+          badgeColor="amber"
+        />
+        <NavItem 
+          to="/dcc/periodic-reviews" 
+          icon={CalendarDays} 
+          label="การทบทวนตามรอบ" 
+        />
+
+        {/* GROUP 4: DCC MANAGEMENT (งานกำกับดูแล DCC - แสดงเฉพาะ Role DCC / Admin) */}
+        {(isDccUser || isAdmin) && (
+          <>
+            <SectionHeader title="งานกำกับดูแล DCC" />
+            <NavItem 
+              to="/dcc/controlled-copy" 
+              icon={Files} 
+              label="ทะเบียนสำเนาควบคุม" 
+              badgeCount={ccTaskCount}
+              badgeColor="blue"
+            />
             {isAdmin && (
               <>
-                <NavItem to="/dcc/admin/master-data" icon={Settings} label="จัดการข้อมูลหลัก" />
-                <NavItem to="/dcc/admin/action-log" icon={History} label="ประวัติการทำงาน" />
+                <NavItem 
+                  to="/dcc/admin/master-data" 
+                  icon={SlidersHorizontal} 
+                  label="จัดการข้อมูลหลัก" 
+                />
+                <NavItem 
+                  to="/dcc/admin/action-log" 
+                  icon={History} 
+                  label="บันทึกประวัติการทำงาน" 
+                />
               </>
-            )}
-            
-            <NavItem to="/dcc/library" icon={Library} label="คลังเอกสารแม่บท" />
-            
-            {isDccUser && (
-              <NavItem to="/dcc/controlled-copy" icon={Copy} label="ทะเบียนสำเนาควบคุม" badgeCount={ccTaskCount} />
-            )}
-            <NavItem to="/dcc/external-docs" icon={Globe} label="คลังเอกสารภายนอก" />
-            <NavItem to="/dcc/external/my-requests" icon={FileText} label="คำร้องเอกสารภายนอกของฉัน" badgeCount={myExternalReviseCount} />
-            <NavItem to="/dcc/periodic-reviews" icon={Calendar} label="การทบทวนตามรอบ" />
-
-            {/* Quick Reset & Seed Mock Data Buttons for DCC */}
-            {isAdmin && (
-              <div className="pt-3 space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    seedComprehensiveQaMockData();
-                    toast.success('โหลดชุดข้อมูลจำลอง QA Workflow (DAR, Tasks, สำเนาควบคุม) เรียบร้อยแล้ว');
-                  }}
-                  className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold text-[#0D99FF] bg-[#E5F4FF]/70 hover:bg-[#D1EFFF] border border-[#B8E1FF] transition-all group shadow-2xs cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#0D99FF]"
-                  title="โหลดชุดข้อมูลจำลองคำร้อง QA ครบทุก Flow สำหรับ Manual Testing"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Sparkles size={15} className="text-[#0D99FF] shrink-0" />
-                    <span className="truncate tracking-tight">โหลด Mock Data (QA)</span>
-                  </div>
-                  <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded bg-[#0D99FF] text-white shrink-0">
-                    Seed
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsCleanSlateOpen(true)}
-                  className="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50/50 hover:bg-rose-100/60 border border-rose-200/80 transition-all group shadow-2xs cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                  title="ล้างข้อมูลจำลองทั้งหมดเพื่อเริ่มทดสอบใหม่"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <RotateCcw size={15} className="text-rose-600 group-hover:-rotate-45 transition-transform shrink-0" />
-                    <span className="truncate tracking-tight">ล้างข้อมูลจำลอง</span>
-                  </div>
-                  <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded bg-rose-600 text-white shrink-0">
-                    Reset
-                  </span>
-                </button>
-              </div>
             )}
           </>
         )}
       </nav>
 
-      {/* ================= BOTTOM SECTION: User Profile & Role Switcher ================= */}
-      <div className="pt-4 border-t border-slate-200 shrink-0">
-        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3 shadow-2xs">
+      {/* ================= BOTTOM SECTION: Dev Tools & User Profile ================= */}
+      <div className="p-3 border-t border-slate-200/80 bg-white shrink-0 space-y-2.5">
+        {/* Compact Dev Action Bar (QA Seed / Clean Slate) */}
+        {isAdmin && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-1.5 py-1 px-2 bg-slate-50 border border-slate-200/60 rounded-lg text-[11px] text-slate-500">
+              <span className="font-mono text-[10px] font-medium text-slate-400 uppercase tracking-wider pl-1">
+                DEV TOOLS
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    seedComprehensiveQaMockData();
+                    toast.success('โหลดชุดข้อมูลจำลอง QA Workflow เรียบร้อยแล้ว');
+                  }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-blue-50 text-slate-600 hover:text-blue-700 transition-colors font-medium cursor-pointer"
+                  title="โหลดชุดข้อมูลจำลองสำหรับ QA Testing"
+                >
+                  <Sparkles size={11} className="text-blue-600 shrink-0" />
+                  <span>Seed</span>
+                </button>
+                <span className="text-slate-300">|</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCleanSlateOpen(true)}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-colors font-medium cursor-pointer"
+                  title="ล้างข้อมูลจำลองทั้งหมดเพื่อเริ่มทดสอบใหม่"
+                >
+                  <RotateCcw size={11} className="text-rose-600 shrink-0" />
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* User Profile & Role Switcher */}
+        <div className="p-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2.5 shadow-2xs">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200 shrink-0">
               {currentUser?.name?.charAt(0) || 'U'}
@@ -283,7 +347,10 @@ const Sidebar = () => {
             <select 
               className="w-full h-8 px-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer leading-normal shadow-none"
               value={currentUser?.id || ''}
-              onChange={(e) => setCurrentUser(e.target.value)}
+              onChange={(e) => {
+                const fn = switchUser || setCurrentUser;
+                fn(e.target.value);
+              }}
               title="สลับผู้ใช้งาน / บทบาทจำลอง"
             >
               {(masterUsers || []).map(user => (

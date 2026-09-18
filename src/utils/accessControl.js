@@ -213,7 +213,28 @@ export const hasDocumentAccess = (doc, user) => {
  * @param {Object} user - Current active user
  * @returns {boolean}
  */
-export const canManageControlledCopy = (copy, user) => {
+export const canManageControlledCopy = (arg1, arg2, arg3) => {
+  let user, masterDoc, copy;
+
+  if (arg3 !== undefined) {
+    // 3 arguments: (currentUser, masterDoc, copy)
+    user = arg1;
+    masterDoc = arg2;
+    copy = arg3;
+  } else {
+    // 2 arguments: (copy, user)
+    copy = arg1;
+    user = arg2;
+    masterDoc = null;
+  }
+
+  // Auto-detect swapped 2-arguments (user, copy)
+  if (copy && (copy.role || copy.empId) && user && (user.holder_dept || user.copy_no)) {
+    const temp = copy;
+    copy = user;
+    user = temp;
+  }
+
   if (!user || !copy) return false;
 
   // 1. DCC Admin / Super Admin bypass
@@ -223,12 +244,13 @@ export const canManageControlledCopy = (copy, user) => {
     user.isDcc ||
     user.isSuperAdmin ||
     user.id === 'U001' ||
-    user.id === 'u5'
+    user.id === 'u5' ||
+    (user.permissions && (user.permissions.includes('DCC_ADMIN') || user.permissions.includes('ADMIN')))
   ) {
     return true;
   }
 
-  // 2. Department Custodianship Check
+  // 2. Department Custodianship Check (Recipient Dept Members)
   const copyDept = (copy.holder_dept || copy.department || copy.departmentId || copy.dept_code || copy.target_department || '').toString().trim().toUpperCase();
   const rawUserDepts = [
     user.primary_department,
@@ -242,13 +264,61 @@ export const canManageControlledCopy = (copy, user) => {
   ];
   const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
 
-  if (!copyDept) return false;
+  const isSameDept = (dept) => {
+    if (!dept) return false;
+    const cleanDept = String(dept).trim().toUpperCase();
+    return userDepts.some(
+      (u) =>
+        u === cleanDept ||
+        ((u === 'QA' || u === 'QA/QC' || u === 'QAQC' || u === 'QC') && (cleanDept === 'QA' || cleanDept === 'QA/QC' || cleanDept === 'QAQC' || cleanDept === 'QC'))
+    );
+  };
 
-  return userDepts.some(
-    (d) =>
-      d === copyDept ||
-      ((d === 'QA' || d === 'QA/QC' || d === 'QAQC') && (copyDept === 'QA' || copyDept === 'QA/QC' || copyDept === 'QAQC'))
-  );
+  if (isSameDept(copyDept)) {
+    return true;
+  }
+
+  // 3. Document Owner / Requester / Dept Head Check (if masterDoc is provided)
+  if (masterDoc) {
+    // Helper to match user ID or Employee ID safely
+    const userMatchesId = (targetId) => {
+      if (!targetId) return false;
+      const targetStr = String(targetId).trim().toLowerCase();
+      const userIdStr = user.id ? String(user.id).trim().toLowerCase() : '';
+      const userEmpIdStr = user.empId ? String(user.empId).trim().toLowerCase() : '';
+      return targetStr === userIdStr || (userEmpIdStr && targetStr === userEmpIdStr);
+    };
+
+    // Requesters / Document Creator / Owner
+    const requesterIds = [
+      masterDoc.created_by,
+      masterDoc.createdBy,
+      masterDoc.requester_id,
+      masterDoc.requesterId,
+      masterDoc.ownerId,
+      masterDoc.owner_id,
+      masterDoc.author_id,
+      masterDoc.authorId,
+      masterDoc.requester?.id,
+      masterDoc.requester?.empId
+    ].filter(Boolean);
+
+    if (requesterIds.some(userMatchesId)) {
+      return true;
+    }
+
+    // Dept Heads of the Document Owner Dept
+    const docDept = (masterDoc.owner_dept || masterDoc.department || masterDoc.dept || '').toString().trim().toUpperCase();
+    if (docDept && isSameDept(docDept)) {
+      // Allow if they are in the owner dept AND are a manager/head
+      const isManager = user.role === 'MANAGER' || user.role === 'DEPT_HEAD' || user.role === 'HEAD' || user.isHead || user.level >= 4;
+      if (isManager) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 };
 
 /**

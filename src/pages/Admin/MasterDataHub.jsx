@@ -290,7 +290,7 @@ const MasterDataHub = () => {
       }));
     }
     return [
-      { id: 'QA', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headName: 'ธนาวุฒิ สมควรกิจดำรง' },
+      { id: 'QC', code: 'QC', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headName: 'บีม' },
       { id: 'PD', nameTh: 'ฝ่ายผลิต', nameEn: 'Production Department', headName: 'มนัสวีร์ ขจรศักดิ์' },
       { id: 'EN', nameTh: 'ฝ่ายวิศวกรรม', nameEn: 'Engineering Department', headName: 'วิศวกรรมการผลิต' },
       { id: 'WH', nameTh: 'ฝ่ายคลังสินค้า', nameEn: 'Warehouse Department', headName: 'คลังสินค้าและจัดส่ง' },
@@ -326,7 +326,8 @@ const MasterDataHub = () => {
 
   // --- TAB 1 HANDLERS (Users) ---
   const filteredUsers = (masterUsers || []).filter(u => {
-    const matchSearch = (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+    const matchSearch = !userSearch || 
+      (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
       (u.id || '').toLowerCase().includes(userSearch.toLowerCase()) ||
       (u.empId || '').toLowerCase().includes(userSearch.toLowerCase()) ||
       (u.email || '').toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -341,9 +342,14 @@ const MasterDataHub = () => {
   const handleOpenUserModal = (user = null) => {
     if (user) {
       setEditingUser(user);
-      const primary = user.primary_department || user.department || user.depts?.[0] || 'QA';
+      let primary = user.primary_department || user.department || user.depts?.[0] || 'QA';
+      if (primary === 'QA/QC' || user.id === 'U005' || user.empId === 'EMP-005') primary = 'QC';
       const rawAffiliated = user.affiliated_departments || user.depts || (user.department ? [user.department] : [primary]);
-      const affiliated = Array.from(new Set([primary, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
+      let affiliated = Array.from(new Set([primary, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
+      if (user.id === 'U005' || user.empId === 'EMP-005' || primary === 'QC') {
+        affiliated = affiliated.map(d => d === 'QA/QC' ? 'QC' : d);
+      }
+      affiliated = Array.from(new Set(affiliated));
       setUserFormData({
         name: user.name,
         empId: user.empId || '',
@@ -351,6 +357,7 @@ const MasterDataHub = () => {
         department: primary,
         primary_department: primary,
         depts: affiliated,
+        departments: affiliated,
         affiliated_departments: affiliated,
         position: user.position || '',
         role: user.role || (user.isDcc ? 'DCC_ADMIN' : 'GENERAL_USER'),
@@ -366,6 +373,7 @@ const MasterDataHub = () => {
         department: 'QA',
         primary_department: 'QA',
         depts: ['QA'],
+        departments: ['QA'],
         affiliated_departments: ['QA'],
         position: 'Staff',
         role: 'GENERAL_USER',
@@ -2303,10 +2311,12 @@ const MasterDataHub = () => {
                 {/* Selected Departments Tag Tray */}
                 <div className="flex flex-wrap items-center gap-1.5 min-h-[40px] p-2 bg-white border border-slate-200 rounded-lg">
                   {(userFormData.affiliated_departments || []).map((deptCode) => {
-                    const normDeptCode = normalizeDepartmentId(deptCode);
-                    const isPrimary = normDeptCode === normalizeDepartmentId(userFormData.primary_department);
-                    const deptObj = departmentsList.find(d => normalizeDepartmentId(d.id) === normDeptCode);
-                    const deptLabel = deptObj ? `${normDeptCode} - ${deptObj.nameTh || deptObj.name}` : normDeptCode;
+                    const normDeptCode = (deptCode === 'QA/QC' || deptCode === 'QA') ? 'QC' : normalizeDepartmentId(deptCode);
+                    const currentPrimary = (userFormData.primary_department === 'QA/QC' || userFormData.primary_department === 'QA') ? 'QC' : (userFormData.primary_department || userFormData.department);
+                    const isPrimary = normDeptCode === currentPrimary || normalizeDepartmentId(deptCode) === normalizeDepartmentId(currentPrimary);
+                    const deptObj = departmentsList.find(d => d.id === normDeptCode || normalizeDepartmentId(d.id) === normalizeDepartmentId(deptCode));
+                    const displayCode = normDeptCode === 'QA/QC' ? 'QC' : normDeptCode;
+                    const deptLabel = deptObj ? `${displayCode} - ${deptObj.nameTh || deptObj.name}` : displayCode;
 
                     return (
                       <div
@@ -2325,12 +2335,13 @@ const MasterDataHub = () => {
                           <button
                             type="button"
                             onClick={() => {
+                              const cleanDept = (deptCode === 'QA/QC' || deptCode === 'QA') ? 'QC' : deptCode;
                               setUserFormData(prev => ({
                                 ...prev,
-                                primary_department: deptCode,
-                                department: deptCode
+                                primary_department: cleanDept,
+                                department: cleanDept
                               }));
-                              toast.success(`ตั้ง ${deptCode} เป็นแผนกหลัก`);
+                              toast.success(`ตั้ง ${cleanDept} เป็นแผนกหลัก`);
                             }}
                             className="text-[10px] text-slate-500 hover:text-[#0D99FF] underline cursor-pointer"
                             title="คลิกเพื่อตั้งเป็นแผนกหลัก (Set as Primary)"
@@ -2356,6 +2367,7 @@ const MasterDataHub = () => {
                             setUserFormData(prev => ({
                               ...prev,
                               affiliated_departments: updated,
+                              departments: updated,
                               depts: updated,
                               primary_department: newPrimary,
                               department: newPrimary
@@ -2380,15 +2392,18 @@ const MasterDataHub = () => {
                     onChange={(e) => {
                       const selected = e.target.value;
                       if (!selected) return;
+                      const cleanSelected = (selected === 'QA/QC' || selected === 'QA') ? 'QC' : selected;
                       const current = userFormData.affiliated_departments || [];
-                      if (!current.includes(selected)) {
-                        const updated = [...current, selected];
+                      const hasSelected = current.some(c => c === cleanSelected || ((c === 'QC' || c === 'QA/QC') && (cleanSelected === 'QC' || cleanSelected === 'QA/QC')));
+                      if (!hasSelected) {
+                        const updated = [...current, cleanSelected];
                         setUserFormData(prev => ({
                           ...prev,
                           affiliated_departments: updated,
+                          departments: updated,
                           depts: updated
                         }));
-                        toast.success(`เพิ่มแผนก ${selected} เรียบร้อยแล้ว`);
+                        toast.success(`เพิ่มแผนก ${cleanSelected} เรียบร้อยแล้ว`);
                       }
                       e.target.value = '';
                     }}
@@ -2396,12 +2411,26 @@ const MasterDataHub = () => {
                   >
                     <option value="" disabled>+ เลือกเพิ่มแผนกที่สังกัดร่วม...</option>
                     {departmentsList
-                      .filter(d => !(userFormData.affiliated_departments || []).includes(d.id))
-                      .map(d => (
-                        <option key={d.id} value={d.id}>
-                          + เพิ่ม: {d.id} ({d.nameTh || d.name})
-                        </option>
-                      ))}
+                      .filter(d => {
+                        const dCode = (d.id === 'QA/QC' || d.id === 'QA') ? 'QC' : d.id;
+                        const primaryCode = (userFormData.primary_department === 'QA/QC' || userFormData.primary_department === 'QA')
+                          ? 'QC'
+                          : (userFormData.primary_department || userFormData.department);
+                        // Exclude primary department
+                        if (dCode === primaryCode) return false;
+                        // Exclude if already in affiliated_departments
+                        const affCodes = (userFormData.affiliated_departments || []).map(a => (a === 'QA/QC' || a === 'QA') ? 'QC' : a);
+                        if (affCodes.includes(dCode)) return false;
+                        return true;
+                      })
+                      .map(d => {
+                        const dCode = (d.id === 'QA/QC' || d.id === 'QA') ? 'QC' : d.id;
+                        return (
+                          <option key={d.id} value={dCode}>
+                            + เพิ่ม: {dCode} ({d.nameTh || d.name})
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
 

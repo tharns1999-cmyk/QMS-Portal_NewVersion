@@ -31,10 +31,11 @@ import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
 import ExternalDocFormModal from '../ExternalDocs/ExternalDocFormModal';
 import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfirmHardcopyReceiptModal';
+import DccCustodyActionModal from '../../components/modals/DccCustodyActionModal';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment } from '../../utils/taskFilter';
+import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment, normalizeCanonicalDept } from '../../utils/taskFilter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date Formatter (null-safe)
@@ -354,7 +355,7 @@ export const resolveTaskDepartment = (task, storeContext) => {
       }
     }
   }
-  return dept === 'DCC' ? 'DC' : dept;
+  return normalizeCanonicalDept(dept);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -515,12 +516,15 @@ export const getRevisionTransition = (task, matchedDar, matchedDoc) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const formatDepartmentBadge = (deptCode, masterDepartments) => {
   if (!deptCode) return '';
-  const clean = deptCode === 'DCC' ? 'DC' : deptCode;
-  const deptObj = (masterDepartments || []).find(d => isSameDepartment(d.id, clean));
+  const clean = normalizeCanonicalDept(deptCode);
+  const deptObj = (masterDepartments || []).find(d => isSameDepartment(d.id, clean) || isSameDepartment(d.code, clean));
   if (deptObj) {
     const rawTh = deptObj.nameTh || deptObj.name || '';
     const thaiName = rawTh.replace(/^.*?\((.*?)\)/, '$1').replace(new RegExp(`^${clean}\\s*[-:]*\\s*`, 'i'), '').trim();
     return `${clean} - ${thaiName || deptObj.name || clean}`;
+  }
+  if (clean === 'QC') {
+    return 'QC - ฝ่ายประกันและควบคุมคุณภาพ';
   }
   return clean;
 };
@@ -913,6 +917,7 @@ const TaskInbox = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
+  const [selectedCustodyTask, setSelectedCustodyTask] = useState(null);
   const [editingExternalDoc, setEditingExternalDoc] = useState(null);
   const [resubmitTaskId, setResubmitTaskId] = useState(null);
   const [isExternalDocModalOpen, setIsExternalDocModalOpen] = useState(false);
@@ -945,12 +950,12 @@ const TaskInbox = () => {
 
   const userDepts = useMemo(() => {
     const raw = currentUser?.affiliated_departments || currentUser?.depts || (currentUser?.primary_department ? [currentUser.primary_department] : (currentUser?.department ? [currentUser.department] : []));
-    return Array.from(new Set(raw.map(d => (d === 'DCC' ? 'DC' : d)).filter(Boolean)));
+    return Array.from(new Set(raw.map(d => normalizeCanonicalDept(d)).filter(Boolean)));
   }, [currentUser]);
 
   const primaryDept = useMemo(() => {
     const raw = currentUser?.primary_department || currentUser?.department || '';
-    return raw === 'DCC' ? 'DC' : raw;
+    return normalizeCanonicalDept(raw);
   }, [currentUser]);
 
   const [deptFilter, setDeptFilter] = useState('ALL');
@@ -962,10 +967,13 @@ const TaskInbox = () => {
   const resolveTaskDept = useCallback((task) => {
     if (!task) return '';
     const isReceipt = isReceiptTask(task) || normalizeTaskCategory(task) === 'RECEIPT';
+    let dept = '';
     if (isReceipt) {
-      return resolveReceiptTaskDepartment(task, null) || resolveTaskDepartment(task, storeContext) || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.department || '';
+      dept = resolveReceiptTaskDepartment(task, null) || resolveTaskDepartment(task, storeContext) || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.department || '';
+    } else {
+      dept = resolveTaskDepartment(task, storeContext) || task.department || task.dept || task.target_department || task.targetDepartment || task.destinationDept || '';
     }
-    return resolveTaskDepartment(task, storeContext) || task.department || task.dept || task.target_department || task.targetDepartment || task.destinationDept || '';
+    return normalizeCanonicalDept(dept);
   }, [storeContext]);
 
   const isTaskMatchingDept = useCallback((task, targetDept) => {
@@ -1020,12 +1028,12 @@ const TaskInbox = () => {
           const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
           return Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || t.assigneeName === currentUser?.name));
         })
-        .map(t => resolveTaskDept(t))
+        .map(t => normalizeCanonicalDept(resolveTaskDept(t)))
         .filter(Boolean);
-      return Array.from(new Set([...userDepts, ...deptsFromAssignedTasks])).filter(Boolean);
+      return Array.from(new Set([...userDepts, ...deptsFromAssignedTasks].map(d => normalizeCanonicalDept(d)))).filter(Boolean);
     }
-    const deptsFromTasks = (userTasks || []).map(t => resolveTaskDept(t)).filter(Boolean);
-    const combined = Array.from(new Set([...userDepts, ...deptsFromTasks]));
+    const deptsFromTasks = (userTasks || []).map(t => normalizeCanonicalDept(resolveTaskDept(t))).filter(Boolean);
+    const combined = Array.from(new Set([...userDepts, ...deptsFromTasks].map(d => normalizeCanonicalDept(d))));
     return combined.filter(Boolean);
   }, [dccAdmin, userDepts, userTasks, resolveTaskDept, currentUser]);
 
@@ -1121,6 +1129,12 @@ const TaskInbox = () => {
 
     if (isReceipt) {
       setSelectedReceiptTask(task);
+      return;
+    }
+
+    // ISO 9001 Cl. 7.5.3 – Custody workflow tasks → open DCC physical verification modal
+    if (normType === 'DCC_RELOCATE' || normType === 'DCC_RETURN') {
+      setSelectedCustodyTask(task);
       return;
     }
 
@@ -1540,6 +1554,13 @@ const TaskInbox = () => {
             isOpen={!!selectedReceiptTask}
             onClose={() => setSelectedReceiptTask(null)}
             task={selectedReceiptTask}
+          />
+        )}
+        {selectedCustodyTask && (
+          <DccCustodyActionModal
+            isOpen={!!selectedCustodyTask}
+            onClose={() => setSelectedCustodyTask(null)}
+            task={selectedCustodyTask}
           />
         )}
         {isExternalDocModalOpen && (

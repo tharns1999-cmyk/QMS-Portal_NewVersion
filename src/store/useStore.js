@@ -394,9 +394,9 @@ export const MASTER_DATA_USER = [
     canViewRegister: true,
     isWorkflowUser: true
   },
-  { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QA/QC'], department: 'PD', dept: 'PD', primary_department: 'PD', departments: ['PD', 'QA/QC'], secondaryDepartments: ['QA/QC', 'QA'], affiliated_departments: ['PD', 'QA/QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QC'], department: 'PD', dept: 'PD', primary_department: 'PD', departments: ['PD', 'QC'], secondaryDepartments: ['QC'], affiliated_departments: ['PD', 'QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U004', empId: 'EMP-004', name: 'คุณเรย์', fullName: 'คุณเรย์', email: 'ray.gm@company.com', position: 'General Manager / QMR', level: 6, approval_level: 6, role: 'DEPT_ADMIN', isDcc: false, isQmr: true, depts: ['MGMT'], department: 'MGMT', dept: 'MGMT', primary_department: 'MGMT', affiliated_departments: ['MGMT'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'RAY-GM', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-GM004', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER', 'QMR_ACCESS'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
-  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QA/QC'], department: 'QA/QC', dept: 'QA/QC', primary_department: 'QA/QC', affiliated_departments: ['QA/QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'BM-QA', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QC'], department: 'QC', dept: 'QC', primary_department: 'QC', primaryDepartment: 'QC', departments: ['QC'], departmentMemberships: ['QC'], affiliated_departments: ['QC'], secondaryDepartments: [], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'BM-QA', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U006', empId: 'EMP-006', name: 'รัตนพล', fullName: 'รัตนพล', email: 'rattanapol.en@company.com', position: 'Engineering Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'RTP-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN006', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U007', empId: 'EMP-007', name: 'ชัยวัฒน์', fullName: 'ชัยวัฒน์', email: 'chaiwat.en@company.com', position: 'Engineering Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'CWT-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN007', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U008', empId: 'EMP-008', name: 'คุณกิต', fullName: 'คุณกิต', email: 'kit.fin@company.com', position: 'Finance Director', level: 7, approval_level: 7, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['FIN'], department: 'FIN', dept: 'FIN', primary_department: 'FIN', affiliated_departments: ['FIN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'KIT-FIN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-FN008', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
@@ -408,7 +408,7 @@ export const MASTER_DATA_USER = [
 export const MASTER_DEPARTMENTS = [
   { id: 'DC', name: 'DC (Document Control)', nameTh: 'ฝ่ายควบคุมเอกสาร / Document Control', nameEn: 'Document Control Department', headUserId: 'EMP-001', headName: 'ธนาวุฒิ สมควรกิจดำรง', status: 'ACTIVE', color: 'sky' },
   { id: 'PD', name: 'PD (Production)', nameTh: 'ฝ่ายผลิต', nameEn: 'Production Department', headUserId: 'U003', headName: 'กัลยาณี พลไกร', status: 'ACTIVE', color: 'indigo' },
-  { id: 'QA/QC', name: 'QA/QC', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'emerald' },
+  { id: 'QC', code: 'QC', name: 'QC (Quality Control)', shortName: 'QC', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'emerald' },
   { id: 'WH', name: 'WH (Warehouse)', nameTh: 'ฝ่ายคลังสินค้าและโลจิสติกส์', nameEn: 'Warehouse & Logistics', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'amber' },
   { id: 'EN', name: 'EN (Engineering)', nameTh: 'ฝ่ายวิศวกรรมและซ่อมบำรุง', nameEn: 'Engineering & Maintenance', headUserId: 'U006', headName: 'รัตนพล', status: 'ACTIVE', color: 'blue' },
   { id: 'PC', name: 'PC (Purchasing)', nameTh: 'ฝ่ายจัดซื้อ', nameEn: 'Purchasing Department', headUserId: 'U004', headName: 'คุณเรย์', status: 'ACTIVE', color: 'purple' },
@@ -419,7 +419,7 @@ export const MASTER_DEPARTMENTS = [
 ];
 
 export const MASTER_DATA_DEPT = MASTER_DEPARTMENTS;
-export const SYSTEM_CORE_DEPTS = ['DC', 'QA/QC', 'QA/QC'];
+export const SYSTEM_CORE_DEPTS = ['DC', 'QC', 'QA/QC'];
 
 // 3. Master Document Types (2-Digit Base Running Number Standard: 01-99 ➔ 100+)
 export const MASTER_DOCUMENT_TYPES = [
@@ -707,6 +707,9 @@ export const CONTROLLED_COPY_STATUS = {
   ISSUED_ACTIVE: 'ISSUED_ACTIVE',
   PENDING_RECALL: 'PENDING_RECALL',
   RECALLED_DESTROYED: 'RECALLED_DESTROYED',
+  // Custody workflow statuses (ISO 9001 Clause 7.5.3)
+  RELOCATION_PENDING_APPROVAL: 'RELOCATION_PENDING_APPROVAL',
+  RETURN_PENDING_APPROVAL: 'RETURN_PENDING_APPROVAL',
   // Backward compatibility aliases
   ACTIVE: 'ACTIVE',
   PENDING_RECEIPT: 'PENDING_RECEIPT',
@@ -839,6 +842,21 @@ export const generateNextEdrNumber = (requests = []) => {
 export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => {
   if (!copyOrTask) return 'EN';
 
+  const normalizeDeptResult = (d) => {
+    if (!d) return 'EN';
+    const str = String(d).trim().toUpperCase();
+    if (str === 'QA/QC' || str === 'QA' || str === 'QAQC' || str === 'QC' || str.startsWith('QA/QC') || str.startsWith('QC') || str.includes('ประกันและควบคุมคุณภาพ')) {
+      return 'QC';
+    }
+    if (str === 'DCC' || str === 'DC') {
+      return 'DC';
+    }
+    if (str === 'HR' || str === 'GA' || str === 'HR&GA') {
+      return 'HR&GA';
+    }
+    return d;
+  };
+
   // 1. Check station or location
   const loc = 
     matchedCopy?.station_id || 
@@ -859,7 +877,7 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
   );
 
   if (foundStation?.departmentId) {
-    return foundStation.departmentId === 'DCC' ? 'DC' : foundStation.departmentId;
+    return normalizeDeptResult(foundStation.departmentId);
   }
 
   const textToCheck = `${typeof loc === 'string' ? loc : ''} ${copyOrTask.title || ''} ${copyOrTask.description || ''}`;
@@ -869,8 +887,8 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
   if (textToCheck.includes('WH Office') || textToCheck.includes('WH-') || textToCheck.includes('(WH)') || textToCheck.includes('คลังสินค้า')) {
     return 'WH';
   }
-  if (textToCheck.includes('QC Lab') || textToCheck.includes('QA/QC') || textToCheck.includes('QA Office') || textToCheck.includes('ห้องแล็บ')) {
-    return 'QA/QC';
+  if (textToCheck.includes('QC Lab') || textToCheck.includes('QA/QC') || textToCheck.includes('QA Office') || textToCheck.includes('ห้องแล็บ') || textToCheck.includes('QC') || textToCheck.includes('ประกันและควบคุมคุณภาพ')) {
+    return 'QC';
   }
 
   // 2. Explicit target/recipient department fields
@@ -889,7 +907,7 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     matchedCopy?.destination_dept;
 
   if (explicitTargetDept && explicitTargetDept !== 'DCC') {
-    return explicitTargetDept === 'DCC' ? 'DC' : explicitTargetDept;
+    return normalizeDeptResult(explicitTargetDept);
   }
 
   // 3. Fallback to copy department or task department if valid and non-DCC
@@ -906,7 +924,7 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     matchedCopy?.deptCode;
 
   if (fallbackDept && fallbackDept !== 'DCC') {
-    return fallbackDept === 'DCC' ? 'DC' : fallbackDept;
+    return normalizeDeptResult(fallbackDept);
   }
 
   return 'EN';
@@ -1061,6 +1079,7 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
       updated = {
         ...updated,
         department: cleanRecipientDept,
+        departmentName: cleanRecipientDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : (updated.departmentName || cleanRecipientDept),
         target_department: cleanRecipientDept,
         targetDepartment: cleanRecipientDept,
         destinationDept: cleanRecipientDept,
@@ -1080,6 +1099,17 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         owner_dept: cleanDept,
         currentHandlerDepartment: cleanDept
       };
+    }
+
+    // Auto-Sanitize QA/QC residue on any task
+    const rawDeptStr = String(updated.department || '');
+    if (rawDeptStr === 'QA/QC' || rawDeptStr === 'QA' || rawDeptStr === 'QAQC' || rawDeptStr.includes('QA/QC') || rawDeptStr.includes('ประกันและควบคุมคุณภาพ')) {
+      updated.department = 'QC';
+      updated.departmentName = 'ฝ่ายประกันและควบคุมคุณภาพ';
+      if (updated.target_department === 'QA/QC' || updated.target_department === 'QA') updated.target_department = 'QC';
+      if (updated.targetDepartment === 'QA/QC' || updated.targetDepartment === 'QA') updated.targetDepartment = 'QC';
+      if (updated.destinationDept === 'QA/QC' || updated.destinationDept === 'QA') updated.destinationDept = 'QC';
+      if (updated.assignedToDept === 'QA/QC' || updated.assignedToDept === 'QA') updated.assignedToDept = 'QC';
     }
 
     return updated;
@@ -1338,6 +1368,7 @@ export const createReceiptTask = (copy, relatedDoc = null, relatedDar = null, ma
     destinationDept: destinationDept,
     destination_dept: destinationDept,
     department: destinationDept,
+    departmentName: destinationDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : (copy.departmentName || destinationDept),
     dept_code: destinationDept,
     currentHandlerDepartment: destinationDept,
     isDepartmentPool: true,
@@ -1835,19 +1866,28 @@ const useStore = create(persist((set, get) => ({
   },
 
   setCurrentUser: (userId) => set((state) => {
-    const baseUser = state.masterUsers.find(u => u.id === userId || u.empId === userId);
+    const targetId = typeof userId === 'object' && userId !== null ? (userId.id || userId.empId) : userId;
+    const baseUser = state.masterUsers.find(u => u.id === targetId || u.empId === targetId) || (typeof userId === 'object' && userId !== null ? userId : null);
     if (!baseUser) return state;
 
     // Find departments from any of the lists
-    const req = state.requestUsers.find(u => u.id === userId || u.empId === userId);
-    const rev = state.reviewUsers.find(u => u.id === userId || u.empId === userId);
-    const app = state.approveUsers.find(u => u.id === userId || u.empId === userId);
-    const depts = baseUser.depts || req?.depts || rev?.depts || app?.depts || (baseUser.department ? [baseUser.department] : ['DC']);
+    const req = state.requestUsers.find(u => u.id === targetId || u.empId === targetId);
+    const rev = state.reviewUsers.find(u => u.id === targetId || u.empId === targetId);
+    const app = state.approveUsers.find(u => u.id === targetId || u.empId === targetId);
+    let depts = baseUser.depts || req?.depts || rev?.depts || app?.depts || (baseUser.department ? [baseUser.department] : ['DC']);
 
     // The primary active department
-    const userDeptsList = Array.isArray(baseUser.departments) ? baseUser.departments : (Array.isArray(depts) ? depts : [baseUser.department].filter(Boolean));
-    const activeDept = baseUser.primary_department || baseUser.department || userDeptsList[0] || 'DC';
-    const secondaryDepts = baseUser.secondaryDepartments || (Array.isArray(baseUser.affiliated_departments) ? baseUser.affiliated_departments.filter(d => d !== activeDept) : userDeptsList.filter(d => d !== activeDept));
+    let userDeptsList = Array.isArray(baseUser.departments) ? baseUser.departments : (Array.isArray(depts) ? depts : [baseUser.department].filter(Boolean));
+    let activeDept = baseUser.primary_department || baseUser.department || userDeptsList[0] || 'DC';
+    if (activeDept === 'QA/QC' || activeDept === 'QA') activeDept = 'QC';
+
+    userDeptsList = userDeptsList.map(d => (d === 'QA/QC' || d === 'QA') ? 'QC' : d);
+    depts = depts.map(d => (d === 'QA/QC' || d === 'QA') ? 'QC' : d);
+
+    const rawSecondary = baseUser.secondaryDepartments || (Array.isArray(baseUser.affiliated_departments) ? baseUser.affiliated_departments.filter(d => d !== activeDept) : userDeptsList.filter(d => d !== activeDept));
+    const secondaryDepts = rawSecondary.map(d => (d === 'QA/QC' || d === 'QA') ? 'QC' : d).filter(d => d !== activeDept);
+    const affiliated = Array.from(new Set([activeDept, ...secondaryDepts, ...userDeptsList])).map(d => (d === 'QA/QC' || d === 'QA') ? 'QC' : d);
+
     const permissions = (baseUser.permissions && baseUser.permissions.length > 0)
       ? baseUser.permissions
       : ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'];
@@ -1857,9 +1897,12 @@ const useStore = create(persist((set, get) => ({
         ...baseUser, 
         department: activeDept, 
         primary_department: activeDept, 
-        departments: userDeptsList,
-        secondaryDepartments: secondaryDepts,
-        depts,
+        primaryDepartment: activeDept,
+        departments: Array.from(new Set(userDeptsList)),
+        departmentMemberships: Array.from(new Set(userDeptsList)),
+        secondaryDepartments: Array.from(new Set(secondaryDepts)),
+        affiliated_departments: affiliated,
+        depts: Array.from(new Set(depts)),
         permissions,
         canCreateDar: baseUser.canCreateDar !== undefined ? Boolean(baseUser.canCreateDar) : true,
         canAccessTasks: baseUser.canAccessTasks !== undefined ? Boolean(baseUser.canAccessTasks) : true,
@@ -1868,6 +1911,14 @@ const useStore = create(persist((set, get) => ({
       }
     };
   }),
+
+  switchUser: (userId) => {
+    get().setCurrentUser(userId);
+  },
+
+  // Session Selectors
+  getCurrentUser: () => get().currentUser,
+  selectCurrentUser: (state) => state.currentUser,
 
   logAction: (logEntry, maybeDetails) => set((state) => {
     let actionType = 'ACTIVITY';
@@ -5139,6 +5190,35 @@ const useStore = create(persist((set, get) => ({
     const targetDarToPublish = isApproveFinal ? { ...targetDar, status: newStatus || 'COMPLETED' } : newlyCompletedDar;
     if (targetDarToPublish) {
       const store = get();
+      
+      if (targetDarToPublish.status === 'COMPLETED') {
+        const existingMaster = store.masterDocuments?.find(d => d.docNo === targetDarToPublish.docNo || (d.docCode && d.docCode === targetDarToPublish.docNo));
+        if (!existingMaster && targetDarToPublish.docNo) {
+          const newMasterDoc = {
+            id: `doc-${Date.now()}`,
+            docNo: targetDarToPublish.docNo,
+            title: targetDarToPublish.documentName || targetDarToPublish.title,
+            type: targetDarToPublish.documentType || targetDarToPublish.type || 'SOP',
+            department: 'QC',
+            departmentName: 'ฝ่ายประกันและควบคุมคุณภาพ',
+            edition: targetDarToPublish.edition || '00',
+            revision: targetDarToPublish.revision || '00',
+            effectiveDate: targetDarToPublish.effectiveDate || new Date().toISOString().split('T')[0],
+            status: 'ACTIVE',
+            accessLevel: targetDarToPublish.securityLevel || 'General',
+            distributionCopies: targetDarToPublish.distributionCopies || [],
+            darNo: targetDarToPublish.darNo || targetDarToPublish.darNumber || targetDarToPublish.id,
+            fileUrl: targetDarToPublish.fileUrl || null,
+            fileName: targetDarToPublish.fileName || null,
+            createdAt: new Date().toISOString(),
+            approvedAt: new Date().toISOString()
+          };
+          if (store.addMasterDocument) {
+            store.addMasterDocument(newMasterDoc);
+          }
+        }
+      }
+      
       if (store.syncRevisionEffective) store.syncRevisionEffective(targetDarToPublish);
       if (store.syncObsoleteCompleted) store.syncObsoleteCompleted(targetDarToPublish);
       if (store.publishApprovedDar) {
@@ -5155,6 +5235,12 @@ const useStore = create(persist((set, get) => ({
       }
     }
   },
+
+  addMasterDocument: (newMasterDoc) => set((state) => {
+    const exists = state.masterDocuments?.some(d => d.docNo === newMasterDoc.docNo);
+    if (exists) return state;
+    return { masterDocuments: [newMasterDoc, ...(state.masterDocuments || [])] };
+  }),
 
   // Complete task alias forwarding to processWorkflow
   completeTask: (taskId, action, comment) => {
@@ -6148,7 +6234,12 @@ const useStore = create(persist((set, get) => ({
 
     const isMatch = (targetDept) => {
       if (!targetDept) return false;
-      return userDepts.some(u => u === targetDept || (u === 'QA/QC' && targetDept === 'QA/QC') || (u === 'QA/QC' && targetDept === 'QA/QC'));
+      return userDepts.some(u => {
+        if (u === targetDept) return true;
+        const isQa1 = u === 'QA' || u === 'QA/QC' || u === 'QC' || u === 'QAQC';
+        const isQa2 = targetDept === 'QA' || targetDept === 'QA/QC' || targetDept === 'QC' || targetDept === 'QAQC';
+        return Boolean(isQa1 && isQa2);
+      });
     };
 
     // 1. Own department document
@@ -6323,6 +6414,7 @@ const useStore = create(persist((set, get) => ({
       destinationDept: destinationDept,
       destination_dept: destinationDept,
       department: destinationDept,
+      departmentName: destinationDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : (copy.departmentName || destinationDept),
       dept_code: destinationDept,
       currentHandlerDepartment: destinationDept,
       isDepartmentPool: true,
@@ -7246,10 +7338,19 @@ const useStore = create(persist((set, get) => ({
     let updatedDocs = [...state.documents];
     let createdDoc;
 
+    const rawDept = dar.department || dar.dept || dar.departmentId || 'QC';
+    const cleanDept = (rawDept === 'QA' || rawDept === 'QC' || rawDept === 'QA/QC' || rawDept === 'QAQC') ? 'QC' : rawDept;
+    const deptObj = (state.masterDepartments || []).find(d => d.id === cleanDept || d.code === cleanDept);
+    const deptName = dar.departmentName || deptObj?.nameTh || (cleanDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : cleanDept);
+
     if (existingIndex >= 0) {
       createdDoc = {
         ...updatedDocs[existingIndex],
         status: docStatus,
+        department: cleanDept,
+        departmentName: updatedDocs[existingIndex].departmentName || deptName,
+        dept: cleanDept,
+        owner_dept: cleanDept,
         effectiveDate: dar.effectiveDate || todayStr,
         effective_date: dar.effectiveDate || todayStr,
         published_at: isEffectiveTodayOrPast ? (updatedDocs[existingIndex].published_at || new Date().toISOString()) : null,
@@ -7271,7 +7372,10 @@ const useStore = create(persist((set, get) => ({
         rev: dar.rev || dar.revision || '00',
         revision: dar.rev || dar.revision || '00',
         docType: dar.docType || (targetCode ? targetCode.split('-')[0] : 'SOP'),
-        department: dar.department || 'PD',
+        department: cleanDept,
+        departmentName: deptName,
+        dept: cleanDept,
+        owner_dept: cleanDept,
         ownerId: dar.requesterId || dar.requester_id,
         requesterId: dar.requesterId,
         effectiveDate: dar.effectiveDate || todayStr,
@@ -7405,6 +7509,16 @@ const useStore = create(persist((set, get) => ({
     }
 
     const updatedDars = state.dars.map(d => {
+      if (d.id === dar.id) {
+        return {
+          ...d,
+          status: isEffectiveTodayOrPast ? (d.ackRequirement === 'REQUIRED' && d.ackUserIds?.length > 0 ? 'WAITING_ACKNOWLEDGEMENT' : 'COMPLETED') : 'APPROVED_WAITING_EFFECTIVE'
+        };
+      }
+      return d;
+    });
+
+    const updatedDarRequests = (state.darRequests || []).map(d => {
       if (d.id === dar.id) {
         return {
           ...d,
@@ -8828,6 +8942,668 @@ const useStore = create(persist((set, get) => ({
 
   markCopyRecalled: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
   receiveRecallCopy: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ISO 9001 Clause 7.5.3 – Controlled Copy Custody Workflow
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * requestCcRelocation
+   * Dept custodian requests to move a controlled copy to a new physical station.
+   * Enforces: Origin Invariant (Copy 01 may NOT be relocated).
+   * Creates: DCC task type DCC_RELOCATE, sets copy status → RELOCATION_PENDING_APPROVAL.
+   */
+  requestCcRelocation: (copyId, { newLocation, newDepartment, reason } = {}) => set((state) => {
+    if (!copyId || !reason) return state;
+    const targetId = String(copyId).trim();
+
+    // 1. Resolve copy instance across both stores
+    const copiesPool = [
+      ...(state.controlledCopyInstances || []),
+      ...(state.documentControlledCopies || [])
+    ];
+    let inst = copiesPool.find(i => String(i.id) === targetId);
+    if (!inst && Array.isArray(state.documents)) {
+      for (const d of state.documents) {
+        if (Array.isArray(d.controlledCopies)) {
+          const found = d.controlledCopies.find(c => String(c.id) === targetId);
+          if (found) {
+            inst = { ...found, docId: found.docId || d.id, doc_id: found.doc_id || d.id, docTitle: found.docTitle || d.title, doc_code: found.doc_code || d.title, holder_dept: found.holder_dept || found.department || d.department };
+            break;
+          }
+        }
+      }
+    }
+    if (!inst) { console.warn(`[requestCcRelocation] Copy ${targetId} not found.`); return state; }
+
+    // 2. Origin Invariant Guard: Copy 01 (จุดต้นทาง) cannot be relocated
+    const rawNo = String(inst.copy_no || inst.ccNumber || '01');
+    const copyNum = parseInt(rawNo.replace(/\D/g, ''), 10) || 1;
+    const isOriginCopy = inst.is_owner || inst.isOwner || copyNum === 1;
+    if (isOriginCopy) {
+      console.warn(`[requestCcRelocation] Origin copy (Copy 01) cannot be relocated.`);
+      return state;
+    }
+
+    // 3. Idempotency Guard
+    if (inst.status === 'RELOCATION_PENDING_APPROVAL') {
+      console.warn(`[requestCcRelocation] Copy ${targetId} already has a pending relocation.`);
+      return state;
+    }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const reporterName = user?.name || user?.fullName || 'Authorized User';
+    const copyDept = (inst.holder_dept || inst.department || '').toString().trim();
+    const docCode = inst.doc_code || inst.docTitle || 'DOC';
+    const docOfficialTitle = inst.docName || inst.name || inst.doc_code || inst.docTitle || 'เอกสารควบคุม';
+    const dccAdminId = resolveDccAdminUserId(state.masterUsers);
+    const taskId = `task-cc-relocate-${targetId}-${Date.now()}`;
+
+    // 4. Audit log
+    const auditLog = {
+      id: `audit-relocate-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: reporterName,
+      action: 'REQUEST_RELOCATION',
+      docTitle: docCode,
+      docRev: inst.doc_version || inst.rev || '01',
+      ccNumber: inst.copy_no || inst.ccNumber || '01',
+      oldStatus: inst.status,
+      newStatus: 'RELOCATION_PENDING_APPROVAL',
+      remarks: `สำเนาชุดที่ ${rawNo} แจ้งขอย้ายจุดติดตั้งจาก ${inst.location || inst.locationName || copyDept} → ${newLocation || newDepartment || 'ตำแหน่งใหม่'} (เหตุผล: ${reason})`
+    };
+
+    // 5. DCC custody task
+    const dccTask = {
+      id: taskId,
+      type: 'DCC_RELOCATE',
+      taskType: 'DCC_RELOCATE',
+      task_type: 'DCC_RELOCATE',
+      title: `ขอย้ายจุดติดตั้งสำเนาควบคุม: ${docOfficialTitle} (${docCode}) Copy ${rawNo}`,
+      description: `${reporterName} (${copyDept}) แจ้งขอย้ายสำเนา Copy ${rawNo} จาก "${inst.location || inst.locationName || copyDept}" ไปยัง "${newLocation || newDepartment || 'ตำแหน่งใหม่'}" เหตุผล: ${reason}`,
+      docId: inst.doc_id || inst.docId,
+      doc_id: inst.doc_id || inst.docId,
+      doc_code: docCode,
+      docCode: docCode,
+      docTitle: docOfficialTitle,
+      copyId: targetId,
+      copy_id: targetId,
+      instanceId: targetId,
+      copy_no: rawNo,
+      currentLocation: inst.location || inst.locationName || copyDept,
+      currentDepartment: copyDept,
+      newLocation: newLocation || '',
+      newDepartment: newDepartment || copyDept,
+      reason,
+      requesterId: user?.id,
+      requesterName: reporterName,
+      requesterDept: copyDept,
+      assigneeId: dccAdminId,
+      assignedToRole: 'DCC_ADMIN',
+      targetRole: 'DCC_ADMIN',
+      target_role: 'DCC_ADMIN',
+      department: 'DC',
+      target_department: 'DC',
+      targetDepartment: 'DC',
+      status: 'PENDING',
+      priority: 'NORMAL',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      createdAt: nowIso
+    };
+
+    // 6. Update copy status in both pools
+    const updateCopy = (c) =>
+      String(c.id) === targetId
+        ? { ...c, status: 'RELOCATION_PENDING_APPROVAL', pendingRelocationTaskId: taskId, pendingNewLocation: newLocation, pendingNewDepartment: newDepartment }
+        : c;
+    const updatedInstances = (state.controlledCopyInstances || []).map(updateCopy);
+    const updatedDcc = (state.documentControlledCopies || []).map(updateCopy);
+    const updatedDocs = (state.documents || []).map(d =>
+      Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+        ? { ...d, controlledCopies: d.controlledCopies.map(updateCopy) }
+        : d
+    );
+
+    // 7. Notifications
+    const newNotifications = [...(state.notifications || [])];
+    newNotifications.push({
+      id: `notif-relocate-dcc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      userId: dccAdminId,
+      targetUserIds: [dccAdminId],
+      targetRole: 'DCC_ADMIN',
+      targetDepartment: 'DC',
+      title: 'คำขอย้ายจุดติดตั้งสำเนาควบคุม',
+      message: `${reporterName} (${copyDept}) ขอย้าย ${docCode} Copy ${rawNo} → ${newLocation || newDepartment || 'ตำแหน่งใหม่'}`,
+      type: 'TASK_ASSIGNED',
+      category: 'CONTROLLED_COPY',
+      isRead: false,
+      read: false,
+      readBy: [],
+      link: '/tasks',
+      timestamp: nowIso,
+      relatedTaskId: taskId,
+      docCode: docCode
+    });
+    if (user?.id) {
+      newNotifications.push({
+        id: `notif-relocate-req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: user.id,
+        targetUserIds: [user.id],
+        title: 'ยื่นคำร้องขอย้ายจุดติดตั้งสำเร็จ',
+        message: `คำขอย้ายสำเนา ${docCode} Copy ${rawNo} ส่งถึง DCC แล้ว (รอดำเนินการ)`,
+        type: 'SUCCESS',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: docCode
+      });
+    }
+
+    return {
+      documents: updatedDocs,
+      controlledCopyInstances: updatedInstances,
+      documentControlledCopies: updatedDcc,
+      tasks: [dccTask, ...(state.tasks || [])],
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_REQUEST_RELOCATION',
+        actor: reporterName,
+        details: `Requested relocation of copy ${targetId} → ${newLocation || newDepartment}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  /**
+   * requestCcReturn
+   * Dept custodian requests to return/decommission a distributed controlled copy.
+   * Enforces: Origin Invariant (Copy 01 may NOT be returned).
+   * Creates: DCC task type DCC_RETURN, sets copy status → RETURN_PENDING_APPROVAL.
+   */
+  requestCcReturn: (copyId, { reason, returnDate } = {}) => set((state) => {
+    if (!copyId || !reason) return state;
+    const targetId = String(copyId).trim();
+
+    // 1. Resolve copy instance
+    const copiesPool = [
+      ...(state.controlledCopyInstances || []),
+      ...(state.documentControlledCopies || [])
+    ];
+    let inst = copiesPool.find(i => String(i.id) === targetId);
+    if (!inst && Array.isArray(state.documents)) {
+      for (const d of state.documents) {
+        if (Array.isArray(d.controlledCopies)) {
+          const found = d.controlledCopies.find(c => String(c.id) === targetId);
+          if (found) {
+            inst = { ...found, docId: found.docId || d.id, doc_id: found.doc_id || d.id, docTitle: found.docTitle || d.title, doc_code: found.doc_code || d.title, holder_dept: found.holder_dept || found.department || d.department };
+            break;
+          }
+        }
+      }
+    }
+    if (!inst) { console.warn(`[requestCcReturn] Copy ${targetId} not found.`); return state; }
+
+    // 2. Origin Invariant Guard
+    const rawNo = String(inst.copy_no || inst.ccNumber || '01');
+    const copyNum = parseInt(rawNo.replace(/\D/g, ''), 10) || 1;
+    const isOriginCopy = inst.is_owner || inst.isOwner || copyNum === 1;
+    if (isOriginCopy) {
+      console.warn(`[requestCcReturn] Origin copy (Copy 01) cannot be returned.`);
+      return state;
+    }
+
+    // 3. Idempotency Guard
+    if (inst.status === 'RETURN_PENDING_APPROVAL') {
+      console.warn(`[requestCcReturn] Copy ${targetId} already has a pending return.`);
+      return state;
+    }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const reporterName = user?.name || user?.fullName || 'Authorized User';
+    const copyDept = (inst.holder_dept || inst.department || '').toString().trim();
+    const docCode = inst.doc_code || inst.docTitle || 'DOC';
+    const docOfficialTitle = inst.docName || inst.name || inst.doc_code || inst.docTitle || 'เอกสารควบคุม';
+    const dccAdminId = resolveDccAdminUserId(state.masterUsers);
+    const taskId = `task-cc-return-${targetId}-${Date.now()}`;
+
+    // 4. Audit log
+    const auditLog = {
+      id: `audit-return-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: reporterName,
+      action: 'REQUEST_RETURN',
+      docTitle: docCode,
+      docRev: inst.doc_version || inst.rev || '01',
+      ccNumber: inst.copy_no || inst.ccNumber || '01',
+      oldStatus: inst.status,
+      newStatus: 'RETURN_PENDING_APPROVAL',
+      remarks: `สำเนาชุดที่ ${rawNo} แจ้งขอส่งคืน / ยกเลิกสำเนาโดย ${reporterName} (${copyDept}) เหตุผล: ${reason}`
+    };
+
+    // 5. DCC custody task
+    const dccTask = {
+      id: taskId,
+      type: 'DCC_RETURN',
+      taskType: 'DCC_RETURN',
+      task_type: 'DCC_RETURN',
+      title: `ขอส่งคืน / ยกเลิกสำเนาควบคุม: ${docOfficialTitle} (${docCode}) Copy ${rawNo}`,
+      description: `${reporterName} (${copyDept}) แจ้งส่งคืนสำเนา Copy ${rawNo} จุด "${inst.location || inst.locationName || copyDept}" เหตุผล: ${reason}`,
+      docId: inst.doc_id || inst.docId,
+      doc_id: inst.doc_id || inst.docId,
+      doc_code: docCode,
+      docCode: docCode,
+      docTitle: docOfficialTitle,
+      copyId: targetId,
+      copy_id: targetId,
+      instanceId: targetId,
+      copy_no: rawNo,
+      currentLocation: inst.location || inst.locationName || copyDept,
+      currentDepartment: copyDept,
+      reason,
+      returnDate: returnDate || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      requesterId: user?.id,
+      requesterName: reporterName,
+      requesterDept: copyDept,
+      assigneeId: dccAdminId,
+      assignedToRole: 'DCC_ADMIN',
+      targetRole: 'DCC_ADMIN',
+      target_role: 'DCC_ADMIN',
+      department: 'DC',
+      target_department: 'DC',
+      targetDepartment: 'DC',
+      status: 'PENDING',
+      priority: 'NORMAL',
+      dueDate: returnDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      createdAt: nowIso
+    };
+
+    // 6. Update copy status
+    const updateCopy = (c) =>
+      String(c.id) === targetId
+        ? { ...c, status: 'RETURN_PENDING_APPROVAL', pendingReturnTaskId: taskId }
+        : c;
+    const updatedInstances = (state.controlledCopyInstances || []).map(updateCopy);
+    const updatedDcc = (state.documentControlledCopies || []).map(updateCopy);
+    const updatedDocs = (state.documents || []).map(d =>
+      Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+        ? { ...d, controlledCopies: d.controlledCopies.map(updateCopy) }
+        : d
+    );
+
+    // 7. Notifications
+    const newNotifications = [...(state.notifications || [])];
+    newNotifications.push({
+      id: `notif-return-dcc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      userId: dccAdminId,
+      targetUserIds: [dccAdminId],
+      targetRole: 'DCC_ADMIN',
+      targetDepartment: 'DC',
+      title: 'คำขอส่งคืน / ยกเลิกสำเนาควบคุม',
+      message: `${reporterName} (${copyDept}) ขอส่งคืน ${docCode} Copy ${rawNo} (${inst.location || inst.locationName || copyDept})`,
+      type: 'TASK_ASSIGNED',
+      category: 'CONTROLLED_COPY',
+      isRead: false,
+      read: false,
+      readBy: [],
+      link: '/tasks',
+      timestamp: nowIso,
+      relatedTaskId: taskId,
+      docCode: docCode
+    });
+    if (user?.id) {
+      newNotifications.push({
+        id: `notif-return-req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: user.id,
+        targetUserIds: [user.id],
+        title: 'ยื่นคำร้องขอส่งคืนสำเร็จ',
+        message: `คำขอส่งคืนสำเนา ${docCode} Copy ${rawNo} ส่งถึง DCC แล้ว (รอดำเนินการ)`,
+        type: 'SUCCESS',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: docCode
+      });
+    }
+
+    return {
+      documents: updatedDocs,
+      controlledCopyInstances: updatedInstances,
+      documentControlledCopies: updatedDcc,
+      tasks: [dccTask, ...(state.tasks || [])],
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_REQUEST_RETURN',
+        actor: reporterName,
+        details: `Requested return/decommission of copy ${targetId}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  /**
+   * approveCcRelocation
+   * DCC Admin approves a relocation request. Requires checklistVerified === true (ISO 9001 Clause 7.5.3).
+   * Updates copy location, department, and reverts status to ISSUED_ACTIVE.
+   */
+  approveCcRelocation: (taskId, { notes = '', checklistVerified = false } = {}) => set((state) => {
+    if (!checklistVerified) {
+      console.warn('[approveCcRelocation] Cannot approve without checklist verification (ISO 9001 Clause 7.5.3).');
+      return state;
+    }
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task) { console.warn(`[approveCcRelocation] Task ${taskId} not found.`); return state; }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const approverName = user?.name || user?.fullName || 'DCC Officer';
+    const targetId = String(task.copyId || task.copy_id || task.instanceId || '').trim();
+
+    const updateCopy = (c) => {
+      if (String(c.id) !== targetId) return c;
+      return {
+        ...c,
+        status: 'ISSUED_ACTIVE',
+        location: task.newLocation || c.location,
+        locationName: task.newLocation || c.locationName,
+        station_name: task.newLocation || c.station_name,
+        department: task.newDepartment || c.department,
+        holder_dept: task.newDepartment || c.holder_dept,
+        pendingRelocationTaskId: null,
+        pendingNewLocation: null,
+        pendingNewDepartment: null,
+        lastRelocatedAt: nowIso,
+        lastRelocatedBy: approverName
+      };
+    };
+
+    const auditLog = {
+      id: `audit-relocate-approve-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: approverName,
+      action: 'APPROVE_RELOCATION',
+      docTitle: task.docCode || task.doc_code || 'DOC',
+      ccNumber: task.copy_no || '01',
+      oldStatus: 'RELOCATION_PENDING_APPROVAL',
+      newStatus: 'ISSUED_ACTIVE',
+      remarks: `DCC อนุมัติย้ายจุดติดตั้งสำเนา Copy ${task.copy_no} → "${task.newLocation || task.newDepartment || 'ตำแหน่งใหม่'}" (ตรวจสอบสถานีจริงแล้ว) หมายเหตุ: ${notes}`
+    };
+
+    const newNotifications = [...(state.notifications || [])];
+    if (task.requesterId) {
+      newNotifications.push({
+        id: `notif-relocate-approved-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: task.requesterId,
+        targetUserIds: [task.requesterId],
+        title: 'คำขอย้ายจุดติดตั้งได้รับการอนุมัติ',
+        message: `DCC อนุมัติย้าย ${task.docCode || task.doc_code || 'สำเนา'} Copy ${task.copy_no} ไปยัง "${task.newLocation || task.newDepartment || 'ตำแหน่งใหม่'}" แล้ว`,
+        type: 'SUCCESS',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: task.docCode || task.doc_code
+      });
+    }
+
+    return {
+      tasks: (state.tasks || []).map(t => t.id === taskId ? { ...t, status: 'COMPLETED', is_completed: true, completedAt: nowIso, completedBy: approverName, dccNotes: notes } : t),
+      controlledCopyInstances: (state.controlledCopyInstances || []).map(updateCopy),
+      documentControlledCopies: (state.documentControlledCopies || []).map(updateCopy),
+      documents: (state.documents || []).map(d =>
+        Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+          ? { ...d, controlledCopies: d.controlledCopies.map(updateCopy) }
+          : d
+      ),
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_APPROVE_RELOCATION',
+        actor: approverName,
+        details: `Approved relocation of copy ${targetId} → ${task.newLocation || task.newDepartment}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  /**
+   * rejectCcRelocation
+   * DCC Admin rejects a relocation request. Reverts copy status to ISSUED_ACTIVE.
+   */
+  rejectCcRelocation: (taskId, { rejectReason = '' } = {}) => set((state) => {
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task) { console.warn(`[rejectCcRelocation] Task ${taskId} not found.`); return state; }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const rejecterName = user?.name || user?.fullName || 'DCC Officer';
+    const targetId = String(task.copyId || task.copy_id || task.instanceId || '').trim();
+
+    const revertCopy = (c) =>
+      String(c.id) === targetId
+        ? { ...c, status: 'ISSUED_ACTIVE', pendingRelocationTaskId: null, pendingNewLocation: null, pendingNewDepartment: null }
+        : c;
+
+    const auditLog = {
+      id: `audit-relocate-reject-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: rejecterName,
+      action: 'REJECT_RELOCATION',
+      docTitle: task.docCode || task.doc_code || 'DOC',
+      ccNumber: task.copy_no || '01',
+      oldStatus: 'RELOCATION_PENDING_APPROVAL',
+      newStatus: 'ISSUED_ACTIVE',
+      remarks: `DCC ปฏิเสธคำขอย้ายจุดติดตั้งสำเนา Copy ${task.copy_no} เหตุผล: ${rejectReason}`
+    };
+
+    const newNotifications = [...(state.notifications || [])];
+    if (task.requesterId) {
+      newNotifications.push({
+        id: `notif-relocate-rejected-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: task.requesterId,
+        targetUserIds: [task.requesterId],
+        title: 'คำขอย้ายจุดติดตั้งถูกปฏิเสธ',
+        message: `DCC ปฏิเสธคำขอย้าย ${task.docCode || task.doc_code || 'สำเนา'} Copy ${task.copy_no} เหตุผล: ${rejectReason}`,
+        type: 'WARNING',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: task.docCode || task.doc_code
+      });
+    }
+
+    return {
+      tasks: (state.tasks || []).map(t => t.id === taskId ? { ...t, status: 'COMPLETED', is_completed: true, completedAt: nowIso, completedBy: rejecterName, rejectReason, outcome: 'REJECTED' } : t),
+      controlledCopyInstances: (state.controlledCopyInstances || []).map(revertCopy),
+      documentControlledCopies: (state.documentControlledCopies || []).map(revertCopy),
+      documents: (state.documents || []).map(d =>
+        Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+          ? { ...d, controlledCopies: d.controlledCopies.map(revertCopy) }
+          : d
+      ),
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_REJECT_RELOCATION',
+        actor: rejecterName,
+        details: `Rejected relocation request for copy ${targetId}. Reason: ${rejectReason}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  /**
+   * approveCcReturn
+   * DCC Admin approves a return/decommission request. Requires checklistVerified === true.
+   * Sets copy status to RECALLED (archived, removed from active station inventory).
+   */
+  approveCcReturn: (taskId, { dispositionMethod = 'ARCHIVE', witnessName = '', notes = '', checklistVerified = false } = {}) => set((state) => {
+    if (!checklistVerified) {
+      console.warn('[approveCcReturn] Cannot approve without checklist verification (ISO 9001 Clause 7.5.3).');
+      return state;
+    }
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task) { console.warn(`[approveCcReturn] Task ${taskId} not found.`); return state; }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const approverName = user?.name || user?.fullName || 'DCC Officer';
+    const targetId = String(task.copyId || task.copy_id || task.instanceId || '').trim();
+    const finalStatus = dispositionMethod === 'DESTROY' ? 'RECALLED_DESTROYED' : 'RECALLED';
+
+    const updateCopy = (c) =>
+      String(c.id) === targetId
+        ? {
+            ...c,
+            status: finalStatus,
+            pendingReturnTaskId: null,
+            recalled_at: nowIso,
+            recalled_by: approverName,
+            recall_disposition: dispositionMethod,
+            recall_witness: witnessName,
+            dcc_notes: notes
+          }
+        : c;
+
+    const auditLog = {
+      id: `audit-return-approve-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: approverName,
+      action: 'APPROVE_RETURN',
+      docTitle: task.docCode || task.doc_code || 'DOC',
+      ccNumber: task.copy_no || '01',
+      oldStatus: 'RETURN_PENDING_APPROVAL',
+      newStatus: finalStatus,
+      remarks: `DCC อนุมัติรับคืน / ยกเลิกสำเนา Copy ${task.copy_no} วิธีจัดการ: ${dispositionMethod} พยาน: ${witnessName || '-'} หมายเหตุ: ${notes}`
+    };
+
+    const newNotifications = [...(state.notifications || [])];
+    if (task.requesterId) {
+      newNotifications.push({
+        id: `notif-return-approved-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: task.requesterId,
+        targetUserIds: [task.requesterId],
+        title: 'คำขอส่งคืนได้รับการอนุมัติ',
+        message: `DCC อนุมัติรับคืน ${task.docCode || task.doc_code || 'สำเนา'} Copy ${task.copy_no} เรียบร้อยแล้ว`,
+        type: 'SUCCESS',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: task.docCode || task.doc_code
+      });
+    }
+
+    return {
+      tasks: (state.tasks || []).map(t => t.id === taskId ? { ...t, status: 'COMPLETED', is_completed: true, completedAt: nowIso, completedBy: approverName, dccNotes: notes } : t),
+      controlledCopyInstances: (state.controlledCopyInstances || []).map(updateCopy),
+      documentControlledCopies: (state.documentControlledCopies || []).map(updateCopy),
+      documents: (state.documents || []).map(d =>
+        Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+          ? { ...d, controlledCopies: d.controlledCopies.map(updateCopy) }
+          : d
+      ),
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_APPROVE_RETURN',
+        actor: approverName,
+        details: `Approved return/decommission of copy ${targetId}. Disposition: ${dispositionMethod}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  /**
+   * rejectCcReturn
+   * DCC Admin rejects a return request. Reverts copy status to ISSUED_ACTIVE.
+   */
+  rejectCcReturn: (taskId, { rejectReason = '' } = {}) => set((state) => {
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task) { console.warn(`[rejectCcReturn] Task ${taskId} not found.`); return state; }
+
+    const nowIso = new Date().toISOString();
+    const user = state.currentUser;
+    const rejecterName = user?.name || user?.fullName || 'DCC Officer';
+    const targetId = String(task.copyId || task.copy_id || task.instanceId || '').trim();
+
+    const revertCopy = (c) =>
+      String(c.id) === targetId
+        ? { ...c, status: 'ISSUED_ACTIVE', pendingReturnTaskId: null }
+        : c;
+
+    const auditLog = {
+      id: `audit-return-reject-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: nowIso,
+      user: rejecterName,
+      action: 'REJECT_RETURN',
+      docTitle: task.docCode || task.doc_code || 'DOC',
+      ccNumber: task.copy_no || '01',
+      oldStatus: 'RETURN_PENDING_APPROVAL',
+      newStatus: 'ISSUED_ACTIVE',
+      remarks: `DCC ปฏิเสธคำขอส่งคืนสำเนา Copy ${task.copy_no} เหตุผล: ${rejectReason}`
+    };
+
+    const newNotifications = [...(state.notifications || [])];
+    if (task.requesterId) {
+      newNotifications.push({
+        id: `notif-return-rejected-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        userId: task.requesterId,
+        targetUserIds: [task.requesterId],
+        title: 'คำขอส่งคืนถูกปฏิเสธ',
+        message: `DCC ปฏิเสธคำขอส่งคืน ${task.docCode || task.doc_code || 'สำเนา'} Copy ${task.copy_no} เหตุผล: ${rejectReason}`,
+        type: 'WARNING',
+        category: 'CONTROLLED_COPY',
+        isRead: false,
+        read: false,
+        readBy: [],
+        link: '/library',
+        timestamp: nowIso,
+        docCode: task.docCode || task.doc_code
+      });
+    }
+
+    return {
+      tasks: (state.tasks || []).map(t => t.id === taskId ? { ...t, status: 'COMPLETED', is_completed: true, completedAt: nowIso, completedBy: rejecterName, rejectReason, outcome: 'REJECTED' } : t),
+      controlledCopyInstances: (state.controlledCopyInstances || []).map(revertCopy),
+      documentControlledCopies: (state.documentControlledCopies || []).map(revertCopy),
+      documents: (state.documents || []).map(d =>
+        Array.isArray(d.controlledCopies) && d.controlledCopies.some(c => String(c.id) === targetId)
+          ? { ...d, controlledCopies: d.controlledCopies.map(revertCopy) }
+          : d
+      ),
+      notifications: newNotifications,
+      controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
+      actionLog: [{
+        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        actionType: 'CC_REJECT_RETURN',
+        actor: rejecterName,
+        details: `Rejected return/decommission request for copy ${targetId}. Reason: ${rejectReason}`,
+        timestamp: nowIso
+      }, ...(state.actionLog || [])]
+    };
+  }),
 
   // Quick-toggle physical receipt of recalled copy (Step 1 <-> Step 2)
   toggleCopyRecallReceived: (copyId) => set((state) => {
@@ -10620,11 +11396,78 @@ const useStore = create(persist((set, get) => ({
       if (Array.isArray(persistedState.currentUser.depts)) {
         persistedState.currentUser.depts = Array.from(new Set(persistedState.currentUser.depts.map(d => d === 'DCC' ? 'DC' : d)));
       }
+
+      // Auto-Healing Migration: Migrate QA/QC to QC for currentUser
+      const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
+      const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
+      if (isQaQc(persistedState.currentUser.department) || isQaQc(persistedState.currentUser.primary_department) || persistedState.currentUser.id === 'U005' || persistedState.currentUser.empId === 'EMP-005') {
+        persistedState.currentUser.department = 'QC';
+        persistedState.currentUser.dept = 'QC';
+        persistedState.currentUser.primary_department = 'QC';
+        persistedState.currentUser.primaryDepartment = 'QC';
+        if (Array.isArray(persistedState.currentUser.affiliated_departments)) {
+          persistedState.currentUser.affiliated_departments = Array.from(new Set(persistedState.currentUser.affiliated_departments.map(replaceQaQc)));
+        }
+        if (Array.isArray(persistedState.currentUser.depts)) {
+          persistedState.currentUser.depts = Array.from(new Set(persistedState.currentUser.depts.map(replaceQaQc)));
+        }
+        if (Array.isArray(persistedState.currentUser.departments)) {
+          persistedState.currentUser.departments = Array.from(new Set(persistedState.currentUser.departments.map(replaceQaQc)));
+        }
+        if (Array.isArray(persistedState.currentUser.departmentMemberships)) {
+          persistedState.currentUser.departmentMemberships = Array.from(new Set(persistedState.currentUser.departmentMemberships.map(replaceQaQc)));
+        }
+      }
+    }
+
+    if (persistedState.masterUsers && Array.isArray(persistedState.masterUsers)) {
+      const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
+      const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
+      persistedState.masterUsers = persistedState.masterUsers.map(u => {
+        if (u.id === 'U005' || u.empId === 'EMP-005' || isQaQc(u.department) || isQaQc(u.primary_department)) {
+          return {
+            ...u,
+            department: 'QC',
+            dept: 'QC',
+            primary_department: 'QC',
+            primaryDepartment: 'QC',
+            departments: Array.isArray(u.departments) ? Array.from(new Set(u.departments.map(replaceQaQc))) : ['QC'],
+            departmentMemberships: Array.isArray(u.departmentMemberships) ? Array.from(new Set(u.departmentMemberships.map(replaceQaQc))) : ['QC'],
+            depts: Array.isArray(u.depts) ? Array.from(new Set(u.depts.map(replaceQaQc))) : ['QC'],
+            affiliated_departments: Array.isArray(u.affiliated_departments) ? Array.from(new Set(u.affiliated_departments.map(replaceQaQc))) : ['QC'],
+            secondaryDepartments: Array.isArray(u.secondaryDepartments) ? u.secondaryDepartments.map(replaceQaQc).filter(d => d !== 'QC') : []
+          };
+        }
+        return u;
+      });
     }
 
     return persistedState;
   },
   onRehydrateStorage: () => (state) => {
+    // Auto-Healing Migration for currentUser on app boot
+    if (state && state.currentUser) {
+      const cu = state.currentUser;
+      const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
+      const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
+      if (isQaQc(cu.department) || isQaQc(cu.primary_department) || cu.id === 'U005' || cu.empId === 'EMP-005') {
+        useStore.setState({
+          currentUser: {
+            ...cu,
+            department: 'QC',
+            dept: 'QC',
+            primary_department: 'QC',
+            primaryDepartment: 'QC',
+            departments: Array.isArray(cu.departments) ? Array.from(new Set(cu.departments.map(replaceQaQc))) : ['QC'],
+            departmentMemberships: Array.isArray(cu.departmentMemberships) ? Array.from(new Set(cu.departmentMemberships.map(replaceQaQc))) : ['QC'],
+            depts: Array.isArray(cu.depts) ? Array.from(new Set(cu.depts.map(replaceQaQc))) : ['QC'],
+            affiliated_departments: Array.isArray(cu.affiliated_departments) ? Array.from(new Set(cu.affiliated_departments.map(replaceQaQc))) : ['QC'],
+            secondaryDepartments: Array.isArray(cu.secondaryDepartments) ? cu.secondaryDepartments.map(replaceQaQc).filter(d => d !== 'QC') : []
+          }
+        });
+      }
+    }
+
     if (state && state.tasks && Array.isArray(state.tasks)) {
       let hasChange = false;
       const safeDars = state.dars || [];
@@ -10713,6 +11556,40 @@ const useStore = create(persist((set, get) => ({
             updated.owner_dept = cleanDept;
             updated.currentHandlerDepartment = cleanDept;
           }
+        }
+
+        // Auto-Sanitize QA/QC residue to QC
+        const taskDeptStr = String(updated.department || '');
+        if (taskDeptStr === 'QA/QC' || taskDeptStr === 'QA' || taskDeptStr === 'QAQC' || taskDeptStr.includes('QA/QC') || taskDeptStr.includes('ประกันและควบคุมคุณภาพ')) {
+          if (updated.department !== 'QC') {
+            updated.department = 'QC';
+            changed = true;
+          }
+          if (updated.departmentName !== 'ฝ่ายประกันและควบคุมคุณภาพ') {
+            updated.departmentName = 'ฝ่ายประกันและควบคุมคุณภาพ';
+            changed = true;
+          }
+          if (updated.target_department === 'QA/QC' || updated.target_department === 'QA') {
+            updated.target_department = 'QC';
+            changed = true;
+          }
+          if (updated.targetDepartment === 'QA/QC' || updated.targetDepartment === 'QA') {
+            updated.targetDepartment = 'QC';
+            changed = true;
+          }
+          if (updated.destinationDept === 'QA/QC' || updated.destinationDept === 'QA') {
+            updated.destinationDept = 'QC';
+            changed = true;
+          }
+          if (updated.assignedToDept === 'QA/QC' || updated.assignedToDept === 'QA') {
+            updated.assignedToDept = 'QC';
+            changed = true;
+          }
+        }
+
+        if (updated.department === 'QC' && updated.departmentName !== 'ฝ่ายประกันและควบคุมคุณภาพ') {
+          updated.departmentName = 'ฝ่ายประกันและควบคุมคุณภาพ';
+          changed = true;
         }
 
         if (changed) hasChange = true;

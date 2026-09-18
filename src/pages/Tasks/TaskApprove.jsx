@@ -188,38 +188,57 @@ const TaskApprove = () => {
   );
 
   if (isCompletedTask) {
-    const completedActor = task?.completedBy || task?.assigneeName || currentUser?.name || 'ผู้อนุมัติ';
+    const completedActor = task?.approvedBy || task?.completedBy || task?.assigneeName || currentUser?.name || 'ผู้อนุมัติ';
     const completedTime = task?.completedAt || task?.updatedAt || task?.timestamp;
+    const completedTimeFormatted = completedTime
+      ? `${new Date(completedTime).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })} น.`
+      : '';
+    const darNumber = dar?.darNumber || dar?.darNo || (typeof dar?.id === 'string' && dar.id.startsWith('DAR') ? dar.id : null);
 
     return (
       <div className="flex h-[80vh] items-center justify-center p-6">
         <div className="card-surface p-8 text-center max-w-md shadow-xs border border-emerald-200/80 rounded-2xl bg-white animate-in fade-in zoom-in-95 duration-150">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center mx-auto mb-4 text-emerald-600 shadow-2xs">
-            <CheckCircle2 size={28} className="text-emerald-600" />
+          {/* 1. ไอคอนสำเร็จ (Top Icon) */}
+          <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 mb-3 mx-auto shadow-2xs">
+            <CheckCircle2 size={24} className="text-emerald-600" />
           </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/90 mb-3">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+
+          {/* 2. ป้ายสถานะ (Status Pill) */}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/60 text-emerald-700 text-xs font-medium mb-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             คำร้องนี้ได้รับการอนุมัติเสร็จสิ้นแล้ว
           </div>
-          <h2 className="text-base font-bold text-slate-900 mb-1 leading-snug">
+
+          {/* Tag เลขที่ DAR (Sleek Monospace Tag) */}
+          {darNumber && (
+            <div>
+              <span className="inline-block font-mono text-[11px] font-semibold tracking-wider text-slate-500 bg-slate-100/80 px-2 py-0.5 rounded-md border border-slate-200/60 mb-1.5">
+                DAR: {darNumber}
+              </span>
+            </div>
+          )}
+
+          {/* 3. ชื่อเอกสาร (Document Title) */}
+          <h2 className="text-sm font-semibold text-slate-900 leading-snug px-4 break-words">
             {dar?.title || task?.title || 'งานอนุมัติเอกสารเสร็จสมบูรณ์'}
           </h2>
-          <p className="text-xs text-slate-500 font-mono mb-2">
-            รหัสงาน: <span className="font-bold text-slate-700">{task?.id || id}</span>
-            {dar?.darNumber && <span> • DAR: <span className="font-bold text-slate-700">{dar.darNumber}</span></span>}
-          </p>
-          <p className="text-xs text-slate-500 leading-relaxed mb-6">
-            อนุมัติเสร็จสิ้นโดย <span className="font-semibold text-slate-700">{completedActor}</span>
-            {completedTime && (
-              <span className="block mt-0.5 text-[11px] text-slate-400">
-                เมื่อ {new Date(completedTime).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })} น.
-              </span>
+
+          {/* 4. ข้อมูลผู้อนุมัติและเวลาเป็นบรรทัดเดียว (Inline Muted Metadata) */}
+          <p className="text-xs text-slate-500 mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+            <span>อนุมัติเสร็จสิ้นโดย <strong className="font-medium text-slate-700">{completedActor}</strong></span>
+            {completedTimeFormatted && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span>{completedTimeFormatted}</span>
+              </>
             )}
           </p>
+
+          {/* 5. ปุ่ม Action สไตล์ Minimalist */}
           <button 
             type="button"
             onClick={() => navigate('/dcc/tasks', { replace: true })} 
-            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+            className="mt-6 w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl text-xs font-medium transition-all shadow-xs inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <ArrowLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
           </button>

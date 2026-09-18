@@ -72,39 +72,39 @@ export const STANDARD_STATIONS = [
     description: 'ห้องควบคุมระบบปฏิบัติการและมอนิเตอร์ไลน์ผลิต'
   },
 
-  // ฝ่ายประกันคุณภาพ (QA/QC)
+  // ฝ่ายประกันและควบคุมคุณภาพ (QC)
   {
     id: 'QA-MASTER',
-    departmentId: 'QA/QC',
-    name: 'QA Head Office',
-    code: 'QA-OFFICE',
+    departmentId: 'QC',
+    name: 'QC Office (สำนักงานประกันและควบคุมคุณภาพ)',
+    code: 'QC-OFFICE',
     isMasterOffice: true,
     description: 'สำนักงานหลักฝ่ายประกันคุณภาพและงานควบคุมระบบ'
   },
   {
     id: 'QA-CHEM',
-    departmentId: 'QA/QC',
+    departmentId: 'QC',
     name: 'QC Chemistry Lab (ห้องปฏิบัติการเคมี)',
     code: 'QC-CHEM',
     description: 'ห้องตรวจวิเคราะห์คุณสมบัติทางเคมีและกายภาพ'
   },
   {
     id: 'QA-MICRO',
-    departmentId: 'QA/QC',
+    departmentId: 'QC',
     name: 'QC Micro Lab (ห้องปฏิบัติการจุลชีววิทยา)',
     code: 'QC-MICRO',
     description: 'ห้องตรวจวิเคราะห์เชื้อจุลินทรีย์และสุขาภิบาล'
   },
   {
     id: 'QA-RETAIN',
-    departmentId: 'QA/QC',
+    departmentId: 'QC',
     name: 'Retain Sample Room (ห้องเก็บตัวอย่าง)',
     code: 'QC-RETAIN',
     description: 'ห้องควบคุมอุณหภูมิสำหรับเก็บตัวอย่างอ้างอิงสินค้า'
   },
   {
     id: 'QA-INSPECT',
-    departmentId: 'QA/QC',
+    departmentId: 'QC',
     name: 'Incoming Inspection (จุดตรวจรับวัตถุดิบ)',
     code: 'QC-INSPECT',
     description: 'จุดตรวจสอบคุณภาพวัตถุดิบและบรรจุภัณฑ์ขาเข้า'
@@ -232,7 +232,7 @@ export const STANDARD_STATIONS = [
 
 export const DEPARTMENT_METADATA = [
   { id: 'PD', name: 'ฝ่ายผลิต (Production)', shortName: 'PD', badgeColor: 'blue' },
-  { id: 'QA/QC', name: 'ฝ่ายประกันคุณภาพ (QA/QC)', shortName: 'QA/QC', badgeColor: 'emerald' },
+  { id: 'QC', name: 'ฝ่ายประกันและควบคุมคุณภาพ (QC)', shortName: 'QC', badgeColor: 'emerald' },
   { id: 'WH', name: 'ฝ่ายคลังสินค้า (Warehouse)', shortName: 'WH', badgeColor: 'amber' },
   { id: 'EN', name: 'ฝ่ายวิศวกรรม (Engineering)', shortName: 'EN', badgeColor: 'purple' },
   { id: 'PC', name: 'ฝ่ายจัดซื้อ (Purchasing)', shortName: 'PC', badgeColor: 'teal' },
@@ -243,12 +243,12 @@ export const DEPARTMENT_METADATA = [
 ];
 
 /**
- * Normalize department IDs for backward compatibility (e.g., 'QA' -> 'QA/QC', 'HR' -> 'HR&GA')
+ * Normalize department IDs for backward compatibility (e.g., 'QA' / 'QA/QC' -> 'QC', 'HR' -> 'HR&GA')
  */
 export const normalizeDepartmentId = (deptId) => {
   if (!deptId) return 'PD';
   const clean = String(deptId).trim();
-  if (clean === 'QA' || clean === 'QA Super' || clean === 'QC') return 'QA/QC';
+  if (clean === 'QA' || clean === 'QA Super' || clean === 'QA/QC' || clean === 'QC' || clean === 'QAQC') return 'QC';
   if (clean === 'HR' || clean === 'GA') return 'HR&GA';
   return clean;
 };

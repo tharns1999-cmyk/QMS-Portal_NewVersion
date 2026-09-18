@@ -94,8 +94,8 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     const readOnlyTags = screen.getAllByText(/เฉพาะผู้ถือสำเนา/i);
     expect(readOnlyTags.length).toBe(2);
 
-    // Should render only 1 "แจ้งชำรุด/เล่มใหม่" button (for Copy 03 QA)
-    const actionButtons = screen.getAllByRole('button', { name: /แจ้งชำรุด\/เล่มใหม่/i });
+    // Should render only 1 "จัดการสำเนา" button (for Copy 03 QA)
+    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
     expect(actionButtons.length).toBe(1);
 
     // QA User should NOT see Watermark Studio button
@@ -108,8 +108,8 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
 
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Should render 2 "แจ้งชำรุด/เล่มใหม่" buttons (for Copy 01 and Copy 02 PD)
-    const actionButtons = screen.getAllByRole('button', { name: /แจ้งชำรุด\/เล่มใหม่/i });
+    // Should render 2 "จัดการสำเนา" buttons (for Copy 01 and Copy 02 PD)
+    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
     expect(actionButtons.length).toBe(2);
 
     // Should render 1 "เฉพาะผู้ถือสำเนา" tag for Copy 03 QA
@@ -126,8 +126,8 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
 
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Should render "แจ้งชำรุด/เล่มใหม่" buttons on all 3 copies
-    const actionButtons = screen.getAllByRole('button', { name: /แจ้งชำรุด\/เล่มใหม่/i });
+    // Should render "จัดการสำเนา" buttons on all 3 copies
+    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
     expect(actionButtons.length).toBe(3);
 
     // Zero "เฉพาะผู้ถือสำเนา" tags
@@ -146,11 +146,11 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     // Attempting to report damage on PD Copy by QA user throws error
     expect(() => {
       reportCcDamagedLost('inst-pd-01', 'DAMAGED', 'ชำรุด');
-    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุมของแผนกอื่น/i);
+    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
 
     expect(() => {
       reportCopyDamaged({ copyId: 'inst-pd-02', reason: 'สูญหาย', type: 'LOST' });
-    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุมของแผนกอื่น/i);
+    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
 
     // QA user reporting on QA copy succeeds
     expect(() => {

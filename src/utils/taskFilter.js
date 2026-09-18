@@ -48,7 +48,15 @@ export const isDccExclusiveTask = (task) => {
     title.includes('เรียกคืน') ||
     title.includes('Recall');
 
-  return isDist || isRecall;
+  // ISO 9001 Clause 7.5.3 – Custody workflow (Relocation & Return)
+  // Exclusively actionable by DCC Admin. Never visible to other departments.
+  const isCustody =
+    normType === 'DCC_RELOCATE' ||
+    normType === 'DCC_RETURN' ||
+    task.taskType === 'DCC_RELOCATE' ||
+    task.taskType === 'DCC_RETURN';
+
+  return isDist || isRecall || isCustody;
 };
 
 export const isDccUser = (user) => {
@@ -89,16 +97,47 @@ export const isDccOperationalTask = (task) => {
 };
 
 /**
+ * Canonicalizes department identifiers to their standard Master Data code:
+ * QA / QA/QC / QAQC / QC -> 'QC'
+ * DCC / DC -> 'DC'
+ * HR / GA -> 'HR&GA'
+ * Strips descriptive Thai text if attached (e.g. 'QA/QC - ฝ่ายประกัน...' -> 'QC', 'QC (Quality Control)' -> 'QC')
+ */
+export const normalizeCanonicalDept = (dept) => {
+  if (!dept) return '';
+  if (typeof dept !== 'string') {
+    dept = dept.code || dept.id || dept.department || dept.dept || '';
+  }
+  let str = String(dept).trim();
+  if (!str) return '';
+
+  // Extract leading acronym if combined e.g. "QA/QC - ฝ่ายประกัน..." -> "QA/QC", "QC - ฝ่าย..." -> "QC"
+  if (str.includes('-')) {
+    const firstPart = str.split('-')[0].trim();
+    if (firstPart && firstPart.length <= 6) {
+      str = firstPart;
+    }
+  }
+
+  const clean = str.replace(/[^a-zA-Z0-9&]/g, '').toUpperCase();
+  if (clean === 'DCC' || clean === 'DC') return 'DC';
+  if (clean === 'QA' || clean === 'QAQC' || clean === 'QC' || clean === 'QASUPER' || clean.startsWith('QAQC') || clean.startsWith('QC')) {
+    return 'QC';
+  }
+  if (clean === 'HR' || clean === 'GA' || clean === 'HRGA') {
+    return 'HR&GA';
+  }
+  return str.toUpperCase();
+};
+
+/**
  * Compares two department identifiers with normalization and alias equivalence (QA <-> QA/QC <-> QC)
  */
 export const isSameDepartment = (deptA, deptB) => {
   if (!deptA || !deptB) return false;
-  let a = String(deptA).trim().toUpperCase();
-  let b = String(deptB).trim().toUpperCase();
-  if (a === 'DCC') a = 'DC';
-  if (b === 'DCC') b = 'DC';
-  if (a === b) return true;
-  if ((a === 'QA' || a === 'QA/QC' || a === 'QC') && (b === 'QA' || b === 'QA/QC' || b === 'QC')) return true;
+  const a = normalizeCanonicalDept(deptA);
+  const b = normalizeCanonicalDept(deptB);
+  if (a && b && a === b) return true;
   return false;
 };
 

@@ -145,7 +145,9 @@ const Library = () => {
     const s2 = normalizeDept(d2);
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
-    if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC')) return true;
+    const isQa1 = s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC' || s1 === 'QC';
+    const isQa2 = s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC' || s2 === 'QC';
+    if (isQa1 && isQa2) return true;
     return false;
   };
 
@@ -226,7 +228,7 @@ const Library = () => {
   };
 
   const isOwnerDept = useCallback((doc) => {
-    const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept;
+    const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
     return isSameDept(userDistinctDepts, docDept);
   }, [userDistinctDepts]);
 

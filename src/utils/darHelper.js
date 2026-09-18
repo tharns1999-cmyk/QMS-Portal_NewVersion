@@ -113,10 +113,13 @@ export const getAckNames = (dar, timeline) => {
  */
 export const isDarDraft = (dar) => {
   if (!dar) return false;
+  const statusStr = String(dar.status || '').trim().toUpperCase();
   return Boolean(
     dar.isDraft || 
-    dar.status === 'DRAFT' || 
-    String(dar.id).startsWith('draft_')
+    statusStr === 'DRAFT' || 
+    dar.status === 'ฉบับร่าง' ||
+    String(dar.id || '').startsWith('draft_') ||
+    String(dar.darNumber || dar.dar_no || dar.darNo || '').startsWith('draft_')
   );
 };
 
@@ -125,15 +128,34 @@ export const isDarDraft = (dar) => {
  */
 export const isDarRequester = (dar, currentUser) => {
   if (!dar || !currentUser) return false;
-  const userIds = [currentUser.id, currentUser.empId].filter(Boolean);
-  const userNames = [currentUser.name, currentUser.fullName].filter(Boolean);
+  const userIds = [currentUser.id, currentUser.empId, currentUser.userId].filter(Boolean).map(String);
+  const userNames = [currentUser.name, currentUser.fullName].filter(Boolean).map(n => n.trim().toLowerCase());
 
-  const darRequesterIds = [dar.requesterId, dar.requester_id, dar.createdBy, dar.created_by].filter(Boolean);
-  const isMatchId = darRequesterIds.some(id => userIds.includes(id));
-  if (isMatchId) return true;
+  const darRequesterIds = [
+    dar.requesterId, 
+    dar.requester_id, 
+    dar.createdBy, 
+    dar.created_by,
+    dar.userId,
+    dar.user_id
+  ].filter(Boolean).map(String);
+  if (darRequesterIds.some(id => userIds.includes(id))) return true;
 
-  if (dar.requester && (userIds.includes(dar.requester) || userNames.includes(dar.requester))) return true;
-  if (dar.createdByName && userNames.includes(dar.createdByName)) return true;
+  const darNames = [
+    dar.requester,
+    dar.requesterName,
+    dar.requester_name,
+    dar.createdByName,
+    dar.created_by_name,
+    dar.userName,
+    dar.user_name
+  ].filter(Boolean).map(n => typeof n === 'string' ? n.trim().toLowerCase() : '');
+  if (darNames.some(name => userNames.includes(name) || userIds.some(id => id.toLowerCase() === name))) return true;
+
+  if (dar.requester && typeof dar.requester === 'string') {
+    const rLower = dar.requester.trim().toLowerCase();
+    if (userIds.some(id => id.toLowerCase() === rLower) || userNames.includes(rLower)) return true;
+  }
 
   return false;
 };

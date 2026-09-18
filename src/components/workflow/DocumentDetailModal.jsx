@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -20,7 +20,9 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  CheckCircle2
+  CheckCircle2,
+  MoreHorizontal,
+  CornerDownLeft
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterDataService';
@@ -29,6 +31,8 @@ import { UniversalWatermarkService, resolveWatermarkConfig } from '../../service
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
 import WatermarkStudioModal from './WatermarkStudioModal';
 import ReplacementModal from '../../pages/Library/ReplacementModal';
+import RelocateCopyModal from './RelocateCopyModal';
+import ReturnCopyModal from './ReturnCopyModal';
 import { canManageControlledCopy } from '../../utils/accessControl';
 import { 
   getDarReason, 
@@ -41,20 +45,31 @@ import {
 import toast from 'react-hot-toast';
 
 /**
+ * Strict revision normalizer
+ * Normalizes '00', '0', 0, 'Rev.00', 'Rev.0', 'Rev. 00' -> '00'
+ * Normalizes '01', '1', 1, 'Rev.01', 'Rev. 1' -> '01'
+ * Preserves alphanumeric revisions like 'A' -> 'A'
+ */
+const normalizeRev = (r) => {
+  if (r === undefined || r === null) return '';
+  const str = String(r).trim().replace(/^Rev\.?\s*/i, '').trim();
+  if (!str) return '';
+  const num = parseInt(str, 10);
+  if (!isNaN(num)) {
+    return String(num).padStart(2, '0');
+  }
+  return str.toUpperCase();
+};
+
+/**
  * Strict revision equality matcher
  * Normalizes '01', 1, 'Rev.01', 'Rev.1' for accurate comparison
  */
 const _isMatchingRevision = (revA, revB) => {
-  if (revA === undefined || revA === null || revB === undefined || revB === null) return false;
-  const strA = String(revA).trim().replace(/^Rev\.?/i, '');
-  const strB = String(revB).trim().replace(/^Rev\.?/i, '');
-  if (!strA || !strB) return false;
-  const numA = parseInt(strA, 10);
-  const numB = parseInt(strB, 10);
-  if (!isNaN(numA) && !isNaN(numB)) {
-    return numA === numB;
-  }
-  return strA.toLowerCase() === strB.toLowerCase();
+  const normA = normalizeRev(revA);
+  const normB = normalizeRev(revB);
+  if (!normA || !normB) return false;
+  return normA === normB;
 };
 
 /**
@@ -163,6 +178,38 @@ const DocumentDetailModal = ({
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isWatermarkStudioOpen, setIsWatermarkStudioOpen] = useState(false);
   const [selectedReplacementCopy, setSelectedReplacementCopy] = useState(null);
+  const [selectedRelocateCopy, setSelectedRelocateCopy] = useState(null);
+  const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
+  const [activeMenuCopyNo, setActiveMenuCopyNo] = useState(null);
+  const menuRef = useRef(null);
+
+  // Click Outside & Escape Key Listener for Controlled Copy Action Dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        if (event.target.closest && event.target.closest('[data-copy-menu-trigger]')) {
+          return;
+        }
+        setActiveMenuCopyNo(null);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setActiveMenuCopyNo(null);
+    };
+
+    if (activeMenuCopyNo !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeMenuCopyNo]);
+
+  useEffect(() => {
+    setActiveMenuCopyNo(null);
+  }, [isOpen, doc?.id]);
 
   // Synchronized copies
   const allCopies = useMemo(() => {
@@ -504,6 +551,24 @@ const DocumentDetailModal = ({
       );
     }
 
+    if (normalized === 'RELOCATION_PENDING_APPROVAL') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+          รอ DCC อนุมัติย้ายจุด
+        </span>
+      );
+    }
+
+    if (normalized === 'RETURN_PENDING_APPROVAL') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          รอ DCC อนุมัติส่งคืน
+        </span>
+      );
+    }
+
     if (normalized === 'PENDING_ISSUE' || normalized === 'PENDING_DISTRIBUTE' || normalized === 'PENDING_DISTRIBUTION') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] whitespace-nowrap shadow-2xs">
@@ -594,177 +659,94 @@ const DocumentDetailModal = ({
     }
   };
 
-  // Non-destructive DAR history related to this document (Complete Lifecycle Lineage)
-  const docDars = useMemo(() => {
+  // Strict Revision-Scoped DAR History Binding (1:1 Revision Snapshot)
+  // Ensures viewing Rev.01 shows only Rev.01 DAR, viewing Rev.00 shows only Rev.00 DAR.
+  const scopedDarHistory = useMemo(() => {
     if (!doc) return [];
 
-    const docCode = (doc.document_code || doc.doc_code || doc.code || doc.title || String(doc.id)).trim().toUpperCase();
+    const docRevNorm = normalizeRev(doc.rev ?? doc.revision ?? doc.doc_version ?? doc.currentRevision ?? '00');
+    const docCode = (doc.title || doc.document_code || doc.doc_code || doc.code || String(doc.id || '')).trim().toUpperCase();
     const docIdStr = String(doc.id || '');
+    const docDarId = doc.darId || doc.dar_id || doc.darNo || doc.dar_no;
 
-    // 1. Direct DAR matches from dars
-    let list = (dars || []).filter(dar => {
-      const darCode = (dar.doc_code || dar.title || dar.docCode || '').trim().toUpperCase();
-      const matchDocCode = Boolean(darCode && darCode === docCode);
-      const matchDocId = Boolean(dar.docIdRef && String(dar.docIdRef) === docIdStr);
-      const matchDocIdDirect = Boolean((dar.docId || dar.doc_id) && String(dar.docId || dar.doc_id) === docIdStr);
-      const matchDarId = Boolean(doc.darId && (String(doc.darId) === String(dar.id) || String(doc.darId) === String(dar.dar_no)));
-      return matchDocCode || matchDocId || matchDocIdDirect || matchDarId;
-    });
-
-    // 2. Also incorporate DARs linked to other revisions of the same document in the library
-    const relatedDocs = (documents || []).filter(d => {
-      const c = (d.document_code || d.doc_code || d.code || d.title || String(d.id)).trim().toUpperCase();
-      return c === docCode;
-    });
-
-    relatedDocs.forEach(rd => {
-      if (rd.darId) {
-        const foundDar = (dars || []).find(dar => String(dar.id) === String(rd.darId) || String(dar.dar_no) === String(rd.darId));
-        if (foundDar && !list.some(d => String(d.id || d.dar_no) === String(foundDar.id || foundDar.dar_no))) {
-          list.push(foundDar);
+    // 1. Direct DAR matches from dars in store
+    const matchedDars = (dars || []).filter(dar => {
+      // Priority 1: Direct ID binding if specified
+      if (docDarId) {
+        const darIdStr = String(dar.id || '');
+        const darNoStr = String(dar.dar_no || dar.darNo || '');
+        if (darIdStr === String(docDarId) || darNoStr === String(docDarId)) {
+          return true;
         }
       }
+
+      // Priority 2: Document Code / ID match AND strict normalized revision equality
+      const darCode = (dar.doc_code || dar.docCode || dar.docNo || dar.title || '').trim().toUpperCase();
+      const matchDocCode = Boolean(darCode && docCode && darCode === docCode);
+      const matchDocId = Boolean(dar.docIdRef && String(dar.docIdRef) === docIdStr);
+      const matchDocIdDirect = Boolean((dar.docId || dar.doc_id) && String(dar.docId || dar.doc_id) === docIdStr);
+
+      const isDocMatch = matchDocCode || matchDocId || matchDocIdDirect;
+      if (!isDocMatch) return false;
+
+      const darRevRaw = dar.targetRevision ?? dar.docRev ?? dar.rev ?? dar.revision ?? dar.target_revision;
+      const darRevNorm = normalizeRev(darRevRaw);
+
+      return darRevNorm === docRevNorm;
     });
 
-    // 3. Track existing revisions in list
-    const existingRevNums = new Set(
-      list.map(d => parseInt(String(d.docRev || d.rev || d.revision || '0').replace(/\D/g, ''), 10))
-    );
-
-    // 4. Fill in missing historical revisions from relatedDocs
-    relatedDocs.forEach(rd => {
-      const rNum = parseInt(String(rd.rev || rd.revision || '0').replace(/\D/g, ''), 10);
-      if (!existingRevNums.has(rNum)) {
-        existingRevNums.add(rNum);
-        const rStr = String(rNum).padStart(2, '0');
-        list.push({
-          id: rd.darId || `DAR-${rd.title || docCode}-R${rStr}`,
-          dar_no: rd.darId || rd.dar_no || `DAR-${new Date(rd.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String(rNum + 1).padStart(3, '0')}`,
-          doc_code: rd.document_code || rd.doc_code || rd.title || docCode,
-          title: rd.title || docCode,
-          revision: rStr,
-          rev: rStr,
-          docRev: rStr,
-          type: rNum === 0 ? 'NEW' : (rd.status === 'OBSOLETE' ? 'OBSOLETE' : 'REVISION'),
-          request_type: rNum === 0 ? 'NEW' : (rd.status === 'OBSOLETE' ? 'OBSOLETE' : 'REVISION'),
-          status: 'EFFECTIVE',
-          effectiveDate: rd.effectiveDate || rd.effective_date || '2025-01-01',
-          effective_date_requested: rd.effectiveDate || rd.effective_date || '2025-01-01',
-          createdAt: rd.createdAt || `${rd.effectiveDate || '2025-01-01'}T08:30:00.000Z`,
-          reason: rd.reason || rd.revisionNote || (rNum === 0 ? 'จัดทำมาตรฐานการปฏิบัติงานและเอกสารควบคุมคุณภาพใหม่ตามข้อกำหนด ISO 9001:2015' : 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง'),
-          description: rd.description || rd.change_details || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ และจุดตรวจสอบสำหรับการปฏิบัติงานประจำวัน',
-          requester_name: rd.ownerName || 'บีม (QA Lv.4 Supervisor)',
-          reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
-          approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
-          require_ack: true
-        });
-      }
-    });
-
-    // 5. GENESIS FALLBACK: Guarantee Rev.00 is ALWAYS present from genesis to current
-    if (!existingRevNums.has(0)) {
-      const codeDigits = docCode.replace(/[^0-9]/g, '') || '001';
-      list.push({
-        id: `DAR-GENESIS-${docCode}-00`,
-        dar_no: `DAR-2025-${codeDigits.padStart(3, '0')}`,
-        doc_code: doc.document_code || doc.doc_code || doc.title || docCode,
-        title: doc.title || docCode,
-        revision: '00',
-        rev: '00',
-        docRev: '00',
-        type: 'NEW',
-        request_type: 'NEW',
-        status: 'COMPLETED',
-        effectiveDate: '2025-01-15',
-        effective_date_requested: '2025-01-15',
-        createdAt: '2025-01-05T08:30:00.000Z',
-        reason: 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)',
-        description: 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ และจุดตรวจสอบสำหรับการปฏิบัติงานประจำวันตามมาตรฐาน ISO 9001:2015',
-        requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
-        reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
-        approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
-        require_ack: true
-      });
+    if (matchedDars.length > 0) {
+      return matchedDars.sort((a, b) => new Date(b.createdAt || b.effectiveDate || 0) - new Date(a.createdAt || a.effectiveDate || 0));
     }
 
-    // 6. Guarantee current document revision is represented
-    const curRevNum = parseInt(normCurrentRev, 10);
-    if (!isNaN(curRevNum) && !existingRevNums.has(curRevNum)) {
-      existingRevNums.add(curRevNum);
-      const rStr = normCurrentRev;
-      list.push({
-        id: doc.darId || `DAR-${docCode}-R${rStr}`,
-        dar_no: doc.darId || doc.dar_no || `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String(curRevNum + 1).padStart(3, '0')}`,
-        doc_code: doc.document_code || doc.doc_code || doc.title || docCode,
-        title: doc.title || docCode,
-        revision: rStr,
-        rev: rStr,
-        docRev: rStr,
-        type: curRevNum === 0 ? 'NEW' : 'REVISION',
-        request_type: curRevNum === 0 ? 'NEW' : 'REVISION',
-        status: 'COMPLETED',
-        effectiveDate: doc.effectiveDate || doc.effective_date || '2025-01-01',
-        effective_date_requested: doc.effectiveDate || doc.effective_date || '2025-01-01',
-        createdAt: doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`,
-        reason: doc.reason || doc.revisionNote || (curRevNum === 0 ? 'จัดทำมาตรฐานการปฏิบัติงานและเอกสารควบคุมคุณภาพใหม่ตามข้อกำหนด ISO 9001:2015' : 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง'),
-        description: doc.description || doc.change_details || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ และจุดตรวจสอบสำหรับการปฏิบัติงานประจำวัน',
-        requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
-        reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
-        approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
-        require_ack: true
-      });
-    }
+    // 2. Fallback: If no explicit DAR found in store for this document revision, construct 1:1 revision snapshot
+    const curRevNum = parseInt(docRevNorm, 10);
+    const rStr = docRevNorm || '00';
+    const isGenesis = curRevNum === 0;
+    const isObs = Boolean(doc.status?.toUpperCase() === 'OBSOLETE' || doc.is_obsolete || isObsoleteDoc);
 
-    // Sort descending by revision: Rev.02 -> Rev.01 -> Rev.00
-    return list.sort((a, b) => {
-      const revA = parseInt(String(a.docRev || a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
-      const revB = parseInt(String(b.docRev || b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
-      if (revB !== revA) return revB - revA;
-      return new Date(b.createdAt || b.effectiveDate || 0) - new Date(a.createdAt || a.effectiveDate || 0);
-    });
-  }, [dars, doc, documents, normCurrentRev]);
+    const fallbackDarNo = doc.darNo || doc.dar_no || doc.darId || `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String((isNaN(curRevNum) ? 0 : curRevNum) + 1).padStart(3, '0')}`;
+
+    return [{
+      id: doc.darId || doc.dar_id || `DAR-${docCode}-R${rStr}`,
+      dar_no: fallbackDarNo,
+      doc_code: doc.document_code || doc.doc_code || doc.title || docCode,
+      title: doc.title || docCode,
+      revision: rStr,
+      rev: rStr,
+      docRev: rStr,
+      type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+      request_type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+      status: isObs ? 'OBSOLETE' : 'EFFECTIVE',
+      effectiveDate: doc.effectiveDate || doc.effective_date || '2025-01-01',
+      effective_date_requested: doc.effectiveDate || doc.effective_date || '2025-01-01',
+      createdAt: doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`,
+      reason: doc.reason || doc.revisionNote || doc.changeReason || (isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง'),
+      description: doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ และจุดตรวจสอบสำหรับการปฏิบัติงานประจำวัน',
+      requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
+      reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
+      approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
+      require_ack: true
+    }];
+  }, [dars, doc, isObsoleteDoc]);
 
   // State ควบคุมการกาง/พับ (Collapsible Timeline - ใบแรกกางออกเป็นค่าเริ่มต้น)
   const [expandedDarItems, setExpandedDarItems] = useState([]);
 
   useEffect(() => {
-    if (docDars && docDars.length > 0) {
-      const firstId = docDars[0].id || docDars[0].dar_no || docDars[0].darNo || 'dar-0';
+    if (scopedDarHistory && scopedDarHistory.length > 0) {
+      const firstId = scopedDarHistory[0].id || scopedDarHistory[0].dar_no || scopedDarHistory[0].darNo || 'dar-0';
       setExpandedDarItems([firstId]);
     } else {
       setExpandedDarItems([]);
     }
-  }, [docDars]);
+  }, [scopedDarHistory]);
 
   const toggleDarItem = (id) => {
     setExpandedDarItems(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
   };
-
-  // Scoped DAR list: strictly single DAR for current revision in effective mode, or full history for superseded/obsolete
-  const displayedDars = useMemo(() => {
-    if (!isEffectiveMode) {
-      return docDars;
-    }
-
-    const curRevNum = parseInt(normCurrentRev, 10);
-    const matched = docDars.filter(dar => {
-      const rRaw = dar.targetRevision ?? dar.docRev ?? dar.rev ?? dar.revision;
-      if (rRaw !== undefined && rRaw !== null && String(rRaw).trim() !== '') {
-        const rNum = parseInt(String(rRaw).replace(/\D/g, ''), 10);
-        return !isNaN(rNum) && rNum === curRevNum;
-      }
-      return false;
-    });
-
-    if (matched.length > 0) {
-      return [matched[0]];
-    }
-
-    // Fallback: If no exact revision match found, return top 1 latest DAR
-    return docDars.slice(0, 1);
-  }, [isEffectiveMode, docDars, normCurrentRev]);
 
   // Resolve user display name and position for workflow stage cards
   const resolveSignatory = (userName, fallbackPosition) => {
@@ -832,7 +814,7 @@ const DocumentDetailModal = ({
 
   // Export DAR History CSV with detailed DD/MM/YYYY HH:mm timestamps
   const handleExportDarHistoryCsv = () => {
-    const targetDars = docDars;
+    const targetDars = scopedDarHistory;
     if (!targetDars || targetDars.length === 0) return;
 
     const headers = [
@@ -1048,7 +1030,7 @@ const DocumentDetailModal = ({
               >
                 <History size={15} strokeWidth={1.75} />
                 <span>
-                  {`ประวัติ DAR และการแก้ไข (${docDars.length})`}
+                  {`ประวัติ DAR และการแก้ไข (${scopedDarHistory.length})`}
                 </span>
               </button>
             </div>
@@ -1282,20 +1264,95 @@ const DocumentDetailModal = ({
                                   {formatReceiptDate(copy.receipt_confirmed_at)}
                                 </td>
                                 <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
-                                  {(copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE') ? (
-                                    canManageControlledCopy(copy, currentUser) ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedReplacementCopy(copy)}
-                                        className="px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] hover:bg-[#FFE5E0] text-[#F24822] border border-[#FDC4B8] inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                                        title="แจ้งเอกสารชำรุดหรือสูญหายประจำจุดนี้เพื่อขอออกเล่มทดแทน"
-                                      >
-                                        <AlertTriangle size={13} />
-                                        <span>แจ้งชำรุด/เล่มใหม่</span>
-                                      </button>
+                                  {/* Pending badge for copies awaiting DCC custody decision */}
+                                  {copy.status === 'RELOCATION_PENDING_APPROVAL' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-semibold whitespace-nowrap">
+                                      <MapPin size={10} className="shrink-0" />
+                                      ขอย้ายจุด (รอ DCC)
+                                    </span>
+                                  ) : copy.status === 'RETURN_PENDING_APPROVAL' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold whitespace-nowrap">
+                                      <CornerDownLeft size={10} className="shrink-0" />
+                                      ขอส่งคืน (รอ DCC)
+                                    </span>
+                                  ) : (copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE') ? (
+                                    canManageControlledCopy(currentUser, doc, copy) ? (
+                                      <div className="relative inline-block text-left">
+                                        <button
+                                          type="button"
+                                          data-copy-menu-trigger="true"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const copyKey = copy.copyNo || copy.copy_no || copy.ccNumber || copy.id;
+                                            setActiveMenuCopyNo(activeMenuCopyNo === copyKey ? null : copyKey);
+                                          }}
+                                          className={`w-7 h-7 rounded-lg inline-flex items-center justify-center transition-colors ${
+                                            activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id)
+                                              ? 'bg-slate-200 text-slate-900'
+                                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                          }`}
+                                          aria-expanded={activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id)}
+                                          aria-label={`จัดการสำเนา (Actions) เล่ม ${copy.copy_no || copy.copyNo || copy.ccNumber || ''}`}
+                                          title="จัดการสำเนา (Actions)"
+                                        >
+                                          <span className="font-bold text-sm tracking-tighter leading-none select-none">···</span>
+                                        </button>
+
+                                        {activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id) && (
+                                          <div
+                                            ref={menuRef}
+                                            className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200/90 rounded-xl shadow-lg shadow-slate-900/10 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                                          >
+                                            {/* Origin Invariant: Copy 01 cannot be relocated or returned */}
+                                            {!isOrigin && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setActiveMenuCopyNo(null);
+                                                    setSelectedRelocateCopy(copy);
+                                                  }}
+                                                  className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                  <MapPin size={15} className="text-slate-500 shrink-0" />
+                                                  ขอย้ายจุดติดตั้ง
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setActiveMenuCopyNo(null);
+                                                    setSelectedReturnCopy(copy);
+                                                  }}
+                                                  className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                  <CornerDownLeft size={15} className="text-slate-500 shrink-0" />
+                                                  ส่งคืน / ยกเลิกสำเนา
+                                                </button>
+
+                                                <div className="my-1 border-t border-slate-100" />
+                                              </>
+                                            )}
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setActiveMenuCopyNo(null);
+                                                setSelectedReplacementCopy(copy);
+                                              }}
+                                              className="w-full px-3 py-2 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                            >
+                                              <AlertTriangle size={15} className="text-rose-500 shrink-0" />
+                                              แจ้งชำรุด / สูญหาย
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     ) : (
-                                      <span className="text-[11px] text-[#94A3B8] italic">
-                                        เฉพาะผู้ถือสำเนา
+                                      <span className="inline-flex items-center justify-center w-full min-w-[90px]">
+                                        <span className="text-[11px] text-[#94A3B8] italic">
+                                          เฉพาะผู้ถือสำเนา
+                                        </span>
                                       </span>
                                     )
                                   ) : (
@@ -1588,14 +1645,14 @@ const DocumentDetailModal = ({
                         ประวัติ DAR และการแก้ไข
                       </h3>
                       <span className="text-xs text-[#666666] font-medium bg-[#FAFAFA] px-2.5 py-0.5 rounded-md border border-[#E5E5E5]">
-                        พบทั้งหมด {docDars.length} ฉบับ
+                        พบทั้งหมด {scopedDarHistory.length} ฉบับ
                       </span>
                     </div>
 
                     <button
                       type="button"
                       onClick={handleExportDarHistoryCsv}
-                      disabled={docDars.length === 0}
+                      disabled={scopedDarHistory.length === 0}
                       className="h-9 px-3.5 text-xs font-semibold text-[#1E1E1E] bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] hover:border-[#CCCCCC] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-2xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                       title="ส่งออกประวัติ DAR เป็นไฟล์ CSV สำหรับเปิดใน Excel"
                     >
@@ -1605,13 +1662,13 @@ const DocumentDetailModal = ({
                   </div>
 
                   {/* Collapsible Accordion Timeline (Gen-Z SaaS Style) */}
-                  {docDars.length > 0 && (
+                  {scopedDarHistory.length > 0 && (
                     <div className="relative pt-2">
                       <div className="space-y-3">
-                        {docDars.map((dar, idx) => {
+                        {scopedDarHistory.map((dar, idx) => {
                           const itemId = dar.id || dar.dar_no || dar.darNo || `dar-${idx}`;
                           const isExpanded = expandedDarItems.includes(itemId);
-                          const isLatest = idx === 0;
+                          const isLatest = isEffectiveMode && idx === 0;
 
                           const reasonInfo = getDarReason(dar);
                           const detailInfo = getDarDetail(dar);
@@ -1811,7 +1868,7 @@ const DocumentDetailModal = ({
                   )}
 
                   {/* Fallback Empty State: Simple, elegant 1-line display */}
-                  {docDars.length === 0 && (
+                  {scopedDarHistory.length === 0 && (
                     <div className="p-8 bg-white border border-dashed border-[#E2E8F0] rounded-2xl text-center text-slate-500 text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xs">
                       <Sparkles size={16} className="text-slate-400 shrink-0" />
                       <span>ยังไม่มีบันทึกข้อมูลคำร้อง DAR สำหรับเอกสารฉบับนี้ในระบบ</span>
@@ -1866,7 +1923,26 @@ const DocumentDetailModal = ({
           instance={selectedReplacementCopy}
         />
       )}
+
+      {/* ISO 9001 Clause 7.5.3 – Custody Workflow: Relocation Request Modal */}
+      {selectedRelocateCopy && (
+        <RelocateCopyModal
+          isOpen={!!selectedRelocateCopy}
+          onClose={() => setSelectedRelocateCopy(null)}
+          copy={selectedRelocateCopy}
+        />
+      )}
+
+      {/* ISO 9001 Clause 7.5.3 – Custody Workflow: Return / Decommission Modal */}
+      {selectedReturnCopy && (
+        <ReturnCopyModal
+          isOpen={!!selectedReturnCopy}
+          onClose={() => setSelectedReturnCopy(null)}
+          copy={selectedReturnCopy}
+        />
+      )}
     </ErrorBoundary>
+
   );
 };
 
