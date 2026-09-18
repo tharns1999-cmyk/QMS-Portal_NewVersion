@@ -319,39 +319,47 @@ const MasterList = () => {
 
       {/* Preview Dialog */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 space-y-4 shadow-none border border-[#E5E5E5]">
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150">
+          <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-white flex justify-between items-center shrink-0">
               <div>
-                <span className="font-mono text-xs font-bold text-[#0D99FF]">{previewDoc.title}</span>
-                <h3 className="text-sm font-bold text-[#1E1E1E] mt-0.5">{previewDoc.name}</h3>
+                <span className="font-mono text-xs font-bold text-blue-600">{previewDoc.title}</span>
+                <h3 className="text-sm font-bold text-slate-900 mt-0.5">{previewDoc.name}</h3>
               </div>
-              <button onClick={() => setPreviewDoc(null)} className="action-icon-btn text-slate-400">
-                <X size={16} />
+              <button 
+                type="button"
+                onClick={() => setPreviewDoc(null)} 
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
               </button>
             </div>
             
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-400">แผนกเจ้าของ:</span>
+            <div className="flex-1 overflow-y-auto p-6 space-y-3 text-xs">
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500 font-medium">แผนกเจ้าของ:</span>
                 <span className="font-bold text-slate-800">{previewDoc.department}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-400">Revision:</span>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500 font-medium">Revision:</span>
                 <span className="font-bold font-mono text-slate-800">{previewDoc.rev || '00'}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-400">วันบังคับใช้:</span>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500 font-medium">วันบังคับใช้:</span>
                 <span className="font-bold font-mono text-slate-800">{previewDoc.effectiveDate}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-50">
-                <span className="text-slate-400">สถานะ:</span>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500 font-medium">สถานะ:</span>
                 <span>{getStatusBadge(previewDoc.status)}</span>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end">
-              <button onClick={() => setPreviewDoc(null)} className="btn-secondary text-xs">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button 
+                type="button"
+                onClick={() => setPreviewDoc(null)} 
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer shadow-2xs"
+              >
                 ปิดหน้าต่าง
               </button>
             </div>

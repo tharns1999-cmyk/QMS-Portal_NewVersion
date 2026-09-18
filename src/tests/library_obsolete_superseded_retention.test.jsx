@@ -133,9 +133,6 @@ describe('Immutable Document Revision History, Persistent Obsolete/Superseded Li
       </MemoryRouter>
     );
 
-    // Switch to Global View
-    fireEvent.click(screen.getByRole('button', { name: /Global View/i }));
-
     // Click "ทั้งหมด (All Records)" tab
     fireEvent.click(screen.getByRole('button', { name: /ทั้งหมด \(All Records\)/i }));
 

@@ -159,7 +159,12 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
         // Denormalized for easy listing
         documentNumber: schedule.documentNumber,
         documentName: schedule.documentName,
-        documentCategory: schedule.documentCategory
+        documentCategory: schedule.documentCategory,
+        docCode: schedule.documentNumber,
+        doc_code: schedule.documentNumber,
+        docTitle: schedule.documentName,
+        docName: schedule.documentName,
+        title: `ทบทวนเอกสารตามรอบ: ${schedule.documentName} (${schedule.documentNumber})`
       });
     }
   });

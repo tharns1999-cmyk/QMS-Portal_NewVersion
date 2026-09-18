@@ -51,31 +51,31 @@ export const WatermarkStudioModal = ({
   ];
 
   return (
-    <div className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-stone-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto">
         
         {/* Modal Header */}
-        <div className="px-8 pt-8 pb-5 bg-white border-b border-stone-100 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#f9f8f6] rounded-xl border border-stone-200 text-[#b87c33] shrink-0">
-              <Sparkles className="w-6 h-6" />
+        <div className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-200 text-blue-600 shrink-0">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-xl sm:text-2xl text-[#2d2d2d] tracking-tight">Watermark Studio & PDF Downloader</h3>
-              <p className="text-sm text-stone-500 mt-1">สร้างและดาวน์โหลดไฟล์ PDF จริง พร้อมประทับลายน้ำ 45 องศา (Client-Side 100%)</p>
+              <h3 className="font-bold text-lg text-slate-900 tracking-tight">Watermark Studio & PDF Downloader</h3>
+              <p className="text-xs text-slate-500 mt-0.5">สร้างและดาวน์โหลดไฟล์ PDF จริง พร้อมประทับลายน้ำ 45 องศา (Client-Side 100%)</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 rounded-xl text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors outline-none cursor-pointer"
             title="ปิดหน้าต่าง"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-8 space-y-6 max-h-[75vh] overflow-y-auto bg-[#f9f8f6]">
+        <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50">
           
           {/* Target Document Summary */}
           <div className="p-4 bg-white rounded-xl border border-stone-200 flex items-center justify-between text-sm shadow-sm">
@@ -179,8 +179,8 @@ export const WatermarkStudioModal = ({
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="px-8 py-5 bg-white border-t border-stone-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-stone-500 text-center sm:text-left flex items-center gap-2">
+        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+          <div className="text-sm text-slate-500 text-center sm:text-left flex items-center gap-2">
             <span className="text-lg">🎯</span> สร้างไฟล์ A4 แบบเต็มรูปแบบ พร้อมประทับข้อความเอียง 45°
           </div>
 

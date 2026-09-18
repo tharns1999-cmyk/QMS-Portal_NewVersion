@@ -13,16 +13,26 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
   const docCode = doc.edCode || doc.doc_code || doc.docNo || doc.id || 'ED-DOC-001';
   const uDept = currentUser?.department || 'QA';
 
+  const isObsolete = Boolean(
+    doc.status === 'OBSOLETE' || 
+    doc.status === 'OBSOLETE_ARCHIVED' || 
+    doc.is_obsolete
+  );
+  const isSuperseded = Boolean(
+    !isObsolete && (
+      doc.status === 'SUPERSEDED' || 
+      doc.status === 'SUPERSEDED_ARCHIVED' || 
+      doc.is_superseded
+    )
+  );
+
+  const watermarkPreset = isObsolete 
+    ? WATERMARK_TYPES.OBSOLETE 
+    : isSuperseded 
+      ? WATERMARK_TYPES.SUPERSEDED 
+      : WATERMARK_TYPES.UNCONTROLLED_COPY;
+
   const handleDownload = async () => {
-    const isObsolete = doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED';
-    let watermarkPreset = WATERMARK_TYPES.UNCONTROLLED_COPY;
-
-    if (isObsolete) {
-      watermarkPreset = WATERMARK_TYPES.OBSOLETE;
-    } else if (doc.accessScope === 'Restricted') {
-      watermarkPreset = WATERMARK_TYPES.STRICTLY_CONFIDENTIAL;
-    }
-
     const toastId = toast.loading(`กำลังประทับลายน้ำเอกสาร ${docCode}...`);
 
     try {
@@ -35,7 +45,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           rev: doc.rev || doc.sourceVersion || '01',
           department: doc.department || uDept,
           effectiveDate: doc.effectiveDate,
-          status: doc.status || 'ACTIVE',
+          status: isObsolete ? 'OBSOLETE' : (isSuperseded ? 'SUPERSEDED' : (doc.status || 'ACTIVE')),
           sourceVersion: doc.sourceVersion || doc.edition,
           source: doc.source,
           isExternal: true,
@@ -58,7 +68,11 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           isExternal: true,
           is_external: true,
           doc_type: 'ED',
-          docType: 'ED'
+          docType: 'ED',
+          isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
+          accessScope: doc.accessScope,
+          watermarkType: watermarkPreset,
+          reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print')
         }
       );
 
@@ -73,18 +87,22 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
   };
 
   const timestamp = UniversalWatermarkService.getBangkokTimestamp ? UniversalWatermarkService.getBangkokTimestamp() : new Date().toLocaleString('th-TH');
-  const watermarkText = `UNCONTROLLED COPY (EXTERNAL REF) • ${currentUser?.name || 'User'} • ${timestamp}`;
+  const watermarkText = isObsolete
+    ? `OBSOLETE / ยกเลิกการใช้งานแล้ว • ${currentUser?.name || 'User'} • ${timestamp}`
+    : isSuperseded
+      ? `SUPERSEDED / ตกรุ่น ห้ามใช้อ้างอิง • ${currentUser?.name || 'User'} • ${timestamp}`
+      : `UNCONTROLLED COPY (EXTERNAL REF) • ${currentUser?.name || 'User'} • ${timestamp}`;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
         {/* Backdrop */}
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-stone-900/20 backdrop-blur-sm"
+          className="fixed inset-0"
         />
         
         <motion.div 
@@ -92,20 +110,33 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 15 }}
           transition={{ type: "spring", stiffness: 320, damping: 30 }}
-          className="relative bg-white border border-stone-200/50 w-full max-w-4xl overflow-hidden flex flex-col h-[88vh] rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] z-10 my-auto"
+          className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
         >
-          {/* Header: Claude Aesthetic (White/Flat) */}
-          <div className="bg-white px-8 pt-8 pb-4 flex justify-between items-center shrink-0 border-b border-stone-100">
-            <div className="flex items-center gap-4 min-w-0 pr-2">
-              <div className="w-12 h-12 rounded-xl bg-[#f9f8f6] text-[#da7756] border border-stone-200 flex items-center justify-center shrink-0">
-                <FileText size={24} />
+          {/* Header */}
+          <div className="bg-white px-6 py-4 flex justify-between items-center shrink-0 border-b border-slate-200">
+            <div className="flex items-center gap-3.5 min-w-0 pr-2">
+              <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
+                <FileText size={22} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-[#2d2d2d] text-xl sm:text-2xl font-bold tracking-tight">{docCode}</h2>
-                  <span className="bg-[#f9f8f6] text-[#da7756] border border-stone-200 px-2 py-0.5 rounded-md text-xs font-mono font-bold">
-                    Rev.{doc.rev || '01'}
+                  <h2 className="text-slate-900 text-lg sm:text-xl font-bold tracking-tight">{docCode}</h2>
+                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-md text-xs font-mono font-bold">
+                    {doc.sourceVersion ? `Ver/Ed: ${doc.sourceVersion}` : 'EXTERNAL DOC'}
                   </span>
+                  {isObsolete ? (
+                    <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
+                      OBSOLETE (ยกเลิกแล้ว)
+                    </span>
+                  ) : isSuperseded ? (
+                    <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
+                      SUPERSEDED (ตกรุ่น)
+                    </span>
+                  ) : (
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
+                      ACTIVE (มีผลบังคับใช้)
+                    </span>
+                  )}
                   {doc.accessScope === 'Restricted' && (
                     <span className="bg-[#f5e6e6] text-[#a94442] border border-[#e5cdcd] px-2 py-0.5 rounded-md text-xs font-bold flex items-center gap-1">
                       <ShieldAlert size={12} /> RESTRICTED
@@ -122,7 +153,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
               <button
                 type="button"
                 onClick={handleDownload}
-                className="px-5 py-2.5 rounded-xl bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-sm transition-all flex items-center gap-2 focus:ring-4 focus:ring-[#da7756]/20 outline-none shadow-none"
+                className="px-5 py-2.5 rounded-xl bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-sm transition-all flex items-center gap-2 focus:ring-4 focus:ring-[#da7756]/20 outline-none shadow-none cursor-pointer"
               >
                 <Download size={16} />
                 <span>ดาวน์โหลด PDF</span>
@@ -177,7 +208,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-mono font-bold bg-[#f9f8f6] border border-stone-200 text-stone-600 px-2 py-0.5 rounded">
-                      Rev.{doc.rev || '01'}
+                      {doc.sourceVersion || doc.edition || 'ฉบับต้นทาง'}
                     </span>
                     <p className="text-[11px] text-stone-400 mt-1 font-mono">{doc.effectiveDate}</p>
                   </div>

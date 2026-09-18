@@ -218,7 +218,7 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
   });
 
   describe('4. DAR Audit History Timeline Tab in DocumentDetailModal', () => {
-    it('renders DAR history timeline tab with revision badges, reasons, and sign-offs', () => {
+    it('renders revision-scoped DAR history timeline tab with strict version isolation and sign-offs', () => {
       renderWithRouter(
         <DocumentDetailModal
           isOpen={true}
@@ -230,13 +230,16 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       // Click on "ประวัติ DAR และการแก้ไข" tab
       const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
       expect(historyTabBtn).toBeInTheDocument();
+      expect(screen.getByText(/ประวัติ DAR และการแก้ไข \(1\)/i)).toBeInTheDocument();
       fireEvent.click(historyTabBtn);
 
-      // Verify DAR items are rendered
+      // Verify ONLY current revision's DAR (Rev.02: DAR-2026-001) is rendered
       expect(screen.getByText('DAR-2026-001')).toBeInTheDocument();
-      expect(screen.getByText('DAR-2026-000')).toBeInTheDocument();
       expect(screen.getByText(/ปรับปรุงขั้นตอนการอบขนมและเพิ่มการบันทึกอุณหภูมิ/i)).toBeInTheDocument();
-      expect(screen.getByText(/จัดทำคู่มือการทำงานใหม่ตามมาตรฐาน FSSC 22000/i)).toBeInTheDocument();
+
+      // Invariant: Historical Rev.00 DAR (DAR-2026-000) MUST NOT leak into Rev.02 view
+      expect(screen.queryByText('DAR-2026-000')).not.toBeInTheDocument();
+      expect(screen.queryByText(/จัดทำคู่มือการทำงานใหม่ตามมาตรฐาน FSSC 22000/i)).not.toBeInTheDocument();
 
       // Verify Requesters / Reviewers / Approvers
       expect(screen.getAllByText('สมชาย สายผลิต').length).toBeGreaterThan(0);

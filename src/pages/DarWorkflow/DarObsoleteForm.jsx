@@ -2,20 +2,24 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
-import { Calendar, X, Settings, Trash2, ShieldAlert, FileText, ChevronLeft, User, AlertTriangle, CheckCircle2, MapPin, Building, Archive } from 'lucide-react';
+import { Calendar, X, Settings, Trash2, FileText, ChevronLeft, User, AlertTriangle, Building, Layers } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
 import { resolveReviewer } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
+import { isUserAuthorizedForDocDept } from '../../utils/darHelper';
 
 const DarObsoleteForm = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const params = useParams();
   const location = useLocation();
-  const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
   const prefillDocId = location.state?.prefillDocId;
+  const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.targetDocCode || location.state?.docCode;
+  const deepLinkDocId = searchParams.get('docId') || location.state?.selectedDocId || location.state?.docId || prefillDocId;
   const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, documents, dars, darRequests, simulatedDate, controlledCopyInstances, documentControlledCopies } = useStore();
   
   const initialFormState = {
@@ -37,57 +41,90 @@ const DarObsoleteForm = () => {
   const [lockedSource, setLockedSource] = useState(null);
   const [lockedSourceError, setLockedSourceError] = useState(null);
 
-  // Filter only EFFECTIVE documents for the current user's department
-  const userDept = currentUser.department || currentUser.dept;
+  // Filter only ACTIVE / EFFECTIVE documents for the current user's authorized departments
   const effectiveDocs = useMemo(() => {
-    return documents.filter(d => d.status === 'EFFECTIVE' && d.department === userDept);
-  }, [documents, userDept]);
+    return (documents || []).filter(d => {
+      if (!d) return false;
+      const status = String(d.status || (d.is_active ? 'ACTIVE' : '')).trim().toUpperCase();
+      if (status !== 'EFFECTIVE' && status !== 'ACTIVE') return false;
+      if (d.is_obsolete || d.is_superseded || status === 'OBSOLETE' || status === 'SUPERSEDED') return false;
+      const docDept = d.department || d.dept || d.owner_dept;
+      return isUserAuthorizedForDocDept(docDept, currentUser);
+    });
+  }, [documents, currentUser]);
 
   // Active Controlled Copy distribution breakdown for the selected document
-  const activeCopyGroups = useMemo(() => {
-    const selectedDoc = documents.find(d => d.id === formData.docId);
+  const activeCopiesList = useMemo(() => {
+    const selectedDoc = (documents || []).find(d => d && d.id === formData.docId);
     if (!selectedDoc) return [];
     const allCopies = (controlledCopyInstances && controlledCopyInstances.length > 0)
       ? controlledCopyInstances
       : (documentControlledCopies || []);
-    const active = allCopies.filter(c => {
+    return allCopies.filter(c => {
       const docMatch =
+        (c.docCode && (c.docCode === selectedDoc.code || c.docCode === selectedDoc.title)) ||
+        (c.documentId && String(c.documentId) === String(selectedDoc.id)) ||
         String(c.doc_id || c.docId) === String(selectedDoc.id) ||
-        c.doc_code === selectedDoc.title ||
-        c.docTitle === selectedDoc.title;
-      return docMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE');
+        (c.doc_code && (c.doc_code === selectedDoc.code || c.doc_code === selectedDoc.title)) ||
+        (c.docTitle && (c.docTitle === selectedDoc.code || c.docTitle === selectedDoc.title)) ||
+        (c.document_code && (c.document_code === selectedDoc.code || c.document_code === selectedDoc.title));
+      return docMatch && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE' || c.status === 'RECEIVED' || c.status === 'DISPATCHED_PENDING_RECEIPT');
     });
+  }, [formData.docId, documents, controlledCopyInstances, documentControlledCopies]);
+
+  const activeCopyGroups = useMemo(() => {
     // Group by dept
     const groups = {};
-    active.forEach(c => {
+    activeCopiesList.forEach(c => {
       const dept = c.holder_dept || c.department || '?';
       if (!groups[dept]) groups[dept] = [];
       groups[dept].push(c);
     });
     return Object.entries(groups).map(([dept, copies]) => ({ dept, copies }));
-  }, [formData.docId, documents, controlledCopyInstances, documentControlledCopies]);
+  }, [activeCopiesList]);
 
   // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
   useEffect(() => {
     if (formData.docId) {
-      const isStillValid = effectiveDocs.some(d => d.id === formData.docId);
+      const isStillValid = (effectiveDocs || []).some(d => d && d.id === formData.docId);
       if (!isStillValid && !lockedSource && !targetDraftId) {
         setFormData(prev => ({ ...prev, docId: '' }));
       }
     }
-  }, [currentUser.id, currentUser.department, currentUser.dept, formData.docId, effectiveDocs, lockedSource, targetDraftId]);
+  }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs, lockedSource, targetDraftId]);
 
-  // Handle Prefill from Periodic Review
+  // Handle Prefill / Deep-link from Document Library or Periodic Review
   useEffect(() => {
-    if (prefillDocId) {
-      setFormData(prev => ({ ...prev, docId: prefillDocId }));
+    if (targetDraftId || location.state?.draftData) return;
+    if (formData.docId) return;
+
+    if (deepLinkDocId || deepLinkDocCode) {
+      const candidateList = (effectiveDocs && effectiveDocs.length > 0) ? effectiveDocs : (documents || []);
+      const matched = candidateList.find(d => {
+        if (!d) return false;
+        if (deepLinkDocId && String(d.id) === String(deepLinkDocId)) return true;
+        const code = (d.document_code || d.doc_code || d.code || d.docCode || d.title || '').trim().toUpperCase();
+        if (deepLinkDocCode && code === String(deepLinkDocCode).trim().toUpperCase()) return true;
+        return false;
+      });
+
+      if (matched) {
+        setFormData(prev => ({ ...prev, docId: matched.id }));
+      }
     }
-  }, [prefillDocId]);
+  }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId]);
 
   useEffect(() => {
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
-      const draft = location.state?.draftData || allDarsList.find(d => (d.id === targetDraftId || d.dar_no === targetDraftId || d.darNo === targetDraftId) && (d.status === 'DRAFT' || d.isDraft));
+      const draft = location.state?.draftData || allDarsList.find(d => {
+        if (!targetDraftId) return false;
+        return (
+          String(d.id) === targetDraftId || 
+          String(d.dar_no) === targetDraftId || 
+          String(d.darNo) === targetDraftId
+        );
+      });
       if (draft) {
         if (draft.sourceType === 'PERIODIC_REVIEW') {
           try {
@@ -226,7 +263,7 @@ const DarObsoleteForm = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -243,7 +280,7 @@ const DarObsoleteForm = () => {
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4">
+      <form onSubmit={handleFormSubmit} className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY MASTER FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -279,8 +316,13 @@ const DarObsoleteForm = () => {
               </div>
             </div>
 
-            <div className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 shrink-0">
-              ขอยกเลิก (OBSOLETE)
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                [ ฉบับร่าง (รอออกเลข DAR หลังส่งคำร้อง) ]
+              </span>
+              <div className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                ขอยกเลิก (OBSOLETE)
+              </div>
             </div>
           </div>
 
@@ -340,39 +382,7 @@ const DarObsoleteForm = () => {
                     </div>
                   </div>
                 )}
-
-                {/* Active Controlled Copies Distribution Impact Widget */}
-                {!lockedSource && selectedDoc && activeCopyGroups.length > 0 && (
-                  <div className="mt-3 bg-[#FFF7ED] border border-[#FDE68A] rounded-xl p-3.5 space-y-2.5">
-                    <div className="flex items-center gap-2 text-xs font-bold text-[#92400E]">
-                      <AlertTriangle size={13} className="text-[#D97706] shrink-0" />
-                      <span>
-                        ผลกระทบ: สำเนาควบคุมที่ใช้งานอยู่จริงต้องถูกเรียกคืน
-                        ({totalControlledCopies} ชุด
-                        ใน {activeCopyGroups.length} แผนก)
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {activeCopyGroups.map(({ dept, copies }) => (
-                        <div
-                          key={dept}
-                          className="bg-white border border-[#FCD34D] rounded-lg px-2.5 py-2 flex items-center gap-2"
-                        >
-                          <Building size={13} className="text-[#D97706] shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-bold text-[11px] text-[#1E293B] truncate">{dept}</div>
-                            <div className="text-[10px] text-[#B45309] font-mono">
-                              {copies.length} สำเนา •{' '}
-                              {copies.map(c => `Copy ${c.copy_no || c.ccNumber}`).join(', ')}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
-
 
               {/* 2. วันที่ต้องการให้มีผลยกเลิก (4 Cols) */}
               <div className="md:col-span-4">
@@ -380,7 +390,7 @@ const DarObsoleteForm = () => {
                   วันที่มีผลยกเลิก (Requested Date) <span className="text-[#EF4444]">*</span>
                 </label>
                 <input 
-                  type="date"
+                  type="date" 
                   value={formData.effectiveDate}
                   min={new Date(simulatedDate || Date.now()).toISOString().split('T')[0]}
                   onChange={(e) => setFormData(prev => ({...prev, effectiveDate: e.target.value}))}
@@ -393,165 +403,222 @@ const DarObsoleteForm = () => {
               </div>
 
             </div>
+
+            {/* Active Controlled Copies Matrix */}
+            {selectedDoc && (
+              <div className="mt-4 pt-4 border-t border-[#E2E8F0] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers size={16} className="text-[#0D99FF]" />
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-[#1E293B]">
+                      สำเนาควบคุมปัจจุบันที่ใช้งานอยู่ในสายงาน (Current Active Copies in Circulation)
+                    </h4>
+                  </div>
+                  <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    พบ {activeCopiesList.length} สำเนา
+                  </span>
+                </div>
+
+                {/* ISO 9001 Recall Warning Banner */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <span className="font-bold">ข้อกำหนด ISO 9001 (Control of Documented Information): </span>
+                    <span>เมื่อคำร้องนี้ได้รับการอนุมัติ สำเนาทั้งหมดในรายการนี้จะถูกเรียกคืนกลับสู่ฝ่าย DC</span>
+                  </div>
+                </div>
+
+                {/* Table */}
+                {activeCopiesList.length > 0 ? (
+                  <div className="overflow-x-auto border border-[#E2E8F0] rounded-xl shadow-xs">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-[#F8FAFC] text-[#475569] font-bold border-b border-[#E2E8F0] uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3">หมายเลขสำเนา (Copy No.)</th>
+                          <th className="py-2.5 px-3">แผนกผู้ถือครอง (Department)</th>
+                          <th className="py-2.5 px-3">จุดใช้งานจริง (Location)</th>
+                          <th className="py-2.5 px-3 text-center">Rev ปัจจุบัน</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#F1F5F9] bg-white">
+                        {activeCopiesList.map((c, idx) => (
+                          <tr key={c.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-bold text-[#0D99FF]">
+                              Copy {c.copy_no || c.copyNo || c.ccNumber || String(idx + 1).padStart(2, '0')}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-[#1E293B]">
+                              <span className="inline-flex items-center gap-1">
+                                <Building size={12} className="text-slate-400" />
+                                {c.holder_dept || c.department || c.dept || '-'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-[#334155]">
+                              {c.location || c.locationName || c.station_name || c.holder_name || `${c.holder_dept || c.department || 'PD'} Station`}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-600">
+                              Rev.{c.rev || c.doc_version || c.revision || selectedDoc?.rev || '00'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                    ไม่พบสำเนาควบคุมที่ใช้งานอยู่ในสายงานสำหรับเอกสารนี้ (ไม่มีภาระงานเรียกคืนเล่มจริง)
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Section 3: เหตุผลและแผนการจัดการสำเนาเดิม (50/50 Symmetrical Equal-Height Grid) */}
-          <div className="p-5 space-y-4 bg-white">
-            <div className="flex items-center justify-between pb-1">
+          {/* Section 3: เหตุผลและแผนการจัดการสำเนาเดิม (Clean Modern SaaS Layout) */}
+          <div className="p-5 sm:p-6 space-y-5 bg-white">
+            <div className="flex items-center justify-between pb-2 border-b border-[#F1F5F9]">
               <h3 className="font-bold text-sm text-[#1E293B] uppercase tracking-wider flex items-center gap-2">
                 <FileText className="text-[#0D99FF]" size={16} />
-                <span className="font-bold text-sm text-[#1E293B]">ส่วนที่ 3: เหตุผลและความจำเป็นในการยกเลิกและแผนการจัดการสำเนา</span>
+                <span>ส่วนที่ 3: เหตุผลและความจำเป็นในการยกเลิกและแผนการจัดการ</span>
               </h3>
+              {selectedDoc && totalControlledCopies > 0 && (
+                <span className="text-xs text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full font-medium">
+                  มีภาระเรียกคืนสำเนากระดาษ {totalControlledCopies} เล่ม
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-              
-              {/* ================= ฝั่งซ้าย (50%): เหตุผล & รายละเอียด ================= */}
-              <div className="flex flex-col justify-between space-y-4 h-full">
+            <div className="space-y-4.5">
+              {/* 1. เหตุผลการยกเลิก (Obsolete Reason) */}
+              <div>
+                <label className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  เหตุผลการยกเลิก (Obsolete Reason) <span className="text-[#EF4444]">*</span>
+                </label>
+                <select 
+                  value={formData.obsoleteReason}
+                  onChange={(e) => setFormData(prev => ({...prev, obsoleteReason: e.target.value}))}
+                  className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.obsoleteReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                >
+                  <option value="">-- เลือกเหตุผลการยกเลิก --</option>
+                  <option value="PROCESS_CHANGE">ปรับปรุงกระบวนการและควบรวมกับเอกสารอื่น (Process Merge)</option>
+                  <option value="PROCESS_REMOVED">ยกเลิกกระบวนการทำงานดังกล่าวแล้ว (Process Discontinued)</option>
+                  <option value="AUDIT_FINDING">ยกเลิกตามข้อเสนอแนะจากการตรวจติดตาม (Audit Finding)</option>
+                  <option value="DUPLICATED">เอกสารซ้ำซ้อน (Duplicate Document)</option>
+                  <option value="OTHER">อื่น ๆ (Other)</option>
+                </select>
+                {errors.obsoleteReason && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteReason}</p>}
                 
-                {/* 1. เหตุผลการยกเลิก */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                    เหตุผลการยกเลิก (Obsolete Reason) <span className="text-[#EF4444]">*</span>
-                  </label>
-                  <select 
-                    value={formData.obsoleteReason}
-                    onChange={(e) => setFormData(prev => ({...prev, obsoleteReason: e.target.value}))}
-                    className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.obsoleteReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                  >
-                    <option value="">-- เลือกเหตุผลการยกเลิก --</option>
-                    <option value="PROCESS_CHANGE">ปรับปรุงกระบวนการและควบรวมกับเอกสารอื่น (Process Merge)</option>
-                    <option value="PROCESS_REMOVED">ยกเลิกกระบวนการทำงานดังกล่าวแล้ว (Process Discontinued)</option>
-                    <option value="AUDIT_FINDING">ยกเลิกตามข้อเสนอแนะจากการตรวจติดตาม (Audit Finding)</option>
-                    <option value="DUPLICATED">เอกสารซ้ำซ้อน (Duplicate Document)</option>
-                    <option value="OTHER">อื่น ๆ (Other)</option>
-                  </select>
-                  {errors.obsoleteReason && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteReason}</p>}
-                  
-                  {formData.obsoleteReason === 'OTHER' && (
-                    <div className="mt-2.5">
-                      <input 
-                        type="text"
-                        value={formData.otherReason}
-                        onChange={(e) => setFormData(prev => ({...prev, otherReason: e.target.value}))}
-                        className={`w-full h-10 px-3.5 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] ${errors.otherReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                        placeholder="ระบุเหตุผลความจำเป็น..."
-                      />
-                      {errors.otherReason && <p className="text-rose-500 text-xs mt-1">{errors.otherReason}</p>}
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. รายละเอียดเพิ่มเติมและผลกระทบ */}
-                <div className="flex-1 flex flex-col">
-                  <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                    รายละเอียดเพิ่มเติมและผลกระทบ (Details & Impact) <span className="text-[#EF4444]">*</span>
-                  </label>
-                  <textarea 
-                    rows={5}
-                    value={formData.obsoleteDetail}
-                    onChange={(e) => setFormData(prev => ({...prev, obsoleteDetail: e.target.value}))}
-                    className={`w-full flex-1 min-h-[100px] lg:min-h-[125px] p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.obsoleteDetail ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                    placeholder="อธิบายเหตุผลและผลกระทบของการยกเลิกเอกสารนี้..."
-                  />
-                  {errors.obsoleteDetail && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteDetail}</p>}
-                </div>
-
-              </div>
-
-              {/* ================= ฝั่งขวา (50%): แผนเรียกคืนสำเนา & การรับทราบ ================= */}
-              <div className="flex flex-col justify-between space-y-4 bg-[#FFF1F2]/35 border border-[#FFE4E6] p-4.5 rounded-xl h-full">
-                
-                {/* 1. แผนการเรียกคืนสำเนาควบคุม */}
-                <div className="space-y-3">
-                  <label className="block text-sm font-semibold text-[#334155]">
-                    แผนการจัดการและเรียกคืนสำเนาเดิม (Recall Plan)
-                  </label>
-
-                  {totalControlledCopies > 0 || Boolean(formData.recallPlan) ? (
-                    <div className="space-y-2.5">
-                      <div className="flex items-center gap-2 text-xs font-semibold text-[#D97706] bg-[#FFFBEB] p-2.5 rounded-lg border border-[#FDE68A]">
-                        <AlertTriangle className="shrink-0 text-[#D97706]" size={15} />
-                        <span>ระบบจะสร้าง Task เรียกคืนสำเนา {totalControlledCopies} ชุดนี้ให้ DCC อัตโนมัติ</span>
-                      </div>
-                      <p className="text-[11px] text-[#64748B] leading-relaxed">
-                        เมื่อคำขอนี้ได้รับการอนุมัติ DCC จะต้องดำเนินการเก็บเล่มจริงจากทุกสถานีกลับมาเพื่อประทับตรา <strong>OBSOLETE</strong> หรือทำลายทิ้งตามระเบียบ
-                      </p>
-                      <div>
-                        <textarea 
-                          rows={3}
-                          value={formData.recallPlan}
-                          onChange={(e) => setFormData(prev => ({...prev, recallPlan: e.target.value}))}
-                          className={`w-full min-h-[80px] p-3 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-200 transition-all leading-relaxed resize-none ${errors.recallPlan ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                          placeholder="ระบุวิธีการสื่อสารและระยะเวลาที่จะเรียกคืนเอกสารกลับมาทำลาย..."
-                        />
-                        {errors.recallPlan && <p className="text-rose-500 text-xs mt-1">{errors.recallPlan}</p>}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
-                      <CheckCircle2 className="text-emerald-500 shrink-0" size={16} />
-                      <span>{selectedDoc ? 'ไม่พบสำเนาควบคุมกระดาษในระบบ (ระบบจะยกเลิกเฉพาะไฟล์ Master ดิจิทัล)' : 'โปรดเลือกเอกสารเป้าหมายเพื่อตรวจสอบสำเนาควบคุม'}</span>
-                    </div>
-                  )}
-                </div>
-
-
-                {/* 2. การรับทราบเอกสารฉบับยกเลิก */}
-                <div className="pt-2 border-t border-[#FFE4E6] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-[#334155]">
-                      การรับทราบการยกเลิก <span className="text-[#EF4444]">*</span>
-                    </label>
-                    <div className="flex items-center gap-4 text-xs sm:text-sm">
-                      <label className="flex items-center gap-2 cursor-pointer font-medium text-[#475569]">
-                        <input 
-                          type="radio" 
-                          name="ack"
-                          value="NOT_REQUIRED"
-                          checked={formData.ackRequirement === 'NOT_REQUIRED'}
-                          onChange={(e) => setFormData(prev => ({...prev, ackRequirement: e.target.value, ackUserId: ''}))}
-                          className="w-4 h-4 text-[#0D99FF] focus:ring-[#0D99FF]"
-                        />
-                        <span>ไม่ต้องรับทราบ</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer font-medium text-[#475569]">
-                        <input 
-                          type="radio" 
-                          name="ack"
-                          value="REQUIRED"
-                          checked={formData.ackRequirement === 'REQUIRED'}
-                          onChange={(e) => setFormData(prev => ({...prev, ackRequirement: e.target.value}))}
-                          className="w-4 h-4 text-[#0D99FF] focus:ring-[#0D99FF]"
-                        />
-                        <span>ต้องรับทราบ</span>
-                      </label>
-                    </div>
+                {formData.obsoleteReason === 'OTHER' && (
+                  <div className="mt-2.5">
+                    <input 
+                      type="text"
+                      value={formData.otherReason}
+                      onChange={(e) => setFormData(prev => ({...prev, otherReason: e.target.value}))}
+                      className={`w-full h-10 px-3.5 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] ${errors.otherReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                      placeholder="ระบุเหตุผลความจำเป็น..."
+                    />
+                    {errors.otherReason && <p className="text-rose-500 text-xs mt-1">{errors.otherReason}</p>}
                   </div>
-
-                  {formData.ackRequirement === 'REQUIRED' && (
-                    <div className={`p-3 rounded-lg border ${errors.ackUserId ? 'border-rose-300 bg-rose-50' : 'border-rose-100 bg-white'}`}>
-                      <p className="text-xs font-semibold text-[#334155] mb-1.5">เลือกผู้ที่ต้องรับทราบ (1 คน)</p>
-                      <UserSelector 
-                        value={formData.ackUserId} 
-                        onChange={(id) => setFormData(prev => ({...prev, ackUserId: id}))} 
-                        error={errors.ackUserId} 
-                        users={masterUsers.filter(u => u.id !== currentUser.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
-                      />
-                      {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
-                    </div>
-                  )}
-                </div>
-
+                )}
               </div>
 
+              {/* 2. รายละเอียดเพิ่มเติมและผลกระทบ (Details & Impact) */}
+              <div>
+                <label className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  รายละเอียดเพิ่มเติมและผลกระทบ (Details & Impact) <span className="text-[#EF4444]">*</span>
+                </label>
+                <textarea 
+                  rows={3}
+                  value={formData.obsoleteDetail}
+                  onChange={(e) => setFormData(prev => ({...prev, obsoleteDetail: e.target.value}))}
+                  className={`w-full p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-y min-h-[90px] ${errors.obsoleteDetail ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                  placeholder="อธิบายเหตุผลและผลกระทบของการยกเลิกเอกสารนี้..."
+                />
+                {errors.obsoleteDetail && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteDetail}</p>}
+              </div>
+
+              {/* 3. แผนการสื่อสารและระยะเวลาเรียกคืนสำเนากลับสู่ DC (Recall Plan) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-semibold text-[#334155]">
+                    แผนการสื่อสารและระยะเวลาเรียกคืนสำเนากลับสู่ DC (Recall Plan)
+                    {selectedDoc && totalControlledCopies > 0 && <span className="text-[#EF4444] ml-1">*</span>}
+                  </label>
+                  <span className="text-[11px] text-[#64748B]">
+                    {selectedDoc && totalControlledCopies > 0 
+                      ? 'อ้างอิงตามรายการสำเนาควบคุมในตารางส่วนที่ 2' 
+                      : 'เอกสารไม่มีสำเนากระดาษ'}
+                  </span>
+                </div>
+                <textarea 
+                  rows={2}
+                  value={formData.recallPlan}
+                  onChange={(e) => setFormData(prev => ({...prev, recallPlan: e.target.value}))}
+                  className={`w-full p-3 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-y min-h-[70px] ${errors.recallPlan ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                  placeholder="แผนการสื่อสารหน้างานและกรอบเวลาในการส่งคืนสำเนาทั้งหมดแก่ฝ่าย DC (เช่น ส่งคืนเล่มจริงภายใน 3 วันทำการหลังได้รับการอนุมัติ)..."
+                />
+                {errors.recallPlan ? (
+                  <p className="text-rose-500 text-xs mt-1">{errors.recallPlan}</p>
+                ) : (
+                  <p className="text-[11px] text-[#64748B] mt-1">
+                    เมื่อคำร้องได้รับอนุมัติ ระบบจะส่ง Task เรียกคืนสำเนาทั้งหมดกลับสู่ฝ่าย DC ตามรายการในตารางด้านบนโดยอัตโนมัติ
+                  </p>
+                )}
+              </div>
+
+              {/* 4. การรับทราบการยกเลิก (Acknowledgement Requirement) */}
+              <div className="pt-3 border-t border-[#F1F5F9] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-sm font-semibold text-[#334155]">
+                      การรับทราบการยกเลิก (Acknowledgement) <span className="text-[#EF4444]">*</span>
+                    </label>
+                    <p className="text-[11px] text-[#64748B]">กำหนดให้ผู้เกี่ยวข้องลงนามรับทราบการยกเลิกเอกสารนี้หรือไม่</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs sm:text-sm">
+                    <label className="flex items-center gap-2 cursor-pointer font-medium text-[#475569]">
+                      <input 
+                        type="radio" 
+                        name="ack"
+                        value="NOT_REQUIRED"
+                        checked={formData.ackRequirement === 'NOT_REQUIRED'}
+                        onChange={(e) => setFormData(prev => ({...prev, ackRequirement: e.target.value, ackUserId: ''}))}
+                        className="w-4 h-4 text-[#0D99FF] focus:ring-[#0D99FF]"
+                      />
+                      <span>ไม่ต้องรับทราบ</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer font-medium text-[#475569]">
+                      <input 
+                        type="radio" 
+                        name="ack"
+                        value="REQUIRED"
+                        checked={formData.ackRequirement === 'REQUIRED'}
+                        onChange={(e) => setFormData(prev => ({...prev, ackRequirement: e.target.value}))}
+                        className="w-4 h-4 text-[#0D99FF] focus:ring-[#0D99FF]"
+                      />
+                      <span>ต้องรับทราบ</span>
+                    </label>
+                  </div>
+                </div>
+
+                {formData.ackRequirement === 'REQUIRED' && (
+                  <div className={`p-3.5 rounded-xl border ${errors.ackUserId ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50/50'}`}>
+                    <p className="text-xs font-semibold text-[#334155] mb-1.5">เลือกผู้ที่ต้องรับทราบ (1 คน) <span className="text-[#EF4444]">*</span></p>
+                    <UserSelector 
+                      value={formData.ackUserId} 
+                      onChange={(id) => setFormData(prev => ({...prev, ackUserId: id}))} 
+                      error={errors.ackUserId} 
+                      users={(masterUsers || []).filter(u => u && u.id !== currentUser?.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
+                    />
+                    {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
         </div>
 
         {/* Action Buttons */}
-        <div className="card-surface p-4 flex justify-end gap-2.5 shadow-2xs mb-2">
+        <div className="card-surface p-4 mt-6 flex items-center justify-end gap-3 shadow-2xs mb-2">
           <Button 
             variant="ghost"
             type="button" 
@@ -577,10 +644,14 @@ const DarObsoleteForm = () => {
       </form>
 
       {(() => {
-        const resolvedRevId = formData.manualReviewerId
-          ? formData.manualReviewerId
-          : (resolveReviewer(currentUser.id, currentUser.department, masterUsers, reviewUsers || masterUsers)?.id);
-        const resolvedReviewerObj = (masterUsers || []).find(u => u.id === resolvedRevId);
+        const resolvedRevId = resolveReviewer(
+          currentUser?.id, 
+          currentUser?.department || 'PD', 
+          masterUsers || [], 
+          reviewUsers || masterUsers || [], 
+          formData.docType || formData.targetDocType
+        )?.id;
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
 
         return (
           <ActionConfirmModal
@@ -597,7 +668,7 @@ const DarObsoleteForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser.name} ({currentUser.department})
+                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },
@@ -642,7 +713,7 @@ const DarObsoleteForm = () => {
                 label: 'แผนการเรียกคืนสำเนา',
                 value: (
                   <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.recallPlan || 'เรียกคืนสำเนาควบคุมจากทุกจุดใช้งานตามขั้นตอนมาตรฐานของ DCC'}
+                    {formData.recallPlan || 'เรียกคืนสำเนาควบคุมจากทุกจุดใช้งานตามขั้นตอนมาตรฐานของฝ่าย DC'}
                   </div>
                 )
               },

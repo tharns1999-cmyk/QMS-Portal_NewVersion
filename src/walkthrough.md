@@ -59,6 +59,83 @@ We have resolved the duplicate navigation clutter in [`src/pages/ControlledCopy/
 
 ---
 
+## Walkthrough: Multi-Department Filtering Fix, Executive UX, DCC Admin Global Access & Clean Unwatermarked Download
+
+ระบบคลังเอกสารแม่บท (`src/pages/Library/Library.jsx`), Service ลายน้ำ (`src/services/UniversalWatermarkService.js`) และ Access Control Utility (`src/utils/accessControl.js`) ได้รับการปรับปรุงอย่างสมบูรณ์ตามข้อกำหนด ISO 9001:
+
+---
+
+## 1. การแก้ไข Logic การกรองเอกสารหลายแผนก (Multi-Dept Sync)
+
+### 1.1 Normalized User Department List
+- รวบรวมสังกัดทั้งหมดของ User อย่างครอบคลุม:
+  - Primary Department: `currentUser.primary_department`, `currentUser.department`, `currentUser.dept`, `currentUser.dept_code`
+  - Secondary / Affiliated Departments: `currentUser.departments`, `currentUser.secondaryDepartments`, `currentUser.affiliated_departments`, `currentUser.depts`
+  - ตัดค่าว่าง ซ้ำ และแปลงเป็นตัวพิมพ์ใหญ่ (Uppercase)
+  - จัดการจับคู่ `QA` และ `QA/QC` ให้เทียบเท่ากันอัตโนมัติ (`deptMatches`)
+- จัดลำดับให้แผนกหลัก (`primaryDept`) อยู่เป็นลำดับแรกเสมอ (`⭐️ [PD]`)
+
+### 1.2 ซิงค์ข้อมูลระหว่าง Badge ด้านบนกับตารางเอกสาร 100%
+- ใน `baseDocs` สำหรับแท็บ `TAB_MY_DEPT`:
+  - เดิม: `docDept === userDept` (เช็คเฉพาะ String แผนกเดียว ทำให้กรณีคุณกัลยาณี `U003` ที่สังกัด PD + QA ข้อมูล QA ถูกตัดทิ้ง)
+  - ใหม่: `isDcc || isOwnerDept(doc)` โดย `isOwnerDept` ตรวจสอบผ่าน `isDocInDeptList(docDept, userDistinctDepts)`
+- ตัวนับ Badge `myDeptDocsCount` และแถวในตาราง `baseDocs` ใช้ฟังก์ชัน `isOwnerDept` ชุดเดียวกัน 100%
+- ผลลัพธ์: แก้ไขกรณีคุณกัลยาณี (`U003`) ให้เอกสาร QA แสดงขึ้นมาในตาราง ไม่เป็นตารางว่างเปล่า
+
+---
+
+## 2. Department Sub-Filter Quick-Pills สำหรับ Multi-Dept & Management
+
+- **แถบ Department Quick-Pills:**
+  - แสดงเฉพาะเมื่อผู้ใช้สังกัดมากกว่า 1 แผนก (`userDistinctDepts.length > 1`) ในแท็บ "เอกสารในแผนกฉัน"
+  - มีปุ่ม:
+    1. `ทั้งหมดในสายงาน (จำนวนรวม)` -> สลับดูเอกสารของทุกแผนกที่ตนเองสังกัด
+    2. ปุ่มรายแผนก เช่น `⭐️ [PD] (จำนวน)`, `[QA] (จำนวน)`
+- **Default Filter Behavior:**
+  - ค่าเริ่มต้นเปิดที่ **"แผนกหลัก (Primary Department ⭐️)"** เสมอ เพื่อลด Cognitive Overload
+  - ผู้ใช้สามารถสลับดูเฉพาะแผนก หรือกดดูทั้งหมดในสายงานได้ในคลิกเดียว
+
+---
+
+## 3. สิทธิ์การเข้าถึงและดาวน์โหลดไฟล์ของ DCC Admin (ISO 9001 Master Custodian)
+
+### 3.1 Global Visibility & ตัวกรองทุกแผนก
+- เพิ่ม Dropdown กรองแผนกในแถบเครื่องมือ Toolbar พร้อมตัวเลือก **"ทุกแผนก (All Departments)"**
+- บัญชี DCC Admin (`isDccUser`) สามารถค้นหาและดูเอกสารของทุกแผนกได้ 100% โดยไม่มีข้อจำกัด
+
+### 3.2 ปุ่มดาวน์โหลดไฟล์ต้นฉบับไร้ลายน้ำ (Clean Master Download)
+- เพิ่ม Method `UniversalWatermarkService.downloadCleanPdf(doc, meta, openInTab)` ที่ส่งออกไฟล์ PDF แท้โดยไม่ประทับตราลายน้ำ Watermark ใดๆ
+- เพิ่มปุ่ม Action **"ดาวน์โหลดต้นฉบับ (ไม่ติดลายน้ำ)" / "Download Clean Master"** สงวนสิทธิ์เฉพาะ DCC Admin เท่านั้น:
+  1. ใน Dropdown เมนูเพิ่มเติม (`...`) ของแต่ละแถวเอกสาร
+  2. ในตารางแถวย่อยประวัติเอกสาร (Sub-Document Rows)
+- ผู้ใช้ทั่วไปยังคงได้รับเฉพาะไฟล์ที่ประทับลายน้ำตามระเบียบรักษาความปลอดภัยเดิม
+
+---
+
+## 4. ตำแหน่งไฟล์และบรรทัดที่แก้ไข
+
+| ไฟล์ | บรรทัดที่แก้ไข | รายละเอียดการปรับปรุง |
+| :--- | :--- | :--- |
+| [`src/services/UniversalWatermarkService.js`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/services/UniversalWatermarkService.js) | L839–L865 | เพิ่ม `downloadCleanPdf` สำหรับดาวน์โหลดไฟล์ PDF ต้นฉบับแท้โดยไม่ผ่านฟังก์ชัน `stampPdf` |
+| [`src/utils/accessControl.js`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/utils/accessControl.js) | L143–L165, L225–L244 | ปรับปรุง `hasDocumentAccess` และ `canManageControlledCopy` ให้ normalize `rawUserDepts` รองรับ primary + secondary departments และจัดการ `QA` / `QA/QC` |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L27, L117–L205 | เพิ่ม `ShieldCheck` icon, ฟังก์ชัน `normalizeDept`, `deptMatches`, `primaryDept`, `userDistinctDepts`, `myDeptSubFilter`, และ `availableDepts` |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L280–L375 | ปรับปรุง `baseDocs`, `accessibleDocs`, `generalDocsCount`, `myDeptDocsCount`, `deptCounts` และ `filteredDocs` ซิงค์ข้อมูลหลายแผนกและรองรับ sub-filter |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L570–L620 | เพิ่มฟังก์ชัน `handleDownloadCleanMaster` พร้อม Permission Guard ตรวจสอบ `isDccUser` |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L738–L758 | เพิ่ม `handleSelectTab` เพื่อรีเซ็ต sub-filter เข้าหา `primaryDept` และอัปเดต `handleResetFilters` |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L1063–L1075 | เพิ่มปุ่ม Clean Master Download (`ShieldCheck`) ในแถวรายการประวัติย่อย (Sub-Document Rows) สำหรับ DCC Admin |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L1195–L1215 | เพิ่มปุ่ม "ดาวน์โหลดต้นฉบับ (ไม่ติดลายน้ำ)" ใน Dropdown Action Menu (`...`) สำหรับ DCC Admin |
+| [`src/pages/Library/Library.jsx`](file:///Users/macpro/Downloads/QMS-Portal_NewVersion/src/pages/Library/Library.jsx) | L1445–L1660 | ปรับปรุง Navigation Tabs, เพิ่ม Dropdown แผนกใน Toolbar (พร้อมตัวเลือก "ทุกแผนก"), และแถบ Quick-Pills สำหรับ Multi-Dept |
+
+---
+
+## 5. ผลการตรวจสอบ (Verification)
+
+- **Linter (`npx oxlint`):** 0 Errors ในทุกไฟล์ที่แก้ไข
+- **Build (`npm run build`):** ผ่านฉลุย 100% (Built in 1.78s, Exit code 0)
+- **Protocol:** ปฏิบัติตามข้อห้ามเด็ดขาด (ไม่รัน `vitest` และไม่เปิด Browser Automation) ตรวจสอบเสร็จสิ้นและปิด Process เรียบร้อย
+
+---
+
 ## 5. Comprehensive QA Workflow Mock Data Engine & State Seeding
 
 ### Mock Data Architecture Implemented (`src/data/mockQaWorkflowSeed.js` & `useStore.js`):

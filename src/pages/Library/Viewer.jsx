@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert } from 'lucide-react';
-import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
 import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import toast from 'react-hot-toast';
 import { hasDocumentAccess } from '../../utils/accessControl';
@@ -17,7 +17,9 @@ const Viewer = () => {
   
   const doc = documents.find(d => d.id === docId);
   const title = doc ? doc.title : docId;
-  const canDownload = doc && !isArchive ? canDownloadDocument(doc, currentUser) : false;
+  const docStatus = doc?.status || (isArchive ? 'OBSOLETE' : '');
+  const watermarkConfig = getWatermarkConfig(docStatus);
+  const canDownload = doc && !isArchive && docStatus === 'EFFECTIVE' ? canDownloadDocument(doc, currentUser) : false;
 
   // Access Control Guard
   if (doc && !hasDocumentAccess(doc, currentUser)) {
@@ -120,12 +122,16 @@ const Viewer = () => {
       {/* Viewer Canvas (Mock) */}
       <div className="flex-1 bg-slate-950 overflow-auto flex items-center justify-center p-4 md:p-8 relative">
         
-        {/* Watermark Overlay for Archived Documents */}
-        {isArchive && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-50 overflow-hidden opacity-20">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="text-rose-500 font-bold text-6xl md:text-8xl whitespace-nowrap -rotate-45 mb-32 select-none tracking-wider drop-shadow-sm">
-                ARCHIVE DOCUMENT
+        {/* Watermark Overlay for Superseded and Obsolete Documents */}
+        {watermarkConfig.visible && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-50 overflow-hidden select-none">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div 
+                key={i} 
+                style={{ color: watermarkConfig.color }}
+                className="font-black text-4xl sm:text-6xl md:text-7xl whitespace-nowrap -rotate-45 mb-24 md:mb-32 select-none tracking-widest drop-shadow-sm font-sans"
+              >
+                {watermarkConfig.text}
               </div>
             ))}
           </div>
@@ -136,9 +142,16 @@ const Viewer = () => {
             <h1 className="text-xl font-bold text-slate-400 mb-2">PDF Document Viewer</h1>
             <p className="text-sm text-slate-800 font-bold font-mono">Document: {title}</p>
             <p className="text-xs text-[#666666] font-mono mt-0.5">Revision: {rev}</p>
-            {isArchive && (
-              <div className="mt-6 px-3.5 py-1.5 bg-rose-50 text-rose-800 rounded-full font-bold text-xs border border-rose-200">
-                🚨 ARCHIVE DOCUMENT (เอกสารยกเลิกแล้ว ห้ามนำไปใช้อ้างอิง)
+            {watermarkConfig.visible && (
+              <div 
+                className="mt-6 px-4 py-2 rounded-full font-bold text-xs border tracking-wide flex items-center gap-2"
+                style={{
+                  backgroundColor: docStatus.includes('SUPERSEDED') ? '#FFF7ED' : '#FEF2F2',
+                  borderColor: docStatus.includes('SUPERSEDED') ? '#FDBA74' : '#FECACA',
+                  color: docStatus.includes('SUPERSEDED') ? '#C2410C' : '#DC2626'
+                }}
+              >
+                {docStatus.includes('SUPERSEDED') ? '⏳' : '🚨'} {watermarkConfig.text} (ห้ามนำไปใช้อ้างอิง)
               </div>
             )}
           </div>

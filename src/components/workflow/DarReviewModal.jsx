@@ -27,6 +27,7 @@ import useStore from '../../store/useStore';
 import { ACCESS_SCOPES, ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { calculateCopyAllocations, cleanLocationName } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 
 /**
@@ -98,10 +99,13 @@ const DarReviewModal = ({
 
   const scopeMeta = ACCESS_SCOPE_METADATA[accessControl.scope] || ACCESS_SCOPE_METADATA.GENERAL;
 
-  // Controlled Copies & Distributions
-  const distributions = dar.distributions || dar.distribution_locations || [];
-  const totalPhysicalCopies = distributions.filter(d => d.copyType === 'CONTROLLED' || d.type === 'CONTROLLED').length;
-  const isDigitalOnly = distributions.length === 0;
+  // Controlled Copies & Distributions (ISO 9001: Master strictly held at DCC, all distributed copies are Controlled Copies)
+  const isFormDoc = String(dar.docType || dar.doc_type || docInfo.docCode || '').startsWith('FM');
+  const rawDistributions = dar.distributions || dar.distribution_locations || [];
+  const allocations = calculateCopyAllocations(ownerDept, rawDistributions);
+  const allControlledCopies = isFormDoc && rawDistributions.length === 0 ? [] : (allocations?.allAllocations || []);
+  const totalControlledCopies = allControlledCopies.length;
+  const isDigitalOnly = isFormDoc || totalControlledCopies === 0;
 
   // Standards Badges
   const relatedStandards = dar.relatedStandards || dar.standards || [];
@@ -175,18 +179,18 @@ const DarReviewModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 10 }}
         transition={{ duration: 0.2 }}
-        className="bg-white border border-[#E5E5E5] rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.1)] w-full max-w-4xl overflow-hidden my-6 flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 my-auto animate-in fade-in zoom-in-95 duration-150"
       >
         {/* ========================================================================= */}
         {/* Header & Status Strip */}
         {/* ========================================================================= */}
-        <div className="bg-[#FAFAFA] border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between shrink-0">
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0D99FF] flex items-center justify-center border border-blue-100 shrink-0">
               <FileCheck2 size={20} />
@@ -312,10 +316,10 @@ const DarReviewModal = ({
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">ระดับชั้นความลับ (Access Scope)</span>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
-                      {accessControl.scope === 'GENERAL' && '🌐 เปิดเผยทั่วไป — ทุกคนเข้าถึงได้'}
-                      {accessControl.scope === 'DEPT_ONLY' && `🔒 เฉพาะแผนก — ล็อกเฉพาะคนในแผนก ${ownerDept}`}
-                      {accessControl.scope === 'TARGETED' && '🏢 เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม'}
-                      {accessControl.scope === 'RESTRICTED' && '🛡️ ลับเฉพาะบุคคล/ตำแหน่ง'}
+                      {accessControl.scope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>เปิดเผยทั่วไป — ทุกคนเข้าถึงได้</span></>}
+                      {accessControl.scope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก — ล็อกเฉพาะคนในแผนก {ownerDept}</span></>}
+                      {accessControl.scope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม</span></>}
+                      {accessControl.scope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะบุคคล/ตำแหน่ง</span></>}
                     </span>
                   </div>
 
@@ -370,25 +374,39 @@ const DarReviewModal = ({
                   <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <span className="text-[#666666]">ยอดจัดสรรสำเนา:</span>
                     <span className="font-bold font-mono text-[#1E1E1E]">
-                      Master: 1 ชุด | เล่มควบคุม: {totalPhysicalCopies} ชุด
+                      {isDigitalOnly 
+                        ? '📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)' 
+                        : `ต้นฉบับ (Master): จัดเก็บที่ DCC | เล่มควบคุมแจกจ่าย: ${totalControlledCopies} ชุด`}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">รายการสำเนาและจุดประจำหน้างาน:</span>
-                    <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                      <div className="flex items-center justify-between p-1.5 bg-indigo-50/60 rounded border border-indigo-100 text-[11px]">
-                        <span className="font-bold text-indigo-900">Master 01 (ต้นฉบับ)</span>
-                        <span className="text-indigo-700 font-medium">{ownerDept} Head Office (ล็อกถาวร)</span>
-                      </div>
-
-                      {distributions.length > 0 ? (
-                        distributions.map((d, i) => (
-                          <div key={i} className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[11px]">
-                            <span className="font-bold text-slate-800">Copy {String(i + 1).padStart(2, '0')}</span>
-                            <span className="text-slate-600 truncate max-w-[180px]">{d.location || d.stationName || d.departmentId || 'จุดหน้างาน'}</span>
-                          </div>
-                        ))
+                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                      {!isDigitalOnly && allControlledCopies.length > 0 ? (
+                        allControlledCopies.map((d, i) => {
+                          const isOrigin = d.copyNo === '01' || d.isOwner || i === 0;
+                          const rawLoc = d.location || d.station_name || d.stationName || d.locationName || d.name || d.departmentId || 'จุดหน้างาน';
+                          const cleanLoc = cleanLocationName(rawLoc);
+                          const deptTag = d.departmentId || d.dept || ownerDept;
+                          return (
+                            <div 
+                              key={i} 
+                              className={`flex items-center justify-between p-1.5 rounded border text-[11px] ${
+                                isOrigin 
+                                  ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950' 
+                                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                              }`}
+                            >
+                              <span className="font-bold font-mono text-indigo-900">
+                                Copy {d.copyNo || String(i + 1).padStart(2, '0')} (เล่มควบคุม)
+                              </span>
+                              <span className="text-slate-600 truncate max-w-[220px]">
+                                {cleanLoc} {isOrigin ? `(${ownerDept} — ล็อกถาวร)` : `(${deptTag})`}
+                              </span>
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className="p-2 text-center text-slate-400 text-[11px] italic bg-slate-50 rounded">
                           📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)
