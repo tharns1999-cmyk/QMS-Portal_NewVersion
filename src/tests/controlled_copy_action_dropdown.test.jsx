@@ -1,10 +1,10 @@
-﻿import React from "react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import React from "react";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import DocumentDetailModal from "../components/workflow/DocumentDetailModal";
 import useStore from "../store/useStore";
 
-describe("Controlled Copy Action Hub: Click-to-Toggle Dropdown & Interaction Suite", () => {
+describe("Controlled Copy Modern Contextual Action Suite (Direct Action Layout)", () => {
   const sampleDoc = {
     id: "DOC-PD-001",
     title: "SOP-PD-01",
@@ -44,104 +44,47 @@ describe("Controlled Copy Action Hub: Click-to-Toggle Dropdown & Interaction Sui
     });
   });
 
-  it("1. Origin Invariant: Copy 01 shows only Damaged/Lost; Copy 02 shows all 3 actions", () => {
+  it("1. Origin Invariant: Copy 01 shows only emergency Damaged/Lost button; Copy 02 shows all 3 direct actions", () => {
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    const triggerButtons = screen.getAllByRole("button", { name: /จัดการสำเนา/i });
-    expect(triggerButtons.length).toBe(2);
+    // Relocate and Return buttons are only rendered for Copy 02 (non-origin)
+    const relocateBtns = screen.getAllByRole("button", { name: /ขอย้ายจุด/i });
+    expect(relocateBtns.length).toBe(1);
 
-    // Initial state: no menus open
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
-    expect(screen.queryByText("ส่งคืน / ยกเลิกสำเนา")).not.toBeInTheDocument();
-    expect(screen.queryByText("แจ้งชำรุด / สูญหาย")).not.toBeInTheDocument();
+    const returnBtns = screen.getAllByRole("button", { name: /ส่งคืน/i });
+    expect(returnBtns.length).toBe(1);
 
-    // Click trigger on Copy 01 (Origin — Relocate & Return must be hidden)
-    fireEvent.click(triggerButtons[0]);
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
-    expect(screen.queryByText("ส่งคืน / ยกเลิกสำเนา")).not.toBeInTheDocument();
-    expect(screen.getByText("แจ้งชำรุด / สูญหาย")).toBeInTheDocument();
-
-    // Close Copy 01 menu
-    fireEvent.click(triggerButtons[0]);
-
-    // Click trigger on Copy 02 (non-origin — all 3 actions visible)
-    fireEvent.click(triggerButtons[1]);
-    expect(screen.getByText("ขอย้ายจุดติดตั้ง")).toBeInTheDocument();
-    expect(screen.getByText("ส่งคืน / ยกเลิกสำเนา")).toBeInTheDocument();
-    expect(screen.getByText("แจ้งชำรุด / สูญหาย")).toBeInTheDocument();
-
-    // Mouse leave does NOT close the menu (unlike legacy hover menu)
-    fireEvent.mouseLeave(triggerButtons[1]);
-    expect(screen.getByText("ขอย้ายจุดติดตั้ง")).toBeInTheDocument();
-
-    // Clicking same trigger closes it
-    fireEvent.click(triggerButtons[1]);
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
+    // Both Copy 01 and Copy 02 have damaged/lost buttons
+    const damagedBtns = screen.getAllByRole("button", { name: /แจ้งชำรุด/i });
+    expect(damagedBtns.length).toBe(2);
   });
 
-  it("2. Clicking outside the menu closes it (Copy 02 – non-origin)", () => {
-    render(
-      <div data-testid="outside-container">
-        <DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />
-      </div>
-    );
-
-    // Use Copy 02 trigger (index [1]) to get full menu with Relocate visible
-    const triggerButton = screen.getAllByRole("button", { name: /จัดการสำเนา/i })[1];
-    fireEvent.click(triggerButton);
-    expect(screen.getByText("ขอย้ายจุดติดตั้ง")).toBeInTheDocument();
-
-    // Mouse down outside
-    fireEvent.mouseDown(document.body);
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
-  });
-
-  it("3. Pressing Escape key closes the active dropdown menu (Copy 02)", () => {
+  it("2. Clicking 'ขอย้ายจุด' on Copy 02 directly opens relocation modal", () => {
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Use Copy 02 trigger (index [1]) to get full menu with Relocate visible
-    const triggerButton = screen.getAllByRole("button", { name: /จัดการสำเนา/i })[1];
-    fireEvent.click(triggerButton);
-    expect(screen.getByText("ขอย้ายจุดติดตั้ง")).toBeInTheDocument();
+    const relocateBtn = screen.getByRole("button", { name: /ขอย้ายจุด/i });
+    fireEvent.click(relocateBtn);
 
-    // Press Escape
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
+    // Relocation modal opens directly without intermediary dropdown
+    expect(screen.getByText(/ขอย้ายจุดติดตั้งสำเนา/i)).toBeInTheDocument();
   });
 
-  it("4. Clicking another copy trigger closes the first and opens the second (single menu constraint)", () => {
+  it("3. Clicking 'ส่งคืน' on Copy 02 directly opens return modal", () => {
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    const triggers = screen.getAllByRole("button", { name: /จัดการสำเนา/i });
-    expect(triggers.length).toBe(2);
+    const returnBtn = screen.getByRole("button", { name: /ส่งคืน/i });
+    fireEvent.click(returnBtn);
 
-    // Open Copy 01 menu (restricted – no Relocate/Return)
-    fireEvent.click(triggers[0]);
-    expect(triggers[0]).toHaveAttribute("aria-expanded", "true");
-    expect(triggers[1]).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
-
-    // Click Copy 02 menu
-    fireEvent.click(triggers[1]);
-    expect(triggers[0]).toHaveAttribute("aria-expanded", "false");
-    expect(triggers[1]).toHaveAttribute("aria-expanded", "true");
-
-    // Only 1 instance of each action (from Copy 02 menu)
-    const relocateActions = screen.getAllByText("ขอย้ายจุดติดตั้ง");
-    expect(relocateActions.length).toBe(1);
+    // Return modal opens directly
+    expect(screen.getByText(/ขอส่งคืน \/ ยกเลิกสำเนาควบคุม/i)).toBeInTheDocument();
   });
 
-  it("5. Selecting \"แจ้งชำรุด / สูญหาย\" closes the menu and opens the replacement modal", () => {
+  it("4. Clicking 'แจ้งชำรุด/สูญหาย' directly opens replacement modal", () => {
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    const triggerButton = screen.getAllByRole("button", { name: /จัดการสำเนา/i })[0];
-    fireEvent.click(triggerButton);
-
-    const reportButton = screen.getByText("แจ้งชำรุด / สูญหาย");
-    fireEvent.click(reportButton);
-
-    // Dropdown closes immediately
-    expect(screen.queryByText("ขอย้ายจุดติดตั้ง")).not.toBeInTheDocument();
+    // Click on Copy 01 damaged button
+    const damagedBtns = screen.getAllByRole("button", { name: /แจ้งชำรุด/i });
+    fireEvent.click(damagedBtns[0]);
 
     // Replacement modal opens
     expect(screen.getByText(/แจ้งเอกสารชำรุด\/สูญหาย/i)).toBeInTheDocument();

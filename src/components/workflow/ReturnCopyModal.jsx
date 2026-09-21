@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, CornerDownLeft, Info, Send, Calendar } from 'lucide-react';
 import useStore from '../../store/useStore';
@@ -126,7 +126,6 @@ const ReturnCopyModal = ({ isOpen, onClose, copy }) => {
                   value={returnDate}
                   onChange={e => setReturnDate(e.target.value)}
                   min={minDate}
-                  defaultValue={defaultDate}
                   className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-shadow"
                 />
                 <p className="text-xs text-slate-400 mt-1">หากไม่ระบุ ระบบจะกำหนด 3 วันทำการ</p>

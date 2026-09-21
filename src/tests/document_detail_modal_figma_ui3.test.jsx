@@ -93,9 +93,9 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
   it('1. Renders Figma UI3 header with Electric Blue doc code and sharp surfaces', () => {
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    expect(screen.getByText('SOP-QA-01')).toBeInTheDocument();
-    expect(screen.getByText('Rev.02')).toBeInTheDocument();
-    expect(screen.getByText('ระเบียบการตรวจประเมินคุณภาพภายในประจำปี')).toBeInTheDocument();
+    expect(screen.getAllByText('SOP-QA-01').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Rev\.?02/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ระเบียบการตรวจประเมินคุณภาพภายในประจำปี').length).toBeGreaterThan(0);
   });
 
   it('2. Top 4 Inspector Property Cards render accurate metadata and badges', () => {

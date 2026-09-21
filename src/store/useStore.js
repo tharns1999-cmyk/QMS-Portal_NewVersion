@@ -20,7 +20,8 @@ import {
   checkDocumentCodeCollision
 } from '../services/MasterDataService';
 import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
-import { hasDocumentAccess, canUserAccessDocument } from '../utils/accessControl';
+import { hasDocumentAccess, canUserAccessDocument, canManageControlledCopy } from '../utils/accessControl';
+export { canManageControlledCopy } from '../utils/accessControl';
 import { calculateTaskDueDate } from '../utils/slaCalculator';
 import { generateInternalDarNumber } from '../utils/darNumberGenerator';
 import { 
@@ -212,7 +213,7 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
 
 export const resolveDccAdminUserId = (masterUsers) => {
   const admin = (masterUsers || []).find(u => isDccAdmin(u));
-  return admin?.id || 'EMP-001';
+  return admin?.id || 'U001';
 };
 
 /**
@@ -4511,6 +4512,30 @@ const useStore = create(persist((set, get) => ({
       distributions: dar.distributions || []
     };
 
+    // --- INVARIANT VALIDATION: Document Identity Immutability ---
+    // ISO 9001: 7.5.3 - Identity (Department, DocNo, Type) of a document cannot mutate during a Revision/Amendment.
+    // We enforce this invariant by overriding any payload values with the true values from the source document.
+    if (newDar.type === 'REVISION' || newDar.type === 'AMENDMENT') {
+      const allDocsForInvariant = [...(state.documents || []), ...(state.masterDocuments || [])];
+      const targetDocId = newDar.docIdRef || newDar.doc_id || newDar.targetDocumentId;
+      if (targetDocId) {
+        const sourceDoc = allDocsForInvariant.find(d => String(d.id) === String(targetDocId));
+        if (sourceDoc) {
+          // Force override to source document's identity
+          newDar.department = sourceDoc.department || sourceDoc.dept || newDar.department;
+          newDar.docType = sourceDoc.docType || sourceDoc.type || newDar.docType;
+          
+          const sourceCode = sourceDoc.code || sourceDoc.document_code || sourceDoc.docCode;
+          if (sourceCode) {
+            newDar.docCode = sourceCode;
+            newDar.document_code = sourceCode;
+            newDar.docIdInput = sourceCode; // Used by some UI components
+          }
+        }
+      }
+    }
+    // ------------------------------------------------------------
+
     if (newDar.type === 'NEW' || newDar.type === 'NEW_DOCUMENT') {
       const selectedTypeObj = (state.documentTypes || []).find(t => (t.code || t.id) === newDar.docType);
       const pattern = selectedTypeObj?.namingPattern || `${newDar.docType}-{Dept}-{##}`;
@@ -6658,12 +6683,10 @@ const useStore = create(persist((set, get) => ({
         return updatedCopy;
       }
       if (copy.is_replacement && copy.replaced_copy_id && String(c.id) === String(copy.replaced_copy_id)) {
-        // 🛡️ Strict ISO 9001 Invariant: If original copy is awaiting recall/destruction (DAMAGED/SUPERSEDED),
-        // preserve its status until physically retrieved and destroyed in Tab 3.
-        const isAwaitingPhysicalRecall = c.isDamaged || c.status === 'DAMAGED_PENDING_RECALL' || c.status === 'PENDING_RECALL' || c.status === 'RECALLED' || c.status === 'DAMAGED_PENDING_REPLACEMENT';
         return {
           ...c,
-          status: isAwaitingPhysicalRecall ? c.status : 'REPLACED_VOID',
+          status: 'REPLACED_VOID',
+          previous_status: c.status,
           replaced_at: confirmedAt,
           replaced_by: confirmedBy
         };
@@ -6859,6 +6882,7 @@ const useStore = create(persist((set, get) => ({
     }
     const obsoleteAt = new Date().toISOString();
     const darNo = dar.dar_no || dar.id;
+    const docOfficialTitle = refDoc?.title || dar.doc_name || dar.document_title || dar.title || targetDocCode || 'เอกสาร';
 
     // Rule 2: Cascade Obsolete All Historical Versions (ยกเลิกยกตระกูล)
     // Matches EVERY Revision having the same document code, whether previously ACTIVE or SUPERSEDED
@@ -8546,58 +8570,9 @@ const useStore = create(persist((set, get) => ({
 
     // 🛡️ Dynamic RBAC & Department Custodianship Guard
     const user = state.currentUser;
-    const isDccUser = Boolean(
-      !user ||
-      user.isDcc ||
-      user.isSuperAdmin ||
-      user.role === 'DCC_ADMIN' ||
-      user.role === 'SUPER_ADMIN' ||
-      user.role === 'ADMIN' ||
-      user.role === 'QMR' ||
-      user.isQmr ||
-      user.id === 'U001' ||
-      user.id === 'u5' ||
-      user.department === 'DC' ||
-      user.department === 'DCC' ||
-      user.dept === 'DC' ||
-      user.dept === 'DCC' ||
-      (user.permissions && (user.permissions.includes('DCC_ADMIN') || user.permissions.includes('ADMIN')))
-    );
-
     const copyDept = (inst.holder_dept || inst.department || inst.departmentId || inst.dept_code || inst.target_department || '').toString().trim();
-    const rawUserDepts = user ? [
-      user.primary_department,
-      user.department,
-      user.dept,
-      user.dept_code,
-      ...(Array.isArray(user.departments) ? user.departments : []),
-      ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
-      ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
-      ...(Array.isArray(user.depts) ? user.depts : [])
-    ] : [];
-    const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d?.id || d?.code || d?.dept || d?.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
 
-    // Also check if user is the document creator / owner
-    const relatedDoc = (state.documents || []).find(d => 
-      String(d.id) === String(inst.doc_id || inst.docId) || 
-      d.title === (inst.doc_code || inst.docTitle) || 
-      d.document_code === (inst.doc_code || inst.docTitle)
-    );
-    const isDocCreator = Boolean(user && relatedDoc && (
-      relatedDoc.createdBy === user.id ||
-      relatedDoc.created_by === user.id ||
-      relatedDoc.requesterId === user.id ||
-      relatedDoc.ownerId === user.id
-    ));
-
-    const isAuthorizedDept = Boolean(
-      !copyDept || 
-      userDepts.length === 0 ||
-      userDepts.some(d => isSameDepartment(d, copyDept)) ||
-      isDocCreator
-    );
-
-    if (user && !isDccUser && !isAuthorizedDept) {
+    if (user && !canManageControlledCopy(user, inst)) {
       console.warn(`[Security Guard] Unauthorized reportCcDamagedLost: User ${user?.name} (${user?.department}) cannot manage copy for department ${copyDept}`);
       throw new Error(`ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุมของแผนก ${copyDept}`);
     }
@@ -8615,6 +8590,11 @@ const useStore = create(persist((set, get) => ({
     const isDamaged = type === 'DAMAGED';
     const newStatus = isDamaged ? 'DAMAGED_PENDING_RECALL' : 'LOST';
 
+    const relatedDoc = (state.documents || []).find(d => 
+      String(d.id) === String(inst.doc_id || inst.docId) || 
+      d.title === (inst.doc_code || inst.docTitle) || 
+      d.document_code === (inst.doc_code || inst.docTitle)
+    );
     const docOfficialTitle = inst.docName || inst.name || relatedDoc?.name || relatedDoc?.document_name || inst.doc_code || inst.docTitle || 'เอกสารควบคุม';
     const docCode = inst.doc_code || inst.docTitle || relatedDoc?.title || relatedDoc?.document_code || 'DOC';
     const dccAdminId = resolveDccAdminUserId(state.masterUsers);
@@ -8764,8 +8744,8 @@ const useStore = create(persist((set, get) => ({
     const newNotifications = [...(state.notifications || [])];
     newNotifications.push({
       id: `notif-rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      userId: dccAdminId,
-      targetUserIds: [dccAdminId],
+      userId: (dccAdminId === 'EMP-001' || !dccAdminId) ? 'U001' : dccAdminId,
+      targetUserIds: [dccAdminId, 'U001', 'EMP-001'],
       targetRole: 'DCC_ADMIN',
       targetDepartment: 'DC',
       title: `มีคำขอออกสำเนาทดแทน (${isDamaged ? 'ชำรุด' : 'สูญหาย'})`,
@@ -8880,6 +8860,12 @@ const useStore = create(persist((set, get) => ({
   reportCopyDamaged: ({ copyId, reason, requestReplacement: _requestReplacement, type = 'DAMAGED' } = {}) => {
     return useStore.getState().reportCcDamagedLost(copyId, type, reason);
   },
+  reportDamagedCopy: (copyId, reason, type = 'DAMAGED') => {
+    if (typeof copyId === 'object' && copyId !== null) {
+      return useStore.getState().reportCcDamagedLost(copyId.copyId || copyId.id, copyId.type || 'DAMAGED', copyId.reason);
+    }
+    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
+  },
   requestCopyReplacement: (copyId, reason, type = 'DAMAGED') => {
     return useStore.getState().reportCcDamagedLost(copyId, type, reason);
   },
@@ -8976,7 +8962,15 @@ const useStore = create(persist((set, get) => ({
     }
     if (!inst) { console.warn(`[requestCcRelocation] Copy ${targetId} not found.`); return state; }
 
-    // 2. Origin Invariant Guard: Copy 01 (จุดต้นทาง) cannot be relocated
+    // 2. Custodianship RBAC Invariant Guard
+    const user = state.currentUser;
+    if (user && !canManageControlledCopy(user, inst)) {
+      const copyDept = (inst.holder_dept || inst.department || inst.recipient_department || 'ผู้ครอบครอง').toString().trim();
+      console.warn(`[Security Guard] Unauthorized requestCcRelocation: User ${user?.name} (${user?.department}) cannot relocate copy for department ${copyDept}`);
+      throw new Error(`ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุมของแผนก ${copyDept}`);
+    }
+
+    // 3. Origin Invariant Guard: Copy 01 (จุดต้นทาง) cannot be relocated
     const rawNo = String(inst.copy_no || inst.ccNumber || '01');
     const copyNum = parseInt(rawNo.replace(/\D/g, ''), 10) || 1;
     const isOriginCopy = inst.is_owner || inst.isOwner || copyNum === 1;
@@ -8985,14 +8979,13 @@ const useStore = create(persist((set, get) => ({
       return state;
     }
 
-    // 3. Idempotency Guard
+    // 4. Idempotency Guard
     if (inst.status === 'RELOCATION_PENDING_APPROVAL') {
       console.warn(`[requestCcRelocation] Copy ${targetId} already has a pending relocation.`);
       return state;
     }
 
     const nowIso = new Date().toISOString();
-    const user = state.currentUser;
     const reporterName = user?.name || user?.fullName || 'Authorized User';
     const copyDept = (inst.holder_dept || inst.department || '').toString().trim();
     const docCode = inst.doc_code || inst.docTitle || 'DOC';
@@ -9149,7 +9142,15 @@ const useStore = create(persist((set, get) => ({
     }
     if (!inst) { console.warn(`[requestCcReturn] Copy ${targetId} not found.`); return state; }
 
-    // 2. Origin Invariant Guard
+    // 2. Custodianship RBAC Invariant Guard
+    const user = state.currentUser;
+    if (user && !canManageControlledCopy(user, inst)) {
+      const copyDept = (inst.holder_dept || inst.department || inst.recipient_department || 'ผู้ครอบครอง').toString().trim();
+      console.warn(`[Security Guard] Unauthorized requestCcReturn: User ${user?.name} (${user?.department}) cannot return copy for department ${copyDept}`);
+      throw new Error(`ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุมของแผนก ${copyDept}`);
+    }
+
+    // 3. Origin Invariant Guard
     const rawNo = String(inst.copy_no || inst.ccNumber || '01');
     const copyNum = parseInt(rawNo.replace(/\D/g, ''), 10) || 1;
     const isOriginCopy = inst.is_owner || inst.isOwner || copyNum === 1;
@@ -9158,14 +9159,13 @@ const useStore = create(persist((set, get) => ({
       return state;
     }
 
-    // 3. Idempotency Guard
+    // 4. Idempotency Guard
     if (inst.status === 'RETURN_PENDING_APPROVAL') {
       console.warn(`[requestCcReturn] Copy ${targetId} already has a pending return.`);
       return state;
     }
 
     const nowIso = new Date().toISOString();
-    const user = state.currentUser;
     const reporterName = user?.name || user?.fullName || 'Authorized User';
     const copyDept = (inst.holder_dept || inst.department || '').toString().trim();
     const docCode = inst.doc_code || inst.docTitle || 'DOC';

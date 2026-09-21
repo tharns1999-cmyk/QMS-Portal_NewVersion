@@ -17,7 +17,8 @@ import {
   RotateCcw, 
   Trash2, 
   CheckCircle2, 
-  X
+  X,
+  ArrowLeft
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
@@ -35,8 +36,17 @@ const Sidebar = () => {
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
   
   const path = location.pathname;
-  const isPortal = path === '/portal' || path === '/';
-  const isDcc = !isPortal;
+  // Context-aware Hub & Spoke: DCC module routes
+  const isDccModule = path.startsWith('/dcc') || 
+                      path.startsWith('/dar') || 
+                      path.startsWith('/tasks') || 
+                      path.startsWith('/library') || 
+                      path.startsWith('/controlled-copy') || 
+                      path.startsWith('/external') || 
+                      path.startsWith('/periodic-reviews') || 
+                      path.startsWith('/dashboard') || 
+                      path.startsWith('/documents') || 
+                      path.startsWith('/viewer');
 
   const isRequester = Boolean(
     currentUser?.status !== 'INACTIVE' && (
@@ -104,16 +114,23 @@ const Sidebar = () => {
     </div>
   );
 
-  const NavItem = ({ to, icon: IconComponent, label, badgeCount, badgeColor = 'blue', isHighlight = false }) => (
+  const NavItem = ({ 
+    to, 
+    icon: IconComponent, 
+    label, 
+    badgeCount, 
+    badgeColor = 'blue', 
+    pulsePing = false,
+    end = false 
+  }) => (
     <NavLink 
       to={to} 
+      end={end}
       className={({ isActive }) => 
         `group relative flex items-center justify-between px-3 py-2 text-xs rounded-xl font-medium gap-2.5 transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 ${
           isActive 
             ? 'bg-blue-50 text-blue-700 font-semibold shadow-2xs' 
-            : isHighlight
-              ? 'text-blue-600 bg-blue-50/40 hover:bg-blue-50/80 hover:text-blue-700'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            : 'text-slate-600 hover:text-slate-900 bg-transparent hover:bg-slate-50'
         }`
       }
     >
@@ -132,9 +149,7 @@ const Sidebar = () => {
               className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
                 isActive 
                   ? 'text-blue-600' 
-                  : isHighlight
-                    ? 'text-blue-500 group-hover:text-blue-600'
-                    : 'text-slate-400 group-hover:text-slate-600'
+                  : 'text-slate-400 group-hover:text-slate-600'
               }`} 
               strokeWidth={1.5} 
             />
@@ -142,19 +157,31 @@ const Sidebar = () => {
           </div>
 
           {badgeCount > 0 && (
-            <span 
-              className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 transition-transform group-hover:scale-105 ${
-                badgeColor === 'red'
-                  ? 'bg-rose-500 text-white shadow-2xs'
-                  : badgeColor === 'amber'
-                    ? 'bg-amber-500 text-white shadow-2xs'
-                    : isActive 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-100 text-blue-700 border border-blue-200'
-              }`}
-            >
-              {badgeCount > 99 ? '99+' : badgeCount}
-            </span>
+            <div className="relative shrink-0 flex items-center justify-center">
+              {/* Layer 1: Sonar Ping Aura for attention-grabbing when pulsePing is active */}
+              {pulsePing && (
+                <span 
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full bg-amber-400 opacity-60 animate-ping pointer-events-none"
+                />
+              )}
+              {/* Layer 2: Interactive Core Badge */}
+              <span 
+                className={`relative text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 transition-all duration-200 group-hover:scale-110 ${
+                  badgeColor === 'red'
+                    ? 'bg-rose-500 text-white shadow-2xs'
+                    : badgeColor === 'amber'
+                      ? pulsePing
+                        ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/50 ring-1 ring-amber-400/40 animate-pulse'
+                        : 'bg-amber-500 text-white shadow-2xs'
+                      : isActive 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-blue-100 text-blue-700 border border-blue-200'
+                }`}
+              >
+                {badgeCount > 99 ? '99+' : badgeCount}
+              </span>
+            </div>
           )}
         </>
       )}
@@ -194,89 +221,105 @@ const Sidebar = () => {
 
       {/* ================= CENTER SECTION: Grouped Navigation Links ================= */}
       <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1 scrollbar-none">
-        {/* GROUP 1: WORKSPACE (พื้นที่ทำงาน) */}
+        {/* WORKSPACE NAVIGATION (Hub vs Spoke) */}
         <SectionHeader title="WORKSPACE" />
-        <NavItem 
-          to="/portal" 
-          icon={Home} 
-          label="ภาพรวมพอร์ทัล" 
-        />
-        {isReviewerOrApprover && (
+        {!isDccModule ? (
           <NavItem 
-            to="/dcc/tasks" 
-            icon={Inbox} 
-            label="กล่องงานที่ต้องทำ" 
-            badgeCount={myTaskCount}
-            badgeColor={myTaskCount > 0 ? 'amber' : 'blue'}
+            to="/portal" 
+            end
+            icon={Home} 
+            label="ภาพรวมพอร์ทัล" 
+          />
+        ) : (
+          <NavItem 
+            to="/portal" 
+            end
+            icon={ArrowLeft} 
+            label="กลับสู่พอร์ทัลหลัก" 
           />
         )}
 
-        {/* GROUP 2: INTERNAL DOCS / DAR (เอกสารภายใน) */}
-        <SectionHeader title="เอกสารภายใน" />
-        <NavItem 
-          to="/dcc/library" 
-          icon={BookOpen} 
-          label="คลังเอกสารแม่บท" 
-        />
-        {isRequester && (
+        {/* DCC MODULE NAVIGATION (Shown only when active in DCC module route) */}
+        {isDccModule && (
           <>
-            <NavItem 
-              to="/dcc/dar/new" 
-              icon={FilePlus2} 
-              label="ยื่นคำร้อง DAR" 
-              isHighlight={true}
-            />
-            <NavItem 
-              to="/dcc/dar/list" 
-              icon={FileText} 
-              label="ติดตามคำร้องของฉัน" 
-            />
-          </>
-        )}
+            {isReviewerOrApprover && (
+              <NavItem 
+                to="/dcc/tasks" 
+                icon={Inbox} 
+                label="กล่องงานที่ต้องทำ" 
+                badgeCount={myTaskCount}
+                badgeColor={myTaskCount > 0 ? 'amber' : 'blue'}
+                pulsePing={myTaskCount > 0}
+              />
+            )}
 
-        {/* GROUP 3: EXTERNAL DOCS / EDR (เอกสารภายนอก) */}
-        <SectionHeader title="เอกสารภายนอก" />
-        <NavItem 
-          to="/dcc/external-docs" 
-          icon={Globe} 
-          label="คลังเอกสารภายนอก" 
-        />
-        <NavItem 
-          to="/dcc/external/my-requests" 
-          icon={FolderGit2} 
-          label="คำร้องของฉัน" 
-          badgeCount={myExternalReviseCount}
-          badgeColor="amber"
-        />
-        <NavItem 
-          to="/dcc/periodic-reviews" 
-          icon={CalendarDays} 
-          label="การทบทวนตามรอบ" 
-        />
-
-        {/* GROUP 4: DCC MANAGEMENT (งานกำกับดูแล DCC - แสดงเฉพาะ Role DCC / Admin) */}
-        {(isDccUser || isAdmin) && (
-          <>
-            <SectionHeader title="งานกำกับดูแล DCC" />
+            {/* GROUP 2: INTERNAL DOCS / DAR (เอกสารภายใน) */}
+            <SectionHeader title="เอกสารภายใน" />
             <NavItem 
-              to="/dcc/controlled-copy" 
-              icon={Files} 
-              label="ทะเบียนสำเนาควบคุม" 
-              badgeCount={ccTaskCount}
-              badgeColor="blue"
+              to="/dcc/library" 
+              icon={BookOpen} 
+              label="คลังเอกสารแม่บท" 
             />
-            {isAdmin && (
+            {isRequester && (
               <>
                 <NavItem 
-                  to="/dcc/admin/master-data" 
-                  icon={SlidersHorizontal} 
-                  label="จัดการข้อมูลหลัก" 
+                  to="/dcc/dar/new" 
+                  icon={FilePlus2} 
+                  label="ยื่นคำร้อง DAR" 
                 />
                 <NavItem 
-                  to="/dcc/admin/action-log" 
-                  icon={History} 
-                  label="บันทึกประวัติการทำงาน" 
+                  to="/dcc/dar/list" 
+                  icon={FileText} 
+                  label="ติดตามคำร้องของฉัน" 
                 />
+              </>
+            )}
+
+            {/* GROUP 3: EXTERNAL DOCS / EDR (เอกสารภายนอก) */}
+            <SectionHeader title="เอกสารภายนอก" />
+            <NavItem 
+              to="/dcc/external-docs" 
+              icon={Globe} 
+              label="คลังเอกสารภายนอก" 
+            />
+            <NavItem 
+              to="/dcc/external/my-requests" 
+              icon={FolderGit2} 
+              label="คำร้องของฉัน" 
+              badgeCount={myExternalReviseCount}
+              badgeColor="amber"
+            />
+            <NavItem 
+              to="/dcc/periodic-reviews" 
+              icon={CalendarDays} 
+              label="การทบทวนตามรอบ" 
+            />
+
+            {/* GROUP 4: DCC MANAGEMENT (งานกำกับดูแล DCC - แสดงเฉพาะ Role DCC / Admin) */}
+            {(isDccUser || isAdmin) && (
+              <>
+                <SectionHeader title="งานกำกับดูแล DCC" />
+                <NavItem 
+                  to="/dcc/controlled-copy" 
+                  icon={Files} 
+                  label="ทะเบียนสำเนาควบคุม" 
+                  badgeCount={ccTaskCount}
+                  badgeColor="blue"
+                />
+                {isAdmin && (
+                  <>
+                    <NavItem 
+                      to="/dcc/admin/master-data" 
+                      icon={SlidersHorizontal} 
+                      label="จัดการข้อมูลหลัก" 
+                    />
+                    <NavItem 
+                      to="/dcc/admin/action-log" 
+                      icon={History} 
+                      label="บันทึกประวัติการทำงาน" 
+                    />
+                  </>
+                )}
               </>
             )}
           </>

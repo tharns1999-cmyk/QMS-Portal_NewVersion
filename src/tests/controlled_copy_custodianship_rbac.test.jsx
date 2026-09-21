@@ -66,84 +66,109 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
   });
 
   it('1. canManageControlledCopy helper correctly authorizes copy custodianship', () => {
-    const dccUser = { id: 'U001', name: 'Admin QA', department: 'QA', isDcc: true, role: 'DCC_ADMIN' };
+    const dccUser = { id: 'U001', name: 'Admin DC', department: 'DC', isDcc: true, role: 'DCC_ADMIN' };
+    const dcDeptUser = { id: 'U008', name: 'เจ้าหน้าที่ DC', department: 'DC', isDcc: false, role: 'GENERAL_USER' };
     const pdUser = { id: 'U002', name: 'ธนาวุฒิ', department: 'PD', isDcc: false, role: 'GENERAL_USER' };
-    const qaUser = { id: 'U005', name: 'บีม', department: 'QA', isDcc: false, role: 'GENERAL_USER' };
+    const qcUser = { id: 'U005', name: 'บีม QC', department: 'QC', isDcc: false, role: 'GENERAL_USER' };
 
-    // DCC Admin can manage any copy
+    // DCC Admin and DC Department can manage any copy
+    expect(canManageControlledCopy(dccUser, copyPD1)).toBe(true);
     expect(canManageControlledCopy(copyPD1, dccUser)).toBe(true);
+    expect(canManageControlledCopy(dcDeptUser, copyPD1)).toBe(true);
     expect(canManageControlledCopy(copyQA1, dccUser)).toBe(true);
 
     // PD User can ONLY manage PD copies
-    expect(canManageControlledCopy(copyPD1, pdUser)).toBe(true);
-    expect(canManageControlledCopy(copyPD2, pdUser)).toBe(true);
-    expect(canManageControlledCopy(copyQA1, pdUser)).toBe(false);
+    expect(canManageControlledCopy(pdUser, copyPD1)).toBe(true);
+    expect(canManageControlledCopy(pdUser, copyPD2)).toBe(true);
+    expect(canManageControlledCopy(pdUser, copyQA1)).toBe(false);
 
-    // QA User can ONLY manage QA copies
-    expect(canManageControlledCopy(copyPD1, qaUser)).toBe(false);
-    expect(canManageControlledCopy(copyQA1, qaUser)).toBe(true);
+    // QC User can ONLY manage QA/QC copies, NEVER PD copies
+    expect(canManageControlledCopy(qcUser, copyPD1)).toBe(false);
+    expect(canManageControlledCopy(qcUser, copyPD2)).toBe(false);
+    expect(canManageControlledCopy(qcUser, copyQA1)).toBe(true);
+
+    // Invariant: doc.department does NOT grant permission on copies held by other departments
+    const docCreatorFromPD = { id: 'U999', name: 'Creator', department: 'PD', isDcc: false, role: 'GENERAL_USER' };
+    expect(canManageControlledCopy(docCreatorFromPD, copyQA1)).toBe(false);
   });
 
-  it('2. QA User viewing PD document sees "เฉพาะผู้ถือสำเนา" on PD copies and action button ONLY on QA copy', () => {
-    const qaUser = { id: 'U005', name: 'บีม QA', department: 'QA', isDcc: false, role: 'GENERAL_USER' };
-    useStore.setState({ currentUser: qaUser });
+  it('2. QC User viewing PD document sees Lock badge "เฉพาะแผนก PD" and cannot see/click relocate/return on PD copies', () => {
+    const qcUser = { id: 'U005', name: 'บีม QC', department: 'QC', isDcc: false, role: 'GENERAL_USER' };
+    useStore.setState({ currentUser: qcUser });
 
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Should render "เฉพาะผู้ถือสำเนา" for the 2 PD copies
-    const readOnlyTags = screen.getAllByText(/เฉพาะผู้ถือสำเนา/i);
-    expect(readOnlyTags.length).toBe(2);
+    // Should render Lock badge "เฉพาะแผนก PD" for the 2 PD copies
+    const lockBadges = screen.getAllByText(/เฉพาะแผนก PD/i);
+    expect(lockBadges.length).toBe(2);
 
-    // Should render only 1 "จัดการสำเนา" button (for Copy 03 QA)
-    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
-    expect(actionButtons.length).toBe(1);
+    // QC user should NOT see relocate or return buttons for PD copies
+    // Copy 03 (QA/QC) is non-origin, so QC user sees 1 "ขอย้ายจุด" and 1 "ส่งคืน" button for Copy 03
+    const relocateButtons = screen.getAllByRole('button', { name: /ขอย้ายจุด/i });
+    expect(relocateButtons.length).toBe(1);
 
-    // QA User should NOT see Watermark Studio button
+    const returnButtons = screen.getAllByRole('button', { name: /ส่งคืน/i });
+    expect(returnButtons.length).toBe(1);
+
+    // QC User should NOT see Watermark Studio button
     expect(screen.queryByRole('button', { name: /Watermark Studio/i })).not.toBeInTheDocument();
   });
 
-  it('3. PD User viewing PD document sees action buttons on PD copies and "เฉพาะผู้ถือสำเนา" on QA copy', () => {
+  it('3. PD User viewing PD document sees action buttons on PD copies and Lock badge on QA copy', () => {
     const pdUser = { id: 'U002', name: 'ธนาวุฒิ PD', department: 'PD', isDcc: false, role: 'GENERAL_USER' };
     useStore.setState({ currentUser: pdUser });
 
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Should render 2 "จัดการสำเนา" buttons (for Copy 01 and Copy 02 PD)
-    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
-    expect(actionButtons.length).toBe(2);
+    // Copy 01 (Origin): shows emergency button [แจ้งชำรุด/สูญหาย] only
+    // Copy 02: shows [ขอย้ายจุด], [ส่งคืน], [AlertTriangle (แจ้งชำรุด)]
+    expect(screen.getByRole('button', { name: /ขอย้ายจุด/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ส่งคืน/i })).toBeInTheDocument();
 
-    // Should render 1 "เฉพาะผู้ถือสำเนา" tag for Copy 03 QA
-    const readOnlyTags = screen.getAllByText(/เฉพาะผู้ถือสำเนา/i);
-    expect(readOnlyTags.length).toBe(1);
+    // Lock badge on Copy 03 QA
+    expect(screen.getByText(/เฉพาะแผนก QA/i)).toBeInTheDocument();
 
     // Non-DCC user does NOT see Watermark Studio
     expect(screen.queryByRole('button', { name: /Watermark Studio/i })).not.toBeInTheDocument();
   });
 
   it('4. DCC Admin sees action buttons on ALL copies and has access to Watermark Studio', () => {
-    const dccUser = { id: 'U001', name: 'Admin QA (DCC)', department: 'QA', isDcc: true, role: 'DCC_ADMIN' };
+    const dccUser = { id: 'U001', name: 'Admin DC (DCC)', department: 'DC', isDcc: true, role: 'DCC_ADMIN' };
     useStore.setState({ currentUser: dccUser });
 
     render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
 
-    // Should render "จัดการสำเนา" buttons on all 3 copies
-    const actionButtons = screen.getAllByRole('button', { name: /จัดการสำเนา/i });
-    expect(actionButtons.length).toBe(3);
+    // Copy 01 (Origin) has emergency damaged button; Copy 02 and Copy 03 have relocate/return buttons
+    const relocateButtons = screen.getAllByRole('button', { name: /ขอย้ายจุด/i });
+    expect(relocateButtons.length).toBe(2);
 
-    // Zero "เฉพาะผู้ถือสำเนา" tags
-    expect(screen.queryByText(/เฉพาะผู้ถือสำเนา/i)).not.toBeInTheDocument();
+    const returnButtons = screen.getAllByRole('button', { name: /ส่งคืน/i });
+    expect(returnButtons.length).toBe(2);
+
+    // Zero Lock badges for DCC Admin
+    expect(screen.queryByText(/เฉพาะแผนก/i)).not.toBeInTheDocument();
 
     // DCC Admin sees Watermark Studio button
     expect(screen.getByRole('button', { name: /Watermark Studio/i })).toBeInTheDocument();
   });
 
-  it('5. Store-Level Security Guard: blocks unauthorized cross-department replacement reporting', () => {
-    const qaUser = { id: 'U005', name: 'บีม QA', department: 'QA', isDcc: false, role: 'GENERAL_USER' };
-    useStore.setState({ currentUser: qaUser });
+  it('5. Store-Level Security Guard: blocks unauthorized cross-department relocate, return, and damaged reporting', () => {
+    const qcUser = { id: 'U005', name: 'บีม QC', department: 'QC', isDcc: false, role: 'GENERAL_USER' };
+    useStore.setState({ currentUser: qcUser });
 
-    const { reportCcDamagedLost, reportCopyDamaged } = useStore.getState();
+    const { reportCcDamagedLost, reportCopyDamaged, requestCcRelocation, requestCcReturn } = useStore.getState();
 
-    // Attempting to report damage on PD Copy by QA user throws error
+    // Relocation rejection on PD copy by QC user
+    expect(() => {
+      requestCcRelocation('inst-pd-02', { newLocation: 'Lab 2', reason: 'ทดสอบย้าย' });
+    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
+
+    // Return rejection on PD copy by QC user
+    expect(() => {
+      requestCcReturn('inst-pd-02', { reason: 'ทดสอบส่งคืน' });
+    }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
+
+    // Report damaged rejection on PD copy by QC user
     expect(() => {
       reportCcDamagedLost('inst-pd-01', 'DAMAGED', 'ชำรุด');
     }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
@@ -152,7 +177,7 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
       reportCopyDamaged({ copyId: 'inst-pd-02', reason: 'สูญหาย', type: 'LOST' });
     }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
 
-    // QA user reporting on QA copy succeeds
+    // QC user reporting on QA/QC copy succeeds
     expect(() => {
       reportCcDamagedLost('inst-qa-01', 'DAMAGED', 'เปียกน้ำ');
     }).not.toThrow();
@@ -163,15 +188,20 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     expect(replaced.holder_dept).toBe('QA');
   });
 
-  it('6. Store-Level Security Guard: DCC Admin can report damage/loss on copies of any department', () => {
-    const dccUser = { id: 'U001', name: 'Admin QA (DCC)', department: 'QA', isDcc: true, role: 'DCC_ADMIN' };
+  it('6. Store-Level Security Guard: DCC Admin can relocate, return, and report damage on copies of any department', () => {
+    const dccUser = { id: 'U001', name: 'Admin DC (DCC)', department: 'DC', isDcc: true, role: 'DCC_ADMIN' };
     useStore.setState({ currentUser: dccUser });
 
-    const { reportCcDamagedLost } = useStore.getState();
+    const { reportCcDamagedLost, requestCcRelocation } = useStore.getState();
 
     // DCC Admin reporting on PD Copy succeeds
     expect(() => {
       reportCcDamagedLost('inst-pd-01', 'DAMAGED', 'DCC physical inspection damaged');
+    }).not.toThrow();
+
+    // DCC Admin requesting relocation on PD Copy succeeds
+    expect(() => {
+      requestCcRelocation('inst-pd-02', { newLocation: 'Packing Line 3', reason: 'DCC reassignment' });
     }).not.toThrow();
 
     const state = useStore.getState();

@@ -173,7 +173,8 @@ const DocumentDetailModal = ({
     darRequests,
     timeline,
     masterUsers,
-    reportCcDamagedLost
+    reportCcDamagedLost,
+    canDownloadDocument = () => true
   } = useStore();
 
   const allDars = useMemo(() => {
@@ -195,36 +196,6 @@ const DocumentDetailModal = ({
   const [selectedReplacementCopy, setSelectedReplacementCopy] = useState(null);
   const [selectedRelocateCopy, setSelectedRelocateCopy] = useState(null);
   const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
-  const [activeMenuCopyNo, setActiveMenuCopyNo] = useState(null);
-  const menuRef = useRef(null);
-
-  // Click Outside & Escape Key Listener for Controlled Copy Action Dropdown
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        if (event.target.closest && event.target.closest('[data-copy-menu-trigger]')) {
-          return;
-        }
-        setActiveMenuCopyNo(null);
-      }
-    };
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setActiveMenuCopyNo(null);
-    };
-
-    if (activeMenuCopyNo !== null) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [activeMenuCopyNo]);
-
-  useEffect(() => {
-    setActiveMenuCopyNo(null);
-  }, [isOpen, doc?.id]);
 
   // Synchronized copies
   const allCopies = useMemo(() => {
@@ -1196,6 +1167,18 @@ const DocumentDetailModal = ({
                         </button>
                       )}
 
+                      {/* Action: ดาวน์โหลด PDF */}
+                      {Boolean(canDownloadDocument && canDownloadDocument(currentUser, doc)) && (
+                        <button
+                          type="button"
+                          onClick={() => toast.success('เริ่มดาวน์โหลดเอกสาร PDF')}
+                          className="h-10 px-4 bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[#1E1E1E] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Download size={15} strokeWidth={1.75} />
+                          <span>ดาวน์โหลด PDF</span>
+                        </button>
+                      )}
+
                       {/* Action 2: Watermark Studio (DCC Admin Only) */}
                       {(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN') && (
                         <button
@@ -1246,7 +1229,7 @@ const DocumentDetailModal = ({
                             <th className="py-3 px-3.5 bg-[#F8FAFC]">จุดติดตั้ง</th>
                             <th className="py-3 px-3.5 text-center w-40 bg-[#F8FAFC]">สถานะสำเนา</th>
                             <th className="py-3 px-3.5 text-center w-32 bg-[#F8FAFC]">วันที่ตรวจรับ</th>
-                            <th className="py-3 px-3.5 text-center w-36 bg-[#F8FAFC]">การจัดการ</th>
+                            <th className="py-3 px-3.5 text-center min-w-[200px] w-52 bg-[#F8FAFC]">การจัดการ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#F0F0F0]">
@@ -1304,96 +1287,66 @@ const DocumentDetailModal = ({
                                   {formatReceiptDate(copy.receipt_confirmed_at)}
                                 </td>
                                 <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
-                                  {/* Pending badge for copies awaiting DCC custody decision */}
+                                  {/* Case A: ติดสถานะรอดำเนินการ (Pending State) */}
                                   {copy.status === 'RELOCATION_PENDING_APPROVAL' ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-semibold whitespace-nowrap">
-                                      <MapPin size={10} className="shrink-0" />
-                                      ขอย้ายจุด (รอ DCC)
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-xs font-medium whitespace-nowrap">
+                                      <span>⏳</span>
+                                      <span>รอ DCC ตรวจสอบ</span>
                                     </span>
                                   ) : copy.status === 'RETURN_PENDING_APPROVAL' ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold whitespace-nowrap">
-                                      <CornerDownLeft size={10} className="shrink-0" />
-                                      ขอส่งคืน (รอ DCC)
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium whitespace-nowrap">
+                                      <span>⏳</span>
+                                      <span>รอ DCC ตรวจสอบ</span>
                                     </span>
                                   ) : (copy.status === 'ISSUED_ACTIVE' || copy.status === 'ACTIVE') ? (
-                                    canManageControlledCopy(currentUser, doc, copy) ? (
-                                      <div className="relative inline-block text-left">
+                                    !canManageControlledCopy(currentUser, copy) ? (
+                                      /* Case B: ไม่มีสิทธิ์ครอบครอง (Unauthorized User) */
+                                      <div 
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200" 
+                                        title={`สิทธิ์เฉพาะบุคลากรแผนก ${copy.department || deptName || 'ผู้ครอบครอง'}`}
+                                      >
+                                        <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <span>เฉพาะแผนก {copy.department || deptName}</span>
+                                      </div>
+                                    ) : isOrigin ? (
+                                      /* Case C (Copy 01 Origin): แสดงเฉพาะปุ่มฉุกเฉิน [ ⚠️ แจ้งชำรุด/สูญหาย ] */
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedReplacementCopy(copy)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-md border border-rose-200 transition-colors cursor-pointer"
+                                        title="แจ้งชำรุด / สูญหาย"
+                                        aria-label="แจ้งชำรุด/สูญหาย แจ้งชำรุด/เล่มใหม่"
+                                      >
+                                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                        <span>แจ้งชำรุด/สูญหาย</span>
+                                      </button>
+                                    ) : (
+                                      /* Case C (Copy 02+): แสดงกลุ่มปุ่มแบบ Compact Flex: ขอย้ายจุด, ส่งคืน, แจ้งชำรุด */
+                                      <div className="inline-flex items-center gap-1.5">
                                         <button
                                           type="button"
-                                          data-copy-menu-trigger="true"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            const copyKey = copy.copyNo || copy.copy_no || copy.ccNumber || copy.id;
-                                            setActiveMenuCopyNo(activeMenuCopyNo === copyKey ? null : copyKey);
-                                          }}
-                                          className={`w-7 h-7 rounded-lg inline-flex items-center justify-center transition-colors ${
-                                            activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id)
-                                              ? 'bg-slate-200 text-slate-900'
-                                              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                          }`}
-                                          aria-expanded={activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id)}
-                                          aria-label={`จัดการสำเนา (Actions) เล่ม ${copy.copy_no || copy.copyNo || copy.ccNumber || ''}`}
-                                          title="จัดการสำเนา (Actions)"
+                                          onClick={() => setSelectedRelocateCopy(copy)}
+                                          className="px-2.5 py-1 text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-md border border-sky-200/80 transition-colors cursor-pointer"
                                         >
-                                          <span className="font-bold text-sm tracking-tighter leading-none select-none">···</span>
+                                          ขอย้ายจุด
                                         </button>
-
-                                        {activeMenuCopyNo === (copy.copyNo || copy.copy_no || copy.ccNumber || copy.id) && (
-                                          <div
-                                            ref={menuRef}
-                                            className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200/90 rounded-xl shadow-lg shadow-slate-900/10 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
-                                          >
-                                            {/* Origin Invariant: Copy 01 cannot be relocated or returned */}
-                                            {!isOrigin && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setActiveMenuCopyNo(null);
-                                                    setSelectedRelocateCopy(copy);
-                                                  }}
-                                                  className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                  <MapPin size={15} className="text-slate-500 shrink-0" />
-                                                  ขอย้ายจุดติดตั้ง
-                                                </button>
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setActiveMenuCopyNo(null);
-                                                    setSelectedReturnCopy(copy);
-                                                  }}
-                                                  className="w-full px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                  <CornerDownLeft size={15} className="text-slate-500 shrink-0" />
-                                                  ส่งคืน / ยกเลิกสำเนา
-                                                </button>
-
-                                                <div className="my-1 border-t border-slate-100" />
-                                              </>
-                                            )}
-
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setActiveMenuCopyNo(null);
-                                                setSelectedReplacementCopy(copy);
-                                              }}
-                                              className="w-full px-3 py-2 text-left text-xs font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                            >
-                                              <AlertTriangle size={15} className="text-rose-500 shrink-0" />
-                                              แจ้งชำรุด / สูญหาย
-                                            </button>
-                                          </div>
-                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedReturnCopy(copy)}
+                                          className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                                        >
+                                          ส่งคืน
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedReplacementCopy(copy)}
+                                          className="px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                                          title="แจ้งชำรุด/สูญหาย"
+                                          aria-label="แจ้งชำรุด/สูญหาย แจ้งชำรุด/เล่มใหม่"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                        </button>
                                       </div>
-                                    ) : (
-                                      <span className="inline-flex items-center justify-center w-full min-w-[90px]">
-                                        <span className="text-[11px] text-[#94A3B8] italic">
-                                          เฉพาะผู้ถือสำเนา
-                                        </span>
-                                      </span>
                                     )
                                   ) : (
                                     <span className="text-[#999999] text-xs">-</span>
