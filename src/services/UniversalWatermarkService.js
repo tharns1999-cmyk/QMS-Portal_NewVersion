@@ -16,6 +16,7 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
+import { applyUncontrolledWatermarkToPdf } from '../utils/pdfStamper';
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -665,6 +666,17 @@ export class UniversalWatermarkService {
     }
 
     const meta = this.sanitizeMetadata(combinedMeta);
+
+    // Intercept UNCONTROLLED_COPY to use Canvas approach for Thai vowel fix
+    if (resolvedType === WATERMARK_TYPES.UNCONTROLLED_COPY || resolvedType === 'UNCONTROLLED_COPY' || meta.isUncontrolledCopy) {
+      return await applyUncontrolledWatermarkToPdf(pdfBytesOrBuffer, {
+        docCode: meta.docCode,
+        docTitle: meta.docTitle || meta.title || '',
+        docRev: meta.docVersion || '00',
+        downloadedBy: meta.userName ? `${meta.userName} (${meta.userDept || 'HQ'})` : 'Authorized User',
+        downloadDate: new Date().toLocaleString('th-TH')
+      });
+    }
 
     // Rule: Blank Form FM Bypass
     if (this.isBlankFormBypass(meta) && resolvedType !== WATERMARK_TYPES.OBSOLETE && resolvedType !== 'OBSOLETE') {

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { stampDocumentFirstPage, stampExternalDocumentTopRight } from '../utils/pdfStamper';
+import { getFile, saveFile } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateSchedules, generateTasksForSchedules, calculateNextReviewDate } from '../services/PeriodicReviewService';
 import { 
@@ -1871,6 +1873,84 @@ const useStore = create(persist((set, get) => ({
   getLinkedActionStatus: (darStatus) => {
     return getLinkedActionStatus(darStatus);
   },
+
+  /**
+   * ISO 9001 Clause 7.5.3 — Periodic Document Review Logger
+   *
+   * Records a review outcome on the target schedule without modifying
+   * the document's Revision number.  Three outcomes are supported:
+   *   'CONFIRM_CONTINUE'   → stamps reviewLog entry + rolls nextReviewDate +1 year
+   *   'REVISION_REQUIRED'  → delegates to submitPeriodicReview (opens DAR)
+   *   'OBSOLETE_REQUIRED'  → delegates to submitPeriodicReview (opens obsolete DAR)
+   *
+   * @param {{ scheduleId, isExternal, outcome, comment, reviewer, reviewDate }} payload
+   */
+  recordPeriodicReview: ({ scheduleId, outcome, comment, reviewer, reviewDate }) => set(state => {
+    const schedules = [...(state.periodicReviewSchedules || [])];
+    const idx = schedules.findIndex(s => s.id === scheduleId);
+    if (idx === -1) return state;
+
+    const schedule = { ...schedules[idx] };
+    const now = reviewDate || new Date().toISOString().split('T')[0];
+
+    // Build a stamped review log entry (ISO 9001 Clause 7.5.3 evidence)
+    const logEntry = {
+      id: `PRL-${Date.now()}`,
+      reviewDate: now,
+      reviewer: reviewer || state.currentUser?.name || '-',
+      reviewerId: state.currentUser?.id || null,
+      outcome,
+      comment: comment || '',
+      previousNextReviewDate: schedule.nextReviewDate || null,
+    };
+
+    if (outcome === 'CONFIRM_CONTINUE') {
+      // Roll review date +1 year from the review date itself
+      const newBase = now;
+      const nextDate = (() => {
+        const d = new Date(newBase);
+        d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString().split('T')[0];
+      })();
+      logEntry.newNextReviewDate = nextDate;
+
+      schedule.lastReviewedDate = now;
+      schedule.nextReviewDate = nextDate;
+      schedule.currentScheduledReviewDate = nextDate;
+      schedule.status = 'UPCOMING';
+      schedule.dueState = 'NOT_YET_DUE';
+      schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
+      schedule.updatedAt = new Date().toISOString();
+      schedules[idx] = schedule;
+
+      const records = [...(state.periodicReviewRecords || []), {
+        id: logEntry.id,
+        scheduleId,
+        outcome,
+        comment,
+        reviewedByUserId: state.currentUser?.id,
+        reviewedAt: new Date().toISOString()
+      }];
+
+      return {
+        periodicReviewSchedules: schedules,
+        periodicReviewRecords: records,
+        actionLog: [{
+          id: `LOG-${Date.now()}`,
+          actionType: 'PERIODIC_REVIEW_CONFIRMED',
+          details: `ยืนยันใช้งานต่อโดยไม่แก้ไข: ${schedule.documentNumber || scheduleId} → ทบทวนครั้งถัดไป ${nextDate}`,
+          actor: state.currentUser?.name,
+          actorId: state.currentUser?.id,
+          date: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
+    }
+
+    // For REVISION_REQUIRED / OBSOLETE_REQUIRED — just stamp the log then defer
+    schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
+    schedules[idx] = schedule;
+    return { periodicReviewSchedules: schedules };
+  }),
 
   syncRevisionEffective: (dar) => {
     syncRevisionEffective(dar, get, set);
@@ -4099,6 +4179,19 @@ const useStore = create(persist((set, get) => ({
       };
     });
 
+    if (newDocStatus === 'ACTIVE' && action === 'APPROVE') {
+      const activeDoc = updatedDocs.find(d => 
+        (d.edCode === doc.edCode || d.doc_code === doc.doc_code || d.docNo === doc.docNo || d.id === doc.id) && d.status === 'ACTIVE'
+      );
+      if (activeDoc) {
+        setTimeout(() => {
+          if (get().stampFinalExternalApprovalPdf) {
+            get().stampFinalExternalApprovalPdf(activeDoc.id);
+          }
+        }, 500);
+      }
+    }
+
     return {
       tasks: newTasks,
       notifications: newNotifications,
@@ -4835,6 +4928,88 @@ const useStore = create(persist((set, get) => ({
     tasks: state.tasks.filter(t => t.id !== taskId)
   })),
 
+  stampFinalApprovalPdf: async (darId) => {
+    const state = get();
+    const dar = state.dars.find(d => d.id === darId);
+    if (!dar || !dar.attachedFile || dar.attachedFile.type !== 'application/pdf') return;
+
+    try {
+      const fileBlob = await getFile(dar.attachedFile.fileId);
+      if (!fileBlob) return;
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      
+      const timeline = state.timeline.filter(t => t.darId === dar.id);
+      // Timeline might not have 'Created' if old data, fallback to requester_name and dar.date
+      const requesterLog = timeline.find(t => t.action?.includes('Created') || t.action?.includes('Submitted')) || { user: dar.requester_name || dar.requesterName || dar.requesterId, date: dar.date || new Date().toISOString() };
+      const reviewerLog = timeline.find(t => t.action === 'Reviewed') || { user: '-', date: '-' };
+      const approverLog = timeline.find(t => t.action === 'Approved') || { user: '-', date: '-' };
+
+      const signOffData = {
+        requester: { name: requesterLog.user, position: 'ผู้จัดทำ (Requester)', timestamp: new Date(requesterLog.date).toLocaleDateString('th-TH') },
+        reviewer: { name: reviewerLog.user, position: 'ผู้ทบทวน (Reviewer)', timestamp: reviewerLog.date !== '-' ? new Date(reviewerLog.date).toLocaleDateString('th-TH') : '-' },
+        approver: { name: approverLog.user, position: 'ผู้อนุมัติ (Approver)', timestamp: approverLog.date !== '-' ? new Date(approverLog.date).toLocaleDateString('th-TH') : '-' }
+      };
+
+      const stampedBytes = await stampDocumentFirstPage(arrayBuffer, signOffData);
+      const stampedBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+      const newFileId = `file_${Date.now()}_stamped_${dar.attachedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      await saveFile(newFileId, stampedBlob);
+
+      set(s => ({
+        dars: s.dars.map(d => d.id === darId ? { 
+          ...d, 
+          attachedFile: { 
+            ...d.attachedFile, 
+            fileId: newFileId, 
+            size: stampedBlob.size, 
+            isStamped: true 
+          } 
+        } : d)
+      }));
+    } catch (err) {
+      console.error('Failed to stamp PDF:', err);
+    }
+  },
+
+  stampFinalExternalApprovalPdf: async (docId) => {
+    const state = get();
+    const doc = state.externalDocuments.find(d => d.id === docId);
+    if (!doc || !doc.attachedFile || doc.attachedFile.type !== 'application/pdf') return;
+
+    try {
+      const fileBlob = await getFile(doc.attachedFile.fileId);
+      if (!fileBlob) return;
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      
+      const stampData = {
+        docCode: doc.edCode || doc.doc_code || doc.docNo || 'EXT-DOC',
+        title: doc.title || doc.name || 'External Document',
+        timestamp: new Date().toLocaleDateString('th-TH'),
+        status: doc.status || 'ACTIVE'
+      };
+
+      const stampedBytes = await stampExternalDocumentTopRight(arrayBuffer, stampData);
+      const stampedBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+      const newFileId = `file_${Date.now()}_stamped_ext_${doc.attachedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      await saveFile(newFileId, stampedBlob);
+
+      set(s => ({
+        externalDocuments: s.externalDocuments.map(d => d.id === docId ? { 
+          ...d, 
+          attachedFile: { 
+            ...d.attachedFile, 
+            fileId: newFileId, 
+            size: stampedBlob.size, 
+            isStamped: true 
+          } 
+        } : d)
+      }));
+    } catch (err) {
+      console.error('Failed to stamp external PDF:', err);
+    }
+  },
+
+
   processWorkflow: (taskId, action, comment) => {
     let newlyCompletedDar = null;
     let targetTask = null;
@@ -5316,6 +5491,11 @@ const useStore = create(persist((set, get) => ({
         } else if (dType === 'NEW' || dType === 'NEW_DOCUMENT') {
           store.publishNewDocumentDar(targetDarToPublish.id);
         }
+      }
+      
+      // Asynchronous Stamp Generation for Approved DAR
+      if (store.stampFinalApprovalPdf && targetDarToPublish.attachedFile) {
+        store.stampFinalApprovalPdf(targetDarToPublish.id);
       }
     }
   },

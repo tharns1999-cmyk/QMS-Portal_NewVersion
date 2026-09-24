@@ -48,6 +48,7 @@ const TaskConfirmHardcopyReceipt = lazy(() => import('./pages/Tasks/TaskConfirmH
 // DCC Periodic Reviews
 const PeriodicReviewDashboard = lazy(() => import('./pages/PeriodicReviews/PeriodicReviewDashboard'));
 const PeriodicReviewDetail = lazy(() => import('./pages/PeriodicReviews/PeriodicReviewDetail'));
+const PeriodicReviewPage = lazy(() => import('./pages/PeriodicReviews/PeriodicReviewPage'));
 
 // Placeholders
 const AdminHealth = lazy(() => import('./pages/Placeholders').then(m => ({ default: m.AdminHealth })));
@@ -153,6 +154,7 @@ function App() {
             <Route path="document-register" element={<AliasRedirect to="/dcc/library" />} />
             
             <Route path="periodic-reviews" element={withSuspense(PeriodicReviewDashboard)} />
+            <Route path="periodic-reviews/manage" element={withSuspense(PeriodicReviewPage)} />
             <Route path="periodic-reviews/:reviewId" element={withSuspense(PeriodicReviewDetail)} />
 
           </Route>
@@ -208,6 +210,7 @@ function App() {
           <Route path="document-register" element={<AliasRedirect to="/dcc/library" />} />
           
           <Route path="periodic-reviews" element={<AliasRedirect to="/dcc/periodic-reviews" />} />
+          <Route path="periodic-reviews/manage" element={<AliasRedirect to="/dcc/periodic-reviews/manage" />} />
           <Route path="periodic-reviews/:reviewId" element={<AliasRedirect to="/dcc/periodic-reviews/:reviewId" />} />
 
           {/* Prototypes */}

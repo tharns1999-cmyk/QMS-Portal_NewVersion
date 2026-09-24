@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode } from '../../utils/darHelper';
 import { hasDocumentAccess } from '../../utils/accessControl';
-import { resolveDocCode } from '../../utils/documentUtils';
+import { resolveDocCode, getReviewStatus } from '../../utils/documentUtils';
 import ReplacementModal from './ReplacementModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
 import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
@@ -57,7 +57,8 @@ const Library = () => {
     logAction,
     documentTypes,
     masterDepartments,
-    departments: storeDepts
+    departments: storeDepts,
+    periodicReviewSchedules
   } = useStore();
   
   const isDccUser = Boolean(
@@ -1352,6 +1353,28 @@ const Library = () => {
                           <span className="font-mono text-[11px] text-slate-500" title="วันที่มีผลบังคับใช้">
                             {effDateDisplay}
                           </span>
+                          {/* ISO 9001 Clause 7.5.3 — Periodic Review Due Badge */}
+                          {isEffective && (() => {
+                            const sch = (periodicReviewSchedules || []).find(
+                              s => s.documentId === primaryDoc.id || s.externalDocumentId === primaryDoc.id
+                            );
+                            if (!sch) return null;
+                            const reviewDue = sch.nextReviewDate || sch.currentScheduledReviewDate;
+                            if (!reviewDue) return null;
+                            const st = getReviewStatus(reviewDue);
+                            if (st === 'ON_SCHEDULE') return null; // silent when not due soon
+                            const cfg = st === 'OVERDUE'
+                              ? { label: '\ud83d\udea8 \u0e40\u0e01\u0e34\u0e19\u0e01\u0e33\u0e2b\u0e19\u0e14\u0e17\u0e1a\u0e17\u0e27\u0e19', cls: 'bg-red-50 text-red-600 border-red-200' }
+                              : { label: '\u26a0\ufe0f \u0e43\u0e01\u0e25\u0e49\u0e17\u0e1a\u0e17\u0e27\u0e19', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+                            return (
+                              <span
+                                className={`mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cfg.cls}`}
+                                title={`\u0e01\u0e33\u0e2b\u0e19\u0e14\u0e17\u0e1a\u0e17\u0e27\u0e19: ${reviewDue}`}
+                              >
+                                {cfg.label}
+                              </span>
+                            );
+                          })()}
                         </div>
                       )}
                     </td>

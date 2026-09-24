@@ -18,6 +18,7 @@ import {
 } from '../../utils/darHelper';
 import { cleanLocationName, getMasterStationForDept, normalizeDepartmentId, calculateCopyAllocations } from '../../services/MasterDataService';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
+import { saveFile } from '../../utils/fileStorage';
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -797,6 +798,25 @@ const DarRevisionForm = () => {
       const docCodeStr = selectedDoc?.code || selectedDoc?.title || formData.docId;
       const docTitleStr = formData.title || selectedDoc?.name || 'Untitled Document';
       const nextRevStr = calculateNextRev(selectedDoc?.rev);
+      let attachedFile = null;
+      if (formData.file) {
+        const fileId = `file_${Date.now()}_${formData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        try {
+          await saveFile(fileId, formData.file);
+          attachedFile = {
+            fileId: fileId,
+            name: formData.file.name,
+            size: formData.file.size,
+            type: formData.file.type,
+            uploadedAt: new Date().toISOString()
+          };
+        } catch (err) {
+          console.error('Error saving file:', err);
+          toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่');
+          setIsSubmitting(false);
+          return;
+        }
+      }
 
       const newDar = {
         type: 'REVISION',
@@ -837,7 +857,8 @@ const DarRevisionForm = () => {
         access_control: formData.access_control,
         accessScope: formData.access_control?.scope || 'GENERAL',
         isDraft: false,
-        status: 'UNDER_REVIEW'
+        status: 'UNDER_REVIEW',
+        attachedFile
       };
 
       if (targetDraftId && deleteDar) {

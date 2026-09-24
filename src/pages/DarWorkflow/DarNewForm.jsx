@@ -27,6 +27,7 @@ import {
 } from '../../services/MasterDataService';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
+import { saveFile } from '../../utils/fileStorage';
 
 const DarNewForm = () => {
   const navigate = useNavigate();
@@ -304,7 +305,26 @@ const DarNewForm = () => {
     }
   };
 
-  const executeSubmit = () => {
+  const executeSubmit = async () => {
+    let attachedFile = null;
+    if (formData.file) {
+      const fileId = `file_${Date.now()}_${formData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      try {
+        await saveFile(fileId, formData.file);
+        attachedFile = {
+          fileId: fileId,
+          name: formData.file.name,
+          size: formData.file.size,
+          type: formData.file.type,
+          uploadedAt: new Date().toISOString()
+        };
+      } catch (err) {
+        console.error('Error saving file:', err);
+        toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่');
+        return;
+      }
+    }
+
     const newDar = {
       type: 'NEW',
       title: formData.title,
@@ -331,7 +351,8 @@ const DarNewForm = () => {
       isDraft: false,
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
-      access_control: formData.access_control
+      access_control: formData.access_control,
+      attachedFile
     };
     if (targetDraftId && deleteDar) deleteDar(targetDraftId);
     addDar(newDar);

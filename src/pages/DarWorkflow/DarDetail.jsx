@@ -22,6 +22,7 @@ import DARComments from '../../components/workflow/DARComments';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { getDarReason, getDarDetail, getDarDocInfo, isDarDraft, isDarRequester } from '../../utils/darHelper';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
+import FileViewerModal from '../../components/modals/FileViewerModal';
 import { UniversalWatermarkService, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
 
 const DarDetail = () => {
@@ -29,6 +30,7 @@ const DarDetail = () => {
   const navigate = useNavigate();
   const { dars, documents, timeline, currentUser, masterUsers, reviewUsers, approveUsers } = useStore();
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
   
   const dar = dars.find(d => d.id === id);
   const myTimeline = timeline.filter(t => t.darId === id).sort((a, b) => b.id - a.id);
@@ -105,8 +107,16 @@ const DarDetail = () => {
     }
   };
 
-  const fileName = dar.file || `${docInfo.docCode || dar.title || 'Document'}.pdf`;
-  const fileSize = dar.fileSize || '2.4 MB';
+  const handlePreviewAttachment = () => {
+    if (dar.attachedFile) {
+      setIsFileViewerOpen(true);
+    } else {
+      toast.error('ไม่พบไฟล์แนบต้นฉบับ');
+    }
+  };
+
+  const fileName = dar.attachedFile ? dar.attachedFile.name : (dar.file || `${docInfo.docCode || dar.title || 'Document'}.pdf`);
+  const fileSize = dar.attachedFile ? `${(dar.attachedFile.size / 1024 / 1024).toFixed(2)} MB` : (dar.fileSize || '2.4 MB');
   const nextRev = String(parseInt(docInfo.docRev || '0', 10) + 1).padStart(2, '0');
 
   return (
@@ -436,7 +446,7 @@ const DarDetail = () => {
                     {fileName}
                   </p>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
-                    PDF
+                    {dar.attachedFile ? (dar.attachedFile.type?.includes('pdf') ? 'PDF' : 'IMG') : 'PDF'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
@@ -450,19 +460,19 @@ const DarDetail = () => {
                 type="button"
                 onClick={handleDownloadAttachment}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium transition-all cursor-pointer shadow-2xs"
-                title="ดาวน์โหลดไฟล์ PDF"
+                title="ดาวน์โหลดไฟล์ PDF ที่ประทับตราแล้ว"
               >
                 <Download size={13} strokeWidth={1.5} className="text-slate-500" />
-                <span className="hidden sm:inline">ดาวน์โหลด</span>
+                <span className="hidden sm:inline">ดาวน์โหลด (Watermark)</span>
               </button>
               <button
                 type="button"
-                onClick={handleDownloadAttachment}
+                onClick={handlePreviewAttachment}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-white text-xs font-medium shadow-xs transition-all cursor-pointer"
-                title="เปิดดูไฟล์เอกสาร"
+                title="เปิดดูไฟล์ต้นฉบับ"
               >
                 <ExternalLink size={13} strokeWidth={1.5} />
-                <span>เปิดดูไฟล์</span>
+                <span>เปิดดูไฟล์ต้นฉบับ</span>
               </button>
             </div>
           </div>
@@ -528,6 +538,13 @@ const DarDetail = () => {
         dar={dar}
         role="VIEWER"
         readOnly={true}
+      />
+
+      {/* Real File Viewer Modal */}
+      <FileViewerModal 
+        isOpen={isFileViewerOpen} 
+        onClose={() => setIsFileViewerOpen(false)} 
+        attachedFile={dar.attachedFile} 
       />
     </div>
   );

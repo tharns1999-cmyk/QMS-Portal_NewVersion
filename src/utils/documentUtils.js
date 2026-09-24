@@ -187,4 +187,46 @@ export const compareRevisions = (revA, revB) => {
   return getRevisionIndex(revA) - getRevisionIndex(revB);
 };
 
+/**
+ * ISO 9001 Clause 7.5.3 — Periodic Review Helpers
+ * ─────────────────────────────────────────────────
+ * These helpers operate on lightweight date strings (YYYY-MM-DD)
+ * and are intentionally separate from PeriodicReviewService.js
+ * to allow use in documentUtils-dependent paths (e.g. Library, DocumentDetailModal).
+ */
+
+/**
+ * Returns a date string exactly 1 year after the supplied base date.
+ * Safe for use in both store actions and pure utility calculations.
+ *
+ * @param {string} baseDateStr - ISO date string or YYYY-MM-DD
+ * @returns {string} YYYY-MM-DD date one year later, or '' if baseDateStr is falsy
+ */
+export const calculateNextReviewDate = (baseDateStr) => {
+  if (!baseDateStr) return '';
+  const date = new Date(baseDateStr);
+  if (isNaN(date.getTime())) return '';
+  date.setFullYear(date.getFullYear() + 1);
+  return date.toISOString().split('T')[0];
+};
+
+/**
+ * Returns a normalized review status string based on the distance
+ * between today and the nextReviewDueDate.
+ *
+ * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
+ * @returns {'OVERDUE' | 'UPCOMING' | 'ON_SCHEDULE'} review urgency status
+ */
+export const getReviewStatus = (nextReviewDueDate) => {
+  if (!nextReviewDueDate) return 'ON_SCHEDULE';
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const due = new Date(nextReviewDueDate);
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 'OVERDUE';     // เกินกำหนด
+  if (diffDays <= 30) return 'UPCOMING';  // ใกล้ถึงกำหนดใน 30 วัน
+  return 'ON_SCHEDULE';                   // ปกติ
+};
+
 
