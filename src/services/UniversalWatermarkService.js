@@ -16,7 +16,8 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
-import { applyUncontrolledWatermarkToPdf } from '../utils/pdfStamper';
+import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight } from '../utils/pdfStamper';
+import { getFile } from '../utils/fileStorage';
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -892,8 +893,54 @@ export class UniversalWatermarkService {
    * @param {Object} [options={}] - Extra options { reason, location, ... }
    * @returns {Promise<Uint8Array>}
    */
+  /**
+   * Helper: Resolve raw PDF bytes from actual attached file (with JIT stamp for external docs)
+   * or fallback to dummy generator.
+   */
+  static async resolveRawPdfBytes(doc, meta = {}) {
+    let rawPdfBytes;
+    try {
+      if (doc.attachedFile && doc.attachedFile.fileId) {
+        const fileBlob = await getFile(doc.attachedFile.fileId);
+        if (fileBlob) {
+          rawPdfBytes = await fileBlob.arrayBuffer();
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load attached file, falling back to dummy generation", err);
+    }
+
+    if (!rawPdfBytes) {
+      rawPdfBytes = await this.generateQmsPdfDocument(doc, meta);
+    }
+
+    const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'DOC-001';
+    const isExternalDoc = doc.edCode || doc.origin === 'EXTERNAL' || doc.sourceVersion || docCode.startsWith('ED') || docCode.startsWith('EXT');
+    if (isExternalDoc && rawPdfBytes) {
+      try {
+        const originRev = doc.originRev || doc.sourceVersion || doc.edition || doc.rev || doc.version || '-';
+        const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
+        const stampData = {
+          docCode: docCode,
+          docRev: originRev,
+          title: docTitle || 'External Document',
+          timestamp: doc.effectiveDate ? new Date(doc.effectiveDate).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH'),
+          status: doc.status || meta.status || 'ACTIVE'
+        };
+        rawPdfBytes = await stampExternalDocumentTopRight(rawPdfBytes, stampData);
+      } catch (err) {
+        console.warn("Failed to JIT stamp external document:", err);
+      }
+    }
+
+    return rawPdfBytes;
+  }
+
+  /**
+   * Universal PDF Generation & Download Helper
+   */
   static async generateStampingPDF(doc = {}, watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY, user = {}, options = {}) {
-    const rawPdfBytes = await this.generateQmsPdfDocument(doc, { ...options, userDept: user?.department || doc?.department });
+    const rawPdfBytes = await this.resolveRawPdfBytes(doc, { ...options, userDept: user?.department || doc?.department });
     const metadata = {
       docCode: doc.title || options.docCode,
       docVersion: doc.rev || options.docVersion,
@@ -921,7 +968,7 @@ export class UniversalWatermarkService {
    * Reserved for Active Forms / Templates (Bypass) and DCC Admin / Master Custodian (ISO 9001 Clause 7.5.3)
    */
   static async downloadCleanPdf(doc, meta = {}, openInTab = false) {
-    const rawPdfBytes = await this.generateQmsPdfDocument(doc, meta);
+    const rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
     const blob = new Blob([rawPdfBytes], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
 
@@ -952,9 +999,10 @@ export class UniversalWatermarkService {
       return await this.downloadCleanPdf(doc, { ...doc, ...meta }, openInTab);
     }
 
-    const rawPdfBytes = await this.generateQmsPdfDocument(doc, meta);
     const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'DOC-001';
     const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
+
+    const rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
 
     const watermarkedBytes = await this.stampPdf(rawPdfBytes, watermarkType, {
       ...doc,

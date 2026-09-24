@@ -213,17 +213,17 @@ export const stampExternalDocumentTopRight = async (pdfBytes, stampData) => {
     // Handle Rotation to keep the stamp physically at the Top Right of the viewed page
     if (rotationAngle === 90) {
       // Page is rotated 90 degrees clockwise.
-      // The visual top-right is (x: height, y: width) in the unrotated coordinate system
-      x = height - stampHeight - margin;
+      // The visual top-right is (x: width, y: 0) in the unrotated coordinate system
+      x = width - stampWidth - margin;
       y = margin;
     } else if (rotationAngle === 180) {
-      // Rotated 180 degrees. Visual top-right is bottom-left unrotated.
+      // Rotated 180 degrees. Visual top-right is bottom-left unrotated (0, 0).
       x = margin;
       y = margin;
     } else if (rotationAngle === 270) {
-      // Rotated 270 degrees clockwise. Visual top-right is top-left unrotated.
+      // Rotated 270 degrees clockwise. Visual top-right is top-left unrotated (0, height).
       x = margin;
-      y = width - stampHeight - margin;
+      y = height - stampHeight - margin;
     }
 
     page.drawImage(stampImage, {
