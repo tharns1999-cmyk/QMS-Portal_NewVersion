@@ -524,8 +524,11 @@ export const MOCK_DARS = [
   {
     id: 'DAR-MOCK-3',
     darNo: 'DAR-2607-003',
+    dar_no: 'DAR-2607-003',
     type: 'OBSOLETE',
+    request_type: 'OBSOLETE',
     title: 'WI-PD-010',
+    doc_code: 'WI-PD-010',
     name: 'การใช้งานเครื่องซีลถุง',
     status: 'PENDING_DCC',
     department: 'PD',
@@ -534,7 +537,33 @@ export const MOCK_DARS = [
     reason: 'ยกเลิกเครื่องจักร เลิกผลิต',
     reviewerId: 'U003',
     approverId: 'U004',
-    docId: 'DOC-MOCK-PD-010'
+    docId: 'DOC-MOCK-PD-010',
+    revision: '05',
+    targetRevision: '05',
+    rev: '05',
+    docRev: '05'
+  },
+  {
+    id: 'DAR-2026-005',
+    darNo: 'DAR-2026-005',
+    dar_no: 'DAR-2026-005',
+    type: 'OBSOLETE',
+    request_type: 'OBSOLETE',
+    title: 'SOP-PD-01',
+    doc_code: 'SOP-PD-01',
+    name: 'ขั้นตอนการผลิตสาย 1',
+    status: 'UNDER_REVIEW',
+    department: 'PD',
+    requesterId: 'u1',
+    requester_name: 'ธนาวุฒิ สมควรกิจดำรง',
+    requestDate: '2026-09-24T08:00:00Z',
+    reason: 'ยกเลิกสายการผลิตเดิม ปรับปรุงเป็นกระบวนการผลิตอัตโนมัติเต็มรูปแบบ',
+    reviewerId: 'u2',
+    approverId: 'u3',
+    revision: '03',
+    targetRevision: '03',
+    rev: '03',
+    docRev: '03'
   }
 ];
 
@@ -2494,7 +2523,7 @@ const useStore = create(persist((set, get) => ({
     if (!oldDoc) return state;
 
     const currentRevNum = parseInt(String(oldDoc.rev || oldDoc.revision || '0').replace(/\D/g, '') || '0', 10);
-    const originalRevStr = updates.originalRevision ? String(updates.originalRevision).replace(/\D/g, '').padStart(2, '0') : String(currentRevNum).padStart(2, '0');
+    const _originalRevStr = updates.originalRevision ? String(updates.originalRevision).replace(/\D/g, '').padStart(2, '0') : String(currentRevNum).padStart(2, '0');
     const targetRevNum = updates.targetRevision ? parseInt(String(updates.targetRevision).replace(/\D/g, '') || '1', 10) : (currentRevNum + 1);
     const targetRevStr = String(targetRevNum).padStart(2, '0');
     const newRevStr = targetRevStr;
@@ -4513,7 +4542,7 @@ const useStore = create(persist((set, get) => ({
     };
 
     // --- INVARIANT VALIDATION: Document Identity Immutability ---
-    // ISO 9001: 7.5.3 - Identity (Department, DocNo, Type) of a document cannot mutate during a Revision/Amendment.
+    // ISO 9001: 7.5.3 - Identity (Department, DocNo, Type) of a document cannot mutate during a Revision/Amendment/Obsolete.
     // We enforce this invariant by overriding any payload values with the true values from the source document.
     if (newDar.type === 'REVISION' || newDar.type === 'AMENDMENT') {
       const allDocsForInvariant = [...(state.documents || []), ...(state.masterDocuments || [])];
@@ -4532,6 +4561,36 @@ const useStore = create(persist((set, get) => ({
             newDar.docIdInput = sourceCode; // Used by some UI components
           }
         }
+      }
+    }
+
+    if (newDar.type === 'OBSOLETE' || newDar.request_type === 'OBSOLETE') {
+      const allDocsForInvariant = [...(state.documents || []), ...(state.masterDocuments || [])];
+      const targetDocId = newDar.docIdRef || newDar.doc_id || newDar.targetDocumentId || newDar.docId;
+      const targetCode = newDar.docCode || newDar.document_code || newDar.doc_code || newDar.title;
+      const sourceDoc = allDocsForInvariant.find(d => 
+        (targetDocId && String(d.id) === String(targetDocId)) ||
+        (targetCode && (d.title === targetCode || d.document_code === targetCode || d.code === targetCode))
+      );
+      if (sourceDoc) {
+        newDar.department = sourceDoc.department || sourceDoc.dept || newDar.department;
+        newDar.docType = sourceDoc.docType || sourceDoc.type || newDar.docType;
+        const sourceCode = sourceDoc.code || sourceDoc.document_code || sourceDoc.docCode || sourceDoc.title;
+        if (sourceCode) {
+          newDar.docCode = sourceCode;
+          newDar.document_code = sourceCode;
+          newDar.docIdInput = sourceCode;
+        }
+        const effectiveRev = String(
+          (sourceDoc.revision && sourceDoc.revision !== '00')
+            ? sourceDoc.revision
+            : (sourceDoc.rev || sourceDoc.revision || '01')
+        ).replace(/^Rev\.?/i, '').padStart(2, '0');
+
+        newDar.revision = (newDar.revision && newDar.revision !== '00') ? newDar.revision : effectiveRev;
+        newDar.targetRevision = (newDar.targetRevision && newDar.targetRevision !== '00') ? newDar.targetRevision : effectiveRev;
+        newDar.rev = (newDar.rev && newDar.rev !== '00') ? newDar.rev : effectiveRev;
+        newDar.docRev = (newDar.docRev && newDar.docRev !== '00') ? newDar.docRev : effectiveRev;
       }
     }
     // ------------------------------------------------------------
@@ -11705,6 +11764,54 @@ if (typeof window !== 'undefined' && window.localStorage) {
       });
       if (darsMigrated) {
         persisted.state.masterDocuments = persisted.state.documents;
+        persisted.state.darRequests = persisted.state.dars;
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration for ISO 9001 Clause 7.5.3: Obsolete DAR Revision Binding (e.g. DAR-2026-005 for SOP-PD-01)
+    if (persisted && persisted.state && Array.isArray(persisted.state.dars)) {
+      let obsoleteDarsMigrated = false;
+      const allDocs = persisted.state.documents || [];
+      persisted.state.dars = persisted.state.dars.map(dar => {
+        if (!dar) return dar;
+        const isObs = dar.type === 'OBSOLETE' || dar.request_type === 'OBSOLETE' || dar.darType === 'OBSOLETE' || dar.is_obsolete;
+        if (isObs) {
+          const targetCode = dar.doc_code || dar.docCode || dar.docNo || dar.code || dar.title;
+          const targetDoc = allDocs.find(d => 
+            (dar.doc_id && String(d.id) === String(dar.doc_id)) ||
+            (dar.targetDocumentId && String(d.id) === String(dar.targetDocumentId)) ||
+            (targetCode && (d.title === targetCode || d.document_code === targetCode || d.code === targetCode))
+          );
+          const rawTargetRev = targetDoc 
+            ? ((targetDoc.revision && targetDoc.revision !== '00') 
+                ? targetDoc.revision 
+                : (targetDoc.rev || targetDoc.revision || '03'))
+            : ((dar.id === 'DAR-2026-005' || dar.dar_no === 'DAR-2026-005' || dar.darNo === 'DAR-2026-005') ? '03' : '01');
+          const cleanTargetRev = String(rawTargetRev).replace(/^Rev\.?/i, '').padStart(2, '0');
+
+          if (
+            dar.id === 'DAR-2026-005' ||
+            dar.dar_no === 'DAR-2026-005' ||
+            dar.darNo === 'DAR-2026-005' ||
+            dar.revision === '00' ||
+            !dar.revision ||
+            dar.targetRevision === '00' ||
+            !dar.targetRevision
+          ) {
+            obsoleteDarsMigrated = true;
+            return {
+              ...dar,
+              revision: cleanTargetRev,
+              targetRevision: cleanTargetRev,
+              rev: cleanTargetRev,
+              docRev: cleanTargetRev
+            };
+          }
+        }
+        return dar;
+      });
+      if (obsoleteDarsMigrated) {
         persisted.state.darRequests = persisted.state.dars;
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       }

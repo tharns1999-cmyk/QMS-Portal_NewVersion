@@ -110,6 +110,13 @@ const DarReviewModal = ({
   // Standards Badges
   const relatedStandards = dar.relatedStandards || dar.standards || [];
 
+  const isObsolete = Boolean(
+    dar?.type === 'OBSOLETE' || 
+    dar?.darType === 'OBSOLETE' || 
+    dar?.type === 'CANCEL' ||
+    dar?.requestType === 'OBSOLETE'
+  );
+
   // Handlers
   const handleApproveClick = () => {
     if (onApprove) onApprove(comment);
@@ -525,9 +532,13 @@ const DarReviewModal = ({
                   <button
                     type="button"
                     onClick={handleApproveClick}
-                    className="bg-[#14AE5C] hover:bg-[#0F8A49] text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    className={`${
+                      isObsolete
+                        ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800'
+                        : 'bg-[#14AE5C] hover:bg-[#0F8A49]'
+                    } text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer`}
                   >
-                    <CheckCircle size={15} /> {role === 'REVIEWER' ? 'ผ่านการทบทวน (Approve Review)' : 'อนุมัติคำร้อง (Approve)'}
+                    <CheckCircle size={15} /> {role === 'REVIEWER' ? 'ผ่านการทบทวน (Approve Review)' : isObsolete ? 'อนุมัติยกเลิกเอกสาร (Approve Obsolete)' : 'อนุมัติคำร้อง (Approve)'}
                   </button>
                 )}
               </div>

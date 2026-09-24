@@ -254,4 +254,84 @@ describe('Cumulative DAR History Lineage (Audit Trail <= Current Revision) Tests
       expect(screen.getByText(/Rev\.00/i)).toBeInTheDocument();
     });
   });
+
+  describe('3. Obsolete DAR Revision Binding & Redesigned Timeline Badge UX', () => {
+    const docPd01Rev03 = {
+      id: 'doc-sop-pd-01',
+      title: 'SOP-PD-01',
+      name: 'ขั้นตอนการผลิตสาย 1',
+      department: 'PD',
+      owner_dept: 'PD',
+      rev: '03',
+      revision: '03',
+      status: 'OBSOLETE',
+      effectiveDate: '2026-09-24',
+      access_control: { scope: ACCESS_SCOPES.GENERAL }
+    };
+
+    const darsWithObsoleteMismatch = [
+      {
+        id: 'DAR-2026-004',
+        dar_no: 'DAR-2026-004',
+        doc_code: 'SOP-PD-01',
+        title: 'SOP-PD-01',
+        rev: '03',
+        revision: '03',
+        targetRevision: '03',
+        type: 'REVISION',
+        request_type: 'REVISION',
+        status: 'EFFECTIVE',
+        effectiveDate: '2026-09-22',
+        reason: 'ปรับปรุงขั้นตอนการผลิตสาย 1 รอบที่ 3'
+      },
+      {
+        id: 'DAR-2026-005',
+        dar_no: 'DAR-2026-005',
+        doc_code: 'SOP-PD-01',
+        title: 'SOP-PD-01',
+        rev: '00', // Intentional bad data from legacy/buggy submission
+        revision: '00',
+        targetRevision: '00',
+        type: 'OBSOLETE',
+        request_type: 'OBSOLETE',
+        status: 'UNDER_REVIEW',
+        effectiveDate: '2026-09-24',
+        reason: 'ยกเลิกสายการผลิตเดิม ปรับปรุงเป็นกระบวนการผลิตอัตโนมัติเต็มรูปแบบ'
+      }
+    ];
+
+    it('correctly resolves revision to Rev.03 and displays audit-compliant badges', () => {
+      useStore.setState({
+        currentUser,
+        documents: [docPd01Rev03],
+        dars: darsWithObsoleteMismatch
+      });
+
+      render(
+        <DocumentDetailModal
+          isOpen={true}
+          onClose={() => {}}
+          document={docPd01Rev03}
+        />
+      );
+
+      const historyTabBtn = screen.getByRole('button', { name: /ประวัติ DAR และการแก้ไข/i });
+      fireEvent.click(historyTabBtn);
+
+      // Verify Obsolete DAR-2026-005 is present
+      expect(screen.getByText('DAR-2026-005')).toBeInTheDocument();
+
+      // Verify Left Badge: Must display "สิ้นสุดที่ Rev.03", NOT "Rev.00 (ยกเลิกถาวร)"
+      expect(screen.getByText('สิ้นสุดที่ Rev.03')).toBeInTheDocument();
+      expect(screen.queryByText(/Rev\.00 \(ยกเลิกถาวร\)/i)).not.toBeInTheDocument();
+
+      // Verify Request Type Badge: Must display "ยกเลิกถาวร (OBSOLETE)"
+      expect(screen.getByText('ยกเลิกถาวร (OBSOLETE)')).toBeInTheDocument();
+
+      // Verify regular DAR-2026-004 still renders regular Rev.03 and ขอแก้ไข
+      expect(screen.getByText('DAR-2026-004')).toBeInTheDocument();
+      expect(screen.getByText('ขอแก้ไข')).toBeInTheDocument();
+    });
+  });
 });
+

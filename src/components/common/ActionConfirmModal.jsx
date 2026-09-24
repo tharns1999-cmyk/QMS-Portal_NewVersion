@@ -62,6 +62,7 @@ const ActionConfirmModal = ({
   confirmText,
   cancelText,
   confirmLabel, // backward compatibility
+  confirmButtonClass,
   dar = null,
   currentActor = null,
   currentStep = null,
@@ -104,6 +105,36 @@ const ActionConfirmModal = ({
     }
   };
 
+  const isObsolete = useMemo(() => {
+    return Boolean(
+      dar?.type === 'OBSOLETE' || 
+      dar?.darType === 'OBSOLETE' || 
+      dar?.type === 'CANCEL' || 
+      dar?.requestType === 'OBSOLETE' ||
+      actionType === 'obsolete' ||
+      (typeof title === 'string' && (title.includes('ยกเลิก') || title.includes('Obsolete') || title.includes('OBSOLETE'))) ||
+      (typeof confirmText === 'string' && (confirmText.includes('ยกเลิก') || confirmText.includes('Obsolete')))
+    );
+  }, [dar, actionType, title, confirmText]);
+
+  const approvalNextStep = useMemo(() => {
+    return isObsolete ? {
+      title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+      description: 'เพื่อดำเนินการปลดระวาง เรียกคืนสำเนาควบคุมทั้งหมดในระบบ และบันทึกผลการทำลายตามระเบียบ (Recall & Disposition)',
+      boxClass: 'bg-rose-50/60 border-rose-200/80 text-rose-900',
+      iconBg: 'bg-rose-600 text-white',
+      buttonText: 'ยืนยันการอนุมัติยกเลิกเอกสาร',
+      buttonClass: 'bg-rose-600 hover:bg-rose-700 text-white'
+    } : {
+      title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+      description: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+      boxClass: 'bg-blue-50/60 border-blue-200/80 text-blue-900',
+      iconBg: 'bg-blue-600 text-white',
+      buttonText: 'ยืนยันการอนุมัติเอกสาร',
+      buttonClass: 'bg-emerald-600 hover:bg-emerald-700 text-white'
+    };
+  }, [isObsolete]);
+
   const getActionTheme = () => {
     switch (actionType) {
       case 'review':
@@ -115,6 +146,15 @@ const ActionConfirmModal = ({
           accentBorder: 'border-indigo-200/60'
         };
       case 'approve':
+        if (isObsolete) {
+          return {
+            icon: <CheckCircle className="w-5 h-5 text-rose-600" />,
+            btn: approvalNextStep.buttonClass,
+            confirmDefault: approvalNextStep.buttonText,
+            badgeBg: 'bg-rose-50 text-rose-700 border-rose-200/80',
+            accentBorder: 'border-rose-200/60'
+          };
+        }
         return {
           icon: <CheckCircle className="w-5 h-5 text-emerald-600" />,
           btn: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20 active:scale-[0.98]',
@@ -132,11 +172,11 @@ const ActionConfirmModal = ({
         };
       case 'obsolete':
         return {
-          icon: <AlertTriangle className="w-5 h-5 text-amber-600" />,
-          btn: 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm shadow-amber-600/20 active:scale-[0.98]',
-          confirmDefault: 'ยืนยันการยกเลิกเอกสาร',
-          badgeBg: 'bg-amber-50 text-amber-700 border-amber-200/80',
-          accentBorder: 'border-amber-200/60'
+          icon: <AlertTriangle className="w-5 h-5 text-rose-600" />,
+          btn: approvalNextStep.buttonClass,
+          confirmDefault: approvalNextStep.buttonText,
+          badgeBg: 'bg-rose-50 text-rose-700 border-rose-200/80',
+          accentBorder: 'border-rose-200/60'
         };
       case 'acknowledge':
         return {
@@ -311,10 +351,11 @@ const ActionConfirmModal = ({
       if (dcc) {
         return {
           type: 'DCC',
-          title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
-          subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+          title: approvalNextStep.title,
+          subtitle: approvalNextStep.description,
+          description: approvalNextStep.description,
           name: dcc.name || dcc.assignedTo || 'Document Control Center (DCC)',
-          role: 'DCC'
+          role: isObsolete ? 'เรียกคืนสำเนาและทำลาย' : 'DCC'
         };
       }
 
@@ -374,7 +415,7 @@ const ActionConfirmModal = ({
     }
 
     return null;
-  }, [workflowList, effectiveCurrentStep, currentActorInfo]);
+  }, [workflowList, effectiveCurrentStep, currentActorInfo, approvalNextStep, isObsolete]);
 
   // Helper to parse Next Step actor details
   const nextActorData = useMemo(() => {
@@ -410,10 +451,11 @@ const ActionConfirmModal = ({
     if (rawText.includes('ส่งมอบงานต่อให้ Document Control Center') || rawText.includes('ส่งมอบงานต่อให้ DCC') || rawText.includes('Document Control Center (DCC)')) {
       return {
         type: 'DCC',
-        title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
-        subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+        title: approvalNextStep.title,
+        subtitle: approvalNextStep.description,
+        description: approvalNextStep.description,
         name: 'Document Control Center (DCC)',
-        role: 'ขึ้นทะเบียนและแจกจ่ายสำเนาควบคุม',
+        role: isObsolete ? 'เรียกคืนสำเนาและทำลาย' : 'ขึ้นทะเบียนและแจกจ่ายสำเนาควบคุม',
         originalValue: rawVal
       };
     }
@@ -619,7 +661,7 @@ const ActionConfirmModal = ({
                     </div>
 
                     {categorized.docTitleItem && (
-                      <h3 className="text-base font-semibold text-slate-900 leading-snug break-words">
+                      <h3 className="text-base font-semibold text-slate-900 leading-snug break-words break-all">
                         {renderItemValue(categorized.docTitleItem)}
                       </h3>
                     )}
@@ -668,7 +710,7 @@ const ActionConfirmModal = ({
                   nextActorData.type === 'COMPLETED'
                     ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-900'
                     : nextActorData.type === 'DCC'
-                      ? 'bg-blue-50/70 border-blue-200/80 text-blue-900'
+                      ? (isObsolete ? approvalNextStep.boxClass : 'bg-blue-50/70 border-blue-200/80 text-blue-900')
                       : nextActorData.type === 'REJECTED'
                         ? 'bg-rose-50/70 border-rose-200/80 text-rose-900'
                         : nextActorData.type === 'RETURNED'
@@ -682,7 +724,7 @@ const ActionConfirmModal = ({
                         <CheckCircle size={18} strokeWidth={2.2} />
                       </div>
                     ) : nextActorData.type === 'DCC' ? (
-                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <div className={`w-9 h-9 rounded-xl ${isObsolete ? approvalNextStep.iconBg : 'bg-blue-600 text-white'} flex items-center justify-center shadow-xs shrink-0`}>
                         <Building2 size={18} strokeWidth={2} />
                       </div>
                     ) : nextActorData.type === 'REJECTED' ? (
@@ -704,7 +746,7 @@ const ActionConfirmModal = ({
                         nextActorData.type === 'COMPLETED'
                           ? 'text-emerald-800'
                           : nextActorData.type === 'DCC'
-                            ? 'text-blue-900'
+                            ? (isObsolete ? 'text-rose-900 font-bold' : 'text-blue-900')
                             : nextActorData.type === 'REJECTED'
                               ? 'text-rose-800'
                               : nextActorData.type === 'RETURNED'
@@ -719,7 +761,7 @@ const ActionConfirmModal = ({
                           nextActorData.type === 'COMPLETED'
                             ? 'text-emerald-700 font-medium'
                             : nextActorData.type === 'DCC'
-                              ? 'text-blue-700 font-medium'
+                              ? (isObsolete ? 'text-rose-800 font-medium' : 'text-blue-700 font-medium')
                               : 'text-slate-600'
                         }`}>
                           {nextActorData.subtitle}
@@ -744,7 +786,7 @@ const ActionConfirmModal = ({
                     nextActorData.type === 'COMPLETED'
                       ? 'border-emerald-200 text-emerald-600'
                       : nextActorData.type === 'DCC'
-                        ? 'border-blue-200 text-blue-600'
+                        ? (isObsolete ? 'border-rose-200 text-rose-600' : 'border-blue-200 text-blue-600')
                         : nextActorData.type === 'REJECTED'
                           ? 'border-rose-200 text-rose-600'
                           : nextActorData.type === 'RETURNED'
@@ -798,10 +840,10 @@ const ActionConfirmModal = ({
                 type="button"
                 onClick={handleConfirmClick}
                 disabled={isConfirmDisabled}
-                className={`text-xs font-medium px-5 py-2.5 rounded-xl shadow-xs shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 min-w-[140px] cursor-pointer outline-none ${
+                className={`text-xs font-medium px-5 py-2.5 rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 min-w-[140px] cursor-pointer outline-none ${
                   isConfirmDisabled
                     ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200 shadow-none'
-                    : theme.btn
+                    : (confirmButtonClass || (isObsolete && actionType === 'approve' ? approvalNextStep.buttonClass : theme.btn))
                 }`}
               >
                 <AnimatePresence mode="wait" initial={false}>

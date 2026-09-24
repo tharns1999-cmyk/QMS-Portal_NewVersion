@@ -109,7 +109,7 @@ describe('Enterprise Form Layout Harmonization Tests (DAR Revision & Obsolete)',
 
       // Verify Auto Revision calculation
       expect(screen.getByText('Rev.00')).toBeInTheDocument();
-      expect(screen.getByText('Rev.01')).toBeInTheDocument();
+      expect(screen.getAllByText('Rev.01').length).toBeGreaterThanOrEqual(1);
 
       // Fill Change Reason & Change Summary
       const comboboxes = screen.getAllByRole('combobox');

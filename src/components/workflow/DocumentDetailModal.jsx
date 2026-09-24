@@ -692,8 +692,14 @@ const DocumentDetailModal = ({
     });
 
     if (filtered.length > 0) {
-      // 3. จัดเรียงตามลำดับเวลาจากล่าสุดลงไปหาอดีต (Descending)
+      // 3. จัดเรียงตามลำดับเวลาจากล่าสุดลงไปหาอดีต (Descending) (พร้อม Hybrid Sorting แบบ Obsolete-first)
       return filtered.sort((a, b) => {
+        const aIsObsolete = a.type === 'OBSOLETE' || a.request_type === 'OBSOLETE' || a.is_obsolete;
+        const bIsObsolete = b.type === 'OBSOLETE' || b.request_type === 'OBSOLETE' || b.is_obsolete;
+        
+        if (aIsObsolete && !bIsObsolete) return -1;
+        if (!aIsObsolete && bIsObsolete) return 1;
+
         const revA = getRevisionIndex(a.targetRevision ?? a.docRev ?? a.rev ?? a.revision ?? a.target_revision ?? '00');
         const revB = getRevisionIndex(b.targetRevision ?? b.docRev ?? b.rev ?? b.revision ?? b.target_revision ?? '00');
         const revDiff = revB - revA;
@@ -1681,25 +1687,38 @@ const DocumentDetailModal = ({
 
                           const darType = dar.type || dar.request_type || dar.requestType || 'NEW';
                           const darStatus = dar.status || 'EFFECTIVE';
-                          const isObsoleteType = darType === 'OBSOLETE' || dar.is_obsolete;
+                          const isObsoleteItem = dar.type === 'OBSOLETE' || dar.request_type === 'OBSOLETE' || dar.darType === 'OBSOLETE' || dar.is_obsolete;
                           const isRevisionType = darType === 'REVISION' || darType === 'REVISE';
 
-                          const darRevStr = String(dar.docRev || dar.rev || dar.revision || '00').padStart(2, '0');
+                          // หากเป็น Obsolete ให้ใช้ dar.revision หรือหากข้อมูลผิดพลาดเป็น 00 ให้ fallback ไปที่ Revision ของเอกสารแม่บท (doc.rev || doc.revision)
+                          const candidateDocRev = (doc.rev && doc.rev !== '00') 
+                            ? doc.rev 
+                            : ((doc.revision && doc.revision !== '00') 
+                              ? doc.revision 
+                              : (doc.rev || doc.revision || '01'));
+                          const rawObsoleteRev = (dar.revision && dar.revision !== '00') 
+                            ? dar.revision 
+                            : candidateDocRev;
+                          const effectiveObsoleteRev = String(rawObsoleteRev).replace(/^Rev\.?/i, '').padStart(2, '0');
+
+                          const darRevStr = isObsoleteItem 
+                            ? effectiveObsoleteRev 
+                            : String(dar.docRev || dar.rev || dar.revision || '00').replace(/^Rev\.?/i, '').padStart(2, '0');
                           const darNo = dar.dar_no || dar.darNo || dar.id || `DAR-2026-${darRevStr}`;
                           const effDate = dar.completedAt || dar.effectiveDate || dar.effective_date_requested || dar.date || dar.createdAt?.split('T')[0] || '-';
 
                           const handleDownloadHistoricalPdf = async () => {
                             try {
-                              const targetRev = darRevStr;
+                              const targetRev = isObsoleteItem ? effectiveObsoleteRev : darRevStr;
                               const toastId = toast.loading(`กำลังสร้าง PDF Rev.${targetRev}...`);
                               const isHistoricalRev = !isLatest;
                               const targetDoc = {
                                 ...doc,
                                 rev: targetRev,
                                 revision: targetRev,
-                                status: isObsoleteType ? 'OBSOLETE' : (isLatest ? doc.status : 'SUPERSEDED'),
-                                is_obsolete: isObsoleteType,
-                                obsolete_dar_id: isObsoleteType ? (dar.dar_no || dar.id) : undefined,
+                                status: isObsoleteItem ? 'OBSOLETE' : (isLatest ? doc.status : 'SUPERSEDED'),
+                                is_obsolete: isObsoleteItem,
+                                obsolete_dar_id: isObsoleteItem ? (dar.dar_no || dar.id) : undefined,
                                 superseded_by_rev: isHistoricalRev ? (doc.rev || doc.revision || 'Latest') : undefined
                               };
                               const watermarkConfig = resolveWatermarkConfig(targetDoc, {
@@ -1734,17 +1753,29 @@ const DocumentDetailModal = ({
                                 >
                                   <div className="flex items-center gap-3 flex-wrap">
                                     {/* Revision & DAR No */}
-                                    <span className="font-mono text-[13px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                      Rev.{darRevStr}
-                                    </span>
+                                    {isObsoleteItem ? (
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-sm">
+                                        สิ้นสุดที่ Rev.{effectiveObsoleteRev}
+                                      </span>
+                                    ) : (
+                                      <span className="font-mono text-[13px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                        Rev.{darRevStr}
+                                      </span>
+                                    )}
                                     <span className="font-mono text-[13px] font-semibold text-slate-700">
                                       {darNo}
                                     </span>
                                     {/* Request Type Badge */}
-                                    <span className="text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200/60">
-                                      {isObsoleteType ? 'ขอยกเลิก' : isRevisionType ? 'ขอแก้ไข' : 'จัดทำใหม่'}
-                                    </span>
-                                    {isLatest && (
+                                    {isObsoleteItem ? (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200/60">
+                                        ยกเลิกถาวร (OBSOLETE)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200/60">
+                                        {isRevisionType ? 'ขอแก้ไข' : 'จัดทำใหม่'}
+                                      </span>
+                                    )}
+                                    {isLatest && !isObsoleteItem && (
                                       <span className="text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded">ฉบับล่าสุด</span>
                                     )}
                                   </div>

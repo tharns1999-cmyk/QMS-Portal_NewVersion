@@ -104,6 +104,31 @@ const TaskApprove = () => {
     );
   }, [subsequentSteps]);
 
+  const isObsolete = Boolean(
+    dar?.type === 'OBSOLETE' || 
+    dar?.darType === 'OBSOLETE' || 
+    dar?.type === 'CANCEL' ||
+    dar?.requestType === 'OBSOLETE'
+  );
+
+  const approvalNextStep = useMemo(() => {
+    return isObsolete ? {
+      title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+      description: 'เพื่อดำเนินการปลดระวาง เรียกคืนสำเนาควบคุมทั้งหมดในระบบ และบันทึกผลการทำลายตามระเบียบ (Recall & Disposition)',
+      boxClass: 'bg-rose-50/60 border-rose-200/80 text-rose-900',
+      iconBg: 'bg-rose-600 text-white',
+      buttonText: 'ยืนยันการอนุมัติยกเลิกเอกสาร',
+      buttonClass: 'bg-rose-600 hover:bg-rose-700 text-white'
+    } : {
+      title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
+      description: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+      boxClass: 'bg-blue-50/60 border-blue-200/80 text-blue-900',
+      iconBg: 'bg-blue-600 text-white',
+      buttonText: 'ยืนยันการอนุมัติเอกสาร',
+      buttonClass: 'bg-emerald-600 hover:bg-emerald-700 text-white'
+    };
+  }, [isObsolete]);
+
   const isFinalStep = subsequentSteps.length === 0 || (!dccStep && subsequentSteps.every(s => s.roleKey === 'COMPLETED' || !s.roleKey));
 
   // Determine next destination details preventing self-targeting
@@ -113,22 +138,22 @@ const TaskApprove = () => {
     if (dccStep) {
       return {
         type: 'DCC',
-        label: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
-        title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
-        subtitle: 'เพื่อดำเนินการขึ้นทะเบียน ประทับตรา และแจกจ่ายสำเนาควบคุมตามระเบียบ',
+        label: approvalNextStep.title,
+        title: approvalNextStep.title,
+        subtitle: approvalNextStep.description,
         name: dccStep.name || dccStep.assignedTo || 'Document Control Center (DCC)',
-        role: dccStep.role || 'DCC'
+        role: isObsolete ? 'เรียกคืนสำเนาและทำลาย' : (dccStep.role || 'DCC')
       };
     }
 
     if (isFinalStep) {
       return {
         type: 'COMPLETED',
-        label: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
-        title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
-        subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
-        name: 'Approval Completed',
-        role: 'มีผลบังคับใช้ (Active)'
+        label: isObsolete ? 'สิ้นสุดขั้นตอนการขอยกเลิก (Obsolete Completed)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        title: isObsolete ? 'สิ้นสุดขั้นตอนการขอยกเลิก (Obsolete Completed)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+        subtitle: isObsolete ? 'เอกสารจะถูกปรับสถานะเป็น "ยกเลิก (Obsolete)" ทันที' : 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+        name: isObsolete ? 'Obsolete Completed' : 'Approval Completed',
+        role: isObsolete ? 'ยกเลิก (Obsolete)' : 'มีผลบังคับใช้ (Active)'
       };
     }
 
@@ -150,13 +175,13 @@ const TaskApprove = () => {
 
     return {
       type: 'COMPLETED',
-      label: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
-      title: 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
-      subtitle: 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
-      name: 'Approval Completed',
-      role: 'มีผลบังคับใช้ (Active)'
+      label: isObsolete ? 'สิ้นสุดขั้นตอนการขอยกเลิก (Obsolete Completed)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+      title: isObsolete ? 'สิ้นสุดขั้นตอนการขอยกเลิก (Obsolete Completed)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)',
+      subtitle: isObsolete ? 'เอกสารจะถูกปรับสถานะเป็น "ยกเลิก (Obsolete)" ทันที' : 'เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที',
+      name: isObsolete ? 'Obsolete Completed' : 'Approval Completed',
+      role: isObsolete ? 'ยกเลิก (Obsolete)' : 'มีผลบังคับใช้ (Active)'
     };
-  }, [pendingAction, dccStep, isFinalStep, subsequentSteps, currentUser]);
+  }, [pendingAction, dccStep, isFinalStep, subsequentSteps, currentUser, approvalNextStep, isObsolete]);
 
   useEffect(() => {
     // If PDF container is small enough that it doesn't scroll, unlock immediately
@@ -330,7 +355,7 @@ const TaskApprove = () => {
     try {
       await processWorkflow(task.id, pendingAction, comment);
       const actionText = pendingAction === 'APPROVE' 
-        ? 'อนุมัติเอกสารสำเร็จแล้ว' 
+        ? (isObsolete ? 'อนุมัติยกเลิกเอกสารสำเร็จแล้ว' : 'อนุมัติเอกสารสำเร็จแล้ว') 
         : pendingAction === 'REJECT' 
           ? 'ไม่อนุมัติคำร้องเรียบร้อยแล้ว' 
           : 'ส่งกลับแก้ไขเรียบร้อยแล้ว';
@@ -514,10 +539,14 @@ const TaskApprove = () => {
               <button
                 disabled={!hasReadToBottom}
                 onClick={() => handleAction('APPROVE')}
-                className="inline-flex items-center gap-1.5 h-9 px-5 py-2 rounded-xl text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-all shadow-xs shadow-emerald-600/20 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                title="อนุมัติคำขอ"
+                className={`inline-flex items-center gap-1.5 h-9 px-5 py-2 rounded-xl text-xs font-medium text-white transition-all whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+                  isObsolete
+                    ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800 shadow-xs shadow-rose-600/20'
+                    : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-xs shadow-emerald-600/20'
+                }`}
+                title={isObsolete ? 'อนุมัติยกเลิกเอกสาร' : 'อนุมัติคำขอ'}
               >
-                <Check size={15} /> อนุมัติ (Approve)
+                <Check size={15} /> {isObsolete ? 'อนุมัติยกเลิกเอกสาร (Approve Obsolete)' : 'อนุมัติ (Approve)'}
               </button>
             </div>
           </div>
@@ -592,9 +621,26 @@ const TaskApprove = () => {
         isOpen={showConfirm}
         onClose={() => setShowConfirm(false)}
         onConfirm={executeAction}
-        title={pendingAction === 'APPROVE' ? 'ยืนยันการอนุมัติเอกสาร (Approve DAR)' : pendingAction === 'REJECT' ? 'ยืนยันการไม่อนุมัติ (Reject DAR)' : 'ยืนยันการส่งกลับแก้ไข (Request Revision)'}
-        actionType={pendingAction === 'APPROVE' ? 'approve' : 'reject'}
-        confirmText={pendingAction === 'APPROVE' ? 'ยืนยันการอนุมัติเอกสาร' : pendingAction === 'REJECT' ? 'ยืนยันไม่อนุมัติคำร้อง' : 'ยืนยันส่งกลับแก้ไข'}
+        title={
+          pendingAction === 'APPROVE' 
+            ? (isObsolete ? 'ยืนยันการอนุมัติยกเลิกเอกสาร (Approve Obsolete DAR)' : 'ยืนยันการอนุมัติเอกสาร (Approve DAR)')
+            : pendingAction === 'REJECT' 
+              ? 'ยืนยันการไม่อนุมัติ (Reject DAR)' 
+              : 'ยืนยันการส่งกลับแก้ไข (Request Revision)'
+        }
+        actionType={pendingAction === 'APPROVE' ? (isObsolete ? 'obsolete' : 'approve') : 'reject'}
+        confirmText={
+          pendingAction === 'APPROVE' 
+            ? approvalNextStep.buttonText 
+            : pendingAction === 'REJECT' 
+              ? 'ยืนยันไม่อนุมัติคำร้อง' 
+              : 'ยืนยันส่งกลับแก้ไข'
+        }
+        confirmButtonClass={
+          pendingAction === 'APPROVE'
+            ? approvalNextStep.buttonClass
+            : undefined
+        }
         cancelText="ยกเลิก / กลับไปตรวจสอบ"
         dar={darWithWorkflow}
         currentActor={currentUser}
@@ -603,12 +649,19 @@ const TaskApprove = () => {
         summaryData={[
           { label: 'ผู้อนุมัติ', value: `${currentUser?.name || 'ผู้อนุมัติ'} (${currentUser?.department || '-'})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
-          { label: 'ผลการพิจารณา', value: pendingAction === 'APPROVE' ? 'อนุมัติประกาศใช้ (Approved)' : pendingAction === 'REJECT' ? 'ไม่อนุมัติคำร้อง (Rejected)' : 'ส่งกลับแก้ไข (Revision Required)' },
+          { 
+            label: 'ผลการพิจารณา', 
+            value: pendingAction === 'APPROVE' 
+              ? (isObsolete ? 'อนุมัติยกเลิกเอกสาร (Approved Obsolete)' : 'อนุมัติประกาศใช้ (Approved)') 
+              : pendingAction === 'REJECT' 
+                ? 'ไม่อนุมัติคำร้อง (Rejected)' 
+                : 'ส่งกลับแก้ไข (Revision Required)' 
+          },
           { label: 'ความเห็นประกอบ', value: comment || '-' },
           { 
             label: 'สายการอนุมัติถัดไป', 
             value: pendingAction === 'APPROVE' 
-              ? (nextDestination?.label || (dccStep ? 'ส่งมอบงานต่อให้ Document Control Center (DCC)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)'))
+              ? (nextDestination?.label || (dccStep ? approvalNextStep.title : (isObsolete ? 'สิ้นสุดขั้นตอนการขอยกเลิก (Obsolete Completed)' : 'สิ้นสุดขั้นตอนการอนุมัติ (Approval Completed)')))
               : pendingAction === 'REJECT' 
                 ? 'สิ้นสุดคำร้อง: ส่งเข้าคลังประวัติ (ไม่อนุมัติ)' 
                 : 'ส่งกลับไปยัง: ผู้ร้องขอ (แก้ไขคำร้อง)' 

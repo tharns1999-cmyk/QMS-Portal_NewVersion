@@ -233,5 +233,82 @@ describe('DAR Document Code Resolution & Form Standardization', () => {
       expect(badges.length).toBeGreaterThan(0);
       expect(screen.getAllByText('ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า').length).toBeGreaterThan(0);
     });
+
+    it('renders standardized document code in obsolete search autocomplete dropdown options', () => {
+      render(
+        <MemoryRouter>
+          <DarObsoleteForm />
+        </MemoryRouter>
+      );
+
+      // Open the dropdown by focusing the search input
+      const searchInput = screen.getByPlaceholderText(/ค้นหารหัส หรือชื่อ/i);
+      fireEvent.focus(searchInput);
+
+      // Dropdown option header should display WI-QC-01 with blue styling
+      const docCodeElement = screen.getByText('WI-QC-01');
+      expect(docCodeElement).toBeInTheDocument();
+      expect(docCodeElement.className).toContain('text-[#0D99FF]');
+
+      // Dropdown option sub-line should display the Thai name
+      expect(screen.getByText('ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า')).toBeInTheDocument();
+    });
+
+    it('updates Selected State box, transition badge, and clear button upon selecting a document in obsolete form', async () => {
+      render(
+        <MemoryRouter>
+          <DarObsoleteForm />
+        </MemoryRouter>
+      );
+
+      // Focus search input to show dropdown
+      const searchInput = screen.getByPlaceholderText(/ค้นหารหัส หรือชื่อ/i);
+      fireEvent.focus(searchInput);
+
+      // Click the document option
+      const docOption = screen.getByText('ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า').closest('div[class*="cursor-pointer"]');
+      expect(docOption).toBeInTheDocument();
+      fireEvent.click(docOption);
+
+      // Verify Selected State Box:
+      const selectedBadge = screen.getAllByText('WI-QC-01')[0];
+      expect(selectedBadge).toBeInTheDocument();
+      expect(selectedBadge.className).toContain('bg-[#E5F4FF]');
+      expect(selectedBadge.className).toContain('text-[#0D99FF]');
+
+      // Transition Badge
+      expect(screen.getByText(/OBSOLETE \(ยกเลิกถาวร\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/สถานะหลังการอนุมัติ:/i)).toBeInTheDocument();
+
+      // Clear button exists and can deselect the document
+      const clearBtn = screen.getByTitle('เปลี่ยนเอกสาร');
+      expect(clearBtn).toBeInTheDocument();
+      fireEvent.click(clearBtn);
+
+      // Dropdown search input should reappear
+      expect(screen.getByPlaceholderText(/ค้นหารหัส หรือชื่อ/i)).toBeInTheDocument();
+    });
+
+    it('filters obsolete documents in dropdown by both document code and document title', () => {
+      render(
+        <MemoryRouter>
+          <DarObsoleteForm />
+        </MemoryRouter>
+      );
+
+      const searchInput = screen.getByPlaceholderText(/ค้นหารหัส หรือชื่อ/i);
+
+      // Search by code: "WI"
+      fireEvent.change(searchInput, { target: { value: 'WI' } });
+      expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
+
+      // Search by Thai name: "วัตถุดิบ"
+      fireEvent.change(searchInput, { target: { value: 'วัตถุดิบ' } });
+      expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
+
+      // Search non-existent
+      fireEvent.change(searchInput, { target: { value: 'NONEXISTENT-CODE-999' } });
+      expect(screen.getByText(/ไม่พบเอกสารที่มีผลบังคับใช้/i)).toBeInTheDocument();
+    });
   });
 });

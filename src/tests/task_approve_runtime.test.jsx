@@ -296,4 +296,97 @@ describe('ActionConfirmModal Dynamic Presentation Unit Tests', () => {
     expect(screen.getByText('เอกสารจะถูกปรับสถานะเป็น "มีผลบังคับใช้ (Active)" ทันที')).toBeDefined();
     expect(screen.queryByText(/ส่งต่อเพื่อพิจารณาขั้นถัดไป: คุณเรย์/i)).toBeNull();
   });
+
+  it('renders ISO 9001 Recall & Disposition messaging for Obsolete DAR in ActionConfirmModal', () => {
+    const obsoleteDar = {
+      type: 'OBSOLETE',
+      approvalWorkflow: [
+        { step: 1, roleKey: 'REQUESTER', name: 'พนักงาน QA' },
+        { step: 2, roleKey: 'REVIEWER', name: 'หัวหน้างาน QA' },
+        { step: 3, roleKey: 'APPROVER', name: 'คุณเรย์' },
+        { step: 4, roleKey: 'DCC', name: 'เจ้าหน้าที่ DCC' }
+      ]
+    };
+
+    render(
+      <ActionConfirmModal
+        isOpen={true}
+        onClose={() => {}}
+        onConfirm={() => {}}
+        title="ยืนยันการอนุมัติยกเลิกเอกสาร (Approve Obsolete DAR)"
+        actionType="obsolete"
+        dar={obsoleteDar}
+        currentActor={currentActor}
+        currentStep="APPROVER"
+        summaryData={[
+          { label: 'ผู้อนุมัติ', value: 'คุณเรย์ (QA)' },
+          { label: 'สายการอนุมัติถัดไป', value: 'ส่งมอบงานต่อให้ Document Control Center (DCC)' }
+        ]}
+      />
+    );
+
+    // Contextual ISO 9001 Recall & Disposition description
+    expect(screen.getByText('ส่งมอบงานต่อให้ Document Control Center (DCC)')).toBeDefined();
+    expect(
+      screen.getByText('เพื่อดำเนินการปลดระวาง เรียกคืนสำเนาควบคุมทั้งหมดในระบบ และบันทึกผลการทำลายตามระเบียบ (Recall & Disposition)')
+    ).toBeDefined();
+
+    // Confirm button text
+    expect(screen.getByRole('button', { name: /ยืนยันการอนุมัติยกเลิกเอกสาร/i })).toBeDefined();
+  });
+
+  it('switches button and modal to Obsolete workflow when TaskApprove renders an Obsolete DAR', () => {
+    useStore.setState({
+      dars: [
+        {
+          id: 'dar-obs-001',
+          darNumber: 'DAR-2026-OBS',
+          title: 'คู่มือการปฏิบัติงานที่ถูกยกเลิก',
+          type: 'OBSOLETE',
+          department: 'QA',
+          docCode: 'SOP-QA-999',
+          docRev: '02',
+          approvalWorkflow: [
+            { step: 1, roleKey: 'REQUESTER', role: 'ผู้ร้องขอ', name: 'พนักงาน QA' },
+            { step: 2, roleKey: 'REVIEWER', role: 'ผู้ทบทวน', name: 'หัวหน้างาน QA' },
+            { step: 3, roleKey: 'APPROVER', role: 'ผู้อนุมัติ', name: 'คุณเรย์' },
+            { step: 4, roleKey: 'DCC', role: 'DCC', name: 'เจ้าหน้าที่ DCC' }
+          ]
+        }
+      ],
+      tasks: [
+        {
+          id: 'task-obs-001',
+          taskId: 'task-obs-001',
+          darId: 'dar-obs-001',
+          title: 'คู่มือการปฏิบัติงานที่ถูกยกเลิก',
+          status: 'PENDING',
+          assigneeName: 'คุณเรย์'
+        }
+      ]
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dcc/tasks/approve/task-obs-001']}>
+        <Routes>
+          <Route path="/dcc/tasks/approve/:id" element={<TaskApprove />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Verify Obsolete Approve button text and styling
+    const obsoleteBtn = screen.getByRole('button', { name: /อนุมัติยกเลิกเอกสาร \(Approve Obsolete\)/i });
+    expect(obsoleteBtn).toBeDefined();
+    expect(obsoleteBtn.className).toContain('bg-rose-600');
+
+    // Click button to open confirmation modal
+    fireEvent.click(obsoleteBtn);
+
+    // Modal title & Next Step Recall & Disposition message
+    expect(screen.getAllByText('ยืนยันการอนุมัติยกเลิกเอกสาร').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('(Approve Obsolete DAR)')).toBeDefined();
+    expect(
+      screen.getByText('เพื่อดำเนินการปลดระวาง เรียกคืนสำเนาควบคุมทั้งหมดในระบบ และบันทึกผลการทำลายตามระเบียบ (Recall & Disposition)')
+    ).toBeDefined();
+  });
 });
