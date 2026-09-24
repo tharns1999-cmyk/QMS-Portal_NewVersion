@@ -134,13 +134,13 @@ export const generateExternalDocStampImage = async (stampData) => {
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     const width = 300;
-    const height = 100;
+    const height = 120; // Increased height
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
 
     // Background (white with some opacity for better reading)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.fillRect(0, 0, width, height);
 
     // Border (Red for external doc control)
@@ -160,17 +160,22 @@ export const generateExternalDocStampImage = async (stampData) => {
 
     // Document Info
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(stampData?.docCode || 'EXT-DOC', width / 2, 50);
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText(stampData?.docCode || 'EXT-DOC', width / 2, 52);
+
+    ctx.fillStyle = '#1f2937'; // gray-800
+    ctx.font = 'bold 13px sans-serif';
+    const originRev = stampData?.docRev && stampData.docRev !== '00' ? stampData.docRev : (stampData?.docRev || '-');
+    ctx.fillText(`ฉบับต้นทาง: ${originRev}`, width / 2, 74);
 
     ctx.fillStyle = '#4b5563'; // gray-600
     ctx.font = '12px sans-serif';
-    ctx.fillText(stampData?.timestamp || new Date().toLocaleString('th-TH'), width / 2, 70);
+    ctx.fillText(`มีผล: ${stampData?.timestamp || '-'}`, width / 2, 94);
     
-    // Status
+    // Status (Optional corner or bottom)
     ctx.fillStyle = stampData?.status === 'OBSOLETE' ? '#dc2626' : '#16a34a'; // green-600 for ACTIVE
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(stampData?.status || 'CONTROLLED', width / 2, 88);
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(stampData?.status === 'OBSOLETE' ? 'OBSOLETE' : 'CONTROLLED', width / 2, 110);
 
     resolve(canvas.toDataURL('image/png'));
   });

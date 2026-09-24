@@ -2231,7 +2231,11 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  registerExternalDoc: (doc) => set((state) => {
+  registerExternalDoc: (doc) => {
+    let finalNewId = null;
+    let finalStatus = null;
+    
+    set((state) => {
     const dept = doc.department || doc.dept || (state.currentUser ? (state.currentUser.department || 'QA/QC') : 'QA/QC');
     const edType = (state.documentTypes || []).find(t => t.code === 'ED' || t.id === 'ED');
     const pattern = edType?.namingPattern || 'ED-{Dept}-{##}';
@@ -2262,6 +2266,7 @@ const useStore = create(persist((set, get) => ({
       }
     }
     const newId = doc.id || edCode || `EXT-${Date.now()}`;
+    const originRev = doc.originRev || doc.sourceVersion || doc.edition || doc.rev || doc.version || '-';
 
     // Review Cycle & Validity
     const reviewCycleMonths = Number(doc.reviewCycleMonths) || 12;
@@ -2404,8 +2409,8 @@ const useStore = create(persist((set, get) => ({
           doc_type: 'ED',
           docType: 'ED',
           docName: doc.title,
-          doc_version: doc.rev || '00',
-          rev: doc.rev || '00',
+          doc_version: originRev,
+          rev: originRev,
           copy_no: copyNoStr,
           copyNo: copyNoStr,
           ccNumber: ccNumStr,
@@ -2447,7 +2452,7 @@ const useStore = create(persist((set, get) => ({
         docName: doc.title,
         department: 'DC',
         target_department: 'DC',
-        doc_version: doc.rev || '00',
+        doc_version: originRev,
         assigneeId: resolveDccAdminUserId(state.masterUsers),
         assignedToRole: 'DCC_ADMIN',
         targetRole: 'DCC_ADMIN',
@@ -2470,7 +2475,7 @@ const useStore = create(persist((set, get) => ({
       department: dept,
       status: initialStatus,
       ownerId: state.currentUser ? state.currentUser.id : 'U001',
-      rev: doc.rev || '00',
+      rev: originRev,
       source: issuerValue,
       issuer: issuerValue,
       officialIssuer: issuerValue,
@@ -2510,7 +2515,7 @@ const useStore = create(persist((set, get) => ({
       officialIssuer: issuerValue,
       sourceVersion: doc.sourceVersion || doc.edition || '',
       requestType: 'NEW',
-      rev: doc.rev || '00',
+      rev: originRev,
       effectiveDate: effectiveDate,
       nextReviewDate: nextReviewDate,
       reviewCycleMonths: reviewCycleMonths,
@@ -2567,7 +2572,7 @@ const useStore = create(persist((set, get) => ({
       ]
     };
 
-    return {
+    const newState = {
       externalDocuments: [newExternalDoc, ...state.externalDocuments],
       externalRequests: [newExternalRequest, ...(state.externalRequests || [])],
       documentControlledCopies: finalCopies,
@@ -2595,7 +2600,21 @@ const useStore = create(persist((set, get) => ({
         details: `Registered external document ${edCode} (Status: ${initialStatus})`
       }, ...state.externalAuditTrail]
     };
-  }),
+    
+    // (Inject side effect values to outer scope)
+    finalNewId = newId;
+    finalStatus = initialStatus;
+    return newState;
+    });
+
+    if (finalStatus === 'ACTIVE') {
+      setTimeout(() => {
+        if (get().stampFinalExternalApprovalPdf) {
+          get().stampFinalExternalApprovalPdf(finalNewId);
+        }
+      }, 500);
+    }
+  },
 
   // Triggered when requesting to Update an existing document (create new revision)
   updateExternalDoc: (id, updates) => set((state) => {
@@ -4981,10 +5000,12 @@ const useStore = create(persist((set, get) => ({
       if (!fileBlob) return;
       const arrayBuffer = await fileBlob.arrayBuffer();
       
+      const originRev = doc.originRev || doc.sourceVersion || doc.edition || doc.rev || doc.version || '-';
       const stampData = {
         docCode: doc.edCode || doc.doc_code || doc.docNo || 'EXT-DOC',
+        docRev: originRev,
         title: doc.title || doc.name || 'External Document',
-        timestamp: new Date().toLocaleDateString('th-TH'),
+        timestamp: doc.effectiveDate ? new Date(doc.effectiveDate).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH'),
         status: doc.status || 'ACTIVE'
       };
 
