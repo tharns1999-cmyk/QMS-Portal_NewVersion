@@ -8,6 +8,7 @@ import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
+import { getFile, resolveFileBlob } from '../../utils/fileStorage';
 
 const TaskApprove = () => {
   const { id } = useParams();
@@ -19,6 +20,8 @@ const TaskApprove = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
   const scrollRef = useRef(null);
 
   const allTasks = useMemo(() => {
@@ -30,6 +33,37 @@ const TaskApprove = () => {
     ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) 
     : (dars || []).find(d => String(d.id) === String(id) || d.darNo === id || d.darNumber === id);
   const darTimeline = dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
+
+  useEffect(() => {
+    let url = null;
+    let isCancelled = false;
+    if (dar) {
+      setLoadingPdf(true);
+      resolveFileBlob(dar, dar.attachedFile?.fileId).then((fileBlob) => {
+        if (!isCancelled) {
+          if (fileBlob) {
+            url = URL.createObjectURL(fileBlob);
+            setPdfBlobUrl(url);
+          } else {
+            setPdfBlobUrl(null);
+          }
+          setLoadingPdf(false);
+        }
+      }).catch(err => {
+        console.error('Error loading PDF blob:', err);
+        if (!isCancelled) {
+          setPdfBlobUrl(null);
+          setLoadingPdf(false);
+        }
+      });
+    } else {
+      setPdfBlobUrl(null);
+    }
+    return () => {
+      isCancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [dar]);
 
   // Dynamic extraction and assembly of approvalWorkflow for DAR
   const darWithWorkflow = useMemo(() => {
@@ -583,37 +617,27 @@ const TaskApprove = () => {
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto p-6 bg-slate-700/80 custom-scrollbar"
         >
-           {/* Mock PDF Pages */}
-           <div className="max-w-3xl mx-auto space-y-6">
-             <div className="bg-white w-full h-[800px] shadow-none p-10 relative rounded-lg">
-               <h1 className="text-2xl font-bold text-center mb-6 border-b pb-3 text-[#1E1E1E]">{dar.title}</h1>
-               <h2 className="text-base font-bold text-slate-800 mb-2">1. วัตถุประสงค์ (Purpose)</h2>
-               <p className="text-xs text-slate-700 leading-relaxed mb-6">
-                 เอกสารฉบับนี้กำหนดมาตรฐานการปฏิบัติงานสำหรับแผนก {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()} เพื่อใช้เป็นแนวทางปฏิบัติงานตามข้อกำหนดระบบบริหารคุณภาพ ISO 9001 / FSSC 22000
-                 {dar.requestDetail}
-               </p>
-               <h2 className="text-base font-bold text-slate-800 mb-2">2. ขอบเขต (Scope)</h2>
-               <p className="text-xs text-slate-700 leading-relaxed">
-                 ครอบคลุมบุคลากรและกระบวนการทำงานที่เกี่ยวข้องทั้งหมดในสังกัด {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}
-               </p>
-               <div className="absolute bottom-8 left-0 right-0 text-center text-slate-400 text-xs font-mono">หน้า 1 จาก 2</div>
-             </div>
-
-             <div className="bg-white w-full h-[800px] shadow-none p-10 relative flex flex-col rounded-lg">
-               <h2 className="text-base font-bold text-slate-800 mb-3">3. ขั้นตอนการปฏิบัติงาน (Procedures)</h2>
-               <ul className="list-disc pl-5 space-y-2 text-xs text-slate-700 flex-1 leading-relaxed">
-                 <li>ตรวจสอบความพร้อมของวัตถุดิบและอุปกรณ์ก่อนเริ่มกระบวนการ</li>
-                 <li>ทำการตรวจวัดค่าควบคุมคุณภาพ ณ จุดตรวจสอบมาตรฐาน</li>
-                 <li>บันทึกผลการปฏิบัติงานลงในแบบฟอร์มบันทึกควบคุม</li>
-                 <li>หากพบข้อบกพร่อง ให้รายงานผู้บังคับบัญชาทันทีตามขั้นตอน CAPA</li>
-               </ul>
-               <div className="mt-auto p-3 bg-[#F5F5F5] rounded-lg text-center font-bold text-[#666666] border border-[#E5E5E5] text-xs">
-                 --- จบเอกสาร (END OF DOCUMENT) ---
+           {/* Native PDF Viewer */}
+           <div className="w-full h-full min-h-[800px] relative rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700">
+             {loadingPdf ? (
+               <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
+                 <FileText size={32} className="text-slate-500" />
+                 <span>กำลังโหลดไฟล์เอกสารฉบับจริง...</span>
                </div>
-               <div className="absolute bottom-8 left-0 right-0 text-center text-slate-400 text-xs font-mono">หน้า 2 จาก 2</div>
-             </div>
+             ) : pdfBlobUrl ? (
+               <iframe
+                 src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                 className="w-full h-full border-0 absolute inset-0"
+                 title="PDF Preview"
+               />
+             ) : (
+               <div className="text-slate-500 font-medium flex flex-col items-center gap-3">
+                 <ShieldAlert size={40} className="text-slate-600" />
+                 <span>ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)</span>
+               </div>
+             )}
            </div>
-        </div>
+         </div>
 
       </div>
 

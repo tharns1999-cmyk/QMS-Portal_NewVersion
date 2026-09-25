@@ -17,7 +17,7 @@ import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
 import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight } from '../utils/pdfStamper';
-import { getFile } from '../utils/fileStorage';
+import { getFile, resolveFileBlob } from '../utils/fileStorage';
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -769,121 +769,7 @@ export class UniversalWatermarkService {
    * @param {Object} meta - Metadata options
    * @returns {Promise<Uint8Array>}
    */
-  static async generateQmsPdfDocument(doc = {}, meta = {}) {
-    const pdfDoc = await PDFDocument.create();
-    const { font, isCustom } = await this.loadFont(pdfDoc);
 
-    const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'WI-PD-001';
-    const docTitle = doc.name || doc.docTitle || meta.title || meta.docTitle || 'Standard Operating Procedure';
-    const docRev = doc.rev || doc.revision || doc.doc_version || meta.docVersion || '01';
-    const docDept = doc.department || meta.userDept || 'PD';
-    const docEff = doc.effectiveDate || meta.effectiveDate ? (
-      String(doc.effectiveDate || meta.effectiveDate).includes('T')
-        ? getBangkokFormattedDate(doc.effectiveDate || meta.effectiveDate)
-        : String(doc.effectiveDate || meta.effectiveDate)
-    ) : getBangkokFormattedDate();
-
-    const safe = (t) => isCustom ? t : this.safeWinAnsiText(t);
-    const draw = (page, text, opts) => {
-      const sanitized = safe(text);
-      if (!sanitized) return;
-      page.drawText(sanitized, { font, ...opts });
-    };
-
-    // Page 1: Quality Management Header & Procedure Outline
-    const page1 = pdfDoc.addPage([595.28, 841.89]); // Standard A4 (595 x 842 pt)
-    const { width: p1W, height: p1H } = page1.getSize();
-
-    // Top Header Grid
-    draw(page1, 'QUALITY MANAGEMENT SYSTEM (ISO 9001 / FSSC 22000)', {
-      x: 50,
-      y: p1H - 45,
-      size: 10,
-      color: rgb(0.3, 0.35, 0.45)
-    });
-
-    draw(page1, `DOCUMENT NUMBER: ${docCode}`, {
-      x: 50,
-      y: p1H - 70,
-      size: 16,
-      color: rgb(0.1, 0.15, 0.25)
-    });
-
-    draw(page1, `TITLE: ${docTitle}`, {
-      x: 50,
-      y: p1H - 92,
-      size: 12,
-      color: rgb(0.2, 0.25, 0.35)
-    });
-
-    draw(page1, `Revision: Rev.${docRev}   |   Owner Dept: ${docDept}   |   Effective: ${docEff}`, {
-      x: 50,
-      y: p1H - 115,
-      size: 10,
-      color: rgb(0.4, 0.45, 0.55)
-    });
-
-    // Content Section 1
-    draw(page1, '1. วัตถุประสงค์ (PURPOSE)', { x: 50, y: p1H - 155, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page1, 'เอกสารนี้จัดทำขึ้นเพื่อกำหนดมาตรฐานและขั้นตอนการปฏิบัติงานในพื้นที่ควบคุม ให้สอดคล้องตามมาตรฐานสากล', { x: 50, y: p1H - 175, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    // Content Section 2
-    draw(page1, '2. ขอบเขตการบังคับใช้ (SCOPE & APPLICABILITY)', { x: 50, y: p1H - 210, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page1, `บังคับใช้ครอบคลุมทุกสถานีงานและจุดใช้งานจริง (Point of Use) ภายในฝ่าย ${docDept} และหน่วยงานที่เกี่ยวข้อง`, { x: 50, y: p1H - 230, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    // Content Section 3: Responsibility Table
-    draw(page1, '3. หน้าที่และความรับผิดชอบ (RESPONSIBILITIES)', { x: 50, y: p1H - 265, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page1, '- ผู้ปฏิบัติงานประจำจุด: ปฏิบัติตาม Work Instruction อย่างเคร่งครัด', { x: 60, y: p1H - 285, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page1, '- หัวหน้างาน / Supervisor: ทวนสอบการบันทึกข้อมูลและสุ่มตรวจความถูกต้องทุกกะการทำงาน', { x: 60, y: p1H - 305, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page1, '- DCC Officer: ควบคุมสำเนาแจกจ่ายและจัดการเอกสารตกรุ่น (Obsolete Recall)', { x: 60, y: p1H - 325, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    // Content Section 4: Operational Standard Workflow
-    draw(page1, '4. ขั้นตอนการปฏิบัติงานมาตรฐาน (STANDARD OPERATING PROCEDURE)', { x: 50, y: p1H - 365, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page1, 'ขั้นตอนที่ 1: ตรวจสอบความพร้อมของเครื่องจักร อุปกรณ์ และสภาพแวดล้อมก่อนเริ่มงาน', { x: 60, y: p1H - 390, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page1, 'ขั้นตอนที่ 2: บันทึกค่าพารามิเตอร์ควบคุมและตรวจวัดตามแบบฟอร์มตรวจสอบประจำวัน', { x: 60, y: p1H - 410, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page1, 'ขั้นตอนที่ 3: หากพบสิ่งผิดปกติ ให้หยุดกระบวนการทันทีและรายงานต่อหัวหน้างานตามสายบังคับบัญชา', { x: 60, y: p1H - 430, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page1, 'ขั้นตอนที่ 4: สรุปผลการปฏิบัติงานและส่งมอบรายงานเมื่อสิ้นสุดกะการทำงาน', { x: 60, y: p1H - 450, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    // Page Number
-    draw(page1, `Page 1 of 2  -  Document Control System (QMS Portal)`, {
-      x: p1W / 2 - 120,
-      y: 35,
-      size: 9,
-      color: rgb(0.5, 0.5, 0.5)
-    });
-
-    // Page 2: Safety & Quality Control Measures
-    const page2 = pdfDoc.addPage([595.28, 841.89]);
-    const { width: p2W, height: p2H } = page2.getSize();
-
-    draw(page2, `DOCUMENT NUMBER: ${docCode}  (Rev.${docRev})`, {
-      x: 50,
-      y: p2H - 45,
-      size: 10,
-      color: rgb(0.4, 0.45, 0.55)
-    });
-
-    draw(page2, '5. ข้อกำหนดด้านความปลอดภัยและสุขอนามัย (FOOD SAFETY & EHS)', { x: 50, y: p2H - 90, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page2, '- สวมใส่อุปกรณ์คุ้มครองความปลอดภัยส่วนบุคคล (PPE) ตามมาตรฐานตลอดเวลา', { x: 60, y: p2H - 115, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page2, '- ห้ามนำอาหาร เครื่องดื่ม หรือสิ่งของส่วนตัวเข้าสู่พื้นที่ปฏิบัติงาน', { x: 60, y: p2H - 135, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page2, '- ล้างมือและฆ่าเชื้อตามสุขลักษณะส่วนบุคคลก่อนเข้าสู่บริเวณไลน์ผลิต', { x: 60, y: p2H - 155, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    draw(page2, '6. บันทึกคุณภาพและแบบฟอร์มที่เกี่ยวข้อง (QUALITY RECORDS & FORMS)', { x: 50, y: p2H - 200, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page2, '- FM-PD-001: แบบฟอร์มตรวจรับและเตรียมวัตถุดิบประจำวัน', { x: 60, y: p2H - 225, size: 10, color: rgb(0.2, 0.2, 0.2) });
-    draw(page2, '- FM-QA-002: ใบบันทึกผลการตรวจวิเคราะห์คุณภาพหน้างาน (In-process QC Log)', { x: 60, y: p2H - 245, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    draw(page2, '7. ประวัติการแก้ไขเอกสาร (REVISION HISTORY)', { x: 50, y: p2H - 290, size: 12, color: rgb(0.1, 0.2, 0.4) });
-    draw(page2, `- Rev.${docRev}: ปรับปรุงเนื้อหาขั้นตอนการปฏิบัติงานให้สอดคล้องตามมาตรฐานระบบคุณภาพ`, { x: 60, y: p2H - 315, size: 10, color: rgb(0.2, 0.2, 0.2) });
-
-    draw(page2, `Page 2 of 2  -  Document Control System (QMS Portal)`, {
-      x: p2W / 2 - 120,
-      y: 35,
-      size: 9,
-      color: rgb(0.5, 0.5, 0.5)
-    });
-
-    return await pdfDoc.save();
-  }
 
   /**
    * Helper: Generate stamped PDF bytes for a given document and user
@@ -898,24 +784,49 @@ export class UniversalWatermarkService {
    * or fallback to dummy generator.
    */
   static async resolveRawPdfBytes(doc, meta = {}) {
-    let rawPdfBytes;
+    let rawPdfBytes = null;
     try {
-      if (doc.attachedFile && doc.attachedFile.fileId) {
-        const fileBlob = await getFile(doc.attachedFile.fileId);
+      if (doc instanceof ArrayBuffer) rawPdfBytes = doc;
+      else if (doc instanceof Uint8Array) rawPdfBytes = doc.buffer;
+      else if (meta instanceof ArrayBuffer) rawPdfBytes = meta;
+      else if (meta instanceof Uint8Array) rawPdfBytes = meta.buffer;
+
+      if (!rawPdfBytes) {
+        const merged = { ...meta, ...doc };
+        const docCodeFallback = doc?.edCode || doc?.doc_code || doc?.docNo || doc?.id || meta?.docCode;
+        const fileBlob = await resolveFileBlob(merged, docCodeFallback);
         if (fileBlob) {
           rawPdfBytes = await fileBlob.arrayBuffer();
         }
       }
     } catch (err) {
-      console.warn("Failed to load attached file, falling back to dummy generation", err);
+      console.error("Failed to load attached file:", err);
+      throw new Error('ไม่พบไฟล์เอกสารอ้างอิงจริง (Original file not found in storage)');
     }
 
-    if (!rawPdfBytes) {
-      rawPdfBytes = await this.generateQmsPdfDocument(doc, meta);
+    if (!rawPdfBytes || rawPdfBytes.byteLength === 0) {
+      throw new Error('ไม่พบไฟล์เอกสารอ้างอิงจริง (Original file not found or corrupted)');
+    }
+
+    // PDF Byte Header Validation (Invariant 3 & PDF-Lib Safety)
+    const uint8 = new Uint8Array(rawPdfBytes);
+    if (uint8.length < 4 || uint8[0] !== 0x25 || uint8[1] !== 0x50 || uint8[2] !== 0x44 || uint8[3] !== 0x46) {
+      throw new Error('ไฟล์ที่แนบมาไม่ใช่รูปแบบ PDF ที่ถูกต้อง (Invalid or corrupted PDF file: missing %PDF- header)');
     }
 
     const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'DOC-001';
-    const isExternalDoc = doc.edCode || doc.origin === 'EXTERNAL' || doc.sourceVersion || docCode.startsWith('ED') || docCode.startsWith('EXT');
+    const isExternalDoc = Boolean(
+      doc.isExternal ||
+      doc.is_external ||
+      meta.isExternal ||
+      meta.is_external ||
+      doc.edCode ||
+      doc.origin === 'EXTERNAL' ||
+      doc.sourceVersion ||
+      docCode.startsWith('ED') ||
+      docCode.startsWith('EXT')
+    );
+
     if (isExternalDoc && rawPdfBytes) {
       try {
         const originRev = doc.originRev || doc.sourceVersion || doc.edition || doc.rev || doc.version || '-';

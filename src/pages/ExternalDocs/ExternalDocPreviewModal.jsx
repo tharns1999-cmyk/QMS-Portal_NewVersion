@@ -1,17 +1,71 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useStore from '../../store/useStore';
 import { X, ShieldAlert, FileText, Download, Building2, Calendar, Globe, Tag, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import UniversalWatermarkService, { WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import toast from 'react-hot-toast';
+import { getFile, resolveFileBlob } from '../../utils/fileStorage';
 
 const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
   const { currentUser, logExternalDownload } = useStore();
 
-  if (!isOpen || !doc) return null;
-
-  const docCode = doc.edCode || doc.doc_code || doc.docNo || doc.id || 'ED-DOC-001';
+  const docCode = doc?.edCode || doc?.doc_code || doc?.docNo || doc?.id || 'ED-DOC-001';
   const uDept = currentUser?.department || 'QA';
+
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const blobUrlRef = useRef(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (isOpen && doc) {
+      setLoadingPdf(true);
+      const fallbackKey = doc.edCode || doc.doc_code || doc.docNo || doc.id;
+      resolveFileBlob(doc, fallbackKey).then((fileBlob) => {
+        if (isCancelled) return;
+        if (fileBlob) {
+          if (blobUrlRef.current) {
+            URL.revokeObjectURL(blobUrlRef.current);
+          }
+          const url = URL.createObjectURL(fileBlob);
+          blobUrlRef.current = url;
+          setPdfBlobUrl(url);
+        } else {
+          setPdfBlobUrl(null);
+        }
+        setLoadingPdf(false);
+      }).catch(err => {
+        console.error('Error loading PDF blob:', err);
+        if (!isCancelled) {
+          setPdfBlobUrl(null);
+          setLoadingPdf(false);
+        }
+      });
+    } else {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+      setPdfBlobUrl(null);
+      setLoadingPdf(false);
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, doc]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  if (!isOpen || !doc) return null;
 
   const isObsolete = Boolean(
     doc.status === 'OBSOLETE' || 
@@ -38,6 +92,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
     try {
       await UniversalWatermarkService.downloadWatermarkedPdf(
         {
+          ...doc,
           id: doc.id,
           title: docCode,
           name: doc.title,
@@ -51,10 +106,13 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           isExternal: true,
           is_external: true,
           doc_type: 'ED',
-          docType: 'ED'
+          docType: 'ED',
+          attachedFile: doc.attachedFile,
+          fileId: doc.fileId || doc.attachedFile?.fileId
         },
         watermarkPreset,
         {
+          ...doc,
           docCode,
           docTitle: doc.title,
           title: doc.title,
@@ -72,7 +130,9 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
           accessScope: doc.accessScope,
           watermarkType: watermarkPreset,
-          reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print')
+          reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print'),
+          attachedFile: doc.attachedFile,
+          fileId: doc.fileId || doc.attachedFile?.fileId
         }
       );
 
@@ -82,7 +142,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
       toast.success(`ดาวน์โหลดเอกสาร ${docCode} สำเร็จ`, { id: toastId });
     } catch (err) {
       console.error(err);
-      toast.error('เกิดข้อผิดพลาดในการสร้างเอกสาร PDF', { id: toastId });
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการสร้างเอกสาร PDF', { id: toastId });
     }
   };
 
@@ -182,69 +242,25 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
             </div>
           </div>
 
-          {/* PDF Mock Viewer with Watermark Overlay */}
-          <div className="flex-1 bg-stone-100/80 relative overflow-hidden flex justify-center items-center p-4 sm:p-8">
-            {/* Watermark Overlay (Repeated 45 degrees) */}
-            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center overflow-hidden opacity-10 select-none z-10">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div 
-                  key={i} 
-                  className="whitespace-nowrap font-bold text-stone-800 transform -rotate-45 my-10 text-xl tracking-widest font-mono"
-                >
-                  {watermarkText}
-                </div>
-              ))}
-            </div>
-
-            {/* Mock PDF Document Page */}
-            <div className="bg-white w-full max-w-2xl h-full shadow-sm rounded-xl p-8 sm:p-10 overflow-y-auto relative z-0 border border-stone-200 flex flex-col justify-between">
-              <div>
-                {/* PDF Header Section */}
-                <div className="border-b-2 border-[#2d2d2d] pb-4 mb-6 flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] uppercase font-mono tracking-widest text-stone-400 block font-bold">External Controlled Document</span>
-                    <h3 className="text-xl font-bold text-[#2d2d2d] mt-1">{docCode}</h3>
-                    <p className="text-xs text-stone-500 font-medium">{doc.title}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-mono font-bold bg-[#f9f8f6] border border-stone-200 text-stone-600 px-2 py-0.5 rounded">
-                      {doc.sourceVersion || doc.edition || 'ฉบับต้นทาง'}
-                    </span>
-                    <p className="text-[11px] text-stone-400 mt-1 font-mono">{doc.effectiveDate}</p>
-                  </div>
-                </div>
-
-                {/* PDF Content Placeholder */}
-                <div className="space-y-5 text-xs text-stone-600 leading-relaxed">
-                  <div className="bg-[#f9f8f6] p-5 rounded-xl border border-stone-200">
-                    <h4 className="font-bold text-[#2d2d2d] mb-3 text-sm">ข้อมูลรายละเอียดเอกสารภายนอก (Document Specification)</h4>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div><span className="text-stone-400">หน่วยงานผู้ออก:</span> <strong className="text-[#2d2d2d]">{doc.source || '-'}</strong></div>
-                      <div><span className="text-stone-400">เวอร์ชันต้นฉบับ:</span> <strong className="text-[#2d2d2d] font-mono">{doc.sourceVersion || '-'}</strong></div>
-                      <div><span className="text-stone-400">รอบการทบทวน:</span> <strong className="text-[#2d2d2d]">{doc.reviewCycleMonths || 12} เดือน</strong></div>
-                      <div><span className="text-stone-400">กำหนดทบทวนถัดไป:</span> <strong className="text-[#2d2d2d] font-mono">{doc.nextReviewDate || '-'}</strong></div>
-                    </div>
-                  </div>
-
-                  <p className="text-stone-500 text-sm">
-                    เอกสารฉบับนี้เป็นเอกสารภายนอกที่ได้รับการขึ้นทะเบียนและควบคุมตามมาตรฐานระบบบริหารคุณภาพ ISO 9001 / FSSC 22000 ห้ามทำซ้ำ ดัดแปลง หรือแจกจ่ายโดยไม่ได้รับอนุญาต
-                  </p>
-
-                  <div className="space-y-3 pt-4">
-                    <div className="h-3 bg-stone-100 rounded w-full"></div>
-                    <div className="h-3 bg-stone-100 rounded w-5/6"></div>
-                    <div className="h-3 bg-stone-100 rounded w-4/6"></div>
-                    <div className="h-3 bg-stone-100 rounded w-full"></div>
-                    <div className="h-3 bg-stone-100 rounded w-3/4"></div>
-                  </div>
-                </div>
+          {/* PDF Native Viewer */}
+          <div className="flex-1 bg-stone-100/80 relative overflow-hidden flex justify-center items-center min-h-[500px]">
+            {loadingPdf ? (
+              <div className="text-stone-500 font-medium animate-pulse flex flex-col items-center gap-3">
+                <FileText size={32} className="text-stone-400" />
+                <span>กำลังโหลดไฟล์ PDF...</span>
               </div>
-
-              {/* PDF Footer Security Notice */}
-              <div className="border-t border-stone-200 pt-3 text-center text-[10px] text-stone-400 font-medium">
-                Official External Document Record • QMS Quality Portal • Confidential & Controlled
+            ) : pdfBlobUrl ? (
+              <iframe
+                src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                className="w-full h-full border-0 absolute inset-0"
+                title="PDF Preview"
+              />
+            ) : (
+              <div className="text-stone-500 font-medium flex flex-col items-center gap-3">
+                <ShieldAlert size={40} className="text-stone-300" />
+                <span>ไม่พบไฟล์ต้นฉบับจริง (No original file attached)</span>
               </div>
-            </div>
+            )}
           </div>
         </motion.div>
       </div>

@@ -109,6 +109,8 @@ const ExternalRequestDetail = () => {
     const strippedId = rawId.replace(/^EDR-/i, '').trim();
     const cleanStrippedId = strippedId.toLowerCase();
 
+    let result = null;
+
     // If request exists, search by request references first
     if (request) {
       const targetDocId = String(request.docId || request.documentId || request.externalDocId || '').trim().toLowerCase();
@@ -122,54 +124,61 @@ const ExternalRequestDetail = () => {
                (targetEdCode && (dEd === targetEdCode || dDocCode === targetEdCode));
       });
 
-      if (docFromReq) return docFromReq;
+      if (docFromReq) result = docFromReq;
     }
 
-    // Direct search in externalDocuments
-    const directDoc = (externalDocuments || []).find(d => {
-      const dId = String(d.id || '').trim().toLowerCase();
-      const dEd = String(d.edCode || '').trim().toLowerCase();
-      const dDocCode = String(d.doc_code || d.docCode || d.docNo || '').trim().toLowerCase();
+    if (!result) {
+      // Direct search in externalDocuments
+      const directDoc = (externalDocuments || []).find(d => {
+        const dId = String(d.id || '').trim().toLowerCase();
+        const dEd = String(d.edCode || '').trim().toLowerCase();
+        const dDocCode = String(d.doc_code || d.docCode || d.docNo || '').trim().toLowerCase();
 
-      return dId === cleanId || dEd === cleanId || dDocCode === cleanId ||
-             (cleanStrippedId && (dId === cleanStrippedId || dEd === cleanStrippedId || dDocCode === cleanStrippedId));
-    });
+        return dId === cleanId || dEd === cleanId || dDocCode === cleanId ||
+               (cleanStrippedId && (dId === cleanStrippedId || dEd === cleanStrippedId || dDocCode === cleanStrippedId));
+      });
 
-    if (directDoc) return directDoc;
+      if (directDoc) result = directDoc;
+    }
 
-    // Check tasks for fallback document information
-    const taskDoc = (tasks || []).find(t => {
-      const refId = String(t.referenceId || '').trim().toLowerCase();
-      const tDocId = String(t.docId || '').trim().toLowerCase();
-      const tDocCode = String(t.docCode || t.doc_code || '').trim().toLowerCase();
-      return refId === cleanId || tDocId === cleanId || tDocCode === cleanId ||
-             (cleanStrippedId && (refId === cleanStrippedId || tDocId === cleanStrippedId || tDocCode === cleanStrippedId));
-    });
+    if (!result) {
+      // Check tasks for fallback document information
+      const taskDoc = (tasks || []).find(t => {
+        const refId = String(t.referenceId || '').trim().toLowerCase();
+        const tDocId = String(t.docId || '').trim().toLowerCase();
+        const tDocCode = String(t.docCode || t.doc_code || '').trim().toLowerCase();
+        return refId === cleanId || tDocId === cleanId || tDocCode === cleanId ||
+               (cleanStrippedId && (refId === cleanStrippedId || tDocId === cleanStrippedId || tDocCode === cleanStrippedId));
+      });
 
-    if (taskDoc) {
-      const code = taskDoc.docCode || taskDoc.doc_code || strippedId.toUpperCase();
-      return {
-        id: taskDoc.docId || taskDoc.referenceId || strippedId,
-        edCode: code,
-        doc_code: code,
-        docCode: code,
-        documentCode: code,
-        title: taskDoc.docTitle || taskDoc.docName || taskDoc.title || 'เอกสารภายนอก',
-        department: taskDoc.department || taskDoc.requesterDepartment || 'QA',
-        status: taskDoc.status === 'PENDING' ? 'PENDING_EXT_REVIEW' : 'ACTIVE',
-        source: 'Official Standard Body',
-        sourceVersion: 'Edition 2026',
-        accessScope: 'General',
-        reviewCycleMonths: 12,
-        effectiveDate: new Date().toISOString().split('T')[0]
-      };
+      if (taskDoc) {
+        const code = taskDoc.docCode || taskDoc.doc_code || strippedId.toUpperCase();
+        result = {
+          id: taskDoc.docId || taskDoc.referenceId || strippedId,
+          edCode: code,
+          doc_code: code,
+          docCode: code,
+          documentCode: code,
+          title: taskDoc.docTitle || taskDoc.docName || taskDoc.title || 'เอกสารภายนอก',
+          department: taskDoc.department || taskDoc.requesterDepartment || 'QA',
+          status: taskDoc.status === 'PENDING' ? 'PENDING_EXT_REVIEW' : 'ACTIVE',
+          source: 'Official Standard Body',
+          sourceVersion: 'Edition 2026',
+          accessScope: 'General',
+          reviewCycleMonths: 12,
+          effectiveDate: new Date().toISOString().split('T')[0],
+          attachedFile: taskDoc.attachedFile,
+          fileId: taskDoc.fileId,
+          fileName: taskDoc.fileName
+        };
+      }
     }
 
     // Emergency Auto-Heal: If ID matches ED pattern (e.g. EDR-ED-PD-02 or ED-PD-02)
-    if (cleanStrippedId.startsWith('ed-')) {
+    if (!result && cleanStrippedId.startsWith('ed-')) {
       const code = strippedId.toUpperCase();
       const deptPart = code.split('-')[1] || 'QA';
-      return {
+      result = {
         id: code,
         edCode: code,
         doc_code: code,
@@ -183,6 +192,18 @@ const ExternalRequestDetail = () => {
         accessScope: 'General',
         reviewCycleMonths: 12,
         effectiveDate: new Date().toISOString().split('T')[0]
+      };
+    }
+
+    if (result) {
+      const attachedFile = request?.attachedFile || result.attachedFile || null;
+      const fileId = request?.fileId || result.fileId || attachedFile?.fileId || null;
+      const fileName = request?.fileName || result.fileName || attachedFile?.name || '';
+      return {
+        ...result,
+        ...(attachedFile ? { attachedFile, file: attachedFile, attachment: attachedFile } : {}),
+        ...(fileId ? { fileId } : {}),
+        ...(fileName ? { fileName } : {})
       };
     }
 

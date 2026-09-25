@@ -296,6 +296,7 @@ const ExternalDocDetailModal = ({
     try {
       await UniversalWatermarkService.downloadWatermarkedPdf(
         {
+          ...docToDl,
           id: docToDl.id,
           title: targetCode,
           name: docToDl.title || docTitle,
@@ -309,10 +310,13 @@ const ExternalDocDetailModal = ({
           isExternal: true,
           is_external: true,
           doc_type: 'ED',
-          docType: 'ED'
+          docType: 'ED',
+          attachedFile: docToDl.attachedFile,
+          fileId: docToDl.fileId || docToDl.attachedFile?.fileId
         },
         watermarkPreset,
         {
+          ...docToDl,
           docCode: targetCode,
           docTitle: docToDl.title || docTitle,
           title: docToDl.title || docTitle,
@@ -330,7 +334,9 @@ const ExternalDocDetailModal = ({
           isRestricted: docToDl.accessScope === 'Restricted' || docToDl.accessScope === 'RESTRICTED',
           accessScope: docToDl.accessScope || currentDoc.accessScope,
           watermarkType: watermarkPreset,
-          reason: isDocObs ? 'Historical Download (OBSOLETE)' : (isDocSup ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print')
+          reason: isDocObs ? 'Historical Download (OBSOLETE)' : (isDocSup ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print'),
+          attachedFile: docToDl.attachedFile,
+          fileId: docToDl.fileId || docToDl.attachedFile?.fileId
         }
       );
 
@@ -340,7 +346,7 @@ const ExternalDocDetailModal = ({
       toast.success(`ดาวน์โหลดเอกสาร ${targetCode} (${targetVer}) สำเร็จ`, { id: toastId });
     } catch (err) {
       console.error(err);
-      toast.error('เกิดข้อผิดพลาดในการสร้างเอกสาร PDF', { id: toastId });
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการสร้างเอกสาร PDF', { id: toastId });
     } finally {
       setIsDownloading(false);
     }

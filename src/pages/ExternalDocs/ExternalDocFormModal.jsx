@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import useStore, { generateNextEdrNumber } from '../../store/useStore';
 import { X, Upload, Save, AlertCircle, FileText, CheckCircle2, Shield, Clock, Building2, Tag, Layers, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -13,8 +13,10 @@ import {
   checkDocumentCodeCollision 
 } from '../../services/MasterDataService';
 import { isLevel6Plus } from '../../utils/taskFilter';
+import { saveFile } from '../../utils/fileStorage';
 
 const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmitTaskId = null }) => {
+  const fileInputRef = useRef(null);
   const { 
     currentUser, 
     registerExternalDoc, 
@@ -133,7 +135,8 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
 
   const [formData, setFormData] = useState(() => getInitialFormData(documentToEdit, currentUser, isResubmit));
 
-  const [fileName, setFileName] = useState('');
+  const [fileName, setFileName] = useState(() => (isResubmit ? (documentToEdit?.attachedFile?.name || documentToEdit?.fileName || '') : ''));
+  const [fileBlob, setFileBlob] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [payloadToSubmit, setPayloadToSubmit] = useState(null);
 
@@ -189,7 +192,19 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
   useEffect(() => {
     if (isOpen) {
       setFormData(getInitialFormData(documentToEdit, currentUser, isResubmit));
-      setFileName(documentToEdit?.fileName || '');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      // Pristine / Empty State Invariant:
+      // In Revision / Update Edition mode, NEVER pre-populate the previous edition's file!
+      // Only pre-populate the file if editing a returned draft (Resubmit mode)
+      if (isResubmit) {
+        setFileName(documentToEdit?.attachedFile?.name || documentToEdit?.fileName || '');
+        setFileBlob(null);
+      } else {
+        setFileName('');
+        setFileBlob(null);
+      }
     }
   }, [documentToEdit, isOpen, currentUser, isResubmit]);
 
@@ -310,7 +325,18 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setFileName(e.target.files[0].name);
+      const file = e.target.files[0];
+      setFileName(file.name);
+      setFileBlob(file);
+    }
+  };
+
+  const handleRemoveFile = (e) => {
+    if (e) e.stopPropagation();
+    setFileName('');
+    setFileBlob(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -373,8 +399,19 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       return;
     }
     
-    if (documentToEdit && !isResubmit && !formData.reason?.trim()) {
-      toast.error('กรุณาระบุเหตุผลในการอัปเดตเวอร์ชันเอกสาร');
+    if (documentToEdit && !isResubmit) {
+      if (!formData.reason?.trim()) {
+        toast.error('กรุณาระบุเหตุผลในการอัปเดตเวอร์ชันเอกสาร');
+        return;
+      }
+      if (!fileBlob) {
+        toast.error('กรุณาแนบไฟล์เอกสารทางการ (PDF) ฉบับปรับปรุงใหม่');
+        return;
+      }
+    }
+
+    if (isResubmit && !fileBlob && !documentToEdit?.attachedFile) {
+      toast.error('กรุณาแนบไฟล์เอกสารทางการ (PDF)');
       return;
     }
 
@@ -424,7 +461,7 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     setShowConfirmModal(true);
   };
 
-  const handleConfirmSubmit = () => {
+  const handleConfirmSubmit = async () => {
     if (payloadToSubmit) {
       const currentUserId = currentUser?.id;
       const currentUserEmpId = currentUser?.empId;
@@ -442,20 +479,66 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       }
     }
 
+    let attachedFile = null;
+    if (fileBlob) {
+      const safeName = (fileName || 'external_document.pdf').replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileId = `file_${Date.now()}_${safeName}`;
+      try {
+        await saveFile(fileId, fileBlob);
+        attachedFile = {
+          fileId: fileId,
+          id: fileId,
+          name: fileName || 'external_document.pdf',
+          fileName: fileName || 'external_document.pdf',
+          size: fileBlob.size,
+          type: fileBlob.type || 'application/pdf',
+          uploadedAt: new Date().toISOString()
+        };
+        // Register aliases for preview/download pipeline resilience
+        if (payloadToSubmit.edCode) {
+          await saveFile(payloadToSubmit.edCode, fileBlob).catch(() => {});
+        }
+        if (payloadToSubmit.requestNo || payloadToSubmit.requestId) {
+          await saveFile(payloadToSubmit.requestNo || payloadToSubmit.requestId, fileBlob).catch(() => {});
+        }
+      } catch (err) {
+        console.error('Error saving file:', err);
+        toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่');
+        return;
+      }
+    } else if (isResubmit && documentToEdit?.attachedFile) {
+      attachedFile = documentToEdit.attachedFile;
+    }
+
+    const activeFile = attachedFile || (isResubmit && documentToEdit?.attachedFile ? documentToEdit.attachedFile : null);
+    const activeFileId = activeFile?.fileId || activeFile?.id || (isResubmit ? documentToEdit?.fileId : null) || null;
+    const activeFileName = activeFile?.name || activeFile?.fileName || (isResubmit ? (fileName || documentToEdit?.fileName) : fileName) || '';
+
+    const submittedPayload = {
+      ...payloadToSubmit,
+      ...(activeFile ? {
+        attachedFile: activeFile,
+        fileId: activeFileId,
+        fileName: activeFileName,
+        file: activeFile,
+        attachment: activeFile
+      } : {})
+    };
+
     if (isResubmit) {
       if (resubmitExternalDoc) {
-        resubmitExternalDoc(documentToEdit.id, payloadToSubmit, resubmitTaskId);
+        resubmitExternalDoc(documentToEdit.id, submittedPayload, resubmitTaskId);
       } else {
-        updateExternalDoc(documentToEdit.id, payloadToSubmit);
+        updateExternalDoc(documentToEdit.id, submittedPayload);
       }
       toast.success(`ส่งคำร้องเอกสารภายนอก ${previewEdCode} อีกครั้งเรียบร้อยแล้ว`);
     } else if (documentToEdit) {
-      updateExternalDoc(documentToEdit.id, payloadToSubmit);
-      const edLabel = payloadToSubmit.sourceVersion ? `(${payloadToSubmit.sourceVersion})` : '';
+      updateExternalDoc(documentToEdit.id, submittedPayload);
+      const edLabel = submittedPayload.sourceVersion ? `(${submittedPayload.sourceVersion})` : '';
       toast.success(`ส่งคำขออัปเดตเอกสาร ${previewEdCode} ${edLabel} สำเร็จ`);
     } else {
       // Omni-Status Monotonic Sequence Collision Guard
-      let finalPayload = { ...payloadToSubmit };
+      let finalPayload = { ...submittedPayload };
       const dept = formData.department || userDept || 'QA';
       const omniPool = [...(externalDocuments || []), ...(externalRequests || []), ...(tasks || [])];
       
@@ -973,11 +1056,19 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
 
                   {/* Compact Official PDF File Upload */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      ไฟล์เอกสารทางการ (Official PDF File)
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700">
+                        ไฟล์เอกสารทางการ (Official PDF File) {documentToEdit && !isResubmit && <span className="text-red-500">*</span>}
+                      </label>
+                      {documentToEdit && !isResubmit && (
+                        <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          จำเป็นต้องแนบไฟล์ฉบับปรับปรุงใหม่
+                        </span>
+                      )}
+                    </div>
                     <div className="border-2 border-dashed border-slate-300 hover:border-[#da7756] rounded-xl py-4 px-6 flex flex-col items-center justify-center hover:bg-slate-50 transition-all cursor-pointer relative group">
                       <input 
+                        ref={fileInputRef}
                         type="file" 
                         accept=".pdf"
                         onChange={handleFileChange}
@@ -995,9 +1086,17 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
                         </div>
                       </div>
                       {fileName && (
-                        <div className="mt-2.5 flex items-center gap-2 bg-white border border-slate-200 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs">
+                        <div className="mt-2.5 flex items-center gap-2 bg-white border border-slate-200 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs z-10">
                           <FileText size={15} className="text-[#da7756]" />
                           <span className="truncate max-w-xs">{fileName}</span>
+                          <button
+                            type="button"
+                            onClick={handleRemoveFile}
+                            className="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                            title="ลบไฟล์"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                       )}
                     </div>

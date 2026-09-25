@@ -2,48 +2,217 @@ const DB_NAME = 'QMS_Files';
 const STORE_NAME = 'attachments';
 const DB_VERSION = 1;
 
+// In-Memory Binary Registry (Lossless Session Registry)
+export const inMemoryBlobRegistry = new Map();
+
 export const initDB = () => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (e) => {
-      if (!e.target.result.objectStoreNames.contains(STORE_NAME)) {
-        e.target.result.createObjectStore(STORE_NAME);
-      }
-    };
-    request.onsuccess = (e) => resolve(e.target.result);
-    request.onerror = (e) => reject(e.target.error);
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB is not supported in this environment'));
+    }
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e) => {
+        if (!e.target.result.objectStoreNames.contains(STORE_NAME)) {
+          e.target.result.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = (e) => resolve(e.target.result);
+      request.onerror = (e) => reject(e.target.error);
+    } catch (err) {
+      reject(err);
+    }
   });
 };
 
 export const saveFile = async (key, fileOrBlob) => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.put(fileOrBlob, key);
-    request.onsuccess = () => resolve(key);
-    request.onerror = (e) => reject(e.target.error);
-  });
+  if (!key) return null;
+  const strKey = String(key);
+  
+  // 1. Immediately store into In-Memory Binary Registry (guarantees synchronous-like availability)
+  inMemoryBlobRegistry.set(strKey, fileOrBlob);
+
+  // 2. Persist to IndexedDB asynchronously
+  try {
+    const db = await initDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.put(fileOrBlob, strKey);
+      request.onsuccess = () => resolve(strKey);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  } catch (err) {
+    // If IndexedDB fails (e.g. sandbox, private browsing), in-memory registry still has it!
+    console.warn(`IndexedDB saveFile failed for ${strKey}, falling back to In-Memory Registry:`, err);
+    return strKey;
+  }
 };
 
 export const getFile = async (key) => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(key);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = (e) => reject(e.target.error);
-  });
+  if (!key) return null;
+  const strKey = String(key);
+
+  // 1. Check In-Memory Registry first (instant cache hit)
+  if (inMemoryBlobRegistry.has(strKey)) {
+    return inMemoryBlobRegistry.get(strKey);
+  }
+
+  // 2. Retrieve from IndexedDB
+  try {
+    const db = await initDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(strKey);
+      request.onsuccess = () => {
+        const result = request.result;
+        if (result) {
+          // Warm up in-memory registry
+          inMemoryBlobRegistry.set(strKey, result);
+        }
+        resolve(result || null);
+      };
+      request.onerror = (e) => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn(`IndexedDB getFile failed for ${strKey}:`, err);
+    return null;
+  }
 };
 
 export const deleteFile = async (key) => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.delete(key);
-    request.onsuccess = () => resolve();
-    request.onerror = (e) => reject(e.target.error);
-  });
+  if (!key) return;
+  const strKey = String(key);
+  inMemoryBlobRegistry.delete(strKey);
+  try {
+    const db = await initDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.delete(strKey);
+      request.onsuccess = () => resolve();
+      request.onerror = (e) => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn(`IndexedDB deleteFile failed for ${strKey}:`, err);
+  }
+};
+
+/**
+ * Universal Resolver: Extract real PDF Blob from any document or attachment object variation
+ * Reconciles: attachedFile, fileId, file, fileData, blob, pdfBlob, pdfUrl, id, edCode
+ */
+export const resolveFileBlob = async (target, fallbackKey = null) => {
+  if (!target) {
+    if (fallbackKey) return await getFile(fallbackKey);
+    return null;
+  }
+
+  // 1. Direct Blob or File instance
+  if (typeof Blob !== 'undefined' && target instanceof Blob) {
+    return target;
+  }
+
+  // 2. Direct ArrayBuffer or Uint8Array
+  if (target instanceof ArrayBuffer) {
+    return new Blob([target], { type: 'application/pdf' });
+  }
+  if (ArrayBuffer.isView(target)) {
+    return new Blob([target.buffer], { type: 'application/pdf' });
+  }
+
+  // 3. String input
+  if (typeof target === 'string') {
+    if (target.startsWith('data:')) {
+      try {
+        const res = await fetch(target);
+        return await res.blob();
+      } catch { /* continue */ }
+    }
+    const retrieved = await getFile(target);
+    if (retrieved) return retrieved;
+  }
+
+  // 4. Object properties examination
+  if (typeof target === 'object') {
+    // Check direct binary fields on target
+    const directBinaryFields = [
+      target.attachedFile,
+      target.file,
+      target.fileBlob,
+      target.blob,
+      target.pdfBlob,
+      target.attachment,
+      target.attachmentFile
+    ];
+
+    for (const field of directBinaryFields) {
+      if (typeof Blob !== 'undefined' && field instanceof Blob) {
+        return field;
+      }
+      if (field instanceof ArrayBuffer) {
+        return new Blob([field], { type: 'application/pdf' });
+      }
+      if (ArrayBuffer.isView(field)) {
+        return new Blob([field.buffer], { type: 'application/pdf' });
+      }
+    }
+
+    // Check Data URL string fields
+    const dataUrlFields = [
+      target.fileData,
+      target.dataUrl,
+      target.pdfUrl,
+      typeof target.attachedFile === 'string' ? target.attachedFile : null,
+      typeof target.file === 'string' ? target.file : null
+    ];
+    for (const dataUrl of dataUrlFields) {
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+        try {
+          const res = await fetch(dataUrl);
+          return await res.blob();
+        } catch { /* continue */ }
+      }
+    }
+
+    // Check Candidate Keys
+    const candidateKeys = [
+      target.attachedFile?.fileId,
+      target.attachedFile?.id,
+      target.attachedFile?.key,
+      target.fileId,
+      target.attachment?.fileId,
+      target.attachment?.id,
+      target.file?.fileId,
+      target.file?.id,
+      typeof target.file === 'string' && !target.file.includes(' ') && target.file.length > 3 ? target.file : null,
+      target.id,
+      target.edCode,
+      target.doc_code,
+      target.docNo,
+      target.docCode,
+      target.requestId,
+      target.requestNo,
+      target.edrNumber,
+      fallbackKey
+    ].filter(Boolean);
+
+    for (const key of candidateKeys) {
+      const file = await getFile(key);
+      if (file) {
+        if (typeof Blob !== 'undefined' && file instanceof Blob) {
+          return file;
+        }
+        if (file instanceof ArrayBuffer) {
+          return new Blob([file], { type: 'application/pdf' });
+        }
+        if (ArrayBuffer.isView(file)) {
+          return new Blob([file.buffer], { type: 'application/pdf' });
+        }
+      }
+    }
+  }
+
+  return null;
 };

@@ -126,56 +126,106 @@ export const stampDocumentFirstPage = async (originalPdfBytes, signOffData) => {
 };
 
 /**
+ * Ensure TH Sarabun New font is loaded and ready before drawing on canvas.
+ */
+let fontLoadPromise = null;
+export const ensureThSarabunFontLoaded = async () => {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  if (fontLoadPromise) return fontLoadPromise;
+
+  fontLoadPromise = (async () => {
+    try {
+      // 1. Check if TH Sarabun New is already available
+      if (document.fonts.check('16px "TH Sarabun New"')) {
+        await document.fonts.ready;
+        return;
+      }
+
+      // 2. Try loading system/registered font
+      try {
+        await Promise.race([
+          document.fonts.load('16px "TH Sarabun New"'),
+          new Promise((resolve) => setTimeout(resolve, 200))
+        ]);
+      } catch {
+        // Fallback to registering font files
+      }
+
+      // 3. Register FontFace fallback from /fonts/ folder under family "TH Sarabun New"
+      if (!document.fonts.check('16px "TH Sarabun New"') && typeof FontFace !== 'undefined') {
+        try {
+          const fontRegular = new FontFace('TH Sarabun New', 'url(/fonts/Sarabun-Regular.ttf)', { weight: 'normal' });
+          const fontBold = new FontFace('TH Sarabun New', 'url(/fonts/Sarabun-Bold.ttf)', { weight: 'bold' });
+          await Promise.allSettled([fontRegular.load(), fontBold.load()]);
+          document.fonts.add(fontRegular);
+          document.fonts.add(fontBold);
+        } catch {
+          // Ignore if cannot fetch
+        }
+      }
+
+      await document.fonts.ready;
+    } catch (e) {
+      console.warn('Font loading check completed with fallback:', e);
+    }
+  })();
+
+  return fontLoadPromise;
+};
+
+/**
  * Generate a stamp image for External Documents
  * @param {Object} stampData - Data for the stamp (e.g. { docCode, title, timestamp, status })
  * @returns {Promise<string>} Data URL of the generated PNG image
  */
 export const generateExternalDocStampImage = async (stampData) => {
+  // Ensure TH Sarabun New is loaded before drawing
+  await ensureThSarabunFontLoaded();
+
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
-    const width = 300;
-    const height = 120; // Increased height
+    // HiDPI Supersampling (1200 x 220) - 5x supersampled vs 240pt on PDF
+    const width = 1200;
+    const height = 220;
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
 
-    // Background (white with some opacity for better reading)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillRect(0, 0, width, height);
+    // 1. Transparent Background (100% frameless, no background or border)
+    ctx.clearRect(0, 0, width, height);
 
-    // Border (Red for external doc control)
-    ctx.strokeStyle = '#dc2626'; // red-600
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, width - 4, height - 4);
-
-    // Top Header
-    ctx.fillStyle = '#dc2626';
-    ctx.fillRect(2, 2, width - 4, 30);
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.textAlign = 'center';
+    // 2. Right-Aligned Typography setup
+    ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText('EXTERNAL DOCUMENT CONTROL', width / 2, 17);
+    // Stamp Red (Crimson/Carmine) with 60% opacity as requested
+    ctx.fillStyle = 'rgba(220, 38, 38, 0.60)'; 
 
-    // Document Info
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.fillText(stampData?.docCode || 'EXT-DOC', width / 2, 52);
-
-    ctx.fillStyle = '#1f2937'; // gray-800
-    ctx.font = 'bold 13px sans-serif';
-    const originRev = stampData?.docRev && stampData.docRev !== '00' ? stampData.docRev : (stampData?.docRev || '-');
-    ctx.fillText(`ฉบับต้นทาง: ${originRev}`, width / 2, 74);
-
-    ctx.fillStyle = '#4b5563'; // gray-600
-    ctx.font = '12px sans-serif';
-    ctx.fillText(`มีผล: ${stampData?.timestamp || '-'}`, width / 2, 94);
+    // Right-Margin Safety Buffer to avoid edge clipping (e.g. 2569 or ')')
+    const paddingRight = 36;
+    const FONT_FAMILY = '"TH Sarabun New", "THSarabunNew", "Sarabun", sans-serif';
     
-    // Status (Optional corner or bottom)
-    ctx.fillStyle = stampData?.status === 'OBSOLETE' ? '#dc2626' : '#16a34a'; // green-600 for ACTIVE
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(stampData?.status === 'OBSOLETE' ? 'OBSOLETE' : 'CONTROLLED', width / 2, 110);
+    // Line 1: รหัสเอกสาร (ฉบับต้นทาง: [เวอร์ชัน]) - Bold Monospace / TH Sarabun New
+    ctx.font = `bold 50px ${FONT_FAMILY}`;
+    const docCode = stampData?.docCode || 'EXT-DOC';
+    const originRev = stampData?.docRev || '-';
+    ctx.fillText(`${docCode} (ฉบับต้นทาง: ${originRev})`, width - paddingRight, 50);
+
+    // Line 2: ชื่อเอกสาร (Truncate if too long)
+    ctx.font = `normal 42px ${FONT_FAMILY}`;
+    let docTitle = stampData?.title || 'External Document';
+    const maxTextWidth = width - paddingRight - 80; 
+    if (ctx.measureText(docTitle).width > maxTextWidth) {
+      while (docTitle.length > 0 && ctx.measureText(docTitle + '...').width > maxTextWidth) {
+        docTitle = docTitle.slice(0, -1);
+      }
+      docTitle += '...';
+    }
+    ctx.fillText(docTitle, width - paddingRight, 112);
+
+    // Line 3: Effective Date - Compact Caption size
+    ctx.font = `normal 38px ${FONT_FAMILY}`;
+    const effectiveDate = stampData?.timestamp || '-';
+    ctx.fillText(`Effective Date: ${effectiveDate}`, width - paddingRight, 170);
 
     resolve(canvas.toDataURL('image/png'));
   });
@@ -197,8 +247,8 @@ export const stampExternalDocumentTopRight = async (pdfBytes, stampData) => {
   // 2. Embed image once
   const stampImage = await pdfDoc.embedPng(pngDataUrl);
 
-  const margin = 20; 
-  const stampWidth = 200; 
+  const margin = 16; 
+  const stampWidth = 240; // Scaled down & compact width for seamless top-right alignment
   const stampHeight = (stampWidth / stampImage.width) * stampImage.height;
 
   // 3. Iterate and stamp all pages

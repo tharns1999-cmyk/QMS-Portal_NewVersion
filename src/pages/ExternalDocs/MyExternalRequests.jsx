@@ -251,11 +251,13 @@ const MyExternalRequests = () => {
 
   // Helper: Find matching externalDocument object for a request
   const findMatchingDoc = (req) => {
-    return (externalDocuments || []).find(d => 
+    const found = (externalDocuments || []).find(d => 
       d.id === req.docId || 
       d.id === req.externalDocId || 
       (req.edCode && (d.edCode === req.edCode || d.doc_code === req.edCode || d.id === req.edCode))
-    ) || {
+    );
+
+    const base = found ? { ...found } : {
       id: req.docId || req.id,
       edCode: req.edCode || req.doc_code || 'ED-DOC',
       title: req.title,
@@ -265,6 +267,18 @@ const MyExternalRequests = () => {
       revisionComment: req.revisionComment,
       source: req.source || 'Official Standard',
       sourceVersion: req.sourceVersion || '-'
+    };
+
+    const attachedFile = req.attachedFile || base.attachedFile || null;
+    const fileId = req.fileId || base.fileId || attachedFile?.fileId || null;
+    const fileName = req.fileName || base.fileName || attachedFile?.name || '';
+
+    return {
+      ...base,
+      requestId: req.requestId || req.id,
+      ...(attachedFile ? { attachedFile, file: attachedFile, attachment: attachedFile } : {}),
+      ...(fileId ? { fileId } : {}),
+      ...(fileName ? { fileName } : {})
     };
   };
 

@@ -955,7 +955,7 @@ const ExternalDocsList = () => {
     } catch (error) {
       console.error('Download error:', error);
       toast.dismiss(toastId);
-      toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร');
+      toast.error(error?.message || 'เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร');
     }
   };
 

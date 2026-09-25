@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { stampDocumentFirstPage, stampExternalDocumentTopRight } from '../utils/pdfStamper';
-import { getFile, saveFile } from '../utils/fileStorage';
+import { getFile, saveFile, resolveFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateSchedules, generateTasksForSchedules, calculateNextReviewDate } from '../services/PeriodicReviewService';
 import { 
@@ -2284,6 +2284,27 @@ const useStore = create(persist((set, get) => ({
 
     const requestId = doc.requestNo || doc.requestId || doc.edrNumber || generateNextEdrNumber(state.externalRequests || []);
 
+    const activeAttachedFile = doc.attachedFile || null;
+    const activeFileId = doc.fileId || activeAttachedFile?.fileId || null;
+    const activeFileName = doc.fileName || activeAttachedFile?.name || '';
+    const filePayload = activeAttachedFile ? {
+      attachedFile: activeAttachedFile,
+      fileId: activeFileId,
+      fileName: activeFileName,
+      file: activeAttachedFile,
+      attachment: activeAttachedFile
+    } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+
+    if (activeFileId) {
+      getFile(activeFileId).then(blob => {
+        if (blob) {
+          saveFile(newId, blob).catch(() => {});
+          saveFile(edCode, blob).catch(() => {});
+          saveFile(requestId, blob).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     if (doc.reviewerId) {
       initialStatus = 'PENDING_EXT_REVIEW';
       newTasks.push({
@@ -2305,7 +2326,8 @@ const useStore = create(persist((set, get) => ({
         department: dept,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: 'REGISTER'
+        extAction: 'REGISTER',
+        ...filePayload
       });
       newNotifications.push({
         id: `notif-ext-rev-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -2344,7 +2366,8 @@ const useStore = create(persist((set, get) => ({
         department: dept,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: 'REGISTER'
+        extAction: 'REGISTER',
+        ...filePayload
       });
       newNotifications.push({
         id: `notif-ext-app-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -2487,7 +2510,8 @@ const useStore = create(persist((set, get) => ({
       requestId,
       edrNumber: requestId,
       changeReason: doc.reason || doc.changeReason || 'ขึ้นทะเบียนเอกสารภายนอกใหม่',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...filePayload
     };
 
     const prevCopies = state.documentControlledCopies || state.controlledCopyInstances || [];
@@ -2535,6 +2559,7 @@ const useStore = create(persist((set, get) => ({
       revisionComment: null,
       createdAt: nowIso,
       updatedAt: nowIso,
+      ...filePayload,
       signoffs: [
         {
           step: 'REQUEST',
@@ -2644,6 +2669,27 @@ const useStore = create(persist((set, get) => ({
 
     const newEditionValue = updates.sourceVersion || updates.edition || oldDoc.sourceVersion || oldDoc.edition || '';
 
+    const activeAttachedFile = updates.attachedFile || oldDoc.attachedFile || null;
+    const activeFileId = updates.fileId || activeAttachedFile?.fileId || oldDoc.fileId || null;
+    const activeFileName = updates.fileName || activeAttachedFile?.name || oldDoc.fileName || '';
+    const filePayload = activeAttachedFile ? {
+      attachedFile: activeAttachedFile,
+      fileId: activeFileId,
+      fileName: activeFileName,
+      file: activeAttachedFile,
+      attachment: activeAttachedFile
+    } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+
+    if (activeFileId) {
+      getFile(activeFileId).then(blob => {
+        if (blob) {
+          saveFile(newId, blob).catch(() => {});
+          saveFile(edCode, blob).catch(() => {});
+          saveFile(requestId, blob).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     const newDoc = {
       ...oldDoc,
       ...updates,
@@ -2664,7 +2710,8 @@ const useStore = create(persist((set, get) => ({
       edrNumber: requestId,
       changeReason: updates.reason || updates.changeReason || '-',
       requesterName,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      ...filePayload
     };
 
     const newTasks = [...state.tasks];
@@ -2690,7 +2737,8 @@ const useStore = create(persist((set, get) => ({
         department: newDoc.department,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: 'UPDATE'
+        extAction: 'UPDATE',
+        ...filePayload
       });
       newNotifications.push({
         id: Date.now() + Math.random(),
@@ -2725,7 +2773,8 @@ const useStore = create(persist((set, get) => ({
         department: newDoc.department,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: 'UPDATE'
+        extAction: 'UPDATE',
+        ...filePayload
       });
       newNotifications.push({
         id: Date.now() + Math.random(),
@@ -2793,6 +2842,7 @@ const useStore = create(persist((set, get) => ({
       revisionComment: null,
       createdAt: nowIso,
       updatedAt: nowIso,
+      ...filePayload,
       signoffs: [
         {
           step: 'REQUEST',
@@ -2831,7 +2881,7 @@ const useStore = create(persist((set, get) => ({
     };
 
     return {
-      externalDocuments: state.externalDocuments,
+      externalDocuments: [newDoc, ...state.externalDocuments.filter(d => d.id !== newId)],
       externalRequests: [newExternalRequest, ...(state.externalRequests || [])],
       tasks: newTasks,
       notifications: newNotifications,
@@ -3318,6 +3368,19 @@ const useStore = create(persist((set, get) => ({
     }
     if (!doc) return state;
 
+    // Lossless Binary Persistence: Ensure doc retains attachedFile from matchingReq or task
+    const candidateFile = matchingReq?.attachedFile || task.attachedFile || doc.attachedFile;
+    const candidateFileId = matchingReq?.fileId || task.fileId || candidateFile?.fileId || doc.fileId;
+    const candidateFileName = matchingReq?.fileName || task.fileName || candidateFile?.name || doc.fileName;
+    if (candidateFile || candidateFileId) {
+      doc = {
+        ...doc,
+        ...(candidateFile ? { attachedFile: candidateFile, file: candidateFile, attachment: candidateFile } : {}),
+        ...(candidateFileId ? { fileId: candidateFileId } : {}),
+        ...(candidateFileName ? { fileName: candidateFileName } : {})
+      };
+    }
+
     const isObsolete = task.extAction === 'OBSOLETE' || matchingReq?.requestType === 'OBSOLETE' || matchingReq?.type === 'OBSOLETE';
     const isRevision = !isObsolete && ['REVISION', 'UPDATE', 'REVISE'].includes(
       matchingReq?.requestType || matchingReq?.type || matchingReq?.actionType || matchingReq?.extAction || task.extAction || ''
@@ -3326,7 +3389,8 @@ const useStore = create(persist((set, get) => ({
     const reqNo = matchingReq?.requestNo || matchingReq?.requestId || matchingReq?.id || task.referenceId || doc.edCode || 'EDR';
     const reqId = matchingReq?.id || matchingReq?.requestId || task.referenceId;
     const requesterId = matchingReq?.requesterId || task.requesterId || doc.ownerId || 'U001';
-    const docCode = doc.edCode || doc.doc_code || doc.docNo || matchingReq?.edCode || task.docCode || doc.title;
+    const edCode = doc.edCode || doc.doc_code || doc.docNo || matchingReq?.edCode || matchingReq?.doc_code || matchingReq?.docCode || task.docCode || doc.id || 'ED-???';
+    const docCode = edCode;
     const docTitle = doc.title || doc.name || matchingReq?.title || task.docTitle || 'เอกสารภายนอก';
 
 
@@ -3359,7 +3423,6 @@ const useStore = create(persist((set, get) => ({
         if (approverId) {
           newDocStatus = 'PENDING_EXT_APPROVAL';
           const newTaskId = `extt-${Date.now()}-app`;
-          const edCode = doc.edCode || doc.doc_code || doc.docNo || doc.id;
           newTasks.push({
             id: newTaskId,
             referenceType: 'EXTERNAL_DOC',
@@ -3773,7 +3836,6 @@ const useStore = create(persist((set, get) => ({
             return c;
           });
 
-          const docCode = doc.edCode || doc.doc_code || doc.title;
           newTasks.push({
             id: `task-dcc-recall-ext-${targetDocId}-${Date.now()}`,
             referenceType: 'EXTERNAL_DOC',
@@ -3844,7 +3906,10 @@ const useStore = create(persist((set, get) => ({
           returnedBy: actorName,
           returnedById: state.currentUser?.id,
           returnedRole: isReviewStep ? 'ผู้ทบทวน (Reviewer)' : 'ผู้อนุมัติ (Approver)',
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          ...(doc.attachedFile ? { attachedFile: doc.attachedFile, file: doc.attachedFile, attachment: doc.attachedFile } : {}),
+          ...(doc.fileId ? { fileId: doc.fileId } : {}),
+          ...(doc.fileName ? { fileName: doc.fileName } : {})
         });
 
         // Phase 1 Point 3: Notify Requester
@@ -3932,6 +3997,26 @@ const useStore = create(persist((set, get) => ({
           const reqReviewer = resolvedRequest?.reviewerName || resolvedRequest?.reviewer?.name || doc.reviewerName || '-';
           const reqApprover = state.currentUser?.fullName || state.currentUser?.name || doc.approverName || 'Approver';
 
+          const activeAttachedFile = resolvedRequest?.attachedFile || doc.attachedFile || priorDoc?.attachedFile || null;
+          const activeFileId = resolvedRequest?.fileId || activeAttachedFile?.fileId || doc.fileId || priorDoc?.fileId || null;
+          const activeFileName = resolvedRequest?.fileName || activeAttachedFile?.name || doc.fileName || priorDoc?.fileName || '';
+          const filePayload = activeAttachedFile ? {
+            attachedFile: activeAttachedFile,
+            fileId: activeFileId,
+            fileName: activeFileName,
+            file: activeAttachedFile,
+            attachment: activeAttachedFile
+          } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+
+          if (activeFileId) {
+            getFile(activeFileId).then(blob => {
+              if (blob) {
+                saveFile(newDocRecordId, blob).catch(() => {});
+                if (targetDocNo) saveFile(targetDocNo, blob).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+
           const newActiveDoc = {
             ...(priorDoc || {}),
             ...doc,
@@ -3966,7 +4051,8 @@ const useStore = create(persist((set, get) => ({
             approvedAt: new Date().toISOString(),
             approverId: state.currentUser?.id || doc.approverId,
             createdAt: doc.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            ...filePayload
           };
 
           if (supersededSnapshotInUpdated) {
@@ -3995,6 +4081,27 @@ const useStore = create(persist((set, get) => ({
           const reqReviewer = resolvedRequest?.reviewerName || resolvedRequest?.reviewer?.name || doc.reviewerName || '-';
           const reqApprover = state.currentUser?.fullName || state.currentUser?.name || doc.approverName || 'Approver';
 
+          const activeAttachedFile = resolvedRequest?.attachedFile || doc.attachedFile || null;
+          const activeFileId = resolvedRequest?.fileId || activeAttachedFile?.fileId || doc.fileId || null;
+          const activeFileName = resolvedRequest?.fileName || activeAttachedFile?.name || doc.fileName || '';
+          const filePayload = activeAttachedFile ? {
+            attachedFile: activeAttachedFile,
+            fileId: activeFileId,
+            fileName: activeFileName,
+            file: activeAttachedFile,
+            attachment: activeAttachedFile
+          } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+
+          if (activeFileId) {
+            getFile(activeFileId).then(blob => {
+              if (blob) {
+                saveFile(doc.id, blob).catch(() => {});
+                const code = doc.edCode || doc.doc_code || doc.docNo;
+                if (code) saveFile(code, blob).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+
           const approvedDoc = {
             ...doc,
             status: 'ACTIVE',
@@ -4015,7 +4122,8 @@ const useStore = create(persist((set, get) => ({
             requesterName: reqRequester,
             reviewerName: reqReviewer,
             approverName: reqApprover,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            ...filePayload
           };
           const existingIdx = updatedDocs.findIndex(d => String(d.id) === String(doc.id));
           if (existingIdx >= 0) {
@@ -4173,7 +4281,7 @@ const useStore = create(persist((set, get) => ({
         }
       }
 
-      // Phase 2: build activityLog audit entry for REVIEW → APPROVE
+      // Phase 2: build activityLog audit entry for REVIEW → APPROVE / RETURN
       const baseLog = Array.isArray(r.activityLog) ? [...r.activityLog] : [];
       if (action === 'APPROVE' && isReviewStep) {
         baseLog.push({
@@ -4184,13 +4292,23 @@ const useStore = create(persist((set, get) => ({
           timestamp: nowIso,
           comment: comment || '-'
         });
+      } else if (action === 'REJECT' || action === 'REVISE' || action === 'RETURN') {
+        const isReturnForRevision = action === 'REVISE' || action === 'RETURN' || (action === 'REJECT' && isReviewStep);
+        baseLog.push({
+          action: isReturnForRevision ? 'RETURNED_FOR_REVISION' : 'REJECTED',
+          actor: state.currentUser?.name || state.currentUser?.fullName || (isReviewStep ? 'Reviewer' : 'Approver'),
+          role: state.currentUser?.role || (isReviewStep ? 'Reviewer' : 'Approver'),
+          department: state.currentUser?.department || doc.department,
+          timestamp: nowIso,
+          comment: comment || '-'
+        });
       }
 
       return {
         ...r,
         status: reqFinalStatus,
-        returnReason: action === 'REJECT' ? comment : r.returnReason,
-        revisionComment: action === 'REJECT' ? comment : r.revisionComment,
+        returnReason: (action === 'REJECT' || action === 'RETURN' || action === 'REVISE') ? comment : r.returnReason,
+        revisionComment: (action === 'REJECT' || action === 'RETURN' || action === 'REVISE') ? comment : r.revisionComment,
         signoffs: nextSignoffs,
         activityLog: baseLog,
         ...(action === 'APPROVE' && isReviewStep ? { reviewedAt: nowIso } : {}),
@@ -4250,6 +4368,26 @@ const useStore = create(persist((set, get) => ({
     const newStatus = reviewerId ? 'PENDING_EXT_REVIEW' : 'PENDING_EXT_APPROVAL';
     const edCode = oldDoc.edCode || oldDoc.doc_code || oldDoc.docNo || id;
 
+    const activeAttachedFile = updates.attachedFile || oldDoc.attachedFile || null;
+    const activeFileId = updates.fileId || activeAttachedFile?.fileId || oldDoc.fileId || null;
+    const activeFileName = updates.fileName || activeAttachedFile?.name || oldDoc.fileName || '';
+    const filePayload = activeAttachedFile ? {
+      attachedFile: activeAttachedFile,
+      fileId: activeFileId,
+      fileName: activeFileName,
+      file: activeAttachedFile,
+      attachment: activeAttachedFile
+    } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+
+    if (activeFileId) {
+      getFile(activeFileId).then(blob => {
+        if (blob) {
+          saveFile(oldDoc.id, blob).catch(() => {});
+          saveFile(edCode, blob).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     const updatedDoc = {
       ...oldDoc,
       ...updates,
@@ -4259,7 +4397,8 @@ const useStore = create(persist((set, get) => ({
       approverId,
       returnReason: null,
       revisionComment: null,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      ...filePayload
     };
 
     // Close/remove the revise task
@@ -4287,7 +4426,8 @@ const useStore = create(persist((set, get) => ({
         department: updatedDoc.department,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: oldDoc.extAction || 'REGISTER'
+        extAction: oldDoc.extAction || 'REGISTER',
+        ...filePayload
       });
       newNotifications.push({
         id: Date.now() + Math.random(),
@@ -4319,7 +4459,8 @@ const useStore = create(persist((set, get) => ({
         department: updatedDoc.department,
         origin: 'EXTERNAL',
         status: 'PENDING',
-        extAction: oldDoc.extAction || 'REGISTER'
+        extAction: oldDoc.extAction || 'REGISTER',
+        ...filePayload
       });
       newNotifications.push({
         id: Date.now() + Math.random(),
@@ -4377,7 +4518,8 @@ const useStore = create(persist((set, get) => ({
         returnReason: null,
         revisionComment: null,
         signoffs: nextSignoffs,
-        updatedAt: nowIso
+        updatedAt: nowIso,
+        ...filePayload
       };
     });
 
@@ -4418,6 +4560,7 @@ const useStore = create(persist((set, get) => ({
         revisionComment: null,
         createdAt: nowIso,
         updatedAt: nowIso,
+        ...filePayload,
         signoffs: [
           {
             step: 'REQUEST',
@@ -4458,7 +4601,7 @@ const useStore = create(persist((set, get) => ({
     }
 
     return {
-      externalDocuments: state.externalDocuments.filter(d => String(d.id) !== String(oldDoc.id) && String(d.id) !== String(id)),
+      externalDocuments: [updatedDoc, ...state.externalDocuments.filter(d => String(d.id) !== String(oldDoc.id) && String(d.id) !== String(id))],
       externalRequests: updatedRequests,
       tasks: newTasks,
       notifications: newNotifications,
@@ -4992,11 +5135,19 @@ const useStore = create(persist((set, get) => ({
 
   stampFinalExternalApprovalPdf: async (docId) => {
     const state = get();
-    const doc = state.externalDocuments.find(d => d.id === docId);
-    if (!doc || !doc.attachedFile || doc.attachedFile.type !== 'application/pdf') return;
+    const doc = (state.externalDocuments || []).find(d => 
+      String(d.id) === String(docId) || 
+      String(d.edCode) === String(docId) || 
+      String(d.doc_code) === String(docId)
+    ) || (state.externalRequests || []).find(r => 
+      String(r.id) === String(docId) || 
+      String(r.requestId) === String(docId) || 
+      String(r.docId) === String(docId)
+    );
+    if (!doc) return;
 
     try {
-      const fileBlob = await getFile(doc.attachedFile.fileId);
+      const fileBlob = await resolveFileBlob(doc, docId);
       if (!fileBlob) return;
       const arrayBuffer = await fileBlob.arrayBuffer();
       
@@ -5011,18 +5162,26 @@ const useStore = create(persist((set, get) => ({
 
       const stampedBytes = await stampExternalDocumentTopRight(arrayBuffer, stampData);
       const stampedBlob = new Blob([stampedBytes], { type: 'application/pdf' });
-      const newFileId = `file_${Date.now()}_stamped_ext_${doc.attachedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const rawFileName = doc.attachedFile?.name || doc.fileName || 'document.pdf';
+      const newFileId = `file_${Date.now()}_stamped_ext_${rawFileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       await saveFile(newFileId, stampedBlob);
+      const edCode = doc.edCode || doc.doc_code || doc.docNo || docId;
+      await saveFile(`${doc.id}_stamped`, stampedBlob).catch(() => {});
+      if (edCode) await saveFile(`${edCode}_stamped`, stampedBlob).catch(() => {});
 
       set(s => ({
-        externalDocuments: s.externalDocuments.map(d => d.id === docId ? { 
+        externalDocuments: (s.externalDocuments || []).map(d => (d.id === doc.id || (edCode && (d.edCode === edCode || d.doc_code === edCode))) ? { 
           ...d, 
           attachedFile: { 
-            ...d.attachedFile, 
+            ...(d.attachedFile || {}), 
             fileId: newFileId, 
+            name: rawFileName,
             size: stampedBlob.size, 
+            type: 'application/pdf',
             isStamped: true 
-          } 
+          },
+          fileId: newFileId,
+          fileName: rawFileName
         } : d)
       }));
     } catch (err) {
