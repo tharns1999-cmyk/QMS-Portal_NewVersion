@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
+import { resolveFileBlob } from '../../utils/fileStorage';
 import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import toast from 'react-hot-toast';
 import { hasDocumentAccess } from '../../utils/accessControl';
@@ -14,8 +15,55 @@ const Viewer = () => {
   const isArchive = searchParams.get('archive') === 'true';
   const { documents, currentUser, canDownloadDocument } = useStore();
   const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [realPdfUrl, setRealPdfUrl] = useState(null);
+  const [_loadingPdf, setLoadingPdf] = useState(false);
+  const [zoomMode, setZoomMode] = useState('FitH'); // 'FitH' | '100' | '125' | '150' | '75'
   
-  const doc = documents.find(d => d.id === docId);
+  const doc = (documents || []).find(d => 
+    String(d.id) === String(docId) ||
+    String(d.document_code) === String(docId) ||
+    String(d.doc_code) === String(docId) ||
+    String(d.docCode) === String(docId) ||
+    String(d.code) === String(docId) ||
+    String(d.docNo) === String(docId) ||
+    String(d.title) === String(docId)
+  );
+
+  useEffect(() => {
+    let activeUrl = null;
+    let isCancelled = false;
+
+    if (doc) {
+      setLoadingPdf(true);
+      resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
+        .then(async (blob) => {
+          if (!isCancelled && blob) {
+            activeUrl = URL.createObjectURL(blob);
+            setRealPdfUrl(activeUrl);
+          }
+        })
+        .catch(err => {
+          console.warn('[Viewer] Could not resolve file blob:', err);
+        })
+        .finally(() => {
+          if (!isCancelled) setLoadingPdf(false);
+        });
+    }
+
+    return () => {
+      isCancelled = true;
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
+    };
+  }, [doc]);
+
+  const iframeUrl = useMemo(() => {
+    if (!realPdfUrl) return '';
+    const viewParam = zoomMode === 'FitH' ? 'view=FitH' : `view=Fit&zoom=${zoomMode}`;
+    return `${realPdfUrl}#${viewParam}&toolbar=0&navpanes=0`;
+  }, [realPdfUrl, zoomMode]);
+
   const title = doc ? doc.title : docId;
   const docStatus = doc?.status || (isArchive ? 'OBSOLETE' : '');
   const watermarkConfig = getWatermarkConfig(docStatus);
@@ -63,11 +111,11 @@ const Viewer = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-none border border-slate-800 relative">
+    <div className="h-full w-full flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-none border border-slate-800 relative min-h-0">
       {/* Viewer Toolbar */}
-      <div className="bg-slate-800 text-slate-200 px-4 py-3 flex items-center justify-between border-b border-slate-700/80 z-10">
+      <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between border-b border-slate-700/80 z-20 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors">
+          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors" title="ย้อนกลับ">
             <ArrowLeft size={18} />
           </button>
           <div className="font-bold text-sm md:text-base truncate max-w-[200px] md:max-w-md flex items-center gap-2">
@@ -86,10 +134,28 @@ const Viewer = () => {
             <Sparkles size={14} /> <span className="hidden sm:inline">Watermark Studio</span>
           </button>
 
-          <div className="hidden md:flex items-center gap-1.5 bg-slate-700/80 rounded-xl px-2.5 py-1">
-            <button className="p-1 hover:bg-slate-600 rounded text-slate-300"><ZoomOut size={16} /></button>
-            <span className="text-xs w-10 text-center font-mono text-slate-300">100%</span>
-            <button className="p-1 hover:bg-slate-600 rounded text-slate-300"><ZoomIn size={16} /></button>
+          <div className="hidden md:flex items-center gap-1 bg-slate-700/80 rounded-xl px-2.5 py-1">
+            <button 
+              onClick={() => setZoomMode(prev => prev === 'FitH' ? '100' : String(Math.max(50, parseInt(prev, 10) - 25)))} 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              title="ซูมออก"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button 
+              onClick={() => setZoomMode('FitH')} 
+              className="text-xs w-12 text-center font-mono text-slate-300 hover:text-white transition-colors cursor-pointer" 
+              title="คลิกเพื่อรีเซ็ต Fit-Width (พอดีความกว้าง)"
+            >
+              {zoomMode === 'FitH' ? 'Fit' : `${zoomMode}%`}
+            </button>
+            <button 
+              onClick={() => setZoomMode(prev => prev === 'FitH' ? '125' : String(Math.min(200, parseInt(prev, 10) + 25)))} 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              title="ซูมเข้า"
+            >
+              <ZoomIn size={15} />
+            </button>
           </div>
           
           <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3">
@@ -119,8 +185,8 @@ const Viewer = () => {
         </div>
       </div>
 
-      {/* Viewer Canvas (Mock) */}
-      <div className="flex-1 bg-slate-950 overflow-auto flex items-center justify-center p-4 md:p-8 relative">
+      {/* Viewer Canvas - Full Frame Immersive (No max-width constraints, Fit-Width Enforced) */}
+      <div className="flex-1 w-full bg-slate-950 overflow-hidden flex flex-col p-2 sm:p-3 relative min-h-0">
         
         {/* Watermark Overlay for Superseded and Obsolete Documents */}
         {watermarkConfig.visible && (
@@ -137,32 +203,43 @@ const Viewer = () => {
           </div>
         )}
 
-        <div className="bg-white w-full max-w-4xl min-h-[700px] shadow-none rounded-xl flex flex-col items-center justify-center text-center p-10 relative z-0">
-          <div className="border-2 border-dashed border-[#E5E5E5] rounded-xl p-10 w-full h-full flex flex-col items-center justify-center bg-[#F5F5F5]/50">
-            <h1 className="text-xl font-bold text-slate-400 mb-2">PDF Document Viewer</h1>
-            <p className="text-sm text-slate-800 font-bold font-mono">Document: {title}</p>
-            <p className="text-xs text-[#666666] font-mono mt-0.5">Revision: {rev}</p>
-            {watermarkConfig.visible && (
-              <div 
-                className="mt-6 px-4 py-2 rounded-full font-bold text-xs border tracking-wide flex items-center gap-2"
-                style={{
-                  backgroundColor: docStatus.includes('SUPERSEDED') ? '#FFF7ED' : '#FEF2F2',
-                  borderColor: docStatus.includes('SUPERSEDED') ? '#FDBA74' : '#FECACA',
-                  color: docStatus.includes('SUPERSEDED') ? '#C2410C' : '#DC2626'
-                }}
-              >
-                {docStatus.includes('SUPERSEDED') ? '⏳' : '🚨'} {watermarkConfig.text} (ห้ามนำไปใช้อ้างอิง)
-              </div>
-            )}
+        {realPdfUrl ? (
+          <div className="w-full flex-1 h-full bg-white rounded-lg sm:rounded-xl overflow-hidden shadow-2xl relative z-0 flex flex-col min-h-0">
+            <iframe
+              src={iframeUrl}
+              className="w-full flex-1 h-full border-0 block"
+              style={{ minHeight: '100%' }}
+              title={`Viewer - ${title}`}
+            />
           </div>
-        </div>
+        ) : (
+          <div className="w-full flex-1 h-full bg-white rounded-lg sm:rounded-xl shadow-none flex flex-col items-center justify-center text-center p-6 sm:p-10 relative z-0 min-h-0">
+            <div className="border-2 border-dashed border-[#E5E5E5] rounded-xl p-8 w-full max-w-2xl flex flex-col items-center justify-center bg-[#F5F5F5]/50">
+              <h1 className="text-xl font-bold text-slate-400 mb-2">PDF Document Viewer</h1>
+              <p className="text-sm text-slate-800 font-bold font-mono">Document: {title}</p>
+              <p className="text-xs text-[#666666] font-mono mt-0.5">Revision: {rev}</p>
+              {watermarkConfig.visible && (
+                <div 
+                  className="mt-6 px-4 py-2 rounded-full font-bold text-xs border tracking-wide flex items-center gap-2"
+                  style={{
+                    backgroundColor: docStatus.includes('SUPERSEDED') ? '#FFF7ED' : '#FEF2F2',
+                    borderColor: docStatus.includes('SUPERSEDED') ? '#FDBA74' : '#FECACA',
+                    color: docStatus.includes('SUPERSEDED') ? '#C2410C' : '#DC2626'
+                  }}
+                >
+                  {docStatus.includes('SUPERSEDED') ? '⏳' : '🚨'} {watermarkConfig.text} (ห้ามนำไปใช้อ้างอิง)
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Floating Pagination */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-xs text-white px-4 py-1.5 rounded-full flex items-center gap-3 shadow-none border border-slate-700 text-xs">
-        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300"><ChevronLeft size={16} /></button>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-md text-white px-4 py-1.5 rounded-full flex items-center gap-3 shadow-lg border border-slate-700/80 text-xs z-20 pointer-events-auto">
+        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"><ChevronLeft size={16} /></button>
         <span className="font-mono font-medium">Page 1 of 5</span>
-        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300"><ChevronRight size={16} /></button>
+        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"><ChevronRight size={16} /></button>
       </div>
 
       {/* Watermark Studio Modal */}

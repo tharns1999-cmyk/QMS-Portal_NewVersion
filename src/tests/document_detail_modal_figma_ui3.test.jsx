@@ -167,4 +167,112 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
     fireEvent.click(exportBtn);
     expect(createObjectURLMock).toHaveBeenCalled();
   });
+
+  it('7. "ดาวน์โหลด PDF" button calls resolveFileBlob and triggers UniversalWatermarkService download', async () => {
+    const { UniversalWatermarkService } = await import('../services/UniversalWatermarkService');
+    const toast = (await import('react-hot-toast')).default;
+
+    const fakePdfBlob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' });
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    vi.spyOn(toast, 'error').mockImplementation(() => {});
+    vi.spyOn(toast, 'loading').mockReturnValue('t-123');
+    vi.spyOn(toast, 'dismiss').mockImplementation(() => {});
+
+    // Mock file resolver returning a valid raw blob
+    const downloadSpy = vi.spyOn(UniversalWatermarkService, 'downloadWatermarkedPdf').mockResolvedValue('blob:mock-watermarked');
+
+    // Attach attachedFile to sampleDoc
+    const docWithFile = {
+      ...sampleDoc,
+      fileId: 'file-sample-01',
+      attachedFile: { fileId: 'file-sample-01', name: 'sop.pdf', type: 'application/pdf' },
+      file: fakePdfBlob
+    };
+
+    render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={docWithFile} />);
+
+    const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
+    expect(downloadPdfBtn).toBeInTheDocument();
+
+    fireEvent.click(downloadPdfBtn);
+
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(downloadSpy).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('สำเร็จ'));
+    });
+  });
+
+  it('8. No Phantom Success: displays red error toast when document original file is not found', async () => {
+    const { UniversalWatermarkService } = await import('../services/UniversalWatermarkService');
+    const fileStorage = await import('../utils/fileStorage');
+    const toast = (await import('react-hot-toast')).default;
+
+    const toastErrorSpy = vi.spyOn(toast, 'error').mockImplementation(() => {});
+    const toastSuccessSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    toastErrorSpy.mockClear();
+    toastSuccessSpy.mockClear();
+    vi.spyOn(toast, 'loading').mockReturnValue('t-124');
+    vi.spyOn(toast, 'dismiss').mockImplementation(() => {});
+    const downloadSpy = vi.spyOn(UniversalWatermarkService, 'downloadWatermarkedPdf');
+    downloadSpy.mockClear();
+
+    // Force resolveFileBlob to return null (file missing in IDB and memory)
+    vi.spyOn(fileStorage, 'resolveFileBlob').mockResolvedValue(null);
+
+    const docWithoutFile = {
+      id: 'doc-missing-file',
+      title: 'WI-MISSING-01',
+      status: 'EFFECTIVE'
+    };
+
+    render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={docWithoutFile} />);
+
+    const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
+    fireEvent.click(downloadPdfBtn);
+
+    const { waitFor } = await import('@testing-library/react');
+    // Verify: error toast is triggered, no phantom success toast, and watermarking is NOT called
+    await waitFor(() => {
+      expect(toastErrorSpy).toHaveBeenCalledWith('ไม่พบไฟล์เอกสารต้นฉบับในระบบ');
+    });
+    expect(toastSuccessSpy).not.toHaveBeenCalled();
+    expect(downloadSpy).not.toHaveBeenCalled();
+  });
+
+  it('9. Form Bypass: calls downloadCleanPdf for blank forms (FM type)', async () => {
+    const { UniversalWatermarkService } = await import('../services/UniversalWatermarkService');
+    const fileStorage = await import('../utils/fileStorage');
+    const toast = (await import('react-hot-toast')).default;
+
+    const fakePdfBlob = new Blob(['%PDF-1.4 form content'], { type: 'application/pdf' });
+    vi.spyOn(fileStorage, 'resolveFileBlob').mockResolvedValue(fakePdfBlob);
+    const cleanPdfSpy = vi.spyOn(UniversalWatermarkService, 'downloadCleanPdf').mockResolvedValue('blob:mock-clean');
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => {});
+    vi.spyOn(toast, 'loading').mockReturnValue('t-125');
+    vi.spyOn(toast, 'dismiss').mockImplementation(() => {});
+
+    const formDoc = {
+      id: 'doc-fm-qc-01',
+      docCode: 'FM-QC-01',
+      docType: 'FM',
+      title: 'FM-QC-01 แบบฟอร์มบันทึกการตรวจประเมิน',
+      status: 'EFFECTIVE'
+    };
+
+    render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={formDoc} />);
+
+    const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
+    fireEvent.click(downloadPdfBtn);
+
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(cleanPdfSpy).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('สำเร็จ'));
+    });
+  });
 });

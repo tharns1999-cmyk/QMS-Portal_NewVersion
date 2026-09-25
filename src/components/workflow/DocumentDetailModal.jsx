@@ -23,12 +23,14 @@ import {
   CheckCircle2,
   MoreHorizontal,
   CornerDownLeft,
-  RotateCw
+  RotateCw,
+  Loader2
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterDataService';
 import { ErrorBoundary } from '../ErrorBoundary';
-import { UniversalWatermarkService, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
+import { UniversalWatermarkService, resolveWatermarkConfig, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { resolveFileBlob } from '../../utils/fileStorage';
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
 import WatermarkStudioModal from './WatermarkStudioModal';
 import ReplacementModal from '../../pages/Library/ReplacementModal';
@@ -198,6 +200,122 @@ const DocumentDetailModal = ({
   const [selectedReplacementCopy, setSelectedReplacementCopy] = useState(null);
   const [selectedRelocateCopy, setSelectedRelocateCopy] = useState(null);
   const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  // Robust permission check supporting both argument signatures: (doc, user) and (user, doc)
+  const canDownload = useMemo(() => {
+    if (!doc || !currentUser) return false;
+    if (typeof canDownloadDocument !== 'function') return true;
+    return Boolean(canDownloadDocument(doc, currentUser) || canDownloadDocument(currentUser, doc));
+  }, [doc, currentUser, canDownloadDocument]);
+
+  // Safe viewer open handler with seamless fallback
+  const handleOpenViewer = () => {
+    onClose();
+    if (onOpenViewer) {
+      onOpenViewer(doc);
+    } else if (doc?.id) {
+      const docRev = normalizeRev(doc.rev || doc.revision || doc.doc_version || '01');
+      if (typeof window !== 'undefined') {
+        window.location.href = `/viewer/${doc.id}/${docRev}`;
+      }
+    }
+  };
+
+  // Real PDF download handler with Universal File Resolver & Watermark Pipeline
+  const handleDownloadPdf = async () => {
+    if (!doc) return;
+    if (isDownloadingPdf) return;
+
+    if (!canDownload) {
+      toast.error('คุณไม่มีสิทธิ์ดาวน์โหลดเอกสารนี้ตามระดับการเข้าถึง (Access Scope)');
+      return;
+    }
+
+    setIsDownloadingPdf(true);
+    const toastId = toast.loading('กำลังค้นหาและจัดเตรียมไฟล์ PDF...');
+
+    try {
+      // 1. Resolve raw file blob through Universal File Resolver
+      const rawBlob = await resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId);
+
+      if (!rawBlob) {
+        toast.dismiss(toastId);
+        toast.error('ไม่พบไฟล์เอกสารต้นฉบับในระบบ');
+        setIsDownloadingPdf(false);
+        return;
+      }
+
+      const isForm = UniversalWatermarkService.isBlankFormBypass(doc);
+      const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN');
+
+      const docCode = resolveDocCode(doc) || doc.docNo || doc.title || 'DOCUMENT';
+      const docRev = normalizeRev(doc.rev || doc.revision || doc.doc_version || '01');
+      const docTitle = resolveDocTitle(doc) || doc.name || doc.docName || doc.title || '';
+      const cleanFileName = `${docCode}_Rev${docRev || '01'}${docTitle ? `_${docTitle}` : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '_');
+
+      // Attach resolved blob to doc clone to ensure UniversalWatermarkService consumes it directly
+      const docWithFile = {
+        ...doc,
+        fileBlob: rawBlob,
+        file: rawBlob,
+        attachedFile: doc.attachedFile || rawBlob,
+        title: docCode,
+        docCode,
+        docTitle
+      };
+
+      if (isForm) {
+        await UniversalWatermarkService.downloadCleanPdf(docWithFile, {
+          userName: currentUser?.name || 'User',
+          userDept: currentUser?.department || currentUser?.dept || 'User Station',
+          docCode,
+          docTitle,
+          filename: cleanFileName
+        }, false);
+      } else {
+        const watermarkType = isDccUser 
+          ? WATERMARK_TYPES.CONTROLLED_COPY 
+          : WATERMARK_TYPES.UNCONTROLLED_COPY;
+
+        const watermarkConfig = resolveWatermarkConfig(docWithFile, { currentUser });
+
+        await UniversalWatermarkService.downloadWatermarkedPdf(
+          docWithFile,
+          watermarkType,
+          {
+            userName: currentUser?.name || 'User',
+            userDept: currentUser?.department || currentUser?.dept || 'User Station',
+            reason: 'Master Document Record Download',
+            location: currentUser?.department || currentUser?.dept || 'User Station',
+            ...watermarkConfig?.metadata,
+            docCode,
+            docTitle,
+            docVersion: docRev,
+            watermarkType: isDccUser ? 'CONTROLLED_COPY' : 'UNCONTROLLED_COPY',
+            downloadMode: isDccUser ? 'CONTROLLED_COPY' : 'UNCONTROLLED_COPY',
+            isUncontrolledCopy: !isDccUser,
+            filename: cleanFileName
+          },
+          false
+        );
+      }
+
+      toast.dismiss(toastId);
+      toast.success('ดาวน์โหลดเอกสาร PDF สำเร็จ');
+    } catch (err) {
+      console.error('[DocumentDetailModal] PDF Download failed:', err);
+      toast.dismiss(toastId);
+      const msg = err?.message || '';
+      if (msg.includes('ไม่พบ') || msg.includes('not found')) {
+        toast.error('ไม่พบไฟล์เอกสารต้นฉบับในระบบ');
+      } else {
+        toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร PDF');
+      }
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   // Synchronized copies
   const allCopies = useMemo(() => {
@@ -1176,10 +1294,7 @@ const DocumentDetailModal = ({
                       {!isSupersededDoc && (
                         <button
                           type="button"
-                          onClick={() => {
-                            onClose();
-                            if (onOpenViewer) onOpenViewer(doc);
-                          }}
+                          onClick={handleOpenViewer}
                           className="h-10 px-4 bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[#1E1E1E] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
                         >
                           <ExternalLink size={15} strokeWidth={1.75} />
@@ -1188,14 +1303,19 @@ const DocumentDetailModal = ({
                       )}
 
                       {/* Action: ดาวน์โหลด PDF */}
-                      {Boolean(canDownloadDocument && canDownloadDocument(currentUser, doc)) && (
+                      {canDownload && (
                         <button
                           type="button"
-                          onClick={() => toast.success('เริ่มดาวน์โหลดเอกสาร PDF')}
-                          className="h-10 px-4 bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[#1E1E1E] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
+                          disabled={isDownloadingPdf}
+                          onClick={handleDownloadPdf}
+                          className="h-10 px-4 bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[#1E1E1E] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
                         >
-                          <Download size={15} strokeWidth={1.75} />
-                          <span>ดาวน์โหลด PDF</span>
+                          {isDownloadingPdf ? (
+                            <Loader2 size={15} className="animate-spin text-slate-600" />
+                          ) : (
+                            <Download size={15} strokeWidth={1.75} />
+                          )}
+                          <span>{isDownloadingPdf ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด PDF'}</span>
                         </button>
                       )}
 

@@ -16,7 +16,7 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
-import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight } from '../utils/pdfStamper';
+import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf } from '../utils/pdfStamper';
 import { getFile, resolveFileBlob } from '../utils/fileStorage';
 
 export const WATERMARK_TYPES = {
@@ -27,7 +27,8 @@ export const WATERMARK_TYPES = {
   CONTROLLED_COPY_REPLACEMENT: 'CONTROLLED_COPY_REPLACEMENT',
   OBSOLETE: 'OBSOLETE',
   SUPERSEDED: 'SUPERSEDED',
-  DRAFT: 'DRAFT'
+  DRAFT: 'DRAFT',
+  DRAFT_WATERMARK: 'DRAFT_WATERMARK'
 };
 
 /**
@@ -111,8 +112,8 @@ export const getBangkokFormattedDate = (dateInput = new Date()) => {
  */
 export const WATERMARK_PRESETS = {
   UNCONTROLLED_COPY: {
-    color: rgb(0.80, 0.35, 0.10), // Dark Orange
-    opacity: 0.15, // ISO 9001 (0.12 - 0.18): Readability without obscuring content
+    color: rgb(0.88, 0.11, 0.28), // Stamp Crimson/Rose Red
+    opacity: 0.50, // 50% opacity for clear visibility & readability balance
     title: 'UNCONTROLLED COPY'
   },
   OFFICIAL_MASTER_COPY: {
@@ -146,9 +147,14 @@ export const WATERMARK_PRESETS = {
     title: 'SUPERSEDED'
   },
   DRAFT: {
-    color: rgb(0.85, 0.55, 0.0), // Amber
-    opacity: 0.65,
-    title: 'DRAFT / UNDER REVIEW'
+    color: rgb(0.88, 0.11, 0.28), // Stamp Crimson / Deep Amber-Red
+    opacity: 0.35, // 35% opacity per ISO QMS specification
+    title: 'DRAFT'
+  },
+  DRAFT_WATERMARK: {
+    color: rgb(0.88, 0.11, 0.28),
+    opacity: 0.35,
+    title: 'DRAFT'
   }
 };
 
@@ -171,6 +177,31 @@ export class UniversalWatermarkService {
   static getBangkokDate(dateInput = new Date()) {
     return getBangkokFormattedDate(dateInput);
   }
+
+  /**
+   * Helper: Check if document or DAR status is in a Draft/In-Review lifecycle stage.
+   * MUTUALLY EXCLUSIVE GOVERNANCE: If any of these states are active, ONLY DRAFT
+   * watermark must be applied — CONFIDENTIAL / UNCONTROLLED are strictly prohibited.
+   * @param {string} status - Document or DAR status
+   * @returns {boolean}
+   */
+  static isDraftLifecycle(status) {
+    if (!status) return false;
+    const s = String(status).toUpperCase();
+    return [
+      'NEW',
+      'PENDING_REVIEW',
+      'UNDER_REVIEW',
+      'IN_REVIEW',
+      'PENDING_APPROVAL',
+      'RETURNED',
+      'RETURNED_FOR_REVISION',
+      'DRAFT',
+      'REVISION_PENDING',
+      'EDITING'
+    ].includes(s);
+  }
+
 
   /**
    * Helper: Check if document is an Active Form/Template that should bypass watermarking (Clean Form 100%)
@@ -383,12 +414,12 @@ export class UniversalWatermarkService {
       switch (type) {
         case WATERMARK_TYPES.UNCONTROLLED_COPY:
           return [
-            { text: 'EXTERNAL DOCUMENT - FOR REFERENCE ONLY', size: 22, isBold: true },
-            { text: 'เอกสารภายนอกสำหรับอ้างอิง (FOR REFERENCE ONLY)', size: 14, isBold: true },
-            { text: `Doc: ${meta.docCode}${docTitlePart} | Ver: ${extVersion}`, size: 13, isBold: true },
-            { text: `สถานะ: [ขึ้นทะเบียนควบคุมแล้ว (REGISTERED)] | ปรับปรุงล่าสุด: ${extDate}${restrictedSuffix}`, size: 12 },
-            { text: `Downloaded By: ${meta.userName || 'Authorized User'} (${meta.userDept || 'PD'}) | Date: ${meta.timestamp}`, size: 11 },
-            { text: '*EXTERNAL DOCUMENT - FOR REFERENCE ONLY - DO NOT DUPLICATE*', size: 10, isBold: true }
+            { text: 'UNCONTROLLED COPY - FOR REFERENCE ONLY', size: 24, isBold: true },
+            { text: docLabel, size: 13, isBold: true },
+            { text: `Ver: Rev.${meta.docVersion}${meta.sourceVersion ? ` (Source: ${meta.sourceVersion})` : ''} | Custodian: ${meta.holderDept || meta.department}`, size: 13 },
+            { text: `Printed By: ${meta.userName} (${meta.userDept})`, size: 12 },
+            { text: `Timestamp: ${meta.timestamp} | Status: Valid on Print Date Only`, size: 12 },
+            { text: '*VALIDITY NOT GUARANTEED IF STORED LOCALLY OR PRINTED*', size: 11, isBold: true }
           ];
 
         case WATERMARK_TYPES.OFFICIAL_MASTER_COPY:
@@ -412,12 +443,12 @@ export class UniversalWatermarkService {
 
         case WATERMARK_TYPES.CONTROLLED_COPY:
           return [
-            { text: 'CONTROLLED COPY', size: 28, isBold: true },
-            { text: 'เอกสารภายนอกสำเนาควบคุม (CONTROLLED EXTERNAL DOCUMENT)', size: 14, isBold: true },
-            { text: `${docLabel} | Ver: ${extVersion} | Copy: ${meta.copyNo}`, size: 13, isBold: true },
-            { text: `สถานะ: [ขึ้นทะเบียนควบคุมแล้ว (REGISTERED)] | Loc: ${meta.location}`, size: 12 },
-            { text: `Issued By: ${meta.issuedBy || 'DCC'} | Date: ${meta.issuedAt || extDate}`, size: 11 },
-            { text: '*CONTROLLED DOCUMENT - DO NOT DUPLICATE*', size: 10, isBold: true }
+            { text: 'CONTROLLED COPY', size: 26, isBold: true },
+            { text: docLabel, size: 13, isBold: true },
+            { text: `Ver: Rev.${meta.docVersion}${meta.sourceVersion ? ` (Source: ${meta.sourceVersion})` : ''} | Copy: ${meta.copyNo}`, size: 13 },
+            { text: `Loc: ${meta.location} | Issue: ${meta.issueNo}`, size: 12 },
+            { text: `Issued By: ${meta.issuedBy || 'DCC'} | Date: ${meta.timestamp}`, size: 12 },
+            { text: '*OFFICIAL CONTROLLED EXTERNAL DOCUMENT - DO NOT DUPLICATE*', size: 10, isBold: true }
           ];
 
         case WATERMARK_TYPES.CONTROLLED_COPY_REPLACEMENT:
@@ -448,41 +479,31 @@ export class UniversalWatermarkService {
           ];
 
         case WATERMARK_TYPES.DRAFT:
+        case 'DRAFT':
+        case 'DRAFT_WATERMARK':
         default:
           return [
-            { text: 'EXTERNAL DOCUMENT - UNDER REVIEW', size: 24, isBold: true },
-            { text: 'เอกสารภายนอกระหว่างรอการอนุมัติขึ้นทะเบียน', size: 14, isBold: true },
-            { text: `${docLabel} | Ver: ${extVersion}`, size: 13 }
+            { text: 'DRAFT', size: 36, isBold: true },
+            { text: 'ฉบับร่าง (สำหรับทบทวนและพิจารณาเท่านั้น)', size: 18, isBold: true },
+            { text: 'ห้ามนำไปใช้ปฏิบัติงานจริง (NOT FOR OPERATIONAL USE)', size: 14, isBold: false },
+            { text: `${docLabel} | Ver: ${extVersion}`, size: 12 }
           ];
       }
-    }
-
-    // Standard UNCONTROLLED_COPY lines (For internal documents: SOP, WI, Form)
-    if (type === WATERMARK_TYPES.UNCONTROLLED_COPY) {
-      const docTitlePart = meta.docTitle ? ` | Title: ${meta.docTitle}` : '';
-      const restrictedPart = meta.isRestricted ? ' [RESTRICTED ACCESS]' : '';
-
-      return [
-        { text: 'UNCONTROLLED COPY', size: 28, isBold: true },
-        { text: `Doc: ${meta.docCode}${docTitlePart} | Rev.${meta.docVersion}${restrictedPart}`, size: 13, isBold: true },
-        { text: `Downloaded By: ${meta.userName || 'Authorized User'} (${meta.userDept || 'PD'}) | Date: ${meta.timestamp}`, size: 12 },
-        { text: '*UNCONTROLLED COPY - FOR REFERENCE ONLY - DO NOT DUPLICATE*', size: 11, isBold: true }
-      ];
     }
 
     switch (type) {
       case WATERMARK_TYPES.UNCONTROLLED_COPY:
         return [
           { text: 'UNCONTROLLED COPY', size: 30, isBold: true },
-          { text: `FOR REFERENCE ONLY (${meta.scope.toUpperCase()})`, size: 15, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 14 },
+          { text: `FOR REFERENCE ONLY (${(meta.scope || 'INTERNAL USE').toUpperCase()})`, size: 15, isBold: true },
+          { text: `Doc: ${meta.docCode} | Ver: Rev.${meta.docVersion}`, size: 14 },
           { text: `Printed By: ${meta.userName} (${meta.userDept}) | Date: ${meta.timestamp}`, size: 12 }
         ];
 
       case WATERMARK_TYPES.OFFICIAL_MASTER_COPY:
         return [
           { text: 'OFFICIAL MASTER COPY', size: 30, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 15, isBold: true },
+          { text: `Doc: ${meta.docCode} | Ver: Rev.${meta.docVersion}`, size: 15, isBold: true },
           { text: 'Document Control Center (DCC Archive)', size: 14 },
           { text: `Effective Date: ${meta.effectiveDate}`, size: 13 },
           { text: `SHA-256: ${meta.fileHashPrefix}... (Integrity Sealed)`, size: 11 }
@@ -491,7 +512,7 @@ export class UniversalWatermarkService {
       case WATERMARK_TYPES.STRICTLY_CONFIDENTIAL:
         return [
           { text: 'STRICTLY CONFIDENTIAL - EXTERNAL RELEASE', size: 22, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 14, isBold: true },
+          { text: `Doc: ${meta.docCode} | Ver: Rev.${meta.docVersion}`, size: 14, isBold: true },
           { text: `Authorized Scope: ${meta.authorizedScope}`, size: 13 },
           { text: `Released By: ${meta.dccName} | ${meta.timestamp}`, size: 12 },
           { text: '*UNAUTHORIZED DUPLICATION & DISTRIBUTION IS PROHIBITED*', size: 10, isBold: true }
@@ -500,7 +521,7 @@ export class UniversalWatermarkService {
       case WATERMARK_TYPES.CONTROLLED_COPY:
         return [
           { text: 'CONTROLLED COPY', size: 30, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 15, isBold: true },
+          { text: `Doc: ${meta.docCode} | Ver: Rev.${meta.docVersion}`, size: 15, isBold: true },
           { text: `Copy No: ${meta.copyNo} | Issue: ${meta.issueNo} | Holder: ${meta.holderEntity}`, size: 14 },
           { text: `Loc: ${meta.location} | Issued By: ${meta.issuedBy || 'DCC'}`, size: 13 },
           { text: `Issued: ${meta.issuedAt} | *DO NOT DUPLICATE*`, size: 12 }
@@ -509,7 +530,7 @@ export class UniversalWatermarkService {
       case WATERMARK_TYPES.CONTROLLED_COPY_REPLACEMENT:
         return [
           { text: 'CONTROLLED COPY (REPLACEMENT)', size: 24, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 15, isBold: true },
+          { text: `Doc: ${meta.docCode} | Ver: Rev.${meta.docVersion}`, size: 15, isBold: true },
           { text: `Copy No: ${meta.copyNo} | Issue: ${meta.issueNo} | Holder: ${meta.holderEntity}`, size: 14, isBold: true },
           { text: `Loc: ${meta.location} | Issued By: ${meta.issuedBy || 'DCC'}`, size: 13 },
           { text: '*PREVIOUS ISSUE IS VOID & INVALID*', size: 12, isBold: true }
@@ -519,7 +540,7 @@ export class UniversalWatermarkService {
         return [
           { text: 'OBSOLETE - DO NOT USE', size: 30, isBold: true },
           { text: 'เอกสารยกเลิก - ห้ามนำไปปฏิบัติงาน (CANCELLED DOCUMENT)', size: 16, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 14 },
+          { text: `Doc: ${meta.docCode} | Rev: Rev.${meta.docVersion}`, size: 14 },
           { text: `Obsolete DAR Ref: ${meta.obsoleteDarId || meta.darNo || 'DAR-OBSOLETE'} | Date: ${meta.obsoleteDate || meta.timestamp}`, size: 12 },
           { text: `Printed By: ${meta.userName} (${meta.userDept})`, size: 12 }
         ];
@@ -528,17 +549,19 @@ export class UniversalWatermarkService {
         return [
           { text: 'SUPERSEDED - FOR REFERENCE ONLY', size: 30, isBold: true },
           { text: 'เอกสารฉบับเดิมตกรุ่น - ใช้อ้างอิงประวัติเท่านั้น (SUPERSEDED REVISION)', size: 15, isBold: true },
-          { text: `Doc: ${meta.docCode} | Rev.${meta.docVersion}`, size: 14 },
-          { text: `Superseded By: Rev.${meta.supersededByRev || meta.nextVersion || 'Latest'}`, size: 12 },
-          { text: `Printed By: ${meta.userName} (${meta.userDept}) | Date: ${meta.timestamp}`, size: 12 }
+          { text: `Doc: ${meta.docCode} | Rev: Rev.${meta.docVersion}`, size: 14 },
+          { text: `Superseded By: Rev.${meta.supersededByRev || '02'} | Date: ${meta.timestamp}`, size: 12 },
+          { text: `Printed By: ${meta.userName} (${meta.userDept})`, size: 12 }
         ];
 
       case WATERMARK_TYPES.DRAFT:
+      case 'DRAFT':
+      case 'DRAFT_WATERMARK':
       default:
         return [
           { text: 'DRAFT / UNDER REVIEW', size: 30, isBold: true },
           { text: 'ฉบับร่างระหว่างดำเนินการ - ห้ามใช้ปฏิบัติงาน', size: 16, isBold: true },
-          { text: `DAR Ref: ${meta.darNo} | Doc: ${meta.docCode}`, size: 14 }
+          { text: `DAR Ref: ${meta.darNo || 'DAR-DRAFT'} | Doc: ${meta.docCode || '-'}`, size: 14 }
         ];
     }
   }
@@ -668,15 +691,41 @@ export class UniversalWatermarkService {
 
     const meta = this.sanitizeMetadata(combinedMeta);
 
-    // Intercept UNCONTROLLED_COPY to use Canvas approach for Thai vowel fix
-    if (resolvedType === WATERMARK_TYPES.UNCONTROLLED_COPY || resolvedType === 'UNCONTROLLED_COPY' || meta.isUncontrolledCopy) {
-      return await applyUncontrolledWatermarkToPdf(pdfBytesOrBuffer, {
-        docCode: meta.docCode,
-        docTitle: meta.docTitle || meta.title || '',
-        docRev: meta.docVersion || '00',
-        downloadedBy: meta.userName ? `${meta.userName} (${meta.userDept || 'HQ'})` : 'Authorized User',
-        downloadDate: new Date().toLocaleString('th-TH')
-      });
+    // Single-Layer Exclusive Selection Flow:
+    // 1. If DRAFT / In-Review stage, enforce DRAFT watermark ONLY.
+    // Cut off any Confidential or Uncontrolled watermark execution.
+    const isDraft = (
+      resolvedType === WATERMARK_TYPES.DRAFT ||
+      resolvedType === 'DRAFT' ||
+      resolvedType === 'DRAFT_WATERMARK' ||
+      meta.isDraft ||
+      combinedMeta.isDraft ||
+      UniversalWatermarkService.isDraftLifecycle(meta.status) ||
+      UniversalWatermarkService.isDraftLifecycle(combinedMeta.status)
+    );
+
+    if (isDraft) {
+      if (typeof document !== 'undefined') {
+        return await applyDraftWatermarkToPdf(pdfBytesOrBuffer, {
+          darNo: meta.darNo || meta.darNumber || meta.id || combinedMeta.darNo,
+          docCode: meta.docCode || meta.title || combinedMeta.docCode,
+          docTitle: meta.docTitle || meta.title || combinedMeta.docTitle,
+          docRev: meta.docRev || meta.docVersion || combinedMeta.docRev,
+          timestamp: meta.timestamp || meta.effectiveDate || combinedMeta.timestamp
+        });
+      }
+      resolvedType = WATERMARK_TYPES.DRAFT;
+    } else {
+      // 2. Intercept UNCONTROLLED_COPY in browser environment
+      if (typeof document !== 'undefined' && (resolvedType === WATERMARK_TYPES.UNCONTROLLED_COPY || resolvedType === 'UNCONTROLLED_COPY' || meta.isUncontrolledCopy)) {
+        return await applyUncontrolledWatermarkToPdf(pdfBytesOrBuffer, {
+          docCode: meta.docCode,
+          docTitle: meta.docTitle || meta.title || '',
+          docRev: meta.docVersion || '00',
+          downloadedBy: meta.userName ? `${meta.userName} (${meta.userDept || 'HQ'})` : 'Authorized User',
+          downloadDate: new Date().toLocaleString('th-TH')
+        });
+      }
     }
 
     // Rule: Blank Form FM Bypass
@@ -694,7 +743,7 @@ export class UniversalWatermarkService {
     const customRgb = combinedMeta.customColor ? hexToRgb(combinedMeta.customColor) : null;
     const resolvedOpacity = combinedMeta.opacity !== undefined
       ? combinedMeta.opacity
-      : (resolvedType === WATERMARK_TYPES.UNCONTROLLED_COPY ? 0.15 : basePreset.opacity);
+      : (resolvedType === WATERMARK_TYPES.UNCONTROLLED_COPY ? 0.50 : basePreset.opacity);
 
     const preset = {
       ...basePreset,
@@ -793,7 +842,7 @@ export class UniversalWatermarkService {
 
       if (!rawPdfBytes) {
         const merged = { ...meta, ...doc };
-        const docCodeFallback = doc?.edCode || doc?.doc_code || doc?.docNo || doc?.id || meta?.docCode;
+        const docCodeFallback = doc?.fileId || doc?.file_id || doc?.attachedFile?.fileId || doc?.attachedFile?.id || doc?.edCode || doc?.doc_code || doc?.document_code || doc?.docNo || doc?.darId || doc?.id || meta?.docCode;
         const fileBlob = await resolveFileBlob(merged, docCodeFallback);
         if (fileBlob) {
           rawPdfBytes = await fileBlob.arrayBuffer();
@@ -829,13 +878,16 @@ export class UniversalWatermarkService {
 
     if (isExternalDoc && rawPdfBytes) {
       try {
-        const originRev = doc.originRev || doc.sourceVersion || doc.edition || doc.rev || doc.version || '-';
+        const originRev = doc.sourceVersion || doc.edition || doc.originRev || doc.externalEdition || (doc.rev && doc.rev !== '00' && doc.rev !== 'Rev.00' ? doc.rev : null) || (doc.version && doc.version !== '00' && doc.version !== 'Rev.00' ? doc.version : null) || '-';
         const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
+        const effectiveDateFormatted = doc.effectiveDate 
+          ? (typeof doc.effectiveDate === 'string' && doc.effectiveDate.includes('/') ? doc.effectiveDate : new Date(doc.effectiveDate).toLocaleDateString('th-TH')) 
+          : new Date().toLocaleDateString('th-TH');
         const stampData = {
           docCode: docCode,
           docRev: originRev,
           title: docTitle || 'External Document',
-          timestamp: doc.effectiveDate ? new Date(doc.effectiveDate).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH'),
+          timestamp: effectiveDateFormatted,
           status: doc.status || meta.status || 'ACTIVE'
         };
         rawPdfBytes = await stampExternalDocumentTopRight(rawPdfBytes, stampData);
@@ -892,12 +944,16 @@ export class UniversalWatermarkService {
     link.href = url;
     const docCode = doc.document_code || doc.doc_code || doc.edCode || doc.title || meta.docCode || 'DOCUMENT';
     const isForm = this.isBlankFormBypass({ ...doc, ...meta });
-    const filename = isForm ? `${docCode}_BLANK_FORM.pdf` : `${docCode}_CLEAN_MASTER.pdf`;
+    const filename = meta.filename || (isForm ? `${docCode}_BLANK_FORM.pdf` : `${docCode}_CLEAN_MASTER.pdf`);
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+      try {
+        window.URL.revokeObjectURL(url);
+      } catch { /* safe */ }
+    }, 60000);
     return url;
   }
 
@@ -942,12 +998,16 @@ export class UniversalWatermarkService {
     const link = document.createElement('a');
     link.href = url;
     const typeLabel = typeof watermarkType === 'string' ? watermarkType : (watermarkType?.type || 'WATERMARKED');
-    const filename = `${docCode}_${typeLabel}.pdf`;
+    const filename = meta.filename || `${docCode}_${typeLabel}.pdf`;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+      try {
+        window.URL.revokeObjectURL(url);
+      } catch { /* safe */ }
+    }, 60000);
     return url;
   }
 

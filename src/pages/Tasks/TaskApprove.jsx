@@ -8,12 +8,31 @@ import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
-import { getFile, resolveFileBlob } from '../../utils/fileStorage';
+import { 
+  stampDarPreviewPdf, 
+  formatSignOffDate, 
+  resolveRawFileBlob, 
+  getActiveUserSignatureAsset, 
+  resolveSubmissionDate 
+} from '../../utils/pdfStamper';
+import { resolveFileBlob } from '../../utils/fileStorage';
 
 const TaskApprove = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { masterDepartments = [], tasks = [], completedTasks = [], dars = [], documents = [], timeline = [], processWorkflow, currentUser, canDownloadDocument, masterUsers = [] } = useStore();
+  const { 
+    masterDepartments = [], 
+    tasks = [], 
+    completedTasks = [], 
+    dars = [], 
+    documents = [], 
+    timeline = [], 
+    processWorkflow, 
+    currentUser, 
+    canDownloadDocument, 
+    masterUsers = [],
+    users = [] 
+  } = useStore();
   
   const [comment, setComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
@@ -22,6 +41,7 @@ const TaskApprove = () => {
   const [pendingAction, setPendingAction] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
+  const [isStamped, setIsStamped] = useState(false);
   const scrollRef = useRef(null);
 
   const allTasks = useMemo(() => {
@@ -32,38 +52,216 @@ const TaskApprove = () => {
   const dar = task 
     ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) 
     : (dars || []).find(d => String(d.id) === String(id) || d.darNo === id || d.darNumber === id);
-  const darTimeline = dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
+    
+  const darTimeline = useMemo(() => {
+    return dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
+  }, [dar, timeline]);
 
+  const docInfo = useMemo(() => {
+    return dar ? (getDarDocInfo(dar, documents) || { docCode: '-', docType: '-', docRev: '-' }) : { docCode: '-', docType: '-', docRev: '-' };
+  }, [dar, documents]);
+
+  const requesterName = useMemo(() => {
+    return dar ? (getRequesterName(dar, masterUsers) || 'ผู้ร้องขอ') : 'ผู้ร้องขอ';
+  }, [dar, masterUsers]);
+
+  const [pdfLoadError, setPdfLoadError] = useState(null);
+  const [pdfLoadRetryKey, setPdfLoadRetryKey] = useState(0);
+
+  // Authority Signatory Data (Requester | Reviewer | Approver)
+  const signOffData = useMemo(() => {
+    if (!dar) return null;
+    // 1. Requester Data Authority (ผู้จัดทำ - คุณบีม)
+    const reqName = dar.requesterName || dar.requester_name || requesterName || 'บีม';
+    const reqUser = (masterUsers || []).find(u => u && (u.id === dar.requesterId || u.empId === dar.requesterId || u.name === reqName)) ||
+      (users || []).find(u => u && (u.id === dar.requesterId || u.name === reqName));
+    const reqDateFormatted = resolveSubmissionDate(dar, task, darTimeline);
+    const reqSignature = getActiveUserSignatureAsset(reqUser);
+    const reqPosition = reqUser?.position || reqUser?.role || dar.requesterRole || 'QAQC Supervisor';
+
+    // 2. Reviewer Data Authority (Review completed in TaskApprove stage)
+    const reviewTl = (darTimeline || []).find(t => t.action === 'REVIEW' || t.action === 'APPROVE_REVIEW' || t.action === 'REVIEWED');
+    const rawRevDate = reviewTl?.date || reviewTl?.timestamp || dar.reviewedAt || dar.reviewDate;
+    const revDateFormatted = rawRevDate ? formatSignOffDate(rawRevDate) : '';
+    const revName = dar.reviewerName || dar.reviewer_name || reviewTl?.user || dar.reviewedBy || '';
+    const revUser = (masterUsers || []).find(u => u && (u.id === dar.reviewerId || u.empId === dar.reviewerId || u.name === revName)) ||
+      (users || []).find(u => u && (u.id === dar.reviewerId || u.name === revName));
+    const revPosition = revUser?.position || revUser?.role || dar.reviewerRole || 'Reviewer';
+    const revSignature = getActiveUserSignatureAsset(revUser);
+
+    // 3. Approver Data Authority (Pending Approval)
+    const appName = currentUser?.name || dar.approverName || 'ผู้อนุมัติ';
+    const appPosition = currentUser?.position || dar.approverRole || 'Approver';
+
+    return {
+      requester: {
+        name: reqName,
+        position: reqPosition,
+        timestamp: reqDateFormatted,
+        status: 'SUBMITTED',
+        statusText: 'ยื่นคำร้องแล้ว',
+        isCompleted: true,
+        isPending: false,
+        signature: reqSignature
+      },
+      reviewer: {
+        name: revName,
+        position: revPosition,
+        timestamp: (revDateFormatted && revDateFormatted !== '-') ? revDateFormatted : '',
+        status: 'REVIEWED',
+        statusText: 'ผ่านการทบทวน (Reviewed)',
+        isCompleted: true,
+        isPending: false,
+        signature: revSignature
+      },
+      approver: {
+        name: appName,
+        position: appPosition,
+        timestamp: '',
+        status: 'PENDING_APPROVAL',
+        statusText: 'รออนุมัติ (Pending Approval)',
+        isCompleted: false,
+        isPending: true,
+        signature: null
+      }
+    };
+  }, [dar, task, darTimeline, masterUsers, users, currentUser, requesterName]);
+
+  // Non-Blocking Instant Preview Lifecycle:
+  // 1. Immediately resolve and mount the Raw PDF Blob (<50ms)
+  // 2. Run PDF stamping asynchronously in background without blocking display
   useEffect(() => {
-    let url = null;
+    const activeUrls = [];
     let isCancelled = false;
-    if (dar) {
-      setLoadingPdf(true);
-      resolveFileBlob(dar, dar.attachedFile?.fileId).then((fileBlob) => {
-        if (!isCancelled) {
-          if (fileBlob) {
-            url = URL.createObjectURL(fileBlob);
-            setPdfBlobUrl(url);
-          } else {
-            setPdfBlobUrl(null);
-          }
-          setLoadingPdf(false);
+
+    if (!dar) {
+      setPdfBlobUrl(null);
+      setLoadingPdf(false);
+      setIsStamped(false);
+      return;
+    }
+
+    setLoadingPdf(true);
+    setPdfLoadError(null);
+    setIsStamped(false);
+
+    const loadAndPreview = async () => {
+      try {
+        const primaryKey = dar.attachedFile?.fileId || dar.fileId || dar.id;
+        const fallbackKeys = [
+          dar.attachedFile?.id,
+          dar.attachedFile?.key,
+          dar.attachedFile?.name,
+          dar.darNumber,
+          dar.darNo,
+          dar.id,
+          dar.title
+        ].filter(Boolean);
+
+        // 1. Direct and instant raw file resolution
+        let rawBlob = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
+        if (!rawBlob) {
+          rawBlob = await resolveFileBlob(dar, primaryKey);
         }
-      }).catch(err => {
-        console.error('Error loading PDF blob:', err);
+
+        if (!rawBlob) {
+          if (!isCancelled) {
+            setPdfBlobUrl(null);
+            setLoadingPdf(false);
+            setPdfLoadError('ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)');
+          }
+          return;
+        }
+
+        // 2. INSTANT DISPLAY: Display raw PDF immediately on screen
+        const rawUrl = URL.createObjectURL(rawBlob);
+        activeUrls.push(rawUrl);
+
+        if (!isCancelled) {
+          setPdfBlobUrl(rawUrl);
+          setLoadingPdf(false); // Unblock screen instantly!
+        }
+
+        // 3. BACKGROUND ASYNC STAMPING: Process stamping in background
+        const draftMetadata = {
+          darNo: dar.darNumber || dar.darNo || dar.id,
+          docCode: docInfo.docCode || dar.docCode || dar.title,
+          docTitle: dar.title,
+          timestamp: signOffData?.requester?.timestamp || resolveSubmissionDate(dar, task, darTimeline)
+        };
+
+        try {
+          // Allow React to render the instant preview first
+          await new Promise(resolve => setTimeout(resolve, 50));
+          const arrayBuffer = await rawBlob.arrayBuffer();
+          const stampedPdfBytes = await stampDarPreviewPdf(arrayBuffer, { signOffData, draftMetadata });
+          if (!isCancelled && stampedPdfBytes) {
+            const stampedBlob = new Blob([stampedPdfBytes], { type: 'application/pdf' });
+            const stampedUrl = URL.createObjectURL(stampedBlob);
+            activeUrls.push(stampedUrl);
+            setPdfBlobUrl(stampedUrl);
+            setIsStamped(true);
+          }
+        } catch (stampErr) {
+          console.warn('[TaskApprove] Background stamping failed, maintaining raw preview:', stampErr);
+        }
+      } catch (err) {
+        console.error('[TaskApprove] PDF preview resolution error:', err);
         if (!isCancelled) {
           setPdfBlobUrl(null);
           setLoadingPdf(false);
+          setPdfLoadError('เกิดข้อผิดพลาดในการโหลดไฟล์เอกสาร');
         }
-      });
-    } else {
-      setPdfBlobUrl(null);
-    }
+      }
+    };
+
+    loadAndPreview();
+
     return () => {
       isCancelled = true;
-      if (url) URL.revokeObjectURL(url);
+      activeUrls.forEach(u => URL.revokeObjectURL(u));
     };
-  }, [dar]);
+  }, [dar, task, darTimeline, docInfo.docCode, signOffData, pdfLoadRetryKey]);
+
+  const handleDownloadDraft = async () => {
+    if (pdfBlobUrl) {
+      const a = document.createElement('a');
+      a.href = pdfBlobUrl;
+      const code = docInfo.docCode || dar?.title || 'DAR_Doc';
+      a.download = `${code}_DRAFT.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success('เริ่มการดาวน์โหลดเอกสารแล้ว');
+      return;
+    }
+
+    try {
+      const primaryKey = dar.attachedFile?.fileId || dar.fileId || dar.id;
+      const fallbackKeys = [dar.attachedFile?.name, dar.darNumber, dar.darNo, dar.id].filter(Boolean);
+      let raw = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
+      if (!raw) {
+        raw = await resolveFileBlob(dar, primaryKey);
+      }
+      if (raw) {
+        const url = URL.createObjectURL(raw);
+        const a = document.createElement('a');
+        a.href = url;
+        const code = docInfo.docCode || dar?.title || 'DAR_Doc';
+        a.download = `${code}_DRAFT.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success('ดาวน์โหลดไฟล์เอกสารสำเร็จ');
+      } else {
+        toast.error('ไม่พบไฟล์เอกสารสำหรับดาวน์โหลด');
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      toast.error('ไม่สามารถดาวน์โหลดเอกสารได้');
+    }
+  };
 
   // Dynamic extraction and assembly of approvalWorkflow for DAR
   const darWithWorkflow = useMemo(() => {
@@ -366,8 +564,6 @@ const TaskApprove = () => {
   // Use a pseudo-document for access rules since DAR is not in documents array yet
   const pseudoDoc = { department: dar.department, distributedTo: dar.distributedDepts || [] };
   const canDownload = canDownloadDocument ? canDownloadDocument(pseudoDoc, currentUser) : false;
-  const docInfo = getDarDocInfo(dar, documents) || { docCode: '-', docType: '-', docRev: '-' };
-  const requesterName = getRequesterName(dar, masterUsers) || 'ผู้ร้องขอ';
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 
@@ -387,6 +583,7 @@ const TaskApprove = () => {
   const executeAction = async () => {
     setShowConfirm(false);
     try {
+      navigate('/dcc/tasks', { replace: true });
       await processWorkflow(task.id, pendingAction, comment);
       const actionText = pendingAction === 'APPROVE' 
         ? (isObsolete ? 'อนุมัติยกเลิกเอกสารสำเร็จแล้ว' : 'อนุมัติเอกสารสำเร็จแล้ว') 
@@ -394,7 +591,6 @@ const TaskApprove = () => {
           ? 'ไม่อนุมัติคำร้องเรียบร้อยแล้ว' 
           : 'ส่งกลับแก้ไขเรียบร้อยแล้ว';
       toast.success(actionText);
-      navigate('/dcc/tasks', { replace: true });
     } catch (error) {
       console.error('Approval Crash:', error);
       toast.error(`เกิดข้อผิดพลาด: ${error.message || 'ระบบขัดข้อง'}`);
@@ -590,24 +786,25 @@ const TaskApprove = () => {
         </div>
       </div>
 
-      {/* RIGHT COLUMN: PDF Viewer (60%) */}
+      {/* RIGHT COLUMN: PDF Viewer & Signatory Matrix (60%) */}
       <div className="w-[60%] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-800">
         
         {/* PDF Toolbar */}
-        <div className="bg-slate-800 text-slate-200 px-4 py-3 flex items-center justify-between shadow-xs z-10">
-          <div className="font-mono text-xs truncate pr-4 text-slate-300 font-bold">
-            {dar.title}.pdf (โหมดการพิจารณาอนุมัติขั้นสุดท้าย)
+        <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between shadow-xs z-10 shrink-0">
+          <div className="font-mono text-xs truncate pr-4 text-slate-300 font-bold flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span>{dar.title}.pdf</span>
+            <span className="text-slate-400 font-mono text-[11px]">(โหมดการพิจารณาอนุมัติ)</span>
           </div>
           <div className="flex items-center gap-2 border-l border-slate-700 pl-4">
-            {canDownload ? (
-              <button className="action-icon-btn text-[#0D99FF] hover:text-[#0D99FF] hover:bg-slate-700" title="ดาวน์โหลดเอกสาร">
-                <Download size={16} />
-              </button>
-            ) : (
-              <button className="action-icon-btn opacity-40 cursor-not-allowed text-[#666666]" title="ดูตัวอย่างเท่านั้น">
-                <Download size={16} />
-              </button>
-            )}
+            <button 
+              onClick={handleDownloadDraft}
+              className="action-icon-btn text-sky-400 hover:text-white hover:bg-slate-700 cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors" 
+              title="ดาวน์โหลดเอกสาร PDF"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">ดาวน์โหลด</span>
+            </button>
           </div>
         </div>
 
@@ -615,21 +812,32 @@ const TaskApprove = () => {
         <div 
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-6 bg-slate-700/80 custom-scrollbar"
+          className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 custom-scrollbar"
         >
            {/* Native PDF Viewer */}
-           <div className="w-full h-full min-h-[800px] relative rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700">
-             {loadingPdf ? (
-               <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
-                 <FileText size={32} className="text-slate-500" />
-                 <span>กำลังโหลดไฟล์เอกสารฉบับจริง...</span>
-               </div>
-             ) : pdfBlobUrl ? (
+           <div className="w-full h-full min-h-[800px] relative rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700/80 shadow-2xl">
+             {pdfBlobUrl ? (
                <iframe
-                 src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                 className="w-full h-full border-0 absolute inset-0"
+                 src={`${pdfBlobUrl}#view=FitH&toolbar=0&navpanes=0&scrollbar=1`}
+                 className="w-full h-full border-0 absolute inset-0 bg-white"
                  title="PDF Preview"
                />
+             ) : loadingPdf ? (
+               <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
+                 <div className="w-10 h-10 rounded-full border-3 border-sky-500/20 border-t-sky-500 animate-spin" />
+                 <span className="text-xs text-slate-300">กำลังเปิดไฟล์เอกสารฉบับจริง...</span>
+               </div>
+             ) : pdfLoadError ? (
+               <div className="text-slate-400 font-medium flex flex-col items-center gap-4 p-6 text-center">
+                 <ShieldAlert size={40} className="text-amber-500" />
+                 <span className="text-sm text-slate-300">{pdfLoadError}</span>
+                 <button
+                   onClick={() => setPdfLoadRetryKey(k => k + 1)}
+                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                 >
+                   <RotateCcw size={14} /> ลองโหลดใหม่
+                 </button>
+               </div>
              ) : (
                <div className="text-slate-500 font-medium flex flex-col items-center gap-3">
                  <ShieldAlert size={40} className="text-slate-600" />

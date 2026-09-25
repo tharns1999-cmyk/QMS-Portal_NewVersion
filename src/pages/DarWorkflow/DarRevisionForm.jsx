@@ -858,6 +858,10 @@ const DarRevisionForm = () => {
         accessScope: formData.access_control?.scope || 'GENERAL',
         isDraft: false,
         status: 'UNDER_REVIEW',
+        fileId: attachedFile?.fileId || null,
+        file_id: attachedFile?.fileId || null,
+        file: formData.file || null,
+        fileBlob: formData.file || null,
         attachedFile
       };
 

@@ -399,7 +399,7 @@ export const MASTER_DATA_USER = [
   },
   { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QC'], department: 'PD', dept: 'PD', primary_department: 'PD', departments: ['PD', 'QC'], secondaryDepartments: ['QC'], affiliated_departments: ['PD', 'QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U004', empId: 'EMP-004', name: 'คุณเรย์', fullName: 'คุณเรย์', email: 'ray.gm@company.com', position: 'General Manager / QMR', level: 6, approval_level: 6, role: 'DEPT_ADMIN', isDcc: false, isQmr: true, depts: ['MGMT'], department: 'MGMT', dept: 'MGMT', primary_department: 'MGMT', affiliated_departments: ['MGMT'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'RAY-GM', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-GM004', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER', 'QMR_ACCESS'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
-  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QC'], department: 'QC', dept: 'QC', primary_department: 'QC', primaryDepartment: 'QC', departments: ['QC'], departmentMemberships: ['QC'], affiliated_departments: ['QC'], secondaryDepartments: [], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'BM-QA', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QC'], department: 'QC', dept: 'QC', primary_department: 'QC', primaryDepartment: 'QC', departments: ['QC'], departmentMemberships: ['QC'], affiliated_departments: ['QC'], secondaryDepartments: [], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'DRAWN', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'Beam', signatureImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAABQCAYAAAAnSfh8AAACZklEQVR4nO3SwQnAIBAF0W8XtiW7sXWbEEQM5g+D78C4r/f5Pqf31Xvf81335T46B7DTAZy17wmc6gDOKn0F+1UAcNYBHNUBnFUGcFYHcFYZAM7qAM4qAzirDDCsDOAsA8BZZQA4qwzgrDMAvGUAOKsMAM4yAJx1BoCzzgDOKgPAWQaw2wEczc8w/QpW5gCO6gDOKgPAWR3AWZUB4KwzgLN6wLDOAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDq/wEAAP//0mZ89XbJ6f8AAAAASUVORK5CYII=', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U006', empId: 'EMP-006', name: 'รัตนพล', fullName: 'รัตนพล', email: 'rattanapol.en@company.com', position: 'Engineering Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'RTP-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN006', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U007', empId: 'EMP-007', name: 'ชัยวัฒน์', fullName: 'ชัยวัฒน์', email: 'chaiwat.en@company.com', position: 'Engineering Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'CWT-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN007', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U008', empId: 'EMP-008', name: 'คุณกิต', fullName: 'คุณกิต', email: 'kit.fin@company.com', position: 'Finance Director', level: 7, approval_level: 7, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['FIN'], department: 'FIN', dept: 'FIN', primary_department: 'FIN', affiliated_departments: ['FIN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'KIT-FIN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-FN008', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
@@ -4793,8 +4793,30 @@ const useStore = create(persist((set, get) => ({
       requesterId: dar.requesterId || dar.requester_id || state.currentUser?.id || 'EMP-001',
       date: dar.date || dar.createdAt?.split('T')[0] || todayStr,
       type: dar.type || 'NEW',
+      fileId: dar.fileId || dar.file_id || dar.attachedFile?.fileId || null,
+      file_id: dar.file_id || dar.fileId || dar.attachedFile?.fileId || null,
+      attachedFile: dar.attachedFile || null,
       distributions: dar.distributions || []
     };
+
+    // Bind file to new DAR ID and allocated number in rawBlobRegistry & file storage
+    const activeFileKey = newDar.fileId || newDar.attachedFile?.fileId;
+    if (activeFileKey) {
+      import('../utils/fileStorage').then(({ inMemoryBlobRegistry, rawBlobRegistry, saveFile }) => {
+        const existingBlob = (rawBlobRegistry && rawBlobRegistry.get(String(activeFileKey))) ||
+          (inMemoryBlobRegistry && inMemoryBlobRegistry.get(String(activeFileKey)));
+        if (existingBlob) {
+          if (newDarId) {
+            rawBlobRegistry?.set(String(newDarId), existingBlob);
+            saveFile(String(newDarId), existingBlob);
+          }
+          if (allocatedDarNumber && allocatedDarNumber !== newDarId) {
+            rawBlobRegistry?.set(String(allocatedDarNumber), existingBlob);
+            saveFile(String(allocatedDarNumber), existingBlob);
+          }
+        }
+      }).catch(() => {});
+    }
 
     // --- INVARIANT VALIDATION: Document Identity Immutability ---
     // ISO 9001: 7.5.3 - Identity (Department, DocNo, Type) of a document cannot mutate during a Revision/Amendment/Obsolete.
@@ -4998,8 +5020,29 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  submitDar: (dar) => {
-    return get().addDar({ ...dar, isDraft: false });
+  submitDar: async (dar, rawFile) => {
+    const finalDar = { ...dar, isDraft: false };
+    const darId = finalDar.darNumber || finalDar.id || `DAR-${new Date().getFullYear()}-${String(get().dars.length + 1).padStart(3, '0')}`;
+    const fileId = finalDar.fileId || `file-${darId}-${Date.now()}`;
+    const targetFile = rawFile || finalDar.file || finalDar.fileBlob;
+
+    if (targetFile && (targetFile instanceof Blob || targetFile instanceof File)) {
+      const { saveFile } = await import('../utils/fileStorage');
+      await saveFile(fileId, targetFile);
+      await saveFile(darId, targetFile); // ทำ Alias ด้วยรหัส DAR
+      if (finalDar.docCode) await saveFile(finalDar.docCode, targetFile);
+      
+      finalDar.fileId = fileId;
+      if (!finalDar.attachedFile) {
+        finalDar.attachedFile = {
+          fileId: fileId,
+          name: targetFile.name || finalDar.fileName || `${darId}.pdf`,
+          size: targetFile.size || 0,
+          type: 'application/pdf'
+        };
+      }
+    }
+    return get().addDar(finalDar);
   },
 
   // Universal DAR Draft Save & Upsert Action
@@ -5633,9 +5676,13 @@ const useStore = create(persist((set, get) => ({
       if (targetDarToPublish.status === 'COMPLETED') {
         const existingMaster = store.masterDocuments?.find(d => d.docNo === targetDarToPublish.docNo || (d.docCode && d.docCode === targetDarToPublish.docNo));
         if (!existingMaster && targetDarToPublish.docNo) {
+          const activeFileId = targetDarToPublish.fileId || targetDarToPublish.file_id || targetDarToPublish.attachedFile?.fileId || targetDarToPublish.attachedFile?.id;
+          const activeAttachedFile = targetDarToPublish.attachedFile || null;
+          const newDocRecordId = `doc-${Date.now()}`;
           const newMasterDoc = {
-            id: `doc-${Date.now()}`,
+            id: newDocRecordId,
             docNo: targetDarToPublish.docNo,
+            docCode: targetDarToPublish.docNo,
             title: targetDarToPublish.documentName || targetDarToPublish.title,
             type: targetDarToPublish.documentType || targetDarToPublish.type || 'SOP',
             department: 'QC',
@@ -5647,11 +5694,24 @@ const useStore = create(persist((set, get) => ({
             accessLevel: targetDarToPublish.securityLevel || 'General',
             distributionCopies: targetDarToPublish.distributionCopies || [],
             darNo: targetDarToPublish.darNo || targetDarToPublish.darNumber || targetDarToPublish.id,
+            darId: targetDarToPublish.id,
+            fileId: activeFileId || null,
+            attachedFile: activeAttachedFile,
+            file: targetDarToPublish.file || activeAttachedFile || null,
             fileUrl: targetDarToPublish.fileUrl || null,
-            fileName: targetDarToPublish.fileName || null,
+            fileName: targetDarToPublish.fileName || activeAttachedFile?.name || null,
             createdAt: new Date().toISOString(),
             approvedAt: new Date().toISOString()
           };
+          if (activeFileId) {
+            getFile(activeFileId).then(blob => {
+              if (blob) {
+                if (targetDarToPublish.docNo) saveFile(targetDarToPublish.docNo, blob).catch(() => {});
+                saveFile(newDocRecordId, blob).catch(() => {});
+                if (targetDarToPublish.id) saveFile(targetDarToPublish.id, blob).catch(() => {});
+              }
+            }).catch(() => {});
+          }
           if (store.addMasterDocument) {
             store.addMasterDocument(newMasterDoc);
           }
@@ -7802,6 +7862,8 @@ const useStore = create(persist((set, get) => ({
       };
       updatedDocs[existingIndex] = createdDoc;
     } else {
+      const activeFileId = dar.fileId || dar.file_id || dar.attachedFile?.fileId || dar.attachedFile?.id;
+      const activeAttachedFile = dar.attachedFile || null;
       createdDoc = {
         id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         darId: dar.id,
@@ -7826,9 +7888,21 @@ const useStore = create(persist((set, get) => ({
         published_at: isEffectiveTodayOrPast ? new Date().toISOString() : null,
         distributions: isFormDoc ? [] : (dar.distributions || []),
         access_control: dar.access_control || { scope: 'GENERAL' },
-        file: dar.file || null,
+        fileId: activeFileId || null,
+        attachedFile: activeAttachedFile,
+        file: dar.file || activeAttachedFile || null,
+        fileName: dar.fileName || activeAttachedFile?.name || null,
         relatedStandards: dar.relatedStandards || []
       };
+      if (activeFileId) {
+        getFile(activeFileId).then(blob => {
+          if (blob) {
+            if (targetCode) saveFile(targetCode, blob).catch(() => {});
+            saveFile(createdDoc.id, blob).catch(() => {});
+            if (dar.id) saveFile(dar.id, blob).catch(() => {});
+          }
+        }).catch(() => {});
+      }
       updatedDocs.push(createdDoc);
     }
 
@@ -8258,6 +8332,8 @@ const useStore = create(persist((set, get) => ({
       String(targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title || dar.title || '').startsWith('FM')
     );
 
+    const activeFileId = dar.fileId || dar.file_id || dar.attachedFile?.fileId || dar.attachedFile?.id;
+    const activeAttachedFile = dar.attachedFile || null;
     const newDocId = `DOC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newDoc = {
       id: newDocId,
@@ -8294,10 +8370,24 @@ const useStore = create(persist((set, get) => ({
       access_control: dar.access_control || oldDoc?.access_control || { scope: dar.accessScope || 'GENERAL' },
       targetDepartments: dar.targetDepartments || dar.target_departments || [],
       confidentialityLevel: dar.confidentialityLevel || 'INTERNAL',
+      fileId: activeFileId || null,
+      attachedFile: activeAttachedFile,
+      file: dar.file || activeAttachedFile || null,
+      fileName: dar.fileName || activeAttachedFile?.name || null,
       pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
       updatedAt: nowIso,
       createdAt: nowIso
     };
+
+    if (activeFileId) {
+      getFile(activeFileId).then(blob => {
+        if (blob) {
+          if (targetCode) saveFile(targetCode, blob).catch(() => {});
+          saveFile(newDocId, blob).catch(() => {});
+          if (dar.id) saveFile(dar.id, blob).catch(() => {});
+        }
+      }).catch(() => {});
+    }
 
     const existingNewDocIndex = updatedDocs.findIndex(
       doc => (isDocMatchCode(doc) || (dar.docNo && (doc.docNo === dar.docNo || doc.code === dar.docNo || doc.document_code === dar.docNo))) && (
@@ -11704,14 +11794,19 @@ const useStore = create(persist((set, get) => ({
   migrate: (persistedState, version) => {
     if (!version || version < 4) {
       if (persistedState.masterUsers && Array.isArray(persistedState.masterUsers)) {
-        persistedState.masterUsers = persistedState.masterUsers.map(u => ({
-          ...u,
-          permissions: (u.permissions && u.permissions.length > 0) ? u.permissions : ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
-          canCreateDar: u.canCreateDar ?? true,
-          canAccessTasks: u.canAccessTasks ?? true,
-          canViewRegister: u.canViewRegister ?? true,
-          isWorkflowUser: u.isWorkflowUser ?? true
-        }));
+        persistedState.masterUsers = persistedState.masterUsers.map(u => {
+          const defaultUser = MASTER_DATA_USER.find(m => m.id === u.id);
+          return {
+            ...u,
+            signatureImage: u.signatureImage || defaultUser?.signatureImage || '',
+            hasRegisteredSignature: u.hasRegisteredSignature ?? defaultUser?.hasRegisteredSignature ?? true,
+            permissions: (u.permissions && u.permissions.length > 0) ? u.permissions : ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'],
+            canCreateDar: u.canCreateDar ?? true,
+            canAccessTasks: u.canAccessTasks ?? true,
+            canViewRegister: u.canViewRegister ?? true,
+            isWorkflowUser: u.isWorkflowUser ?? true
+          };
+        });
         const userRoleObj = (u) => ({
           id: u.id,
           empId: u.empId || u.id,

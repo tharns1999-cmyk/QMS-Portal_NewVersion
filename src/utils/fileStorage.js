@@ -5,6 +5,9 @@ const DB_VERSION = 1;
 // In-Memory Binary Registry (Lossless Session Registry)
 export const inMemoryBlobRegistry = new Map();
 
+// Dedicated Pristine Raw Blob Registry (Guaranteed unstamped session storage)
+export const rawBlobRegistry = new Map();
+
 export const initDB = () => {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -29,8 +32,9 @@ export const saveFile = async (key, fileOrBlob) => {
   if (!key) return null;
   const strKey = String(key);
   
-  // 1. Immediately store into In-Memory Binary Registry (guarantees synchronous-like availability)
+  // 1. Immediately store into In-Memory Binary Registries (guarantees synchronous-like availability)
   inMemoryBlobRegistry.set(strKey, fileOrBlob);
+  rawBlobRegistry.set(strKey, fileOrBlob);
 
   // 2. Persist to IndexedDB asynchronously
   try {
@@ -53,7 +57,10 @@ export const getFile = async (key) => {
   if (!key) return null;
   const strKey = String(key);
 
-  // 1. Check In-Memory Registry first (instant cache hit)
+  // 1. Check In-Memory Registries first (instant cache hit)
+  if (rawBlobRegistry.has(strKey)) {
+    return rawBlobRegistry.get(strKey);
+  }
   if (inMemoryBlobRegistry.has(strKey)) {
     return inMemoryBlobRegistry.get(strKey);
   }
@@ -68,8 +75,9 @@ export const getFile = async (key) => {
       request.onsuccess = () => {
         const result = request.result;
         if (result) {
-          // Warm up in-memory registry
+          // Warm up in-memory registries
           inMemoryBlobRegistry.set(strKey, result);
+          rawBlobRegistry.set(strKey, result);
         }
         resolve(result || null);
       };
@@ -85,6 +93,7 @@ export const deleteFile = async (key) => {
   if (!key) return;
   const strKey = String(key);
   inMemoryBlobRegistry.delete(strKey);
+  rawBlobRegistry.delete(strKey);
   try {
     const db = await initDB();
     return await new Promise((resolve, reject) => {
@@ -176,22 +185,32 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
       }
     }
 
-    // Check Candidate Keys
+    // Check Candidate Keys across all master document dimensions
     const candidateKeys = [
       target.attachedFile?.fileId,
       target.attachedFile?.id,
       target.attachedFile?.key,
       target.fileId,
+      target.file_id,
       target.attachment?.fileId,
       target.attachment?.id,
       target.file?.fileId,
       target.file?.id,
       typeof target.file === 'string' && !target.file.includes(' ') && target.file.length > 3 ? target.file : null,
       target.id,
-      target.edCode,
       target.doc_code,
-      target.docNo,
       target.docCode,
+      target.document_code,
+      target.documentCode,
+      target.docNo,
+      target.code,
+      target.title,
+      target.darId,
+      target.dar_id,
+      target.darNo,
+      target.dar_no,
+      target.darNumber,
+      target.edCode,
       target.requestId,
       target.requestNo,
       target.edrNumber,
@@ -199,7 +218,7 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
     ].filter(Boolean);
 
     for (const key of candidateKeys) {
-      const file = await getFile(key);
+      const file = await getFile(key) || inMemoryBlobRegistry.get(String(key));
       if (file) {
         if (typeof Blob !== 'undefined' && file instanceof Blob) {
           return file;
@@ -211,6 +230,61 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
           return new Blob([file.buffer], { type: 'application/pdf' });
         }
       }
+    }
+
+    // Layer 5: Dynamic DAR store trace fallback (trace originating DAR for approved master docs)
+    try {
+      const { default: useStore } = await import('../store/useStore');
+      if (useStore && typeof useStore.getState === 'function') {
+        const state = useStore.getState();
+        const allDars = [...(state.dars || []), ...(state.darRequests || [])];
+        const darIdToFind = target.darId || target.dar_id || target.darNo || target.dar_no || target.darNumber;
+        const docCodeToFind = target.docCode || target.document_code || target.doc_code || target.docNo || target.code || target.title;
+
+        const matchedDar = allDars.find(d => 
+          (darIdToFind && (String(d.id) === String(darIdToFind) || String(d.darNo) === String(darIdToFind) || String(d.darNumber) === String(darIdToFind))) ||
+          (docCodeToFind && (d.docNo === docCodeToFind || d.docIdInput === docCodeToFind || d.document_code === docCodeToFind || d.title === docCodeToFind))
+        );
+
+        if (matchedDar) {
+          const darKeys = [
+            matchedDar.fileId,
+            matchedDar.file_id,
+            matchedDar.attachedFile?.fileId,
+            matchedDar.attachedFile?.id,
+            matchedDar.attachment?.fileId,
+            matchedDar.file?.fileId,
+            matchedDar.id,
+            matchedDar.darNo,
+            matchedDar.darNumber
+          ].filter(Boolean);
+
+          for (const key of darKeys) {
+            const file = await getFile(key) || inMemoryBlobRegistry.get(String(key));
+            if (file) {
+              if (typeof Blob !== 'undefined' && file instanceof Blob) return file;
+              if (file instanceof ArrayBuffer) return new Blob([file], { type: 'application/pdf' });
+              if (ArrayBuffer.isView(file)) return new Blob([file.buffer], { type: 'application/pdf' });
+            }
+          }
+
+          const darBinary = [
+            matchedDar.attachedFile,
+            matchedDar.file,
+            matchedDar.fileBlob,
+            matchedDar.blob,
+            matchedDar.pdfBlob,
+            matchedDar.attachment
+          ];
+          for (const f of darBinary) {
+            if (typeof Blob !== 'undefined' && f instanceof Blob) return f;
+            if (f instanceof ArrayBuffer) return new Blob([f], { type: 'application/pdf' });
+            if (ArrayBuffer.isView(f)) return new Blob([f.buffer], { type: 'application/pdf' });
+          }
+        }
+      }
+    } catch {
+      // Ignore dynamic store lookup errors
     }
   }
 

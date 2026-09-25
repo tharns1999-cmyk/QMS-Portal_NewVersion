@@ -352,6 +352,10 @@ const DarNewForm = () => {
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
       access_control: formData.access_control,
+      fileId: attachedFile?.fileId || null,
+      file_id: attachedFile?.fileId || null,
+      file: formData.file || null,
+      fileBlob: formData.file || null,
       attachedFile
     };
     if (targetDraftId && deleteDar) deleteDar(targetDraftId);

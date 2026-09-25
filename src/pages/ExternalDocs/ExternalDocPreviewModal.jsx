@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import useStore from '../../store/useStore';
-import { X, ShieldAlert, FileText, Download, Building2, Calendar, Globe, Tag, CheckCircle2 } from 'lucide-react';
+import { X, ShieldAlert, FileText, Download, Building2, Calendar, Globe, Tag, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import UniversalWatermarkService, { WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import toast from 'react-hot-toast';
-import { getFile, resolveFileBlob } from '../../utils/fileStorage';
+import { resolveFileBlob } from '../../utils/fileStorage';
+import { stampExternalDocumentTopRight } from '../../utils/pdfStamper';
 
 const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
   const { currentUser, logExternalDownload } = useStore();
@@ -15,46 +16,124 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const blobUrlRef = useRef(null);
+  const stampedPdfBytesRef = useRef(null);
+  const currentDocKeyRef = useRef(null);
 
   useEffect(() => {
     let isCancelled = false;
 
-    if (isOpen && doc) {
-      setLoadingPdf(true);
-      const fallbackKey = doc.edCode || doc.doc_code || doc.docNo || doc.id;
-      resolveFileBlob(doc, fallbackKey).then((fileBlob) => {
-        if (isCancelled) return;
-        if (fileBlob) {
-          if (blobUrlRef.current) {
-            URL.revokeObjectURL(blobUrlRef.current);
-          }
-          const url = URL.createObjectURL(fileBlob);
-          blobUrlRef.current = url;
-          setPdfBlobUrl(url);
-        } else {
-          setPdfBlobUrl(null);
-        }
-        setLoadingPdf(false);
-      }).catch(err => {
-        console.error('Error loading PDF blob:', err);
-        if (!isCancelled) {
-          setPdfBlobUrl(null);
-          setLoadingPdf(false);
-        }
-      });
-    } else {
+    if (!isOpen || !doc) {
       if (blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
       }
+      stampedPdfBytesRef.current = null;
+      currentDocKeyRef.current = null;
       setPdfBlobUrl(null);
       setLoadingPdf(false);
+      return;
     }
+
+    const docKey = `${doc.id || ''}_${doc.edCode || doc.doc_code || doc.docNo || ''}_${doc.sourceVersion || doc.edition || ''}_${doc.attachedFile?.fileId || doc.fileId || ''}`;
+
+    // Skip re-processing if already stamped and loaded for the exact same document
+    if (currentDocKeyRef.current === docKey && blobUrlRef.current && pdfBlobUrl) {
+      return;
+    }
+
+    setLoadingPdf(true);
+    const fallbackKey = doc.edCode || doc.doc_code || doc.docNo || doc.id;
+
+    resolveFileBlob(doc, fallbackKey).then(async (fileBlob) => {
+      if (isCancelled) return;
+      if (!fileBlob) {
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        stampedPdfBytesRef.current = null;
+        currentDocKeyRef.current = null;
+        setPdfBlobUrl(null);
+        setLoadingPdf(false);
+        return;
+      }
+
+      try {
+        const rawBuffer = await fileBlob.arrayBuffer();
+        if (isCancelled) return;
+
+        // Origin version extraction strictly avoiding Rev.00
+        const originRev = doc.sourceVersion || doc.edition || doc.originRev || doc.externalEdition || (doc.rev && doc.rev !== '00' && doc.rev !== 'Rev.00' ? doc.rev : null) || (doc.version && doc.version !== '00' && doc.version !== 'Rev.00' ? doc.version : null) || '-';
+        const docTitle = doc.docTitle || doc.docName || doc.title || doc.name || 'External Document';
+        const effectiveDateFormatted = doc.effectiveDate
+          ? (typeof doc.effectiveDate === 'string' && doc.effectiveDate.includes('/')
+              ? doc.effectiveDate
+              : new Date(doc.effectiveDate).toLocaleDateString('th-TH'))
+          : new Date().toLocaleDateString('th-TH');
+
+        const stampData = {
+          docCode: docCode,
+          docRev: originRev,
+          title: docTitle,
+          timestamp: effectiveDateFormatted,
+          status: doc.status || 'ACTIVE'
+        };
+
+        // On-the-fly stamping of all pages for preview
+        let stampedBytes;
+        try {
+          stampedBytes = await stampExternalDocumentTopRight(rawBuffer, stampData);
+        } catch (stampErr) {
+          console.warn("Failed to apply top-right preview stamp, falling back to raw buffer:", stampErr);
+          stampedBytes = rawBuffer;
+        }
+
+        if (isCancelled) return;
+
+        stampedPdfBytesRef.current = stampedBytes;
+        currentDocKeyRef.current = docKey;
+
+        const stampedBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+        }
+        const url = URL.createObjectURL(stampedBlob);
+        blobUrlRef.current = url;
+        setPdfBlobUrl(url);
+      } catch (err) {
+        console.error('Error processing PDF stamp:', err);
+        if (!isCancelled) {
+          if (blobUrlRef.current) {
+            URL.revokeObjectURL(blobUrlRef.current);
+            blobUrlRef.current = null;
+          }
+          stampedPdfBytesRef.current = null;
+          currentDocKeyRef.current = null;
+          setPdfBlobUrl(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoadingPdf(false);
+        }
+      }
+    }).catch(err => {
+      console.error('Error loading PDF blob:', err);
+      if (!isCancelled) {
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        stampedPdfBytesRef.current = null;
+        currentDocKeyRef.current = null;
+        setPdfBlobUrl(null);
+        setLoadingPdf(false);
+      }
+    });
 
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, doc]);
+  }, [isOpen, doc, docCode, pdfBlobUrl]);
 
   useEffect(() => {
     return () => {
@@ -62,6 +141,8 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
         URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = null;
       }
+      stampedPdfBytesRef.current = null;
+      currentDocKeyRef.current = null;
     };
   }, []);
 
@@ -90,51 +171,72 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
     const toastId = toast.loading(`กำลังประทับลายน้ำเอกสาร ${docCode}...`);
 
     try {
-      await UniversalWatermarkService.downloadWatermarkedPdf(
-        {
-          ...doc,
-          id: doc.id,
-          title: docCode,
-          name: doc.title,
-          docTitle: doc.title,
-          rev: doc.rev || doc.sourceVersion || '01',
-          department: doc.department || uDept,
-          effectiveDate: doc.effectiveDate,
-          status: isObsolete ? 'OBSOLETE' : (isSuperseded ? 'SUPERSEDED' : (doc.status || 'ACTIVE')),
-          sourceVersion: doc.sourceVersion || doc.edition,
-          source: doc.source,
-          isExternal: true,
-          is_external: true,
-          doc_type: 'ED',
-          docType: 'ED',
-          attachedFile: doc.attachedFile,
-          fileId: doc.fileId || doc.attachedFile?.fileId
-        },
-        watermarkPreset,
-        {
-          ...doc,
-          docCode,
-          docTitle: doc.title,
-          title: doc.title,
-          docVersion: doc.rev || '01',
-          sourceVersion: doc.sourceVersion || doc.edition,
-          source: doc.source,
-          userName: currentUser?.name || 'Authorized User',
-          userDept: currentUser?.department || uDept,
-          authorizedScope: doc.accessScope === 'Restricted' ? 'Restricted External Release' : 'Standard External Reference',
-          dccName: currentUser?.name || 'DCC Admin',
-          isExternal: true,
-          is_external: true,
-          doc_type: 'ED',
-          docType: 'ED',
-          isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
-          accessScope: doc.accessScope,
-          watermarkType: watermarkPreset,
-          reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print'),
-          attachedFile: doc.attachedFile,
-          fileId: doc.fileId || doc.attachedFile?.fileId
-        }
-      );
+      const downloadMeta = {
+        ...doc,
+        docCode,
+        docTitle: doc.title,
+        title: doc.title,
+        docVersion: doc.rev || doc.sourceVersion || '01',
+        sourceVersion: doc.sourceVersion || doc.edition,
+        source: doc.source,
+        userName: currentUser?.name || 'Authorized User',
+        userDept: currentUser?.department || uDept,
+        authorizedScope: doc.accessScope === 'Restricted' ? 'Restricted External Release' : 'Standard External Reference',
+        dccName: currentUser?.name || 'DCC Admin',
+        isExternal: true,
+        is_external: true,
+        doc_type: 'ED',
+        docType: 'ED',
+        isRestricted: doc.accessScope === 'Restricted' || doc.accessScope === 'RESTRICTED',
+        accessScope: doc.accessScope,
+        watermarkType: watermarkPreset,
+        reason: isObsolete ? 'Historical Download (OBSOLETE)' : (isSuperseded ? 'Historical Download (SUPERSEDED)' : 'External Document Download / Print'),
+        attachedFile: doc.attachedFile,
+        fileId: doc.fileId || doc.attachedFile?.fileId
+      };
+
+      if (stampedPdfBytesRef.current) {
+        // Fast path: Apply diagonal watermark directly onto the pre-stamped PDF bytes
+        const watermarkedBytes = await UniversalWatermarkService.stampPdf(
+          stampedPdfBytesRef.current,
+          watermarkPreset,
+          downloadMeta
+        );
+        const blob = new Blob([watermarkedBytes], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const revTag = doc.sourceVersion || doc.edition || 'STAMPED';
+        link.download = `${docCode}_${revTag}_${watermarkPreset}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } else {
+        await UniversalWatermarkService.downloadWatermarkedPdf(
+          {
+            ...doc,
+            id: doc.id,
+            title: docCode,
+            name: doc.title,
+            docTitle: doc.title,
+            rev: doc.rev || doc.sourceVersion || '01',
+            department: doc.department || uDept,
+            effectiveDate: doc.effectiveDate,
+            status: isObsolete ? 'OBSOLETE' : (isSuperseded ? 'SUPERSEDED' : (doc.status || 'ACTIVE')),
+            sourceVersion: doc.sourceVersion || doc.edition,
+            source: doc.source,
+            isExternal: true,
+            is_external: true,
+            doc_type: 'ED',
+            docType: 'ED',
+            attachedFile: doc.attachedFile,
+            fileId: doc.fileId || doc.attachedFile?.fileId
+          },
+          watermarkPreset,
+          downloadMeta
+        );
+      }
 
       if (logExternalDownload) {
         logExternalDownload(doc.id);
@@ -155,7 +257,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/75 backdrop-blur-md overflow-hidden">
         {/* Backdrop */}
         <motion.div 
           initial={{ opacity: 0 }}
@@ -165,100 +267,135 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
           className="fixed inset-0"
         />
         
+        {/* Near Full-Screen Modal Canvas */}
         <motion.div 
-          initial={{ scale: 0.95, opacity: 0, y: 15 }}
+          initial={{ scale: 0.96, opacity: 0, y: 12 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.95, opacity: 0, y: 15 }}
-          transition={{ type: "spring", stiffness: 320, damping: 30 }}
-          className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-10 my-auto"
+          exit={{ scale: 0.96, opacity: 0, y: 12 }}
+          transition={{ type: "spring", stiffness: 340, damping: 32 }}
+          className="relative w-[95vw] max-w-7xl 2xl:max-w-[1536px] h-[92vh] max-h-[960px] min-h-[580px] bg-white rounded-2xl shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden z-10 my-auto"
         >
-          {/* Header */}
-          <div className="bg-white px-6 py-4 flex justify-between items-center shrink-0 border-b border-slate-200">
-            <div className="flex items-center gap-3.5 min-w-0 pr-2">
-              <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
-                <FileText size={22} />
+          {/* Header (Compact & High Information Density) */}
+          <div className="bg-white px-4 sm:px-6 py-2.5 sm:py-3 flex justify-between items-center shrink-0 border-b border-slate-200/90">
+            <div className="flex items-center gap-3 min-w-0 pr-3">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/80 flex items-center justify-center shrink-0 shadow-xs">
+                <FileText size={20} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-slate-900 text-lg sm:text-xl font-bold tracking-tight">{docCode}</h2>
-                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-md text-xs font-mono font-bold">
+                  <h2 className="text-slate-900 text-base sm:text-lg font-bold tracking-tight">{docCode}</h2>
+                  <span className="bg-indigo-50 text-indigo-700 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-mono font-bold">
                     {doc.sourceVersion ? `Ver/Ed: ${doc.sourceVersion}` : 'EXTERNAL DOC'}
                   </span>
                   {isObsolete ? (
-                    <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
-                      OBSOLETE (ยกเลิกแล้ว)
+                    <span className="bg-rose-50 text-rose-700 border border-rose-200/80 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-bold flex items-center gap-1">
+                      <AlertTriangle size={12} /> OBSOLETE
                     </span>
                   ) : isSuperseded ? (
-                    <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
-                      SUPERSEDED (ตกรุ่น)
+                    <span className="bg-amber-50 text-amber-800 border border-amber-200/80 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-bold flex items-center gap-1">
+                      <AlertTriangle size={12} /> SUPERSEDED
                     </span>
                   ) : (
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-md text-xs font-bold">
-                      ACTIVE (มีผลบังคับใช้)
+                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-bold flex items-center gap-1">
+                      <CheckCircle2 size={12} /> ACTIVE
                     </span>
                   )}
                   {doc.accessScope === 'Restricted' && (
-                    <span className="bg-[#f5e6e6] text-[#a94442] border border-[#e5cdcd] px-2 py-0.5 rounded-md text-xs font-bold flex items-center gap-1">
+                    <span className="bg-rose-50 text-rose-700 border border-rose-200/80 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-bold flex items-center gap-1">
                       <ShieldAlert size={12} /> RESTRICTED
                     </span>
                   )}
                 </div>
-                <p className="text-stone-500 text-sm sm:text-base font-medium truncate max-w-md mt-1">
+                <p className="text-slate-500 text-xs sm:text-sm font-medium truncate max-w-xl mt-0.5" title={doc.title}>
                   {doc.title}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <button
                 type="button"
                 onClick={handleDownload}
-                className="px-5 py-2.5 rounded-xl bg-[#da7756] hover:bg-[#c96646] active:scale-[0.99] text-white font-bold text-sm transition-all flex items-center gap-2 focus:ring-4 focus:ring-[#da7756]/20 outline-none shadow-none cursor-pointer"
+                className="px-3.5 sm:px-4 py-2 rounded-xl bg-[#da7756] hover:bg-[#c96646] active:scale-[0.98] text-white font-semibold text-xs sm:text-sm transition-all flex items-center gap-1.5 focus:ring-4 focus:ring-[#da7756]/20 outline-none shadow-sm cursor-pointer"
+                title="ดาวน์โหลดไฟล์พร้อมลายน้ำควบคุม"
               >
-                <Download size={16} />
+                <Download size={15} />
                 <span>ดาวน์โหลด PDF</span>
               </button>
               <button 
                 type="button"
                 onClick={onClose}
-                className="text-stone-400 hover:text-[#2d2d2d] hover:bg-stone-50 p-2 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none"
-                title="ปิดหน้าต่าง"
+                className="text-slate-400 hover:text-slate-800 hover:bg-slate-100 p-2 rounded-xl transition-colors focus:ring-2 focus:ring-[#da7756]/20 outline-none cursor-pointer"
+                title="ปิดหน้าต่าง (Esc)"
               >
-                <X size={24} />
+                <X size={20} />
               </button>
             </div>
           </div>
 
-          {/* Metadata Quick Ribbon */}
-          <div className="px-8 py-4 bg-[#f9f8f6] border-b border-stone-100 flex flex-wrap items-center justify-between gap-4 text-sm text-stone-500 shrink-0">
-            <div className="flex flex-wrap items-center gap-5">
-              <span>ผู้ออก: <strong className="text-[#2d2d2d]">{doc.source || '-'}</strong></span>
-              {doc.sourceVersion && <span>รุ่น/Edition: <strong className="text-[#2d2d2d] font-mono">{doc.sourceVersion}</strong></span>}
-              <span>แผนก: <strong className="text-[#2d2d2d] font-mono">{doc.department || doc.dept || 'QA'}</strong></span>
-              <span>วันบังคับใช้: <strong className="text-[#2d2d2d] font-mono">{doc.effectiveDate}</strong></span>
+          {/* Metadata Quick Ribbon (Compact single-line scannable info strip) */}
+          <div className="px-4 sm:px-6 py-2 bg-slate-50/90 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 text-xs text-slate-500 shrink-0">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <Globe size={13} className="text-slate-400" />
+                <span>ผู้ออก:</span>
+                <strong className="text-slate-800 font-medium">{doc.source || '-'}</strong>
+              </span>
+              {(doc.sourceVersion || doc.edition) && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Tag size={13} className="text-slate-400" />
+                  <span>รุ่น/Edition:</span>
+                  <strong className="text-slate-800 font-mono font-medium">{doc.sourceVersion || doc.edition}</strong>
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5">
+                <Building2 size={13} className="text-slate-400" />
+                <span>แผนก:</span>
+                <strong className="text-slate-800 font-mono font-medium">{doc.department || doc.dept || 'QA'}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar size={13} className="text-slate-400" />
+                <span>วันบังคับใช้:</span>
+                <strong className="text-slate-800 font-mono font-medium">{doc.effectiveDate || '-'}</strong>
+              </span>
             </div>
-            <div>
-              สิทธิ์การเข้าถึง: <span className="font-bold text-[#b87c33] bg-[#f9f1e6] border border-[#e8d6c1] px-2.5 py-1 rounded-md text-xs">{doc.accessScope || 'General'}</span>
+            <div className="inline-flex items-center gap-1.5">
+              <span>สิทธิ์การเข้าถึง:</span>
+              <span className="font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px] shadow-2xs">
+                {doc.accessScope || 'General'}
+              </span>
             </div>
           </div>
 
-          {/* PDF Native Viewer */}
-          <div className="flex-1 bg-stone-100/80 relative overflow-hidden flex justify-center items-center min-h-[500px]">
+          {/* PDF Native Viewer Container (Maximized Full Height Viewport) */}
+          <div className="flex-1 min-h-0 w-full h-full bg-slate-900 relative overflow-hidden flex flex-col justify-center items-center">
             {loadingPdf ? (
-              <div className="text-stone-500 font-medium animate-pulse flex flex-col items-center gap-3">
-                <FileText size={32} className="text-stone-400" />
-                <span>กำลังโหลดไฟล์ PDF...</span>
+              <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3 z-10">
+                <FileText size={36} className="text-slate-500 animate-bounce" />
+                <span className="text-sm">กำลังประทับตรายางควบคุมและเตรียมพรีวิวเอกสาร...</span>
               </div>
             ) : pdfBlobUrl ? (
-              <iframe
-                src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                className="w-full h-full border-0 absolute inset-0"
-                title="PDF Preview"
-              />
+              <>
+                <iframe
+                  src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                  className="w-full h-full border-0 absolute inset-0 bg-slate-900"
+                  title="PDF Preview"
+                />
+                {/* Floating subtle security preview watermark pill */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none z-10 px-3 py-1 rounded-full bg-slate-950/80 backdrop-blur-md border border-slate-700/60 text-slate-300 text-[11px] font-mono shadow-lg flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
+                  <ShieldCheck size={12} className={isObsolete ? "text-rose-400" : isSuperseded ? "text-amber-400" : "text-emerald-400"} />
+                  <span>{watermarkText}</span>
+                </div>
+              </>
             ) : (
-              <div className="text-stone-500 font-medium flex flex-col items-center gap-3">
-                <ShieldAlert size={40} className="text-stone-300" />
-                <span>ไม่พบไฟล์ต้นฉบับจริง (No original file attached)</span>
+              <div className="text-slate-400 font-medium flex flex-col items-center gap-3 p-6 text-center z-10">
+                <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-slate-400">
+                  <ShieldAlert size={28} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-slate-200 font-semibold text-sm">ไม่พบไฟล์ต้นฉบับจริง (No original file attached)</p>
+                  <p className="text-slate-400 text-xs">เอกสารนี้อาจถูกบันทึกโดยไม่มีไฟล์แนบ หรือไฟล์อยู่ในคลังข้อมูลที่ถูกย้าย</p>
+                </div>
               </div>
             )}
           </div>

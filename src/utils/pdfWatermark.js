@@ -78,6 +78,22 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     ];
   }
 
+  // 📝 0. กรณีเอกสารฉบับร่าง หรืออยู่ระหว่างทบทวน/อนุมัติ (DRAFT / UNDER REVIEW)
+  if (
+    normalizedType === 'DRAFT' || 
+    normalizedType === 'DRAFT_WATERMARK' || 
+    isDraftLifecycle(doc?.status) || 
+    isDraftLifecycle(options?.status)
+  ) {
+    const darRef = doc?.darNumber || doc?.darNo || doc?.dar_no || doc?.id || options?.darNo || 'DAR-DRAFT';
+    return [
+      'ฉบับร่าง (สำหรับทบทวนและพิจารณาเท่านั้น)',
+      'ห้ามนำไปใช้ปฏิบัติงานจริง (NOT FOR OPERATIONAL USE)',
+      `DAR Ref: ${darRef} | Doc: ${docCode} | Rev: Rev.${docRev}`,
+      `Printed Date: ${nowStr} | User: ${userStr}`
+    ];
+  }
+
   // 🚫 1. กรณีเอกสารยกเลิก (OBSOLETE) — ห้ามมีคำว่า "Superseded By" เด็ดขาด 100%!
   if (
     normalizedType === 'OBSOLETE' || 
@@ -87,7 +103,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const darRef = doc.obsolete_dar_id || doc.obsolete_dar_no || doc.dar_id || doc.dar_no || doc.darId || doc.darNo || 'DAR-OBSOLETE';
     return [
       'เอกสารยกเลิก - ห้ามนำไปปฏิบัติงาน (CANCELLED DOCUMENT)',
-      `Doc: ${docCode} | Rev.${docRev}`,
+      `Doc: ${docCode} | Rev: Rev.${docRev}`,
       `Obsolete DAR Ref: ${darRef} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];
@@ -103,7 +119,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const nextRev = doc.superseded_by_rev || options.supersededByRev || doc.nextVersion || 'Latest';
     return [
       'เอกสารฉบับเดิมตกรุ่น - ใช้อ้างอิงประวัติเท่านั้น (SUPERSEDED REVISION)',
-      `Doc: ${docCode} | Rev.${docRev}`,
+      `Doc: ${docCode} | Rev: Rev.${docRev}`,
       `Superseded By: Rev.${nextRev} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];
@@ -119,32 +135,38 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const copyInfo = options.copyInfo || {};
     return [
       'OFFICIAL CONTROLLED COPY — DO NOT DUPLICATE',
-      `Doc: ${docCode} | Rev.${docRev}`,
+      `Doc: ${docCode} | Rev: Rev.${docRev}`,
       `Copy: ${copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || 'Copy 01'} | Station: ${copyInfo.station_name || copyInfo.location || copyInfo.locationName || 'Master'}`,
       `Issued Date: ${nowStr} | Issuer: ${userStr}`,
     ];
   }
 
   // 📄 4. กรณีเอกสารใช้งานทั่วไป (UNCONTROLLED COPY)
-  const docTitle = doc?.docTitle || doc?.docName || doc?.name || (doc?.title !== docCode ? doc?.title : '') || options?.docTitle || '';
-  const titlePart = docTitle ? ` | Title: ${docTitle}` : '';
-  const isRestricted = Boolean(
-    doc?.accessScope === 'Restricted' || 
-    doc?.access_scope === 'Restricted' || 
-    doc?.accessScope === 'RESTRICTED' || 
-    doc?.access_scope === 'RESTRICTED' ||
-    doc?.isRestricted ||
-    options?.isRestricted
-  );
-  const restrictedSuffix = isRestricted ? ' [RESTRICTED ACCESS]' : '';
-  const userDept = options.currentUser?.department || options.currentUser?.dept || options.userDept || doc?.department || 'HQ';
-  const userName = options.currentUser?.name || options.currentUser?.username || options.userName || 'Authorized User';
-
   return [
-    `Doc: ${docCode}${titlePart} | Rev.${docRev}${restrictedSuffix}`,
-    `Downloaded By: ${userName} (${userDept}) | Date: ${nowStr}`,
-    '*UNCONTROLLED COPY - FOR REFERENCE ONLY - DO NOT DUPLICATE*'
+    'FOR REFERENCE ONLY (INTERNAL USE)',
+    `Doc: ${docCode} | Ver: Rev.${docRev}`,
+    `Printed Date: ${nowStr} | User: ${userStr}`,
   ];
+};
+
+/**
+ * Check if a document or DAR status belongs to the Draft / Review lifecycle
+ */
+export const isDraftLifecycle = (status) => {
+  if (!status) return false;
+  const s = String(status).toUpperCase();
+  return [
+    'NEW',
+    'PENDING_REVIEW',
+    'UNDER_REVIEW',
+    'IN_REVIEW',
+    'PENDING_APPROVAL',
+    'RETURNED',
+    'RETURNED_FOR_REVISION',
+    'DRAFT',
+    'REVISION_PENDING',
+    'EDITING'
+  ].includes(s);
 };
 
 /**
@@ -164,7 +186,7 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
     doc?.type === 'EXTERNAL' ||
     (doc?.edCode && !doc?.doc_code)
   );
-  const status = (doc?.status || '').toUpperCase();
+  const status = (doc?.status || options.status || '').toUpperCase();
   const currentUser = options.currentUser || {};
   const copyInfo = options.copyInfo || null;
   const nowStr = getBangkokFormattedTimestamp(new Date());
@@ -174,6 +196,40 @@ export const resolveWatermarkConfig = (doc = {}, options = {}) => {
   const docVersion = isExternal ? extVersion : String(doc?.revision || doc?.rev || doc?.doc_version || doc?.docVersion || '00').replace(/^REV\.?/i, '').padStart(2, '0');
   const userDisplayName = currentUser.name || currentUser.username || options.userName || 'User';
   const userDept = currentUser.department || currentUser.dept || options.userDept || doc?.department || 'HQ';
+
+  // 0. กรณีเอกสารฉบับร่าง หรืออยู่ระหว่างทบทวน/อนุมัติ (DRAFT / IN-REVIEW / PENDING APPROVAL)
+  // Mutually Exclusive Stage Governance: บังคับใช้ลายน้ำ DRAFT ชั้นเดียวเท่านั้น 100%
+  const isDraftStage = isDraftLifecycle(doc?.status) || 
+                       isDraftLifecycle(options?.status) || 
+                       doc?.isDraft || 
+                       options?.isDraft || 
+                       status === 'DRAFT' || 
+                       status === 'PENDING_REVIEW' || 
+                       status === 'UNDER_REVIEW' || 
+                       status === 'IN_REVIEW' || 
+                       status === 'PENDING_APPROVAL' || 
+                       status === 'RETURNED' || 
+                       status === 'RETURNED_FOR_REVISION';
+
+  if (isDraftStage) {
+    return {
+      type: 'DRAFT',
+      watermarkType: WATERMARK_TYPES.DRAFT,
+      mainText: 'DRAFT',
+      color: '#E11D48', // Stamp Crimson / Rose Red
+      subLines: buildWatermarkSubLines(doc, 'DRAFT', { ...options, currentUser, isExternal }),
+      metadata: {
+        docCode,
+        docVersion,
+        darNo: doc?.darNumber || doc?.darNo || doc?.id || options?.darNo || '-',
+        userName: userDisplayName,
+        userDept,
+        timestamp: nowStr,
+        isExternal,
+        status: doc?.status || options?.status || 'DRAFT'
+      }
+    };
+  }
 
   // 1. กรณีเป็นสำเนาควบคุม (Controlled Copy - internal documents only)
   if (!isExternal && copyInfo && (copyInfo.copy_number || copyInfo.copy_no || copyInfo.ccNumber || options.isControlledCopy)) {
@@ -301,6 +357,7 @@ export {
   WATERMARK_PRESETS,
   getBangkokFormattedTimestamp,
   getBangkokFormattedDate
+  // Note: isDraftLifecycle is declared as a named export above (line 155) — no re-export needed
 };
 
 export default {
@@ -308,5 +365,7 @@ export default {
   resolveWatermarkConfig,
   UniversalWatermarkService,
   WATERMARK_TYPES,
-  WATERMARK_PRESETS
+  WATERMARK_PRESETS,
+  isDraftLifecycle
 };
+

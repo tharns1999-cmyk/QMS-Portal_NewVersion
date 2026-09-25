@@ -44,6 +44,7 @@ import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { generateCursiveSignatureDataUrl } from '../../utils/pdfStamper';
 
 const MasterDataHub = () => {
   const navigate = useNavigate();
@@ -858,8 +859,17 @@ const MasterDataHub = () => {
     if (!selectedUserForSignature) return;
 
     try {
+      let finalSigImage = signatureFormData.signatureImage;
+      if (signatureActiveTab === 'TYPOGRAPHIC' && !finalSigImage) {
+        finalSigImage = generateCursiveSignatureDataUrl(
+          signatureFormData.signatureInitials || selectedUserForSignature.name,
+          signatureFormData.signatureStyle
+        );
+      }
+
       updateUserSignatureProfile(selectedUserForSignature.id, {
         ...signatureFormData,
+        signatureImage: finalSigImage || signatureFormData.signatureImage,
         signatureType: signatureActiveTab
       });
       toast.success(`บันทึกสินทรัพย์ลายเซ็นของ "${selectedUserForSignature.name}" เรียบร้อยแล้ว`);
