@@ -63,11 +63,11 @@ describe('TaskInbox UI/UX Bug Fixes & Polish Tests', () => {
   it('2. Leading Icon Box: assigns appropriate icon configuration and is never empty', () => {
     renderWithRouter(<TaskInbox />);
 
-    // TASK-MOCK-4 is ACKNOWLEDGE (renders Bell icon and badge "Acknowledge Task")
-    expect(screen.getByText('Acknowledge Task')).toBeInTheDocument();
+    // TASK-MOCK-4 is ACKNOWLEDGE — new design shows Thai chip "รับทราบเอกสาร"
+    expect(screen.getByText('รับทราบเอกสาร')).toBeInTheDocument();
 
-    // TASK-MOCK-2 is APPROVE (renders ShieldCheck icon and badge "Approve Task")
-    expect(screen.getByText('Approve Task')).toBeInTheDocument();
+    // TASK-MOCK-2 is APPROVE — new design shows Thai chip "อนุมัติคำร้อง"
+    expect(screen.getByText('อนุมัติคำร้อง')).toBeInTheDocument();
   });
 
   it('3. Title Prefix Bug Fix: sanitizes empty brackets `[]` and formats titles cleanly', () => {
@@ -101,8 +101,14 @@ describe('TaskInbox UI/UX Bug Fixes & Polish Tests', () => {
     const ackTabBtn = screen.getByRole('button', { name: /Acknowledge/i });
     fireEvent.click(ackTabBtn);
 
-    // Should only show TASK-MOCK-4
-    expect(screen.getByText('TASK-MOCK-4')).toBeInTheDocument();
-    expect(screen.queryByText('TASK-MOCK-2')).toBeNull();
+    // After redesign: card content shows the clean document title, not the raw task ID.
+    // The ACKNOWLEDGE task title after stripping "[] " is "รับทราบการประกาศใช้เอกสารใหม่ - SOP-PD-001"
+    // TASK-MOCK-2 (APPROVE) should NOT be visible.
+    expect(screen.queryByText('อนุมัติคำร้อง (Approve DAR) - SOP-WH-002')).toBeNull();
+
+    // The ACK task content should be visible via its heading
+    const headings = screen.getAllByRole('heading', { level: 3 });
+    const ackCard = headings.find(h => h.textContent.includes('รับทราบการประกาศใช้เอกสารใหม่'));
+    expect(ackCard).toBeDefined();
   });
 });

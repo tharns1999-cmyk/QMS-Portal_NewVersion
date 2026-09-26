@@ -4,11 +4,13 @@ import toast from 'react-hot-toast';
 import { Download, FileText, AlertTriangle } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { isDarDraft } from '../../utils/darHelper';
 
 const Reports = () => {
   const { dars, tasks } = useStore();
   
-  const darPagination = useTablePagination(dars || [], 10);
+  const submittedDars = (dars || []).filter(d => !isDarDraft(d));
+  const darPagination = useTablePagination(submittedDars, 10);
   const overdueTasks = (tasks || []).filter(t => t.status === 'OVERDUE');
   const overduePagination = useTablePagination(overdueTasks, 10);
 

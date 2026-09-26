@@ -218,7 +218,7 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
   });
 
   describe('4. DAR Audit History Timeline Tab in DocumentDetailModal', () => {
-    it('renders DAR history timeline tab with revision badges, reasons, and sign-offs', () => {
+    it('renders DAR history timeline tab with cumulative audit trail and sign-offs', () => {
       renderWithRouter(
         <DocumentDetailModal
           isOpen={true}
@@ -232,7 +232,7 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       expect(historyTabBtn).toBeInTheDocument();
       fireEvent.click(historyTabBtn);
 
-      // Verify DAR items are rendered
+      // Verify DAR items are rendered (cumulative history up to Rev.02)
       expect(screen.getByText('DAR-2026-001')).toBeInTheDocument();
       expect(screen.getByText('DAR-2026-000')).toBeInTheDocument();
       expect(screen.getByText(/ปรับปรุงขั้นตอนการอบขนมและเพิ่มการบันทึกอุณหภูมิ/i)).toBeInTheDocument();
@@ -242,6 +242,91 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       expect(screen.getAllByText('สมชาย สายผลิต').length).toBeGreaterThan(0);
       expect(screen.getAllByText('ธนาวุฒิ สมควรกิจดำรง').length).toBeGreaterThan(0);
       expect(screen.getAllByText('ประจักษ์ มุ่งมั่น').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('5. Modernize & Lean Out Document Library (Superseded Tab & Filter Architecture)', () => {
+    const supersededDoc = {
+      id: 'doc-pd-sup-01',
+      title: 'SOP-PD-01',
+      name: 'Standard Operating Procedure for Production Baking',
+      rev: '00',
+      status: 'SUPERSEDED_ARCHIVED',
+      department: 'PD',
+      owner_dept: 'PD',
+      effectiveDate: '2025-01-01',
+      target_depts: ['PD']
+    };
+
+    beforeEach(() => {
+      useStore.setState({
+        currentUser: pdUser,
+        documents: [pdDoc, qaDoc, supersededDoc],
+        masterDepartments: [
+          { id: 'PD', name: 'Production', nameTh: 'ฝ่ายผลิต' },
+          { id: 'QA', name: 'Quality Assurance', nameTh: 'ประกันคุณภาพ' }
+        ],
+        controlledCopyInstances: [],
+        documentControlledCopies: []
+      });
+    });
+
+    it('Streamlined Filters: Removes redundant secondary sub-department filter bar', () => {
+      setTestUser(pdUser);
+      renderWithRouter(<Library />);
+
+      // Invariant: The redundant secondary sub-department bar "สายงาน / แผนก: ทั้งหมดในสายงาน" must NOT exist
+      expect(screen.queryByText(/สายงาน \/ แผนก:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/ทั้งหมดในสายงาน/i)).not.toBeInTheDocument();
+
+      // Primary department dropdown filter remains available
+      const selects = screen.getAllByRole('combobox');
+      expect(selects.length).toBeGreaterThan(0);
+      expect(screen.getByText(/ทุกแผนก/i)).toBeInTheDocument();
+    });
+
+    it('Superseded Tab Lean Table: Omits "สถานะเอกสาร", renders lean badges, and removes verbose sublines', () => {
+      setTestUser(pdUser);
+      renderWithRouter(<Library />);
+
+      // Switch to "เอกสารในแผนกฉัน"
+      fireEvent.click(screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i }));
+
+      // Switch to "ฉบับเดิมตกรุ่น (Superseded)" tab
+      const supersededTabBtn = screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น/i });
+      fireEvent.click(supersededTabBtn);
+
+      // Verify Superseded Table Headers
+      expect(screen.getByText('รหัสและชื่อเอกสาร')).toBeInTheDocument();
+      expect(screen.getByText('แผนกเจ้าของ')).toBeInTheDocument();
+      expect(screen.getByText('จำนวนฉบับตกรุ่น')).toBeInTheDocument();
+      expect(screen.getByText('การเรียกคืนสำเนา')).toBeInTheDocument();
+      expect(screen.getByText('การจัดการ')).toBeInTheDocument();
+
+      // Invariant: Header "สถานะเอกสาร" must NOT be rendered in Superseded tab
+      const tableHeaders = screen.getAllByRole('columnheader').map(th => th.textContent.trim());
+      expect(tableHeaders).not.toContain('สถานะเอกสาร');
+
+      // Column 1: Monospace Code Badge & Type Badge & Name
+      expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
+      expect(screen.getByText('Standard Operating Procedure for Production Baking')).toBeInTheDocument();
+
+      // Column 2: Clean Department Badge (PD) without security subline
+      expect(screen.queryByText(/🌐 ทั่วไป/i)).not.toBeInTheDocument();
+
+      // Column 3: Minimal Pill Badge ({count} ฉบับ) - No breakdown string, no "ประวัติตกรุ่นสะสม"
+      const supersededPills = screen.getAllByText(/1 ฉบับ/i);
+      expect(supersededPills.length).toBeGreaterThan(0);
+      expect(screen.queryByText(/ประวัติตกรุ่นสะสม/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/\(R00/i)).not.toBeInTheDocument();
+
+      // Column 4: Recall status badge only - No requester or approver string
+      expect(screen.queryByText(/ผู้ขอ:/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/อนุมัติ:/i)).not.toBeInTheDocument();
+
+      // Table does not have redundant "ฉบับตกรุ่น" status column in row body
+      // Ensure only 5 columns exist in the table header
+      expect(tableHeaders.length).toBe(5);
     });
   });
 });
