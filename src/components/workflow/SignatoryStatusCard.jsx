@@ -71,17 +71,17 @@ const SignatoryStatusCard = ({
               />
             ) : (
               <span className="text-sm italic font-serif text-slate-400">
-                {req.name || 'คุณบีม'}
+                {req.name || 'ผู้จัดทำ'}
               </span>
             )}
           </div>
 
           <div className="text-center pt-1 leading-tight space-y-0.5">
             <p className="text-sm font-bold text-slate-100 truncate">
-              ({req.name || 'คุณบีม'})
+              ({req.name || 'ผู้จัดทำ'})
             </p>
             <p className="text-[12px] text-slate-400 truncate">
-              {req.position || 'QAQC Supervisor'}
+              {req.position || 'Requester'}
             </p>
             <p className="text-[11px] text-slate-400 font-mono">
               วันที่: {req.timestamp || '-'}

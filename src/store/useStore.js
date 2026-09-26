@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { stampDocumentFirstPage, stampExternalDocumentTopRight } from '../utils/pdfStamper';
 import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
+import { generateDynamicWorkflow } from '../utils/workflowEngine';
 import { generateSchedules, generateTasksForSchedules, calculateNextReviewDate } from '../services/PeriodicReviewService';
 import { 
   createOrGetLinkedDarDraft, 
@@ -4927,10 +4928,40 @@ const useStore = create(persist((set, get) => ({
       }
     }
 
-    // When a DAR is added, it needs a Reviewer assigned from the same department
-    // Criteria: candidate.level >= minReviewerLevel (L4+ threshold with linear escalation)
+    // Generate Rule-Based Dynamic Workflow Steps (Step 1: Requester, Step 2: Reviewer, Step 3: Approver)
+    const requesterUser = (state.masterUsers || []).find(u => (u.id === newDar.requesterId || u.userId === newDar.requesterId)) || state.currentUser;
+    const dynamicWorkflow = generateDynamicWorkflow(requesterUser, newDar.department, state.masterUsers || []);
+
+    newDar.workflowSteps = (Array.isArray(dar.workflowSteps) && dar.workflowSteps.length > 0)
+      ? dar.workflowSteps
+      : dynamicWorkflow;
+
+    const step2 = newDar.workflowSteps?.find(s => s.role === 'REVIEWER' || s.step === 2);
+    const step3 = newDar.workflowSteps?.find(s => s.role === 'APPROVER' || s.step === 3);
+
+    if (step2?.userId) {
+      newDar.reviewerId = step2.userId;
+      newDar.reviewerName = step2.userName;
+    }
+    if (step3?.userId) {
+      newDar.approverId = step3.userId;
+      newDar.approverName = step3.userName;
+    }
+
+    // Set reviewerObj based on dynamic workflow step 2 (with fallback to resolveReviewer)
     let reviewerObj = null;
-    if (!newDar.manualReviewerId) {
+    if (step2?.userId) {
+      const step2User = (state.masterUsers || []).find(m => m.id === step2.userId || m.userId === step2.userId);
+      if (step2User) {
+        reviewerObj = {
+          id: step2User.id || step2User.userId,
+          name: step2User.name || step2.userName,
+          level: step2User.level || step2User.approval_level || 5,
+          dept: step2User.department || newDar.department
+        };
+      }
+    }
+    if (!reviewerObj && !newDar.manualReviewerId) {
       reviewerObj = resolveReviewer(
         newDar.requesterId, 
         newDar.department, 
@@ -4939,7 +4970,7 @@ const useStore = create(persist((set, get) => ({
         newDar.docType, 
         state.approvalMatrix
       );
-    } else {
+    } else if (!reviewerObj && newDar.manualReviewerId) {
       const u = state.masterUsers.find(m => m.id === newDar.manualReviewerId);
       if (u) reviewerObj = { id: u.id, level: u.level, dept: newDar.department };
     }
@@ -5318,7 +5349,19 @@ const useStore = create(persist((set, get) => ({
 
         // Find Approver (Rule: candidate.level >= minApproverLevel, Linear Multi-Stage Pipeline)
         let approverObj = null;
-        if (!dar.manualApproverId) {
+        const step3 = dar.workflowSteps?.find(s => s.role === 'APPROVER' || s.step === 3);
+        if (step3?.userId && !dar.manualApproverId) {
+          const step3User = (state.masterUsers || []).find(m => m.id === step3.userId || m.userId === step3.userId);
+          if (step3User) {
+            approverObj = {
+              id: step3User.id || step3User.userId,
+              name: step3User.name || step3.userName,
+              level: step3User.level || step3User.approval_level || 6,
+              dept: step3User.department || dar.department
+            };
+          }
+        }
+        if (!approverObj && !dar.manualApproverId) {
           approverObj = resolveApprover(
             dar.requesterId, 
             task.assigneeId, 
@@ -5328,7 +5371,7 @@ const useStore = create(persist((set, get) => ({
             dar.docType || dar.doc_type, 
             state.approvalMatrix
           );
-        } else {
+        } else if (!approverObj && dar.manualApproverId) {
           const u = state.masterUsers.find(m => m.id === dar.manualApproverId);
           if (u) approverObj = { id: u.id, level: u.level, dept: dar.department };
         }
@@ -5645,8 +5688,61 @@ const useStore = create(persist((set, get) => ({
       }
     }
 
-    const updatedDars = state.dars.map(d => d.id === dar.id ? { ...d, status: newStatus } : d);
-    const updatedDarRequests = (state.darRequests || []).map(d => d.id === dar.id ? { ...d, status: newStatus } : d);
+    const isReviewTask = task.type === 'Review' || task.type === 'REVIEW';
+    const isApproveTask = task.type === 'Approve' || task.type === 'APPROVE';
+
+    const updatedSteps = (dar.workflowSteps || []).map(s => {
+      if (isReviewTask && (s.role === 'REVIEWER' || s.step === 2)) {
+        return {
+          ...s,
+          userId: s.userId || state.currentUser?.id,
+          userName: state.currentUser?.name || s.userName,
+          position: state.currentUser?.position || s.position,
+          status: action === 'APPROVE' ? 'COMPLETED' : action,
+          timestamp: new Date().toISOString()
+        };
+      }
+      if (isApproveTask && (s.role === 'APPROVER' || s.step === 3)) {
+        return {
+          ...s,
+          userId: s.userId || state.currentUser?.id,
+          userName: state.currentUser?.name || s.userName,
+          position: state.currentUser?.position || s.position,
+          status: action === 'APPROVE' ? 'COMPLETED' : action,
+          timestamp: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    const newHistoryEntry = {
+      step: isReviewTask ? 2 : (isApproveTask ? 3 : 1),
+      role: isReviewTask ? 'REVIEWER' : (isApproveTask ? 'APPROVER' : 'REQUESTER'),
+      action: action === 'APPROVE' ? (isReviewTask ? 'REVIEW' : 'APPROVE') : action,
+      userId: state.currentUser?.id,
+      userName: state.currentUser?.name,
+      timestamp: new Date().toISOString(),
+      comment: comment || ''
+    };
+
+    const updatedWorkflowHistory = [...(dar.workflowHistory || []), newHistoryEntry];
+
+    const updatedDars = state.dars.map(d => d.id === dar.id ? { 
+      ...d, 
+      status: newStatus,
+      workflowSteps: updatedSteps,
+      workflowHistory: updatedWorkflowHistory,
+      ...(isReviewTask && action === 'APPROVE' ? { reviewedAt: new Date().toISOString(), reviewerId: state.currentUser?.id, reviewerName: state.currentUser?.name } : {}),
+      ...(isApproveTask && action === 'APPROVE' ? { approvedAt: new Date().toISOString(), approverId: state.currentUser?.id, approverName: state.currentUser?.name } : {})
+    } : d);
+    const updatedDarRequests = (state.darRequests || []).map(d => d.id === dar.id ? { 
+      ...d, 
+      status: newStatus,
+      workflowSteps: updatedSteps,
+      workflowHistory: updatedWorkflowHistory,
+      ...(isReviewTask && action === 'APPROVE' ? { reviewedAt: new Date().toISOString(), reviewerId: state.currentUser?.id, reviewerName: state.currentUser?.name } : {}),
+      ...(isApproveTask && action === 'APPROVE' ? { approvedAt: new Date().toISOString(), approverId: state.currentUser?.id, approverName: state.currentUser?.name } : {})
+    } : d);
     if (newStatus === 'COMPLETED' && dar.status !== 'COMPLETED') {
       newlyCompletedDar = { ...dar, status: 'COMPLETED' };
     }

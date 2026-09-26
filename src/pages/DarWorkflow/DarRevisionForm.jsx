@@ -866,7 +866,7 @@ const DarRevisionForm = () => {
         rev: nextRevStr,
         requesterId: currentUser?.id || 'EMP-001',
         requester_id: currentUser?.id || 'EMP-001',
-        requester_name: currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง',
+        requester_name: currentUser?.name || '',
         department: selectedDoc?.department || currentUser?.department || formData.department || 'PD',
         date: new Date().toISOString().split('T')[0],
         submittedAt: new Date().toISOString(),
@@ -965,7 +965,7 @@ const DarRevisionForm = () => {
                 <span className="text-[#CBD5E1] hidden sm:inline">•</span>
                 <label className="text-sm font-semibold text-[#64748B] flex items-center gap-1.5 cursor-default">
                   <span>ชื่อผู้ร้องขอ (Requester):</span>
-                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'}</strong>
+                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ผู้ร้องขอ'}</strong>
                 </label>
               </div>
 
@@ -1663,7 +1663,7 @@ const DarRevisionForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
+                    {currentUser?.name || 'ผู้ร้องขอ'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },

@@ -414,7 +414,7 @@ const DarObsoleteForm = () => {
                 <span className="text-[#CBD5E1] hidden sm:inline">•</span>
                 <label className="text-sm font-semibold text-[#64748B] flex items-center gap-1.5 cursor-default">
                   <span>ผู้ร้องขอ:</span>
-                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'}</strong>
+                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ผู้ร้องขอ'}</strong>
                 </label>
               </div>
 
@@ -903,7 +903,7 @@ const DarObsoleteForm = () => {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
                   <span className="font-medium text-slate-800">
-                    {currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} ({currentUser?.department || 'PD'})
+                    {currentUser?.name || 'ผู้ร้องขอ'} ({currentUser?.department || 'PD'})
                   </span>
                 )
               },

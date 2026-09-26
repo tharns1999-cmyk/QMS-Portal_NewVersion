@@ -18,7 +18,7 @@ import RelatedStandardsSelector from '../../components/workflow/RelatedStandards
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
-import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
+import { generateDynamicWorkflow } from '../../utils/workflowEngine';
 import { 
   calculateCopyAllocations, 
   cleanLocationName,
@@ -49,8 +49,6 @@ const DarNewForm = () => {
     masterDocuments,
     tasks,
     masterUsers, 
-    reviewUsers, 
-    approveUsers, 
     documentTypes, 
     departments, 
     masterDepartments, 
@@ -137,60 +135,20 @@ const DarNewForm = () => {
 
   // Auto-calculated Workflow Participants for Auto-Whitelisting
   const workflowParticipants = useMemo(() => {
-    const list = [];
-    if (currentUser) {
-      list.push({
-        id: currentUser.id,
-        empId: currentUser.empId,
-        name: currentUser.name,
-        department: currentUser.department || currentUser.dept || 'QMS',
-        role: 'REQUESTER',
-        roleTitle: 'ผู้จัดทำ (Requester)'
-      });
+    const targetDept = formData.department || currentUser?.department || 'PD';
+    const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+    if (dynamicSteps && dynamicSteps.length > 0) {
+      return dynamicSteps.map(step => ({
+        id: step.userId,
+        empId: step.userId,
+        name: step.userName,
+        department: targetDept,
+        role: step.role,
+        roleTitle: step.role === 'REQUESTER' ? 'ผู้จัดทำ (Requester)' : (step.role === 'REVIEWER' ? 'ผู้ทบทวน (Reviewer)' : 'ผู้อนุมัติ (Approver)')
+      }));
     }
-    const resolvedRevId = resolveReviewer(
-      currentUser?.id, 
-      currentUser?.department || 'PD', 
-      masterUsers || [], 
-      reviewUsers || masterUsers || [], 
-      formData.docType
-    )?.id;
-    if (resolvedRevId && resolvedRevId !== currentUser?.id) {
-      const revUser = (masterUsers || []).find(u => u && u.id === resolvedRevId);
-      if (revUser) {
-        list.push({
-          id: revUser.id,
-          empId: revUser.empId,
-          name: revUser.name,
-          department: revUser.primary_department || revUser.department || revUser.dept,
-          role: 'REVIEWER',
-          roleTitle: 'ผู้ทบทวน (Reviewer)'
-        });
-      }
-    }
-    const resolvedAppId = resolveApprover(
-      currentUser?.id, 
-      resolvedRevId, 
-      currentUser?.department || 'PD', 
-      masterUsers || [], 
-      approveUsers || masterUsers || [], 
-      formData.docType
-    )?.id;
-    if (resolvedAppId && resolvedAppId !== currentUser?.id && resolvedAppId !== resolvedRevId) {
-      const appUser = (masterUsers || []).find(u => u && u.id === resolvedAppId);
-      if (appUser) {
-        list.push({
-          id: appUser.id,
-          empId: appUser.empId,
-          name: appUser.name,
-          department: appUser.primary_department || appUser.department || appUser.dept,
-          role: 'APPROVER',
-          roleTitle: 'ผู้อนุมัติ (Approver)'
-        });
-      }
-    }
-    return list;
-  }, [currentUser, formData.docType, masterUsers, reviewUsers, approveUsers]);
+    return [];
+  }, [currentUser, formData.department, masterUsers]);
 
   const getPreviewCode = () => {
     if (!formData?.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
@@ -358,6 +316,9 @@ const DarNewForm = () => {
       console.warn('saveFile error fallback:', err);
     }
 
+    const targetDept = formData.department || currentUser?.department || 'PD';
+    const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+
     const newDar = {
       type: 'NEW',
       title: formData.title,
@@ -365,7 +326,8 @@ const DarNewForm = () => {
       requesterId: currentUser?.id,
       requester_id: currentUser?.id,
       requester_name: currentUser?.name,
-      department: currentUser?.department || formData.department,
+      department: targetDept,
+      workflowSteps: dynamicSteps,
       date: new Date().toISOString().split('T')[0],
       submittedAt: new Date().toISOString(),
       docType: formData.docType,
@@ -444,7 +406,7 @@ const DarNewForm = () => {
                 <span className="text-[#CBD5E1] hidden sm:inline">•</span>
                 <label className="text-sm font-semibold text-[#64748B] flex items-center gap-1.5 cursor-default">
                   <span>ชื่อผู้ร้องขอ (Requester):</span>
-                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'}</strong>
+                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ผู้ร้องขอ'}</strong>
                 </label>
               </div>
 
@@ -768,14 +730,10 @@ const DarNewForm = () => {
 
       {(() => {
         const selectedDocTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
-        const resolvedRevId = resolveReviewer(
-          currentUser?.id, 
-          currentUser?.department || 'PD', 
-          masterUsers || [], 
-          reviewUsers || masterUsers || [], 
-          formData.docType
-        )?.id;
-        const resolvedReviewerObj = (masterUsers || []).find(u => u && u.id === resolvedRevId);
+        const targetDept = formData.department || currentUser?.department || 'PD';
+        const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+        const step2 = dynamicSteps.find(s => s.role === 'REVIEWER');
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && (u.id === step2?.userId || u.userId === step2?.userId));
 
         return (
           <ActionConfirmModal
@@ -792,7 +750,7 @@ const DarNewForm = () => {
                 value: (
                   <div className="flex items-center gap-1.5 text-xs text-slate-800 font-medium">
                     <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                    <span>{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'} • แผนก {currentUser?.department || 'PD'}</span>
+                    <span>{currentUser?.name || 'ผู้ร้องขอ'} • แผนก {currentUser?.department || 'PD'}</span>
                   </div>
                 )
               },

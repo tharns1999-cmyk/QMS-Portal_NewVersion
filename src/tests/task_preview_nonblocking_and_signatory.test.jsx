@@ -174,9 +174,8 @@ describe('Instant Non-Blocking Preview Architecture & Signatory Matrix Tests', (
     expect(downloadBtn).toBeDefined();
     expect(downloadBtn.classList.contains('cursor-not-allowed')).toBe(false);
 
-    // Verifies SignatoryStatusCard is rendered in the right column
-    expect(screen.getByText(/ตารางการลงนามอิเล็กทรอนิกส์/i)).toBeDefined();
-    expect(screen.getByText(/1\. ผู้จัดทำ/i)).toBeDefined();
+    // Verifies SignatoryStatusCard banner is removed to maximize viewer real estate
+    expect(screen.queryByText(/ตารางการลงนามอิเล็กทรอนิกส์/i)).toBeNull();
 
     // Verifies PDF preview frame is mounted immediately without permanent hang
     await waitFor(() => {
@@ -188,7 +187,7 @@ describe('Instant Non-Blocking Preview Architecture & Signatory Matrix Tests', (
     });
   });
 
-  it('3. TaskApprove renders instant non-blocking preview, Signatory card, and unlocked download button', async () => {
+  it('3. TaskApprove renders instant non-blocking preview without redundant signatory banner, and unlocked download button', async () => {
     const sampleBlob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' });
     await saveFile('file_1740000000_dgzhdtgh_raw.pdf', sampleBlob);
 
@@ -205,9 +204,8 @@ describe('Instant Non-Blocking Preview Architecture & Signatory Matrix Tests', (
     expect(downloadBtn).toBeDefined();
     expect(downloadBtn.classList.contains('cursor-not-allowed')).toBe(false);
 
-    // Verifies Signatory Matrix
-    expect(screen.getByText(/ตารางการลงนามอิเล็กทรอนิกส์/i)).toBeDefined();
-    expect(screen.getByText(/3\. ผู้อนุมัติ \(Approver\)/i)).toBeDefined();
+    // Verifies Signatory Matrix banner is removed to maximize viewer real estate
+    expect(screen.queryByText(/ตารางการลงนามอิเล็กทรอนิกส์/i)).toBeNull();
 
     // Verifies PDF iframe mounts with FitH
     await waitFor(() => {

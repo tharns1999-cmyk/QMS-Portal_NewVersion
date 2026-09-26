@@ -67,16 +67,27 @@ const DarDetail = () => {
 
   let workflow = null;
   if (isAdmin && dar) {
-    const requester = masterUsers?.find(u => u.id === dar.requesterId);
-    const revObj = resolveReviewer(dar.requesterId, dar.department, masterUsers, reviewUsers, dar.docType);
-    const revId = revObj?.id || revObj;
-    const reviewer = masterUsers?.find(u => u.id === revId);
-    
-    const appObj = revId ? resolveApprover(dar.requesterId, revId, dar.department, masterUsers, approveUsers, dar.docType) : null;
-    const appId = appObj?.id || appObj;
-    const approver = masterUsers?.find(u => u.id === appId);
+    if (Array.isArray(dar.workflowSteps) && dar.workflowSteps.length > 0) {
+      const step1 = dar.workflowSteps.find(s => s.role === 'REQUESTER' || s.step === 1);
+      const step2 = dar.workflowSteps.find(s => s.role === 'REVIEWER' || s.step === 2);
+      const step3 = dar.workflowSteps.find(s => s.role === 'APPROVER' || s.step === 3);
+      workflow = {
+        requester: masterUsers?.find(u => u.id === (step1?.userId || dar.requesterId)) || { name: step1?.userName || dar.requesterName },
+        reviewer: masterUsers?.find(u => u.id === (step2?.userId || dar.reviewerId)) || { name: step2?.userName || dar.reviewerName },
+        approver: masterUsers?.find(u => u.id === (step3?.userId || dar.approverId)) || { name: step3?.userName || dar.approverName }
+      };
+    } else {
+      const requester = masterUsers?.find(u => u.id === dar.requesterId);
+      const revObj = resolveReviewer(dar.requesterId, dar.department, masterUsers, reviewUsers, dar.docType);
+      const revId = revObj?.id || revObj;
+      const reviewer = masterUsers?.find(u => u.id === revId);
+      
+      const appObj = revId ? resolveApprover(dar.requesterId, revId, dar.department, masterUsers, approveUsers, dar.docType) : null;
+      const appId = appObj?.id || appObj;
+      const approver = masterUsers?.find(u => u.id === appId);
 
-    workflow = { requester, reviewer, approver };
+      workflow = { requester, reviewer, approver };
+    }
   }
 
   // Handle PDF Download / Preview via UniversalWatermarkService

@@ -185,8 +185,8 @@ const Viewer = () => {
         </div>
       </div>
 
-      {/* Viewer Canvas - Full Frame Immersive (No max-width constraints, Fit-Width Enforced) */}
-      <div className="flex-1 w-full bg-slate-950 overflow-hidden flex flex-col p-2 sm:p-3 relative min-h-0">
+      {/* Viewer Canvas - Full Frame Immersive (Edge-to-Edge, Fit-Width Enforced) */}
+      <div className="flex-1 w-full bg-slate-950 overflow-hidden flex flex-col p-0 relative min-h-0">
         
         {/* Watermark Overlay for Superseded and Obsolete Documents */}
         {watermarkConfig.visible && (
@@ -204,7 +204,7 @@ const Viewer = () => {
         )}
 
         {realPdfUrl ? (
-          <div className="w-full flex-1 h-full bg-white rounded-lg sm:rounded-xl overflow-hidden shadow-2xl relative z-0 flex flex-col min-h-0">
+          <div className="w-full flex-1 h-full bg-white overflow-hidden relative z-0 flex flex-col min-h-0">
             <iframe
               src={iframeUrl}
               className="w-full flex-1 h-full border-0 block"

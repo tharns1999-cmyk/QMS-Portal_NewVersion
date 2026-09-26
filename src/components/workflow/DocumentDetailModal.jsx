@@ -46,6 +46,7 @@ import {
   getAckNames 
 } from '../../utils/darHelper';
 import { getRevisionIndex, resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
+import { generateQmsDownloadName } from '../../utils/documentNamingHelper';
 import toast from 'react-hot-toast';
 
 /**
@@ -252,7 +253,13 @@ const DocumentDetailModal = ({
       const docCode = resolveDocCode(doc) || doc.docNo || doc.title || 'DOCUMENT';
       const docRev = normalizeRev(doc.rev || doc.revision || doc.doc_version || '01');
       const docTitle = resolveDocTitle(doc) || doc.name || doc.docName || doc.title || '';
-      const cleanFileName = `${docCode}_Rev${docRev || '01'}${docTitle ? `_${docTitle}` : ''}.pdf`.replace(/[/\\?%*:|"<>]/g, '_');
+      const cleanFileName = generateQmsDownloadName({
+        docCode,
+        title: docTitle,
+        revision: docRev,
+        systemStatus: doc.status || 'ACTIVE',
+        isControlledPrint: isDccUser
+      });
 
       // Attach resolved blob to doc clone to ensure UniversalWatermarkService consumes it directly
       const docWithFile = {
@@ -857,9 +864,9 @@ const DocumentDetailModal = ({
         createdAt: isCurrent ? (doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`) : '2025-01-01T08:30:00.000Z',
         reason: isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : (isCurrent ? (doc.reason || doc.revisionNote || doc.changeReason || 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง') : 'ปรับปรุงขั้นตอนการทำงาน'),
         description: isCurrent ? (doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ') : 'กำหนดขั้นตอนการทำงานเริ่มต้น',
-        requester_name: doc.ownerName || 'บีม (QA Lv.4 Supervisor)',
-        reviewer_name: 'กัลยาณี พลไกร (QA Lv.5 Lead)',
-        approver_name: 'คุณเรย์ (MGMT Lv.6 General Manager)',
+        requester_name: doc.ownerName || '',
+        reviewer_name: '',
+        approver_name: '',
         require_ack: true
       });
     }
@@ -987,9 +994,9 @@ const DocumentDetailModal = ({
         ? detailInfo.value 
         : (dar.description || dar.changeSummary || dar.requestDetail || dar.change_details || dar.disposition_plan || 'กำหนดขั้นตอนการทำงานและจุดควบคุมสำหรับการปฏิบัติงานประจำวัน');
 
-      const reqName = (getRequesterName(dar, masterUsers) !== '-' ? getRequesterName(dar, masterUsers) : null) || dar.requester_name || dar.requester || dar.requesterName || 'บีม (QA Lv.4)';
-      const revName = (getReviewerName(dar, timeline) !== '-' ? getReviewerName(dar, timeline) : null) || dar.reviewer_name || dar.reviewer || dar.reviewerName || 'กัลยาณี พลไกร (QA Lv.5)';
-      const appName = (getApproverName(dar, timeline) !== '-' ? getApproverName(dar, timeline) : null) || dar.approver_name || dar.approver || dar.approverName || 'คุณเรย์ (MGMT Lv.6)';
+      const reqName = (getRequesterName(dar, masterUsers) !== '-' ? getRequesterName(dar, masterUsers) : null) || dar.requester_name || dar.requester || dar.requesterName || '-';
+      const revName = (getReviewerName(dar, timeline) !== '-' ? getReviewerName(dar, timeline) : null) || dar.reviewer_name || dar.reviewer || dar.reviewerName || '-';
+      const appName = (getApproverName(dar, timeline) !== '-' ? getApproverName(dar, timeline) : null) || dar.approver_name || dar.approver || dar.approverName || '-';
       const ackName = (getAckNames(dar, timeline) !== '-' ? getAckNames(dar, timeline) : null) || dar.ack_name || dar.ackNames || (dar.require_ack !== false ? 'ต้องรับทราบ' : 'ไม่ต้องรับทราบ');
 
       const reqTimestamp = getWorkflowStepTimestamp(dar, 'REQUEST', timeline);
@@ -1814,9 +1821,9 @@ const DocumentDetailModal = ({
                             ? detailInfo.value
                             : (dar.description || dar.changeSummary || dar.requestDetail || dar.change_details || dar.disposition_plan || 'กำหนดขั้นตอนการทำงานและจุดควบคุมสำหรับการปฏิบัติงานประจำวัน');
 
-                          const reqName = (getRequesterName(dar, masterUsers) !== '-' ? getRequesterName(dar, masterUsers) : null) || dar.requester_name || dar.requester || dar.requesterName || 'บีม (QA Lv.4)';
-                          const revName = (getReviewerName(dar, timeline) !== '-' ? getReviewerName(dar, timeline) : null) || dar.reviewer_name || dar.reviewer || dar.reviewerName || 'กัลยาณี พลไกร (QA Lv.5)';
-                          const appName = (getApproverName(dar, timeline) !== '-' ? getApproverName(dar, timeline) : null) || dar.approver_name || dar.approver || dar.approverName || 'คุณเรย์ (MGMT Lv.6)';
+                          const reqName = (getRequesterName(dar, masterUsers) !== '-' ? getRequesterName(dar, masterUsers) : null) || dar.requester_name || dar.requester || dar.requesterName || '-';
+                          const revName = (getReviewerName(dar, timeline) !== '-' ? getReviewerName(dar, timeline) : null) || dar.reviewer_name || dar.reviewer || dar.reviewerName || '-';
+                          const appName = (getApproverName(dar, timeline) !== '-' ? getApproverName(dar, timeline) : null) || dar.approver_name || dar.approver || dar.approverName || '-';
                           const ackName = (getAckNames(dar, timeline) !== '-' ? getAckNames(dar, timeline) : null) || dar.ack_name || dar.ackNames || (dar.require_ack !== false ? 'ต้องรับทราบ' : 'ไม่ต้องรับทราบ');
 
                           const darType = dar.type || dar.request_type || dar.requestType || 'NEW';
@@ -1859,9 +1866,18 @@ const DocumentDetailModal = ({
                                 currentUser,
                                 isHistoricalRev
                               });
+                              const isControlledUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN');
+                              const histFileName = generateQmsDownloadName({
+                                docCode: resolveDocCode(targetDoc) || targetDoc.docNo || targetDoc.title || 'DOCUMENT',
+                                title: resolveDocTitle(targetDoc) || targetDoc.name || targetDoc.docName || targetDoc.title || '',
+                                revision: targetRev,
+                                systemStatus: targetDoc.status,
+                                isControlledPrint: isControlledUser
+                              });
                               await UniversalWatermarkService.generateAndDownloadPdf(targetDoc, watermarkConfig, {
                                 userName: currentUser?.name || 'DCC Officer',
-                                userDept: currentUser?.department || 'DC'
+                                userDept: currentUser?.department || 'DC',
+                                filename: histFileName
                               });
                               toast.dismiss(toastId);
                               toast.success(`ดาวน์โหลด PDF Rev.${targetRev} สำเร็จ`);

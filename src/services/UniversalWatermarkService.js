@@ -18,6 +18,7 @@ import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
 import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf } from '../utils/pdfStamper';
 import { getFile, resolveFileBlob } from '../utils/fileStorage';
+import { generateQmsDownloadName } from '../utils/documentNamingHelper';
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -943,8 +944,15 @@ export class UniversalWatermarkService {
     const link = document.createElement('a');
     link.href = url;
     const docCode = doc.document_code || doc.doc_code || doc.edCode || doc.title || meta.docCode || 'DOCUMENT';
+    const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
     const isForm = this.isBlankFormBypass({ ...doc, ...meta });
-    const filename = meta.filename || (isForm ? `${docCode}_BLANK_FORM.pdf` : `${docCode}_CLEAN_MASTER.pdf`);
+    const filename = meta.filename || generateQmsDownloadName({
+      docCode,
+      title: docTitle,
+      revision: doc.rev || doc.revision || doc.doc_version || meta.docVersion || '00',
+      systemStatus: doc.status || meta.status || 'ACTIVE',
+      isControlledPrint: !isForm
+    });
     link.download = filename;
     document.body.appendChild(link);
     link.click();
@@ -997,8 +1005,28 @@ export class UniversalWatermarkService {
 
     const link = document.createElement('a');
     link.href = url;
-    const typeLabel = typeof watermarkType === 'string' ? watermarkType : (watermarkType?.type || 'WATERMARKED');
-    const filename = meta.filename || `${docCode}_${typeLabel}.pdf`;
+    const isControlled = watermarkType === WATERMARK_TYPES.CONTROLLED_COPY || 
+      watermarkType === 'CONTROLLED_COPY' || 
+      watermarkType === WATERMARK_TYPES.OFFICIAL_MASTER_COPY || 
+      watermarkType === 'OFFICIAL_MASTER_COPY' ||
+      meta.downloadMode === 'CONTROLLED_COPY' || 
+      Boolean(meta.isControlledPrint);
+      
+    const resolvedStatus = doc.status || meta.status || (
+      watermarkType === WATERMARK_TYPES.OBSOLETE || watermarkType === 'OBSOLETE' 
+        ? 'OBSOLETE' 
+        : (watermarkType === WATERMARK_TYPES.SUPERSEDED || watermarkType === 'SUPERSEDED' 
+            ? 'SUPERSEDED' 
+            : 'ACTIVE')
+    );
+
+    const filename = meta.filename || generateQmsDownloadName({
+      docCode,
+      title: docTitle,
+      revision: doc.rev || doc.revision || doc.doc_version || meta.docVersion || '00',
+      systemStatus: resolvedStatus,
+      isControlledPrint: isControlled
+    });
     link.download = filename;
     document.body.appendChild(link);
     link.click();

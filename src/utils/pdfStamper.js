@@ -78,7 +78,7 @@ export const formatSignOffDate = (dateInput) => {
  * Helper: Generate dynamic cursive handwritten signature data URL from text/style
  * Uses HTML5 Canvas off-screen rendering with smooth anti-aliased cursive script and paraph flourish.
  */
-export const generateCursiveSignatureDataUrl = (nameOrInitials = 'Beam', style = 'BRUSH_SCRIPT') => {
+export const generateCursiveSignatureDataUrl = (nameOrInitials = '', style = 'BRUSH_SCRIPT') => {
   if (typeof document === 'undefined') return null;
   try {
     const canvas = document.createElement('canvas');
@@ -154,7 +154,7 @@ export const getActiveUserSignatureAsset = (user) => {
 
   // 2. Synthesize an authentic handwritten signature image from user profile
   if (user.hasRegisteredSignature || user.signatureType || user.signatureInitials || user.name) {
-    const text = user.signatureInitials || user.name || 'Beam';
+    const text = user.signatureInitials || user.name || '';
     const style = user.signatureStyle || 'BRUSH_SCRIPT';
     return generateCursiveSignatureDataUrl(text, style);
   }

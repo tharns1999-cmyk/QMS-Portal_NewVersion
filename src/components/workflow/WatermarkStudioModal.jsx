@@ -7,7 +7,7 @@ export const WatermarkStudioModal = ({
   isOpen = false,
   onClose = () => {},
   document: doc = { title: 'WI-PD-001', name: 'ขั้นตอนการล้างทำความสะอาดเครื่องผสม', rev: '01', department: 'PD', effectiveDate: '2026-08-01', status: 'EFFECTIVE' },
-  currentUser = { name: 'ธนาวุฒิ สมควรกิจดำรง', department: 'PD', isDcc: false }
+  currentUser = {}
 }) => {
   const [selectedType, setSelectedType] = useState(WATERMARK_TYPES.UNCONTROLLED_COPY);
   const [copyNo, setCopyNo] = useState('02');

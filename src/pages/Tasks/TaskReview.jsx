@@ -18,6 +18,7 @@ import {
   resolveSubmissionDate 
 } from '../../utils/pdfStamper';
 import { resolveFileBlob } from '../../utils/fileStorage';
+import { generateQmsDownloadName, triggerBrowserDownload, formatDarHeaderTitle } from '../../utils/documentNamingHelper';
 
 const getSystemSampleDocumentBlob = (docCode = 'SOP-QC-002', docTitle = 'Standard Operating Procedure for Quality Control') => {
   const safeTitle = (docTitle || 'Standard Operating Procedure').replace(/[()\\\\]/g, '');
@@ -154,7 +155,6 @@ const TaskReview = () => {
   const [pendingAction, setPendingAction] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
-  const [isStamped, setIsStamped] = useState(false);
   const scrollRef = useRef(null);
   const createdUrlsRef = useRef([]);
 
@@ -183,6 +183,11 @@ const TaskReview = () => {
   const docInfo = useMemo(() => {
     return dar ? (getDarDocInfo(dar, documents) || { docCode: '-', docType: '-', docRev: '-' }) : { docCode: '-', docType: '-', docRev: '-' };
   }, [dar, documents]);
+
+  const targetDocCode = dar?.docCode || dar?.doc_code || dar?.docNo || docInfo?.docCode || 'No Code';
+  const targetDocTitle = dar?.title || dar?.docName || dar?.documentName || dar?.docTitle || dar?.name || 'ไม่ระบุชื่อเอกสาร';
+  const targetRev = dar?.targetRevision || dar?.newRevision || dar?.revision || docInfo?.docRev || '00';
+  const headerDisplayTitle = formatDarHeaderTitle(dar, targetDocCode, targetDocTitle);
 
   const requesterName = useMemo(() => {
     return dar ? (getRequesterName(dar, masterUsers) || 'ผู้ร้องขอ') : 'ผู้ร้องขอ';
@@ -257,8 +262,8 @@ const TaskReview = () => {
           step: 4,
           roleKey: 'DCC',
           role: 'DCC Admin',
-          name: 'ธนาวุฒิ สมควรกิจดำรง (เจ้าหน้าที่ DCC)',
-          assignedTo: 'ธนาวุฒิ สมควรกิจดำรง'
+          name: `${(masterUsers || []).find(u => u && (u.isDcc || u.role === 'DCC_ADMIN'))?.name || 'เจ้าหน้าที่ DCC'} (เจ้าหน้าที่ DCC)`,
+          assignedTo: (masterUsers || []).find(u => u && (u.isDcc || u.role === 'DCC_ADMIN'))?.name || 'เจ้าหน้าที่ DCC'
         }
       ]
     };
@@ -283,12 +288,12 @@ const TaskReview = () => {
   // Authority Signatory Data (Requester | Reviewer | Approver)
   const signOffData = useMemo(() => {
     if (!dar) return null;
-    const reqName = dar.requesterName || dar.requester_name || requesterName || 'บีม';
+    const reqName = dar.requesterName || dar.requester_name || requesterName || '';
     const reqUser = (masterUsers || []).find(u => u && (u.id === dar.requesterId || u.empId === dar.requesterId || u.name === reqName)) ||
       (users || []).find(u => u && (u.id === dar.requesterId || u.name === reqName));
     const reqDateFormatted = resolveSubmissionDate(dar, task, darTimeline);
     const reqSignature = getActiveUserSignatureAsset(reqUser);
-    const reqPosition = reqUser?.position || reqUser?.role || dar.requesterRole || 'QAQC Supervisor';
+    const reqPosition = reqUser?.position || reqUser?.role || dar.requesterRole || '';
 
     return {
       requester: {
@@ -331,13 +336,11 @@ const TaskReview = () => {
     if (!dar) {
       setPdfBlobUrl(null);
       setLoadingPdf(false);
-      setIsStamped(false);
       return;
     }
 
     setLoadingPdf(true);
     setPdfLoadError(null);
-    setIsStamped(false);
 
     const loadAndPreview = async () => {
       try {
@@ -431,7 +434,6 @@ const TaskReview = () => {
             const stampedUrl = URL.createObjectURL(stampedBlob);
             createdUrlsRef.current.push(stampedUrl);
             setPdfBlobUrl(stampedUrl);
-            setIsStamped(true);
           }
         } catch (stampErr) {
           console.warn('[TaskReview] Background stamping failed, maintaining raw preview:', stampErr);
@@ -455,24 +457,24 @@ const TaskReview = () => {
   }, [dar?.id, dar?.darNumber, dar?.fileId, dar?.attachedFile?.fileId, task?.id, pdfLoadRetryKey]);
 
   const handleDownloadDraft = async () => {
-    const code = docInfo.docCode || dar?.title || 'DAR_Doc';
+    const fileName = generateQmsDownloadName({
+      docCode: targetDocCode,
+      title: targetDocTitle,
+      revision: targetRev,
+      systemStatus: 'DRAFT'
+    });
 
     // Primary: pdfBlobUrl is the already-stamped Blob URL — download it directly (Preview=Download parity)
     if (pdfBlobUrl) {
-      const a = document.createElement('a');
-      a.href = pdfBlobUrl;
-      a.download = `${code}_DRAFT.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      triggerBrowserDownload(pdfBlobUrl, fileName);
       toast.success('เริ่มการดาวน์โหลดเอกสารแล้ว');
       return;
     }
 
     // Fallback: resolve raw blob then stamp through stampUnifiedInternalPdf (same pipeline as preview)
     try {
-      const primaryKey = dar.attachedFile?.fileId || dar.fileId || dar.id;
-      const fallbackKeys = [dar.attachedFile?.name, dar.darNumber, dar.darNo, dar.id].filter(Boolean);
+      const primaryKey = dar?.attachedFile?.fileId || dar?.fileId || dar?.id;
+      const fallbackKeys = [dar?.attachedFile?.name, dar?.darNumber, dar?.darNo, dar?.id].filter(Boolean);
       let raw = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
       if (!raw) raw = await resolveFileBlob(dar, primaryKey);
 
@@ -480,16 +482,9 @@ const TaskReview = () => {
         const stampedBlob = await stampUnifiedInternalPdf(raw, {
           stage: 'REVIEW', dar, task, masterUsers, users, currentUser,
           watermarkType: 'DRAFT',
-          docInfo: { docCode: docInfo.docCode || dar.docCode, title: dar.title, revision: docInfo.docRev || '00' }
+          docInfo: { docCode: targetDocCode, title: targetDocTitle, revision: targetRev }
         });
-        const url = URL.createObjectURL(stampedBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${code}_DRAFT.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        triggerBrowserDownload(stampedBlob, fileName);
         toast.success('ดาวน์โหลดไฟล์เอกสารสำเร็จ');
       } else {
         toast.error('ไม่พบไฟล์เอกสารสำหรับดาวน์โหลด');
@@ -783,64 +778,62 @@ const TaskReview = () => {
       </div>
 
       {/* RIGHT COLUMN: PDF Viewer & Signatory Matrix (60%) */}
-      <div className="w-[60%] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-800">
+      <div className="w-[60%] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-700">
         
-        {/* PDF Toolbar */}
-        <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between shadow-xs z-10 shrink-0">
-          <div className="font-mono text-xs truncate pr-4 text-slate-300 font-bold flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-sky-400" />
-            <span>{dar.attachedFile?.name || dar.fileName || task?.fileName || `${dar.title}.pdf`}</span>
-            <span className="text-slate-400 font-mono text-[11px]">(DRAFT Rev. {docInfo.docRev || '00'})</span>
+        {/* Header - แสดงชื่อเอกสารตามฟอร์ม DAR แทนชื่อไฟล์ดิบ (Blueprint A) */}
+        <div className="bg-slate-800 text-slate-200 px-4 py-3 flex items-center justify-between border-b border-slate-700 shadow-xs z-10 shrink-0">
+          <div className="flex items-center gap-2 truncate pr-4">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shrink-0" />
+            <span className="text-sm font-bold text-slate-200 truncate" title={headerDisplayTitle}>
+              {headerDisplayTitle}
+            </span>
           </div>
-          <div className="flex items-center gap-2 border-l border-slate-700 pl-4">
+          <div className="flex items-center gap-2 border-l border-slate-700 pl-4 shrink-0">
             <button 
               onClick={handleDownloadDraft}
-              className="action-icon-btn text-sky-400 hover:text-white hover:bg-slate-700 cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors" 
+              className="action-icon-btn text-sky-400 hover:text-white hover:bg-slate-700 cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" 
               title="ดาวน์โหลดเอกสาร PDF"
             >
               <Download size={14} />
-              <span className="hidden sm:inline">ดาวน์โหลด</span>
+              <span className="hidden sm:inline font-bold">ดาวน์โหลด</span>
             </button>
           </div>
         </div>
 
-        {/* Scrollable PDF Canvas */}
+        {/* PDF Container - ขยาย Edge-to-Edge ห้ามมี Padding ล้อมรอบ (Blueprint A) */}
         <div 
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/80 custom-scrollbar"
+          className="flex-1 w-full h-full relative bg-slate-50 overflow-hidden flex items-center justify-center"
         >
-           {/* Native PDF Viewer */}
-           <div className="w-full h-full min-h-[800px] relative rounded-lg overflow-hidden bg-slate-800 flex items-center justify-center border border-slate-700/80 shadow-2xl">
-             {pdfBlobUrl ? (
-               <iframe
-                 src={`${pdfBlobUrl}#view=FitH&toolbar=0&navpanes=0&scrollbar=1`}
-                 className="w-full h-full border-0 absolute inset-0 bg-white"
-                 title="PDF Preview"
-               />
-             ) : loadingPdf ? (
-               <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
-                 <div className="w-10 h-10 rounded-full border-3 border-sky-500/20 border-t-sky-500 animate-spin" />
-                 <span className="text-xs text-slate-300">กำลังเปิดไฟล์เอกสารฉบับจริง...</span>
-               </div>
-             ) : pdfLoadError ? (
-               <div className="text-slate-400 font-medium flex flex-col items-center gap-4 p-6 text-center">
-                 <ShieldAlert size={40} className="text-amber-500" />
-                 <span className="text-sm text-slate-300">{pdfLoadError}</span>
-                 <button
-                   onClick={() => setPdfLoadRetryKey(k => k + 1)}
-                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium transition-colors cursor-pointer"
-                 >
-                   <RotateCcw size={14} /> ลองโหลดใหม่
-                 </button>
-               </div>
-             ) : (
-               <div className="text-slate-500 font-medium flex flex-col items-center gap-3">
-                 <ShieldAlert size={40} className="text-slate-600" />
-                 <span>ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)</span>
-               </div>
-             )}
-           </div>
+          {loadingPdf ? (
+            <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
+              <div className="w-10 h-10 rounded-full border-3 border-sky-500/20 border-t-sky-500 animate-spin" />
+              <span className="text-xs text-slate-500">กำลังเปิดไฟล์เอกสารฉบับจริง...</span>
+            </div>
+          ) : pdfBlobUrl ? (
+            <iframe
+              src={`${pdfBlobUrl}#view=FitH&toolbar=0&navpanes=0`}
+              className="absolute inset-0 w-full h-full border-0 bg-white"
+              title="PDF Preview"
+            />
+          ) : pdfLoadError ? (
+            <div className="text-slate-400 font-medium flex flex-col items-center gap-4 p-6 text-center">
+              <ShieldAlert size={40} className="text-amber-500" />
+              <span className="text-sm text-slate-700">{pdfLoadError}</span>
+              <button
+                onClick={() => setPdfLoadRetryKey(k => k + 1)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium transition-colors cursor-pointer"
+              >
+                <RotateCcw size={14} /> ลองโหลดใหม่
+              </button>
+            </div>
+          ) : (
+            <div className="text-slate-400 font-medium flex flex-col items-center gap-3">
+              <ShieldAlert size={40} className="text-slate-400" />
+              <span>ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)</span>
+            </div>
+          )}
         </div>
 
       </div>

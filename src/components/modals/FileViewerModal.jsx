@@ -53,11 +53,11 @@ const FileViewerModal = ({ isOpen, onClose, attachedFile }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       <div 
-        className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+        className="w-full max-w-6xl h-[88vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div className="px-6 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
               {isPdf ? <FileText size={20} /> : <ImageIcon size={20} />}
@@ -83,8 +83,8 @@ const FileViewerModal = ({ isOpen, onClose, attachedFile }) => {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 bg-slate-100 min-h-[50vh] flex flex-col items-center justify-center relative">
+        {/* Content - Edge-to-Edge */}
+        <div className="flex-1 w-full bg-slate-900 relative flex flex-col items-center justify-center overflow-hidden">
           {loading ? (
             <div className="flex flex-col items-center text-slate-400">
               <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
@@ -97,12 +97,12 @@ const FileViewerModal = ({ isOpen, onClose, attachedFile }) => {
             </div>
           ) : isPdf ? (
             <iframe 
-              src={`${blobUrl}#view=FitH`} 
-              className="w-full h-[75vh] border-0 rounded-lg shadow-inner bg-white" 
+              src={`${blobUrl}#view=FitH&toolbar=0&navpanes=0`} 
+              className="absolute inset-0 w-full h-full border-0 bg-white" 
               title="PDF Preview" 
             />
           ) : isImage ? (
-            <div className="w-full h-[75vh] overflow-auto flex items-center justify-center bg-white rounded-lg shadow-inner">
+            <div className="w-full h-full overflow-auto flex items-center justify-center bg-slate-900">
               <img src={blobUrl} alt={attachedFile.name} className="max-w-full max-h-full object-contain" />
             </div>
           ) : (
