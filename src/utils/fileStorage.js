@@ -147,6 +147,9 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
   if (typeof target === 'object') {
     // Check direct binary fields on target
     const directBinaryFields = [
+      // Nested file Blob stored inside attachedFile object (same-session in-memory)
+      target.attachedFile?.file,
+      target.attachedFile?.blob,
       target.attachedFile,
       target.file,
       target.fileBlob,

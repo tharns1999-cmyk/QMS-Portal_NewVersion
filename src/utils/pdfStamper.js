@@ -378,49 +378,43 @@ export const stampDocumentFirstPage = async (originalPdfBytes, signOffData) => {
  * @returns {Promise<Uint8Array>} The modified PDF bytes
  */
 export const stampDocumentLastPage = async (originalPdfBytes, signOffData) => {
+  // Guard: must load from real bytes — never create a blank document
+  if (!originalPdfBytes || (originalPdfBytes instanceof ArrayBuffer && originalPdfBytes.byteLength === 0)) {
+    throw new Error('stampDocumentLastPage: ไม่มีไบต์ PDF ต้นฉบับ — ห้ามสร้างเอกสารเปล่า');
+  }
+
   const pdfDoc = await PDFDocument.load(originalPdfBytes);
   const pages = pdfDoc.getPages();
   const lastPage = pages[pages.length - 1];
-  const { width, height } = lastPage.getSize();
-  const rotationAngle = lastPage.getRotation().angle;
+  const { width } = lastPage.getSize();
 
   // 1. Generate stamp image
   const pngDataUrl = await generateSignOffStampImage(signOffData);
   const pngImage = await pdfDoc.embedPng(pngDataUrl);
 
-  // 2. Calculate dimensions and positioning
-  const margin = 20;
-  const stampWidth = Math.min(540, width - 40);
-  const stampHeight = (stampWidth / pngImage.width) * pngImage.height;
+  // 2. STRICTLY CLAMPED Footer dimensions — 120pt high, 30pt from bottom edge
+  // This ensures the white mask NEVER touches document content above the Footer zone.
+  const MATRIX_HEIGHT = 120; // Fixed 120pt footer zone
+  const FOOTER_BOTTOM  = 30; // 30pt from physical bottom edge
+  const stampWidth  = Math.min(500, width - 40);
+  const stampHeight = MATRIX_HEIGHT;
+  const xPos = (width - stampWidth) / 2;
+  const yPos = FOOTER_BOTTOM;
 
-  let x = (width - stampWidth) / 2;
-  let y = margin; // 20pt from bottom
-
-  // Handle Rotation to keep the stamp physically in the footer of the viewed page
-  if (rotationAngle === 90) {
-    x = margin;
-    y = (height - stampHeight) / 2;
-  } else if (rotationAngle === 180) {
-    x = (width - stampWidth) / 2;
-    y = height - stampHeight - margin;
-  } else if (rotationAngle === 270) {
-    x = width - stampWidth - margin;
-    y = (height - stampHeight) / 2;
-  }
-
-  // Mask out underlying PDF content/ghost lines with solid white rectangle
+  // 3. White mask — covers ONLY the footer rectangle (never touches content above)
   lastPage.drawRectangle({
-    x,
-    y,
+    x: xPos,
+    y: yPos,
     width: stampWidth,
     height: stampHeight,
     color: rgb(1, 1, 1),
     borderWidth: 0,
   });
 
+  // 4. Draw the signatory matrix image into the exactly-clamped footer zone
   lastPage.drawImage(pngImage, {
-    x,
-    y,
+    x: xPos,
+    y: yPos,
     width: stampWidth,
     height: stampHeight,
   });
@@ -558,24 +552,23 @@ export const stampExternalDocumentTopRight = async (pdfBytes, stampData) => {
  * Generate an Uncontrolled Copy watermark image
  * Enhanced with 4x HiDPI Supersampling (300+ DPI) & high-quality anti-aliasing for vector-like sharpness
  */
-export const generateUncontrolledWatermarkImage = async ({ docCode, docTitle, docRev, downloadedBy, downloadDate }) => {
+export const generateDiagonalWatermarkCanvas = async ({
+  type = 'UNCONTROLLED', // 'CONTROLLED' | 'UNCONTROLLED' | 'DRAFT'
+  docInfo = {},
+  userInfo = {}
+}) => {
   await ensureThSarabunFontLoaded();
 
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
+    const scale = 3; // HiDPI 3x Supersampling ป้องกันรอยหยัก
+    const width = 800 * scale;
+    const height = 800 * scale;
+    canvas.width = width;
+    canvas.height = height;
 
-    // 4x HiDPI Supersampling Architecture (300+ DPI Print Sharpness)
-    // Base logical dimensions: 600 x 300 pt (matches physical PDF target bounds)
-    // Scale multiplier: 4x -> Physical Canvas: 2400 x 1200 px (~330 DPI)
-    // This compresses 4x pixel density into the target PDF area, eliminating pixelation and stair-stepping.
-    const SCALE = 4;
-    const BASE_WIDTH = 600;
-    const BASE_HEIGHT = 300;
-
-    canvas.width = BASE_WIDTH * SCALE;   // 2400 px
-    canvas.height = BASE_HEIGHT * SCALE; // 1200 px
-    const ctx = canvas.getContext('2d', { alpha: true });
-
+    const ctx = canvas.getContext('2d');
+    
     // Enable high-quality anti-aliasing & subpixel text smoothing
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -583,49 +576,95 @@ export const generateUncontrolledWatermarkImage = async ({ docCode, docTitle, do
       ctx.textRendering = 'optimizeLegibility';
     }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
+    ctx.scale(scale, scale);
 
-    // จัดกึ่งกลางโดยไม่ต้องหมุนมุมเอียง (0 องศา แนวนอน)
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    // เลื่อนจุดหมุนมาไว้กึ่งกลางแคนวาส
+    ctx.translate(400, 400);
+    ctx.rotate((-45 * Math.PI) / 180); // หมุนเอียง 45 องศาทวนเข็มนาฬิกาเหมือน Controlled Copy
 
-    const FONT_FAMILY = '"TH Sarabun New", "Noto Sans Thai", "Sarabun", -apple-system, sans-serif';
+    // กำหนด Palette สีตามประเภทลายน้ำ
+    const isControlled = type === 'CONTROLLED';
+    const primaryColor = isControlled 
+      ? 'rgba(22, 101, 52, 0.45)'   // เขียว Controlled Copy
+      : 'rgba(220, 38, 38, 0.48)';   // แดง Uncontrolled Copy (Alpha ~48-50%)
+
+    const secondaryColor = isControlled 
+      ? 'rgba(21, 128, 61, 0.40)' 
+      : 'rgba(239, 68, 68, 0.42)';
+
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // 1. หัวข้อหลักภาษาอังกฤษ (Bold, โทนสีแดงมาตรฐานตรายาง ความทึบแสง 50% ตามสเปก, 4x Supersampled)
-    ctx.fillStyle = 'rgba(225, 29, 72, 0.50)';
-    ctx.font = `bold ${Math.round(29 * SCALE)}px ${FONT_FAMILY}`; // 116px
-    ctx.fillText('UNCONTROLLED COPY', centerX, centerY - Math.round(32.5 * SCALE)); // -130px
+    // 1. หัวเรื่องหลัก (Primary Title)
+    ctx.font = 'bold 52px "TH Sarabun New", sans-serif';
+    ctx.fillStyle = primaryColor;
+    ctx.fillText(
+      isControlled ? 'CONTROLLED COPY' : 'UNCONTROLLED COPY',
+      0,
+      -40
+    );
 
-    // 2. หัวข้อย่อยภาษาไทย (Semi-bold, ความทึบแสง 48%, 4x Supersampled)
-    ctx.fillStyle = 'rgba(225, 29, 72, 0.48)';
-    ctx.font = `600 ${Math.round(18 * SCALE)}px ${FONT_FAMILY}`; // 72px
-    ctx.fillText('สำเนาไม่ควบคุม (ใช้สำหรับอ้างอิงเท่านั้น)', centerX, centerY - Math.round(5 * SCALE)); // -20px
+    // 2. หัวเรื่องรองภาษาไทย (Secondary Title)
+    ctx.font = 'bold 26px "TH Sarabun New", sans-serif';
+    ctx.fillStyle = primaryColor;
+    ctx.fillText(
+      isControlled ? 'สำเนาควบคุม (เอกสารมีผลบังคับใช้)' : 'สำเนาไม่ควบคุม (ใช้สำหรับอ้างอิงเท่านั้น)',
+      0,
+      -5
+    );
 
-    // 3. เส้นขีดคั่นแนวนอนบางๆ สไตล์ Minimal (ความทึบแสง 42%, 4x Supersampled)
-    ctx.strokeStyle = 'rgba(225, 29, 72, 0.42)';
-    ctx.lineWidth = Math.max(1, 0.75 * SCALE); // 3px
+    // เส้นคั่นบางๆ ขนานตามแนวเอียง
+    ctx.strokeStyle = secondaryColor;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(centerX - Math.round(175 * SCALE), centerY + Math.round(12.5 * SCALE)); // -700px, +50px
-    ctx.lineTo(centerX + Math.round(175 * SCALE), centerY + Math.round(12.5 * SCALE)); // +700px, +50px
+    ctx.moveTo(-280, 15);
+    ctx.lineTo(280, 15);
     ctx.stroke();
 
-    // 4. ข้อมูล Metadata ประจำเอกสาร (Normal, ขนาดกะทัดรัด คมชัด ความทึบแสง 44%, 4x Supersampled)
-    ctx.fillStyle = 'rgba(225, 29, 72, 0.44)';
-    ctx.font = `normal ${Math.round(10.5 * SCALE)}px ${FONT_FAMILY}`; // 42px
-    const formattedRev = docRev ? (String(docRev).startsWith('Rev') ? docRev : `Rev.${docRev}`) : 'Rev.00';
-    ctx.fillText(`รหัส: ${docCode || '-'}  |  ฉบับ: ${formattedRev}  |  ชื่อ: ${docTitle || '-'}`, centerX, centerY + Math.round(27.5 * SCALE)); // +110px
-    ctx.fillText(`ผู้ดาวน์โหลด: ${downloadedBy || 'Authorized User'}  |  วันที่: ${downloadDate || '-'}`, centerX, centerY + Math.round(42.5 * SCALE)); // +170px
+    // 3. บรรทัดข้อมูลและ Metadata (ดึง Font Size และ Spacing เดียวกับ Controlled)
+    ctx.font = 'normal 15px "TH Sarabun New", sans-serif';
+    ctx.fillStyle = secondaryColor;
 
-    // 5. ข้อความเตือนตามมาตรฐาน ISO (Italic, ความทึบแสง 40%, 4x Supersampled)
-    ctx.fillStyle = 'rgba(225, 29, 72, 0.40)';
-    ctx.font = `italic ${Math.round(8 * SCALE)}px ${FONT_FAMILY}`; // 32px
-    ctx.fillText('* เอกสารนี้ไม่มีการปรับปรุงเมื่อมีการแก้ไข โปรดตรวจสอบฉบับล่าสุดในระบบก่อนใช้งาน *', centerX, centerY + Math.round(60 * SCALE)); // +240px
+    const formattedRev = docInfo.revision ? (String(docInfo.revision).startsWith('Rev') ? docInfo.revision : `Rev.${docInfo.revision}`) : 'Rev.00';
+    const line1 = `รหัส: ${docInfo.docCode || '-'} | ฉบับ: ${formattedRev} | ชื่อ: ${docInfo.title || '-'}`;
+    const line2 = `ผู้ดาวน์โหลด: ${userInfo.name || '-'} ${userInfo.dept ? `(${userInfo.dept})` : ''} | วันที่: ${docInfo.downloadDate || '-'}`;
+    const line3 = isControlled
+      ? '*ห้ามทำซ้ำหรือถ่ายเอกสารโดยไม่ได้รับอนุญาตจาก DCC*'
+      : '*เอกสารนี้ไม่มีการปรับปรุงเมื่อมีการแก้ไข โปรดตรวจสอบฉบับล่าสุดในระบบ*';
 
-    ctx.restore();
+    ctx.fillText(line1, 0, 35);
+    ctx.fillText(line2, 0, 55);
+    ctx.fillText(line3, 0, 75);
+
     resolve(canvas.toDataURL('image/png'));
+  });
+};
+
+/**
+ * Generate an Uncontrolled Copy watermark image (Backwards Compatible Wrapper)
+ */
+export const generateUncontrolledWatermarkImage = async (metadata) => {
+  let name = metadata.downloadedBy || 'Authorized User';
+  let dept = '';
+  // parse "Name (Dept)" if possible
+  const match = name.match(/^(.*?)\s*\((.*?)\)$/);
+  if (match) {
+    name = match[1].trim();
+    dept = match[2].trim();
+  }
+
+  return await generateDiagonalWatermarkCanvas({
+    type: 'UNCONTROLLED',
+    docInfo: {
+      docCode: metadata.docCode,
+      revision: metadata.docRev,
+      title: metadata.docTitle,
+      downloadDate: metadata.downloadDate
+    },
+    userInfo: {
+      name,
+      dept
+    }
   });
 };
 
@@ -641,14 +680,13 @@ export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata) => {
 
   pages.forEach((page) => {
     const { width, height } = page.getSize();
-    const watermarkWidth = width * 0.88;
-    const watermarkHeight = (watermarkWidth / watermarkImage.width) * watermarkImage.height;
+    const watermarkSize = Math.max(width, height);
 
     page.drawImage(watermarkImage, {
-      x: (width - watermarkWidth) / 2,
-      y: (height - watermarkHeight) / 2, // วางกึ่งกลางหน้ากระดาษในแนวนอน
-      width: watermarkWidth,
-      height: watermarkHeight,
+      x: (width - watermarkSize) / 2,
+      y: (height - watermarkSize) / 2, // วางกึ่งกลางหน้ากระดาษ
+      width: watermarkSize,
+      height: watermarkSize,
     });
   });
 
@@ -909,25 +947,86 @@ export const resolveRawFileBlob = async (fileId, fallbackKeys = [], darObject = 
 
 /**
  * Sequential Stamping Pipeline for DAR Document Previews:
- * 1. Stamp dynamic Signatory Matrix on the last page footer
+ * 1. Stamp dynamic Signatory Matrix on the last page footer (strictly 120pt at y=30)
  * 2. Stamp state-aware DRAFT watermark across center of all pages
  * 3. Return final stamped PDF bytes
  *
- * SINGLE-LAYER MUTUALLY EXCLUSIVE GUARANTEE:
- * This function ONLY ever applies the DRAFT watermark as the center watermark.
- * No CONFIDENTIAL / UNCONTROLLED / CONTROLLED stamps are applied here.
+ * ZERO BLANK PDF POLICY:
+ * - Accepts only real, non-empty PDF bytes (Uint8Array | ArrayBuffer)
+ * - Will throw immediately if rawPdfBytes is falsy or empty
+ * - NEVER calls PDFDocument.create() — always loads from existing bytes
  *
- * @param {Uint8Array|ArrayBuffer} rawPdfBytes - Must be a PRISTINE UNSTAMPED PDF
- * @param {Object} options - { signOffData, draftMetadata }
+ * Calling conventions (both are supported):
+ *   stampDarPreviewPdf(bytes, { signOffData, draftMetadata })  — legacy
+ *   stampDarPreviewPdf(bytes, { dar, task, signatories })      — new Blueprint C
+ *
+ * @param {Uint8Array|ArrayBuffer} rawPdfBytes - MUST be non-empty pristine PDF bytes
+ * @param {Object} options
  * @returns {Promise<Uint8Array>}
  */
-export const stampDarPreviewPdf = async (rawPdfBytes, { signOffData = {}, draftMetadata = {} } = {}) => {
-  // Step 1: Stamp Signatory Matrix on the last page footer only
+export const stampDarPreviewPdf = async (rawPdfBytes, options = {}) => {
+  // Zero Blank PDF guard — throw immediately rather than produce a white page
+  if (!rawPdfBytes) {
+    throw new Error('stampDarPreviewPdf: rawPdfBytes is null/undefined — ห้ามสร้างเอกสารเปล่า');
+  }
+  const byteLen = rawPdfBytes instanceof ArrayBuffer
+    ? rawPdfBytes.byteLength
+    : (ArrayBuffer.isView(rawPdfBytes) ? rawPdfBytes.byteLength : 0);
+  if (byteLen === 0) {
+    throw new Error('stampDarPreviewPdf: rawPdfBytes is empty (0 bytes) — ห้ามสร้างเอกสารเปล่า');
+  }
+
+  // Resolve signOffData — support both calling conventions
+  let signOffData = options.signOffData || {};
+  let draftMetadata = options.draftMetadata || {};
+
+  // Blueprint C convention: { dar, task, signatories }
+  if (options.signatories && !options.signOffData) {
+    const sig = options.signatories;
+    signOffData = {
+      requester: sig.requester || {},
+      reviewer:  sig.reviewer  || {},
+      approver:  sig.approver  || {}
+    };
+    const d = options.dar || {};
+    const t = options.task || {};
+    draftMetadata = {
+      darNo:     d.darNumber || d.darNo || d.id || t.darId,
+      docCode:   d.docCode   || d.document_code || d.title,
+      docTitle:  d.title     || d.name,
+      timestamp: d.submittedAt || d.date || t.createdAt
+    };
+  }
+
+  // Step 1: Stamp Signatory Matrix on the last page footer only (strictly 120pt at y=30)
   let stampedBytes = await stampDocumentLastPage(rawPdfBytes, signOffData);
 
   // Step 2: Stamp DRAFT watermark on ALL pages — exclusively, no other center watermark
   stampedBytes = await applyDraftWatermarkToPdf(stampedBytes, draftMetadata);
 
   return stampedBytes;
+};
+
+/**
+ * Blueprint C entry-point: accepts a raw Blob + { dar, task, signatories }
+ * and returns a stamped Blob (not Uint8Array).
+ *
+ * ZERO BLANK PDF POLICY: throws if rawPdfBlob is missing or empty.
+ *
+ * @param {Blob} rawPdfBlob
+ * @param {{ dar: Object, task: Object, signatories: Object }} options
+ * @returns {Promise<Blob>}
+ */
+export const stampDarPreviewPdfFromBlob = async (rawPdfBlob, options = {}) => {
+  if (!rawPdfBlob || !(rawPdfBlob instanceof Blob)) {
+    throw new Error('stampDarPreviewPdfFromBlob: ต้องการ Blob จริงที่ไม่ว่างเปล่า — ห้ามสร้างเอกสารเปล่า');
+  }
+  if (rawPdfBlob.size === 0) {
+    throw new Error('stampDarPreviewPdfFromBlob: Blob มีขนาด 0 bytes — ไม่พบไฟล์เอกสาร PDF ต้นฉบับ');
+  }
+
+  const rawBytes = await rawPdfBlob.arrayBuffer();
+  const stampedBytes = await stampDarPreviewPdf(rawBytes, options);
+  return new Blob([stampedBytes], { type: 'application/pdf' });
 };
 

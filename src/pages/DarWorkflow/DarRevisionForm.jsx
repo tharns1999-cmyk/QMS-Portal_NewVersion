@@ -802,12 +802,16 @@ const DarRevisionForm = () => {
       if (formData.file) {
         const fileId = `file_${Date.now()}_${formData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
         try {
+          // Save under fileId (primary key)
           await saveFile(fileId, formData.file);
+          // Also register under document code alias for broader key resolution
+          if (docCodeStr) await saveFile(docCodeStr, formData.file);
           attachedFile = {
             fileId: fileId,
             name: formData.file.name,
             size: formData.file.size,
             type: formData.file.type,
+            file: formData.file, // Keep raw Blob in-memory (stripped by Zustand persist but available in same session)
             uploadedAt: new Date().toISOString()
           };
         } catch (err) {
@@ -837,6 +841,7 @@ const DarRevisionForm = () => {
         requester_name: currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง',
         department: selectedDoc?.department || currentUser?.department || formData.department || 'PD',
         date: new Date().toISOString().split('T')[0],
+        submittedAt: new Date().toISOString(),
         changeSummary: formData.changeSummary || '',
         change_summary: formData.changeSummary || '',
         changeReason: formData.changeReason || '',
@@ -870,6 +875,19 @@ const DarRevisionForm = () => {
       }
 
       addDar(newDar);
+
+      // After DAR is created, save the file under the DAR id alias for IndexedDB resolution
+      if (formData.file && attachedFile?.fileId) {
+        try {
+          const { default: useStore } = await import('../../store/useStore');
+          const state = useStore.getState();
+          const createdDar = (state.dars || []).find(d => d.fileId === attachedFile.fileId);
+          if (createdDar?.id) {
+            await saveFile(createdDar.id, formData.file);
+          }
+        } catch { /* non-critical alias save — ignore if store not accessible */ }
+      }
+
       setShowConfirm(false);
       toast.success('สร้างคำร้อง Revision สำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
       navigate('/dashboard');

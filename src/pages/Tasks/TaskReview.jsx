@@ -232,11 +232,13 @@ const TaskReview = () => {
           rawBlob = await resolveFileBlob(dar, primaryKey);
         }
 
-        if (!rawBlob) {
+        // Zero-Blank-PDF guard: refuse to proceed if no real file found
+        if (!rawBlob || rawBlob.size === 0) {
+          const errMsg = 'ไม่พบไฟล์เอกสาร PDF ต้นฉบับที่แนบมากับคำร้องนี้ กรุณาตรวจสอบว่าท่านได้แนบไฟล์ในขั้นตอนยื่นคำร้องแล้ว';
           if (!isCancelled) {
             setPdfBlobUrl(null);
             setLoadingPdf(false);
-            setPdfLoadError('ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)');
+            setPdfLoadError(errMsg);
           }
           return;
         }
@@ -262,6 +264,7 @@ const TaskReview = () => {
           // Allow React to render the instant preview first
           await new Promise(resolve => setTimeout(resolve, 50));
           const arrayBuffer = await rawBlob.arrayBuffer();
+          // stampDarPreviewPdf now enforces Zero Blank PDF policy internally
           const stampedPdfBytes = await stampDarPreviewPdf(arrayBuffer, { signOffData, draftMetadata });
           if (!isCancelled && stampedPdfBytes) {
             const stampedBlob = new Blob([stampedPdfBytes], { type: 'application/pdf' });
@@ -278,7 +281,7 @@ const TaskReview = () => {
         if (!isCancelled) {
           setPdfBlobUrl(null);
           setLoadingPdf(false);
-          setPdfLoadError('เกิดข้อผิดพลาดในการโหลดไฟล์เอกสาร');
+          setPdfLoadError(err.message || 'เกิดข้อผิดพลาดในการโหลดไฟล์เอกสาร');
         }
       }
     };
