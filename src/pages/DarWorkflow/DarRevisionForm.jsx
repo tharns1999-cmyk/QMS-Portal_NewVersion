@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer, CheckCircle2 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
@@ -31,7 +32,18 @@ const DarRevisionForm = () => {
   const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.targetDocCode || location.state?.docCode;
   const deepLinkDocId = searchParams.get('docId') || location.state?.selectedDocId || location.state?.docId || prefillDocId;
   const { currentUser, addDar, submitDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies, distributionLocations } = useStore();
-  const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
+  // Document types: prefer runtime store data, fall back to registry
+  const activeDocumentTypes = useMemo(() => {
+    const storeTypes = documentTypes || [];
+    const source = storeTypes.length > 0 ? storeTypes : QMS_CONFIG.documentTypes;
+    return source.filter(t =>
+      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) &&
+      t.allowDar !== false &&
+      t.category !== 'EXTERNAL' &&
+      t.code !== 'ED' &&
+      t.id !== 'ED'
+    );
+  }, [documentTypes]);
   
   const initialFormState = {
     docId: '',
@@ -39,6 +51,10 @@ const DarRevisionForm = () => {
     changeSummary: '',
     changeReason: '',
     otherReason: '',
+    confidentialityLevel: 'INTERNAL',
+    slaPriority: 'NORMAL',
+    isFastTrack: false,
+    dueDate: calculateDueDateBySla('NORMAL'),
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     distributions: [],
@@ -60,6 +76,18 @@ const DarRevisionForm = () => {
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSlaPriorityChange = (newPriority) => {
+    const isFast = newPriority === 'FAST_TRACK';
+    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
+    setFormData(prev => ({
+      ...prev,
+      slaPriority: newPriority,
+      isFastTrack: isFast,
+      dueDate: computedDueDate
+    }));
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -768,6 +796,12 @@ const DarRevisionForm = () => {
       change_reason: formData.changeReason,
       reasonCategory: formData.changeReason,
       otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       ackRequirement: formData.ackRequirement,
       requireAck: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
@@ -864,8 +898,8 @@ const DarRevisionForm = () => {
         currentRev: selectedDoc?.rev || '00',
         newRev: nextRevStr,
         rev: nextRevStr,
-        requesterId: currentUser?.id || 'EMP-001',
-        requester_id: currentUser?.id || 'EMP-001',
+        requesterId: currentUser?.id || '',
+        requester_id: currentUser?.id || '',
         requester_name: currentUser?.name || '',
         department: selectedDoc?.department || currentUser?.department || formData.department || 'PD',
         date: new Date().toISOString().split('T')[0],
@@ -874,7 +908,14 @@ const DarRevisionForm = () => {
         change_summary: formData.changeSummary || '',
         changeReason: formData.changeReason || '',
         change_reason: formData.changeReason || '',
+        reasonCategory: formData.changeReason || '',
         otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
+        confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+        confidentiality: formData.confidentialityLevel || 'INTERNAL',
+        slaPriority: formData.slaPriority || 'NORMAL',
+        priority: formData.slaPriority || 'NORMAL',
+        isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+        dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
         ackRequirement: formData.ackRequirement || 'NOT_REQUIRED',
         requireAck: formData.ackRequirement === 'REQUIRED',
         require_ack: formData.ackRequirement === 'REQUIRED',
@@ -1150,6 +1191,54 @@ const DarRevisionForm = () => {
                 </div>
               </div>
 
+              {/* 5. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-rev-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ระดับชั้นความลับ (Confidentiality)
+                </label>
+                <select
+                  id="dar-rev-confidentiality-level"
+                  value={formData.confidentialityLevel || 'INTERNAL'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
+                >
+                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
+                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-rev-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ความเร่งด่วน (SLA Policy)
+                </label>
+                <select
+                  id="dar-rev-sla-priority"
+                  value={formData.slaPriority || 'NORMAL'}
+                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
+                >
+                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
+                    <option key={sla.id} value={sla.id}>
+                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-rev-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  วันครบกำหนดตาม SLA (Due Date)
+                </label>
+                <input
+                  type="date"
+                  id="dar-rev-due-date"
+                  value={formData.dueDate || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
+                />
+              </div>
+
             </div>
 
             {/* Active Controlled Copies Matrix */}
@@ -1247,11 +1336,10 @@ const DarRevisionForm = () => {
                     onChange={(e) => setFormData(prev => ({ ...prev, changeReason: e.target.value }))}
                     className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.changeReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
                   >
-                    <option value="">-- เลือกเหตุผลการแก้ไข --</option>
-                    <option value="PROCESS_CHANGE">การปรับเปลี่ยนกระบวนการปฏิบัติงาน (Process Change)</option>
-                    <option value="EQUIPMENT_CHANGE">การเปลี่ยนแปลงเครื่องจักรหรืออุปกรณ์ (Equipment Change)</option>
-                    <option value="AUDIT_FINDING">ข้อเสนอแนะจากการตรวจประเมิน / CAPA (Audit Finding)</option>
-                    <option value="PERIODIC_REVIEW">การทบทวนตามรอบระยะเวลา (Periodic Review)</option>
+                    <option value="">-- เลือกเหตุผลการแก้ไข (ISO 9001) --</option>
+                    {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('REVISE')).map(r => (
+                      <option key={r.id} value={r.id}>{r.labelTh} ({r.id})</option>
+                    ))}
                     <option value="OTHER">อื่น ๆ (Other)</option>
                   </select>
                   {errors.changeReason && <p className="text-rose-500 text-xs mt-1">{errors.changeReason}</p>}

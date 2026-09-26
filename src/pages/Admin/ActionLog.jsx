@@ -38,9 +38,8 @@ const ActionLog = () => {
     currentUser?.isDcc || 
     currentUser?.role === 'DCC_ADMIN' || 
     currentUser?.role === 'DCC_STAFF' || 
-    currentUser?.role === 'SUPER_ADMIN' || 
-    currentUser?.id === 'U001' || 
-    currentUser?.id === 'u5'
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.isDccAdmin
   );
 
   // --- Safe Extraction Helpers (Guaranteed string return, zero React 19 child crash) ---

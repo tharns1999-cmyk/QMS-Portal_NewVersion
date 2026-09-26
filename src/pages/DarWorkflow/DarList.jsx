@@ -12,7 +12,7 @@ const DarList = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
 
-  const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
+  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDccAdmin);
   
   const extractDarNumber = (darStr = '') => {
     const match = String(darStr || '').match(/\d+/g);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { getDeptOptions, getDocTypeOptions, QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { 
   FileText, 
@@ -55,17 +56,24 @@ const DarNewForm = () => {
     simulatedDate 
   } = useStore();
   
+  // Departments: prefer runtime store data (admin-customised), fall back to registry seed
   const availableDepartments = useMemo(() => {
-    return masterDepartments || departments || [];
+    const storeDepts = masterDepartments || departments || [];
+    if (storeDepts.length > 0) return storeDepts;
+    // Fallback: convert registry option objects back to dept-shape objects
+    return QMS_CONFIG.departments.filter(d => !d.status || d.status === 'ACTIVE');
   }, [masterDepartments, departments]);
 
+  // Document types: prefer runtime store data, fall back to registry
   const activeDocumentTypes = useMemo(() => {
-    return (documentTypes || []).filter(t => 
-      t && 
-      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && 
-      t.allowDar !== false && 
-      t.category !== 'EXTERNAL' && 
-      t.code !== 'ED' && 
+    const storeTypes = documentTypes || [];
+    const source = storeTypes.length > 0 ? storeTypes : QMS_CONFIG.documentTypes;
+    return source.filter(t =>
+      t &&
+      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) &&
+      t.allowDar !== false &&
+      t.category !== 'EXTERNAL' &&
+      t.code !== 'ED' &&
       t.id !== 'ED'
     );
   }, [documentTypes]);
@@ -89,6 +97,11 @@ const DarNewForm = () => {
     date: new Date().toISOString().split('T')[0],
     requestDetail: '',
     requestReason: '',
+    reasonCategory: 'NEW_PROCESS',
+    confidentialityLevel: 'INTERNAL',
+    slaPriority: 'NORMAL',
+    isFastTrack: false,
+    dueDate: calculateDueDateBySla('NORMAL'),
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     distributions: [],
@@ -110,6 +123,17 @@ const DarNewForm = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleSlaPriorityChange = (newPriority) => {
+    const isFast = newPriority === 'FAST_TRACK';
+    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
+    setFormData(prev => ({
+      ...prev,
+      slaPriority: newPriority,
+      isFastTrack: isFast,
+      dueDate: computedDueDate
+    }));
+  };
 
   // Universal Hydration Lifecycle: ดึงข้อมูลแบบร่างกลับมาหยอดลงฟอร์มทันทีที่เปิดหน้า
   useEffect(() => {
@@ -244,7 +268,13 @@ const DarNewForm = () => {
       reasonDetails: formData.requestDetail,
       requestReason: formData.requestReason,
       request_reason: formData.requestReason,
-      reasonCategory: formData.requestReason,
+      reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       ackRequirement: formData.ackRequirement,
       requireAck: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
@@ -338,6 +368,13 @@ const DarNewForm = () => {
       request_detail: formData.requestDetail,
       requestReason: formData.requestReason,
       request_reason: formData.requestReason,
+      reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       ackRequirement: formData.ackRequirement,
       requireAck: formData.ackRequirement === 'REQUIRED',
       require_ack: formData.ackRequirement === 'REQUIRED',
@@ -521,6 +558,54 @@ const DarNewForm = () => {
                   <span className="text-[10px] text-[#64748B] font-sans font-normal shrink-0">Rev. 00</span>
                 </div>
               </div>
+
+              {/* 5. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ระดับชั้นความลับ (Confidentiality)
+                </label>
+                <select
+                  id="dar-confidentiality-level"
+                  value={formData.confidentialityLevel || 'INTERNAL'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
+                >
+                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
+                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ความเร่งด่วน (SLA Policy)
+                </label>
+                <select
+                  id="dar-sla-priority"
+                  value={formData.slaPriority || 'NORMAL'}
+                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
+                >
+                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
+                    <option key={sla.id} value={sla.id}>
+                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="lg:col-span-4">
+                <label htmlFor="dar-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  วันครบกำหนดตาม SLA (Due Date)
+                </label>
+                <input
+                  type="date"
+                  id="dar-due-date"
+                  value={formData.dueDate || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
+                />
+              </div>
             </div>
           </div>
 
@@ -554,15 +639,36 @@ const DarNewForm = () => {
 
                 {/* 2. เหตุผลความจำเป็นในการร้องขอ */}
                 <div className="flex-1 flex flex-col">
-                  <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                    เหตุผลความจำเป็นในการร้องขอ <span className="text-[#EF4444]">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                    <label htmlFor="dar-reason-select" className="block text-sm font-semibold text-[#334155]">
+                      เหตุผลความจำเป็นในการร้องขอ <span className="text-[#EF4444]">*</span>
+                    </label>
+                    <select
+                      id="dar-reason-select"
+                      value={formData.reasonCategory || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const match = QMS_POLICIES.CHANGE_REASONS.find(r => r.id === val);
+                        setFormData(prev => ({
+                          ...prev,
+                          reasonCategory: val,
+                          requestReason: match ? match.labelTh : prev.requestReason
+                        }));
+                      }}
+                      className="text-xs px-2 py-1 bg-slate-100 border border-slate-200 rounded-md text-slate-700 outline-none cursor-pointer"
+                    >
+                      <option value="">-- เลือกเหตุผลมาตรฐาน (ISO 9001) --</option>
+                      {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('NEW')).map(r => (
+                        <option key={r.id} value={r.id}>{r.labelTh}</option>
+                      ))}
+                    </select>
+                  </div>
                   <textarea 
                     rows={5}
                     value={formData.requestReason}
                     onChange={(e) => setFormData({...formData, requestReason: e.target.value})}
                     className={`w-full flex-1 min-h-[100px] lg:min-h-[125px] p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.requestReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                    placeholder="ระบุเหตุผลความจำเป็นในการจัดทำ หรือการอ้างอิงข้อกำหนด ISO..."
+                    placeholder="ระบุเหตุผลความจำเป็นในการจัดทำ หรือเลือกจากมาตรฐาน ISO ข้างบน..."
                   />
                   {errors.requestReason && <p className="text-rose-500 text-xs mt-1">{errors.requestReason}</p>}
                 </div>

@@ -63,7 +63,7 @@ const DarDetail = () => {
     );
   }
 
-  const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
+  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDccAdmin);
 
   let workflow = null;
   if (isAdmin && dar) {

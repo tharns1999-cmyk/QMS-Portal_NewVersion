@@ -4,6 +4,8 @@ import useStore from '../../store/useStore';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
 import { resolveFileBlob } from '../../utils/fileStorage';
+import { applyProgressiveSignatoryStamp } from '../../utils/pdfStamper';
+import { resolveProgressiveSignatories } from '../../utils/signatoryResolver';
 import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import toast from 'react-hot-toast';
 import { hasDocumentAccess } from '../../utils/accessControl';
@@ -38,7 +40,37 @@ const Viewer = () => {
       resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
         .then(async (blob) => {
           if (!isCancelled && blob) {
-            activeUrl = URL.createObjectURL(blob);
+            let displayBlob = blob;
+            const status = (doc.status || (isArchive ? 'OBSOLETE' : '')).toUpperCase();
+            const isMasterDoc = status === 'ACTIVE' || status === 'EFFECTIVE' || status === 'APPROVED' || isArchive;
+            const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(doc.title || doc.docCode || '').startsWith('ED-') && !String(doc.title || doc.docCode || '').startsWith('EXT-');
+
+            if (isMasterDoc && isInternal && !doc.isSignatoryStamped) {
+              try {
+                const store = useStore.getState();
+                const relatedDar = (store.dars || []).find(d => 
+                  d.id === doc.darId || 
+                  d.darNumber === doc.darNumber || 
+                  d.docNo === doc.document_code || 
+                  d.docCode === doc.document_code ||
+                  d.title === doc.title
+                );
+                const signatories = resolveProgressiveSignatories({
+                  dar: relatedDar,
+                  masterDoc: doc,
+                  stage: 'MASTER',
+                  masterUsers: store.masterUsers,
+                  users: store.users,
+                  currentUser: store.currentUser
+                });
+                const stampedBytes = await applyProgressiveSignatoryStamp(blob, signatories);
+                displayBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+              } catch (stampErr) {
+                console.warn('[Viewer] Stamping 3x3 table warning:', stampErr);
+              }
+            }
+
+            activeUrl = URL.createObjectURL(displayBlob);
             setRealPdfUrl(activeUrl);
           }
         })

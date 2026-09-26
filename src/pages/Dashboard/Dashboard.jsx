@@ -33,8 +33,8 @@ const Dashboard = () => {
   const [activeCardFilter, setActiveCardFilter] = useState('');
   const [activeOverviewTab, setActiveOverviewTab] = useState('ALL_REQUESTS'); // Tabs for System Overview
 
-  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001' || currentUser?.empId === 'EMP-001');
-  const isQmrApprover = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR' || (currentUser?.position && currentUser.position.toUpperCase().includes('QMR')) || currentUser?.id === 'U004' || (currentUser?.level >= 6 && !currentUser?.isDcc));
+  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDccAdmin);
+  const isQmrApprover = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR' || (currentUser?.position && currentUser.position.toUpperCase().includes('QMR')) || (currentUser?.level >= 6 && !currentUser?.isDcc));
 
   // 1. Calculate Stats (Split into Group 1 and Group 2)
   const isMyTask = (t) => {
@@ -52,23 +52,23 @@ const Dashboard = () => {
       return isDarRequester(dar, currentUser);
     }
 
-    // 2. DCC Supervisor / Admin (คุณธนาวุฒิ): Shows all submitted DAR requests organization-wide
+    // 2. DCC Supervisor / Admin: Shows all submitted DAR requests organization-wide
     if (isAdmin) {
       return true;
     }
 
-    // 3. GM / QMR / Approver (คุณเรย์):
-    //    - Actionable items (tasks awaiting Ray's review/approval)
+    // 3. GM / QMR / Approver:
+    //    - Actionable items (tasks awaiting review/approval)
     //    - Completed/approved requests organization-wide
-    //    - Requests submitted by Ray himself
+    //    - Requests submitted by approver/QMR directly
     if (isQmrApprover) {
-      const isActionableForRay = myTasks.some(t => t.darId === dar.id);
+      const isActionableForApprover = myTasks.some(t => t.darId === dar.id);
       const isCompletedOrgWide = ['APPROVED_WAITING_EFFECTIVE', 'WAITING_EFFECTIVE', 'EFFECTIVE', 'COMPLETED', 'OBSOLETE'].includes(dar.status);
-      const isRequestedByRay = isDarRequester(dar, currentUser);
-      return isActionableForRay || isCompletedOrgWide || isRequestedByRay;
+      const isRequestedByApprover = isDarRequester(dar, currentUser);
+      return isActionableForApprover || isCompletedOrgWide || isRequestedByApprover;
     }
 
-    // 4. General Employee / Dept Head (เช่น บีม - QC):
+    // 4. General Employee / Dept Head:
     //    - Requests created by user
     //    - Requests within user's department
     //    - Tasks assigned to user to review/action

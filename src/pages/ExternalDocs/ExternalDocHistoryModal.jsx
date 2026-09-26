@@ -61,8 +61,7 @@ const ExternalDocHistoryModal = ({
     currentUser?.role === 'DCC_ADMIN' || 
     currentUser?.isDccAdmin || 
     currentUser?.isDcc || 
-    currentUser?.role === 'ADMIN' ||
-    currentUser?.id === 'U001'
+    currentUser?.role === 'ADMIN'
   );
 
   // Close dropdown on outside click

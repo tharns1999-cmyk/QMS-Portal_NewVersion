@@ -16,9 +16,11 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
-import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf } from '../utils/pdfStamper';
+import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf, drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
 import { getFile, resolveFileBlob } from '../utils/fileStorage';
 import { generateQmsDownloadName } from '../utils/documentNamingHelper';
+
+export { drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp };
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -160,6 +162,9 @@ export const WATERMARK_PRESETS = {
 };
 
 export class UniversalWatermarkService {
+  static drawIsoDiagonalWatermark = drawIsoDiagonalWatermark;
+  static applyProgressiveSignatoryStamp = applyProgressiveSignatoryStamp;
+
   /**
    * Cached custom font buffer for Thai support
    */
@@ -355,6 +360,7 @@ export class UniversalWatermarkService {
       docCode,
       docTitle,
       sourceEdition,
+      sourceVersion: sourceEdition,
       source,
       isExternal,
       isRestricted,
@@ -977,7 +983,50 @@ export class UniversalWatermarkService {
     const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'DOC-001';
     const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
 
-    const rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
+    let rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
+
+    // Fallback Stamping on Download: If master document is ACTIVE, EFFECTIVE, or APPROVED, burn 3x3 table first
+    const statusUpper = String(doc.status || meta.status || 'ACTIVE').toUpperCase();
+    const isMasterDoc = statusUpper === 'ACTIVE' || statusUpper === 'EFFECTIVE' || statusUpper === 'APPROVED';
+    const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(docCode).startsWith('ED-') && !String(docCode).startsWith('EXT-');
+
+    if (isMasterDoc && isInternal && !doc.isSignatoryStamped) {
+      try {
+        const { resolveProgressiveSignatories } = await import('../utils/signatoryResolver');
+        let relatedDar = doc.dar;
+        let masterUsers = [];
+        let users = [];
+        try {
+          const { default: useStore } = await import('../store/useStore');
+          const store = useStore.getState();
+          if (store) {
+            masterUsers = store.masterUsers || [];
+            users = store.users || [];
+            if (!relatedDar && store.dars) {
+              relatedDar = store.dars.find(d => 
+                d.id === doc.darId || 
+                d.darNumber === doc.darNumber || 
+                d.docNo === docCode || 
+                d.docCode === docCode ||
+                d.title === docTitle
+              );
+            }
+          }
+        } catch {}
+
+        const signatories = resolveProgressiveSignatories({
+          dar: relatedDar,
+          masterDoc: doc,
+          stage: 'MASTER',
+          masterUsers,
+          users,
+          currentUser: meta.currentUser || { name: meta.userName, department: meta.userDept }
+        });
+        rawPdfBytes = await applyProgressiveSignatoryStamp(rawPdfBytes, signatories);
+      } catch (err) {
+        console.warn('[UniversalWatermarkService] Stamping 3x3 table on download warning:', err);
+      }
+    }
 
     const watermarkedBytes = await this.stampPdf(rawPdfBytes, watermarkType, {
       ...doc,
@@ -1162,7 +1211,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const darRef = doc?.obsolete_dar_id || doc?.obsolete_dar_no || doc?.dar_id || doc?.dar_no || doc?.darId || doc?.darNo || 'DAR-OBSOLETE';
     return [
       'เอกสารยกเลิก - ห้ามนำไปปฏิบัติงาน (CANCELLED DOCUMENT)',
-      `Doc: ${docCode} | Rev.${docRev}`,
+      `Doc: ${docCode} | Rev: Rev.${docRev}`,
       `Obsolete DAR Ref: ${darRef} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];
@@ -1178,7 +1227,7 @@ export const buildWatermarkSubLines = (doc = {}, watermarkType = 'UNCONTROLLED',
     const nextRev = doc?.superseded_by_rev || options.supersededByRev || doc?.nextVersion || 'Latest';
     return [
       'เอกสารฉบับเดิมตกรุ่น - ใช้อ้างอิงประวัติเท่านั้น (SUPERSEDED REVISION)',
-      `Doc: ${docCode} | Rev.${docRev}`,
+      `Doc: ${docCode} | Rev: Rev.${docRev}`,
       `Superseded By: Rev.${nextRev} | Date: ${nowStr}`,
       `Printed By: ${userStr}`,
     ];

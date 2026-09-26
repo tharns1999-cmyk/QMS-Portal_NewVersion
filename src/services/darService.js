@@ -6,7 +6,7 @@
 
 /**
  * Standardize department code to Master Department Code
- * Quality Assurance & Control (บีม) standardizes strictly to 'QC'
+ * Quality Assurance & Control standardizes strictly to 'QC'
  */
 export const standardizeDepartmentCode = (dept) => {
   if (!dept) return 'QC';
@@ -19,7 +19,7 @@ export const standardizeDepartmentCode = (dept) => {
 };
 
 /**
- * Extract clean department code from string or object (e.g. 'SOP-QC-01' -> 'QC', 'บีม (QC)' -> 'QC', 'QC - ฝ่ายประกัน...' -> 'QC')
+ * Extract clean department code from string or object (e.g. 'SOP-QC-01' -> 'QC', 'Staff (QC)' -> 'QC', 'QC - ฝ่ายประกัน...' -> 'QC')
  */
 export const extractDeptCode = (val) => {
   if (!val) return '';
@@ -39,7 +39,7 @@ export const extractDeptCode = (val) => {
     }
   }
 
-  // Extract from parentheses like "บีม (QC)" or "(QA/QC)"
+  // Extract from parentheses like "Officer (QC)" or "(QA/QC)"
   const parenMatch = trimmed.match(/\(([A-Za-z/]+)\)/);
   if (parenMatch) {
     const inside = parenMatch[1].toUpperCase();

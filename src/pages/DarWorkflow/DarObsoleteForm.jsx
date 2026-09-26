@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { Calendar, X, Settings, Trash2, FileText, ChevronLeft, User, AlertTriangle, Building, Layers, Search } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
@@ -38,12 +39,15 @@ const DarObsoleteForm = () => {
     documentControlledCopies 
   } = useStore();
 
+  // Document types: prefer runtime store data, fall back to registry
   const activeDocumentTypes = useMemo(() => {
-    return (documentTypes || []).filter(t => 
-      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && 
-      t.allowDar !== false && 
-      t.category !== 'EXTERNAL' && 
-      t.code !== 'ED' && 
+    const storeTypes = documentTypes || [];
+    const source = storeTypes.length > 0 ? storeTypes : QMS_CONFIG.documentTypes;
+    return source.filter(t =>
+      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) &&
+      t.allowDar !== false &&
+      t.category !== 'EXTERNAL' &&
+      t.code !== 'ED' &&
       t.id !== 'ED'
     );
   }, [documentTypes]);
@@ -54,6 +58,10 @@ const DarObsoleteForm = () => {
     otherReason: '',
     obsoleteDetail: '',
     recallPlan: '',
+    confidentialityLevel: 'INTERNAL',
+    slaPriority: 'NORMAL',
+    isFastTrack: false,
+    dueDate: calculateDueDateBySla('NORMAL'),
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     effectiveDate: '',
@@ -63,6 +71,17 @@ const DarObsoleteForm = () => {
   
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleSlaPriorityChange = (newPriority) => {
+    const isFast = newPriority === 'FAST_TRACK';
+    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
+    setFormData(prev => ({
+      ...prev,
+      slaPriority: newPriority,
+      isFastTrack: isFast,
+      dueDate: computedDueDate
+    }));
+  };
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
@@ -335,6 +354,12 @@ const DarObsoleteForm = () => {
       obsoleteDetail: formData.obsoleteDetail,
       obsolete_detail: formData.obsoleteDetail,
       reasonDetails: formData.obsoleteDetail,
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       recallPlan: formData.recallPlan,
       recall_plan: formData.recallPlan,
       ackRequirement: formData.ackRequirement,
@@ -600,6 +625,54 @@ const DarObsoleteForm = () => {
                 </p>
               </div>
 
+              {/* 3. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
+              <div className="md:col-span-4">
+                <label htmlFor="dar-obs-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ระดับชั้นความลับ (Confidentiality)
+                </label>
+                <select
+                  id="dar-obs-confidentiality-level"
+                  value={formData.confidentialityLevel || 'INTERNAL'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
+                >
+                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
+                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-4">
+                <label htmlFor="dar-obs-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  ความเร่งด่วน (SLA Policy)
+                </label>
+                <select
+                  id="dar-obs-sla-priority"
+                  value={formData.slaPriority || 'NORMAL'}
+                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
+                >
+                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
+                    <option key={sla.id} value={sla.id}>
+                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-4">
+                <label htmlFor="dar-obs-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
+                  วันครบกำหนดตาม SLA (Due Date)
+                </label>
+                <input
+                  type="date"
+                  id="dar-obs-due-date"
+                  value={formData.dueDate || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
+                />
+              </div>
+
             </div>
 
             {/* Step 3: Identity Preview & Transition Badge */}
@@ -728,11 +801,10 @@ const DarObsoleteForm = () => {
                   onChange={(e) => setFormData(prev => ({...prev, obsoleteReason: e.target.value}))}
                   className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.obsoleteReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
                 >
-                  <option value="">-- เลือกเหตุผลการยกเลิก --</option>
-                  <option value="PROCESS_CHANGE">ปรับปรุงกระบวนการและควบรวมกับเอกสารอื่น (Process Merge)</option>
-                  <option value="PROCESS_REMOVED">ยกเลิกกระบวนการทำงานดังกล่าวแล้ว (Process Discontinued)</option>
-                  <option value="AUDIT_FINDING">ยกเลิกตามข้อเสนอแนะจากการตรวจติดตาม (Audit Finding)</option>
-                  <option value="DUPLICATED">เอกสารซ้ำซ้อน (Duplicate Document)</option>
+                  <option value="">-- เลือกเหตุผลการยกเลิก (ISO 9001) --</option>
+                  {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('OBSOLETE')).map(r => (
+                    <option key={r.id} value={r.id}>{r.labelTh} ({r.id})</option>
+                  ))}
                   <option value="OTHER">อื่น ๆ (Other)</option>
                 </select>
                 {errors.obsoleteReason && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteReason}</p>}

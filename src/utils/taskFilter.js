@@ -70,10 +70,7 @@ export const isDccUser = (user) => {
     user.dept === 'DC' ||
     user.primary_department === 'DC' ||
     (user.affiliated_departments && (user.affiliated_departments.includes('DC') || user.affiliated_departments.includes('DCC'))) ||
-    (user.depts && (user.depts.includes('DC') || user.depts.includes('DCC'))) ||
-    user.id === 'EMP-001' || 
-    user.id === 'U001' || 
-    user.id === 'u5'
+    (user.depts && (user.depts.includes('DC') || user.depts.includes('DCC')))
   );
 };
 
@@ -243,7 +240,11 @@ export const isActionableTask = (task, currentUser) => {
   // 🛡️ Phase 2: Level 1–5 Assignment & Visibility Guard (Exempt Level 6+)
   // Executive users (Level 6+: GM, Plant Manager, QMR, or level >= 6 / 'L6'):
   // Cut all RECEIPT tasks from task inbox and badge counters even if they belong to/oversee that department.
+  // Exception: DCC Admin and QMR have wildcard oversight across all departments.
   if (isReceiptTask(task)) {
+    if (dccAdmin || currentUser?.role === 'QMR' || currentUser?.isQmr) {
+      return true;
+    }
     if (isLevel6Plus(currentUser)) {
       return false;
     }
@@ -281,7 +282,8 @@ export const isActionableTask = (task, currentUser) => {
   }
 
   // 6. Department Workflow Tasks (Review / Approve / Revise / Ack) without specific assignee (Pooled):
-  // Must match department AND user's level must meet required approval level
+  // Must match department AND user's level must meet required approval level.
+  // QMR has wildcard cross-org authority across all departments (ISO 9001 SoD).
   const isDeptReviewOrApprove = [
     'REVIEW', 'DAR_REVIEW', 'EXT_REVIEW', 'EXTERNAL_REVIEW', 
     'APPROVE', 'DAR_APPROVE', 'APPROVAL', 'EXT_APPROVAL', 'EXTERNAL_APPROVAL',
@@ -289,10 +291,11 @@ export const isActionableTask = (task, currentUser) => {
   ].includes(normType);
 
   if (isDeptReviewOrApprove) {
+    const isQmr = currentUser?.role === 'QMR' || currentUser?.isQmr;
     const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || '';
-    const isDeptMatch = Boolean(taskDept && userDepts.some(uDept => isSameDepartment(uDept, taskDept)));
+    const isDeptMatch = Boolean(isQmr || (taskDept && userDepts.some(uDept => isSameDepartment(uDept, taskDept))));
     const requiredLevel = Number(task.required_approval_level || task.requiredLevel || task.currentHandlerLevel || task.min_level || 1);
-    const isLevelMatch = userApprovalLevel >= requiredLevel;
+    const isLevelMatch = isQmr || (userApprovalLevel >= requiredLevel);
 
     return isDeptMatch && isLevelMatch;
   }

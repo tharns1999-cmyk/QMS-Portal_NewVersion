@@ -36,6 +36,7 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment, normalizeCanonicalDept } from '../../utils/taskFilter';
+import { getDepartmentBadgeClasses, getDeptNameTh } from '../../config/qmsRegistry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date Formatter (null-safe)
@@ -523,8 +524,9 @@ export const formatDepartmentBadge = (deptCode, masterDepartments) => {
     const thaiName = rawTh.replace(/^.*?\((.*?)\)/, '$1').replace(new RegExp(`^${clean}\\s*[-:]*\\s*`, 'i'), '').trim();
     return `${clean} - ${thaiName || deptObj.name || clean}`;
   }
-  if (clean === 'QC') {
-    return 'QC - ฝ่ายประกันและควบคุมคุณภาพ';
+  const registryName = getDeptNameTh(clean);
+  if (registryName && registryName !== clean) {
+    return `${clean} - ${registryName}`;
   }
   return clean;
 };
@@ -991,9 +993,9 @@ const TaskInbox = () => {
     return (tasks || [])
       .filter(t => isActionableTask(t, currentUser))
       .filter(t => dccAdmin || !isDccExclusiveTask(t))
-      .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
+      .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && !dccAdmin && !(currentUser?.role === 'QMR' || currentUser?.isQmr) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
       .filter(t => {
-        if (dccAdmin) return true;
+        if (dccAdmin || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
 
         // 🛡️ Phase 1 & 3: Department Pool / Shared Task for Physical Controlled Copy Receipt
         // All staff in the destination department with Level < 6 can view and act on receipt tasks
@@ -1097,13 +1099,13 @@ const TaskInbox = () => {
       { id: 'DCC_RECALL', label: 'เรียกคืน', count: getTaskCount('DCC_RECALL') },
       { id: 'REVIEW', label: 'ทบทวน', count: getTaskCount('REVIEW') },
       { id: 'APPROVE', label: 'อนุมัติ', count: getTaskCount('APPROVE') },
-      { id: 'RECEIPT', label: 'ตรวจรับ', count: getTaskCount('RECEIPT') },
+      { id: 'RECEIPT', label: 'ตรวจรับเล่ม', count: getTaskCount('RECEIPT') },
       { id: 'REVISE', label: 'ส่งกลับ/แก้ไข', count: getTaskCount('REVISE') },
     ] : [
       { id: 'ALL', label: 'ทั้งหมด', count: getTaskCount('ALL') },
       { id: 'REVIEW', label: 'ทบทวน', count: getTaskCount('REVIEW') },
       { id: 'APPROVE', label: 'อนุมัติ', count: getTaskCount('APPROVE') },
-      { id: 'RECEIPT', label: 'ตรวจรับ', count: getTaskCount('RECEIPT') },
+      { id: 'RECEIPT', label: 'ตรวจรับเล่ม', count: getTaskCount('RECEIPT') },
       { id: 'ACK', label: 'รับทราบ', count: getTaskCount('ACK') },
       { id: 'REVISE', label: 'ส่งกลับ/แก้ไข', count: getTaskCount('REVISE') },
     ];
@@ -1278,6 +1280,7 @@ const TaskInbox = () => {
             </span>
             <button
               type="button"
+              aria-label={dccAdmin ? `งานทั้งหมดทุกแผนก (${userTasks.length})` : `งานทั้งหมดทุกแผนก ทุกแผนกที่สังกัด (${userTasks.length})`}
               onClick={() => setDeptFilter('ALL')}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                 deptFilter === 'ALL'
@@ -1295,6 +1298,11 @@ const TaskInbox = () => {
                 <button
                   key={dept}
                   type="button"
+                  aria-label={
+                    dept === 'QC'
+                      ? `QC ${deptCount} เฉพาะงาน QA เฉพาะงาน QC${isPrimary ? ' (แผนกหลัก)' : ''}`
+                      : `${dept} ${deptCount} เฉพาะงาน ${dept}${isPrimary ? ' (แผนกหลัก)' : ''}`
+                  }
                   onClick={() => setDeptFilter(dept)}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                     isSelected
@@ -1474,8 +1482,8 @@ const TaskInbox = () => {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                     {/* Badge แผนกเจ้าของเอกสาร */}
                     {ownerDept && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold whitespace-nowrap">
-                        <Building2 size={11} strokeWidth={1.5} className="text-slate-500" />
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold whitespace-nowrap border ${getDepartmentBadgeClasses(ownerDept)}`}>
+                        <Building2 size={11} strokeWidth={1.5} className="opacity-75" />
                         <span>{formatDepartmentBadge(ownerDept, masterDepartments)}</span>
                       </span>
                     )}

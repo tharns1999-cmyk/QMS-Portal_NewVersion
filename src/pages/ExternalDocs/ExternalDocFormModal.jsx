@@ -218,7 +218,7 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     const currentEmpId = currentUser?.empId;
     return (masterUsers || []).filter(u => {
       if (!u || !u.id) return false;
-      if (u.isDcc || u.role === 'DCC_ADMIN' || u.id === 'U001' || u.id === 'EMP-001') return false;
+      if (u.isDcc || u.role === 'DCC_ADMIN' || u.isDccAdmin) return false;
       if (currentId && (u?.id === currentId || u?.empId === currentId)) return false;
       if (currentEmpId && (u?.id === currentEmpId || u?.empId === currentEmpId)) return false;
       if (formData?.approverId && (u?.id === formData.approverId || u?.empId === formData.approverId)) return false;
@@ -236,7 +236,7 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     const currentEmpId = currentUser?.empId;
     return (masterUsers || []).filter(u => {
       if (!u || !u.id) return false;
-      if (u.isDcc || u.role === 'DCC_ADMIN' || u.id === 'U001' || u.id === 'EMP-001') return false;
+      if (u.isDcc || u.role === 'DCC_ADMIN' || u.isDccAdmin) return false;
       if (currentId && (u?.id === currentId || u?.empId === currentId)) return false;
       if (currentEmpId && (u?.id === currentEmpId || u?.empId === currentEmpId)) return false;
       if (formData?.reviewerId && (u?.id === formData.reviewerId || u?.empId === formData.reviewerId)) return false;

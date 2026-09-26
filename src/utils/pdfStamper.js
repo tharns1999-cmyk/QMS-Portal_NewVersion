@@ -1,4 +1,5 @@
 import { PDFDocument, rgb } from 'pdf-lib';
+import { formatSignOffDate as _formatSignOffDate, formatQmsDate } from './dateFormatter';
 
 /**
  * Ensure TH Sarabun New font is loaded and ready before drawing on canvas.
@@ -54,24 +55,7 @@ export const ensureThSarabunFontLoaded = async () => {
  * @returns {string}
  */
 export const formatSignOffDate = (dateInput) => {
-  if (!dateInput || dateInput === '-') return '-';
-  try {
-    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (isNaN(d.getTime())) return String(dateInput);
-
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear() + 543; // Buddhist Era
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-
-    if (hours === '00' && minutes === '00') {
-      return `${day}/${month}/${year}`;
-    }
-    return `${day}/${month}/${year} ${hours}:${minutes}`;
-  } catch {
-    return String(dateInput);
-  }
+  return _formatSignOffDate(dateInput);
 };
 
 /**
@@ -225,6 +209,9 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
   canvas.height = height;
 
   const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+  }
   ctx.scale(scale, scale);
 
   // 1. ถมพื้นหลังขาวทึบ 100% ป้องกันเส้นตารางเดิมใน PDF ทะลุ
@@ -292,7 +279,7 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
     }
 
     // แถวที่ 2: วาดภาพ E-Signature จริง
-    const signatureSrc = data.signatureImage || data.signature; // Support both keys
+    const signatureSrc = data.signatureImage || data.signature || (data.name ? generateCursiveSignatureDataUrl(data.name, 'BRUSH_SCRIPT') : null);
     if (signatureSrc) {
       const sigImg = await loadImg(signatureSrc);
       if (sigImg) {
@@ -343,11 +330,11 @@ export const stampDocumentFirstPage = async (originalPdfBytes, signOffData) => {
   const pngDataUrl = await generateSignOffStampImage(signOffData);
   const pngImage = await pdfDoc.embedPng(pngDataUrl);
 
-  const stampWidth = Math.min(540, width - 40);
+  const stampWidth = Math.min(500, width - 40);
   const stampHeight = (stampWidth / pngImage.width) * pngImage.height;
 
   const x = (width - stampWidth) / 2;
-  const y = 20;
+  const y = 30;
 
   // Mask out underlying PDF content/ghost lines with solid white rectangle
   firstPage.drawRectangle({
@@ -357,6 +344,95 @@ export const stampDocumentFirstPage = async (originalPdfBytes, signOffData) => {
     height: stampHeight,
     color: rgb(1, 1, 1),
     borderWidth: 0,
+    opacity: 1.0
+  });
+
+  firstPage.drawImage(pngImage, {
+    x,
+    y,
+    width: stampWidth,
+    height: stampHeight,
+  });
+
+  return await pdfDoc.save();
+};
+
+/**
+ * Apply permanent progressive signatory stamp (3-column 3x3 table) onto the FIRST page footer of a PDF.
+ * Conforms to ISO 9001 permanent signatory stamping requirement.
+ *
+ * @param {Uint8Array|ArrayBuffer|Blob} originalPdfBytesOrBlob - Pristine source PDF
+ * @param {{ requester: Object, reviewer: Object, approver: Object }} signatories
+ * @returns {Promise<Uint8Array>} Stamped PDF bytes
+ */
+export const applyProgressiveSignatoryStamp = async (originalPdfBytesOrBlob, signatories = {}) => {
+  if (!originalPdfBytesOrBlob) {
+    throw new Error('applyProgressiveSignatoryStamp: ไม่พบข้อมูล PDF ต้นฉบับ');
+  }
+
+  let arrayBuffer;
+  if (typeof Blob !== 'undefined' && originalPdfBytesOrBlob instanceof Blob) {
+    arrayBuffer = await originalPdfBytesOrBlob.arrayBuffer();
+  } else if (originalPdfBytesOrBlob instanceof ArrayBuffer) {
+    arrayBuffer = originalPdfBytesOrBlob;
+  } else if (ArrayBuffer.isView(originalPdfBytesOrBlob)) {
+    arrayBuffer = originalPdfBytesOrBlob.buffer.slice(
+      originalPdfBytesOrBlob.byteOffset,
+      originalPdfBytesOrBlob.byteOffset + originalPdfBytesOrBlob.byteLength
+    );
+  } else {
+    throw new Error('applyProgressiveSignatoryStamp: รูปแบบข้อมูล PDF ไม่ถูกต้อง');
+  }
+
+  const pdfDoc = await PDFDocument.load(arrayBuffer);
+  const pages = pdfDoc.getPages();
+  if (pages.length === 0) return new Uint8Array(arrayBuffer);
+
+  const firstPage = pages[0];
+  const { width } = firstPage.getSize();
+
+  // Normalize signatories cell shape
+  const toStampCell = (cell) => {
+    if (!cell) return { isCompleted: false, isPending: true };
+    const isCompleted = cell.isCompleted !== undefined 
+      ? Boolean(cell.isCompleted) 
+      : Boolean(cell.name && String(cell.name).trim() !== '');
+    return {
+      name: cell.name || '',
+      position: cell.position || '',
+      date: cell.date || cell.timestamp || '',
+      timestamp: cell.date || cell.timestamp || '',
+      signatureImage: cell.signatureImage || cell.signature || null,
+      signature: cell.signatureImage || cell.signature || null,
+      isCompleted,
+      isPending: !isCompleted,
+      status: isCompleted ? 'COMPLETED' : 'PENDING'
+    };
+  };
+
+  const stampData = {
+    requester: toStampCell(signatories?.requester),
+    reviewer:  toStampCell(signatories?.reviewer),
+    approver:  toStampCell(signatories?.approver)
+  };
+
+  const pngDataUrl = await generateSignOffStampImage(stampData);
+  const pngImage = await pdfDoc.embedPng(pngDataUrl);
+
+  const stampWidth = Math.min(500, width - 40);
+  const stampHeight = (stampWidth / pngImage.width) * pngImage.height;
+  const x = (width - stampWidth) / 2;
+  const y = 30; // 30pt from bottom of Page 1
+
+  // Solid white rectangle mask to erase any underlying PDF text/grid lines
+  firstPage.drawRectangle({
+    x,
+    y,
+    width: stampWidth,
+    height: stampHeight,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+    opacity: 1.0
   });
 
   firstPage.drawImage(pngImage, {
@@ -657,25 +733,80 @@ export const generateUncontrolledWatermarkImage = async (metadata) => {
 };
 
 /**
- * Apply the Uncontrolled watermark to all pages of a PDF
+ * Redesigned Responsive ISO Watermark Engine (Blueprint A)
+ * Parametric Auto-Scaling according to actual page size:
+ * - Main text (48pt-52pt, min(width, height) * 0.085)
+ * - Sub text (20pt-22pt, mainFontSize * 0.42)
+ * - Warning Red ({ red: 0.9, green: 0.2, blue: 0.2 }), opacity: 0.22, 45 degrees, centered
+ *
+ * @param {PDFPage} page - pdf-lib page
+ * @param {string} text - Main watermark text
+ * @param {string} subText - Secondary subtitle text
+ * @param {Object} [options={}] - Custom options (font, opacity, color)
  */
-export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata) => {
+export const drawIsoDiagonalWatermark = (page, text = 'UNCONTROLLED COPY', subText = '(สำเนาไม่ควบคุม)', options = {}) => {
+  const { width, height } = page.getSize();
+  
+  // คำนวณขนาดฟอนต์ให้ได้สัดส่วนกับหน้ากระดาษจริงเสมอ
+  const mainFontSize = Math.min(width, height) * 0.085; // ~50pt สำหรับ A4
+  const subFontSize = mainFontSize * 0.42;              // ~21pt
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const opacity = options.opacity !== undefined ? options.opacity : 0.22;
+  const color = options.color || rgb(0.9, 0.25, 0.25);
+  const font = options.font || null;
+
+  // วาดข้อความหลักภาษาอังกฤษ
+  page.drawText(text, {
+    x: centerX - (text.length * mainFontSize * 0.28),
+    y: centerY + 10,
+    size: mainFontSize,
+    rotate: { type: 'degrees', angle: 45 },
+    opacity,
+    color,
+    ...(font ? { font } : {})
+  });
+
+  // วาดข้อความบรรทัดรองภาษาไทย
+  if (subText) {
+    try {
+      page.drawText(subText, {
+        x: centerX - (subText.length * subFontSize * 0.32),
+        y: centerY - (subFontSize * 1.5),
+        size: subFontSize,
+        rotate: { type: 'degrees', angle: 45 },
+        opacity: Math.max(0.1, opacity - 0.02),
+        color,
+        ...(font ? { font } : {})
+      });
+    } catch {
+      try {
+        const fallbackSub = subText.includes('ไม่ควบคุม') ? '(FOR REFERENCE ONLY)' : '(CONTROLLED)';
+        page.drawText(fallbackSub, {
+          x: centerX - (fallbackSub.length * subFontSize * 0.28),
+          y: centerY - (subFontSize * 1.5),
+          size: subFontSize,
+          rotate: { type: 'degrees', angle: 45 },
+          opacity: Math.max(0.1, opacity - 0.02),
+          color
+        });
+      } catch {
+        // safe
+      }
+    }
+  }
+};
+
+/**
+ * Apply the Uncontrolled watermark to all pages of a PDF using responsive ISO engine
+ */
+export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata = {}) => {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const pages = pdfDoc.getPages();
 
-  const watermarkPngUrl = await generateUncontrolledWatermarkImage(metadata);
-  const watermarkImage = await pdfDoc.embedPng(watermarkPngUrl);
-
   pages.forEach((page) => {
-    const { width, height } = page.getSize();
-    const watermarkSize = Math.min(width, height) * 0.52;
-
-    page.drawImage(watermarkImage, {
-      x: (width - watermarkSize) / 2,
-      y: (height - watermarkSize) / 2, // วางกึ่งกลางหน้ากระดาษ
-      width: watermarkSize,
-      height: watermarkSize,
-    });
+    drawIsoDiagonalWatermark(page, 'UNCONTROLLED COPY', '(สำเนาไม่ควบคุม)');
   });
 
   return await pdfDoc.save();

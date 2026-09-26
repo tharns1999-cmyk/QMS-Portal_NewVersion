@@ -66,7 +66,7 @@ const TaskConfirmHardcopyReceipt = () => {
   const dispatchedBy = copy?.dispatched_by || 'เจ้าหน้าที่ DC';
 
   const isLevel6 = isLevel6Plus(currentUser);
-  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
+  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN';
   const isAuthorized = !isLevel6 && (isWildcardUser || !dept || userMatchesDepartment(currentUser, dept));
 
   const handleSubmit = (e) => {

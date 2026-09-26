@@ -15,16 +15,13 @@ const DashboardHeader = ({
   const isAdmin = Boolean(
     currentUser?.isDcc || 
     currentUser?.role === 'DCC_ADMIN' || 
-    currentUser?.id === 'u5' || 
-    currentUser?.id === 'U001' || 
-    currentUser?.empId === 'EMP-001'
+    currentUser?.isDccAdmin
   );
 
   const isQmr = Boolean(
     currentUser?.isQmr || 
     currentUser?.role === 'QMR' || 
-    (currentUser?.position && currentUser.position.toUpperCase().includes('QMR')) || 
-    currentUser?.id === 'U004'
+    (currentUser?.position && currentUser.position.toUpperCase().includes('QMR'))
   );
 
   return (

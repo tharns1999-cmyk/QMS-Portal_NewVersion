@@ -7,30 +7,7 @@ import {
   Lock,
   RotateCcw
 } from 'lucide-react';
-
-/**
- * Department color mapping for avatars
- */
-const DEPT_COLORS = {
-  QA: { avatar: 'bg-blue-600 text-white' },
-  'QA/QC': { avatar: 'bg-blue-600 text-white' },
-  PD: { avatar: 'bg-amber-600 text-white' },
-  EN: { avatar: 'bg-purple-600 text-white' },
-  WH: { avatar: 'bg-emerald-600 text-white' },
-  DC: { avatar: 'bg-sky-600 text-white' },
-  FIN: { avatar: 'bg-teal-600 text-white' },
-  EXEC: { avatar: 'bg-zinc-900 text-white' },
-  MGMT: { avatar: 'bg-indigo-600 text-white' },
-  MKT: { avatar: 'bg-rose-600 text-white' },
-  HR: { avatar: 'bg-cyan-600 text-white' },
-  'HR&GA': { avatar: 'bg-cyan-600 text-white' },
-  HSE: { avatar: 'bg-emerald-600 text-white' },
-  PC: { avatar: 'bg-purple-600 text-white' },
-  ST: { avatar: 'bg-slate-600 text-white' },
-  DEFAULT: { avatar: 'bg-slate-700 text-white' }
-};
-
-const getDeptTheme = (dept) => DEPT_COLORS[dept] || DEPT_COLORS.DEFAULT;
+import { getDepartmentTheme } from '../../config/qmsRegistry';
 
 const getInitials = (name = '') => {
   if (!name) return 'U';
@@ -240,7 +217,7 @@ const AuthorizedUsersSelector = ({
         {selectedUsers.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
             {selectedUsers.map(user => {
-              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
+              const theme = getDepartmentTheme(user.primary_department || user.department || user.dept);
               return (
                 <span
                   key={user.id}
@@ -333,7 +310,7 @@ const AuthorizedUsersSelector = ({
             filteredUsers.map(user => {
               const isWorkflowParticipant = participantIdsSet.has(user.id) || (user.empId && participantIdsSet.has(user.empId));
               const isSelected = isWorkflowParticipant || safeSelectedIds.includes(user.id) || (user.empId && safeSelectedIds.includes(user.empId));
-              const theme = getDeptTheme(user.primary_department || user.department || user.dept);
+              const theme = getDepartmentTheme(user.primary_department || user.department || user.dept);
 
               return (
                 <div

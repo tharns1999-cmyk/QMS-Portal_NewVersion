@@ -51,7 +51,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
   const eligibleReviewers = useMemo(() => {
     return (masterUsers || []).filter(u => {
       if (!u || !u.id) return false;
-      if (u.role === 'DCC_ADMIN' || u.isDcc || u.id === 'U001' || u.id === 'EMP-001') return false;
+      if (u.role === 'DCC_ADMIN' || u.isDcc || u.isDccAdmin) return false;
       if (isCurrentUser(u)) return false;
       if (formData?.approverId && (u.id === formData.approverId || u.empId === formData.approverId)) return false;
       return true;
@@ -62,7 +62,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
   const eligibleApprovers = useMemo(() => {
     return (masterUsers || []).filter(u => {
       if (!u || !u.id) return false;
-      if (u.role === 'DCC_ADMIN' || u.isDcc || u.id === 'U001' || u.id === 'EMP-001') return false;
+      if (u.role === 'DCC_ADMIN' || u.isDcc || u.isDccAdmin) return false;
       if (isCurrentUser(u)) return false;
       if (formData?.reviewerId && (u.id === formData.reviewerId || u.empId === formData.reviewerId)) return false;
       return true;

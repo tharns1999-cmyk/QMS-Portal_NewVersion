@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { stampDocumentFirstPage, stampExternalDocumentTopRight } from '../utils/pdfStamper';
+import { stampDocumentFirstPage, stampExternalDocumentTopRight, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
+import { resolveProgressiveSignatories } from '../utils/signatoryResolver';
 import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateDynamicWorkflow } from '../utils/workflowEngine';
@@ -216,7 +217,7 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
 
 export const resolveDccAdminUserId = (masterUsers) => {
   const admin = (masterUsers || []).find(u => isDccAdmin(u));
-  return admin?.id || 'U001';
+  return admin?.id || masterUsers?.[0]?.id || '';
 };
 
 /**
@@ -408,70 +409,28 @@ export const MASTER_DATA_USER = [
   { id: 'U010', empId: 'EMP-010', name: 'สมชาย การตลาด', fullName: 'สมชาย การตลาด', email: 'somchai.mkt@company.com', position: 'Sales Executive', level: 3, approval_level: 3, role: 'GENERAL_USER', isDcc: false, isQmr: false, depts: ['MKT'], department: 'MKT', dept: 'MKT', primary_department: 'MKT', affiliated_departments: ['MKT'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'SCM-MKT', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-MK010', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true }
 ];
 
-// 2. Master Departments
-export const MASTER_DEPARTMENTS = [
-  { id: 'DC', name: 'DC (Document Control)', nameTh: 'ฝ่ายควบคุมเอกสาร / Document Control', nameEn: 'Document Control Department', headUserId: 'EMP-001', headName: 'ธนาวุฒิ สมควรกิจดำรง', status: 'ACTIVE', color: 'sky' },
-  { id: 'PD', name: 'PD (Production)', nameTh: 'ฝ่ายผลิต', nameEn: 'Production Department', headUserId: 'U003', headName: 'กัลยาณี พลไกร', status: 'ACTIVE', color: 'indigo' },
-  { id: 'QC', code: 'QC', name: 'QC (Quality Control)', shortName: 'QC', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'emerald' },
-  { id: 'WH', name: 'WH (Warehouse)', nameTh: 'ฝ่ายคลังสินค้าและโลจิสติกส์', nameEn: 'Warehouse & Logistics', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'amber' },
-  { id: 'EN', name: 'EN (Engineering)', nameTh: 'ฝ่ายวิศวกรรมและซ่อมบำรุง', nameEn: 'Engineering & Maintenance', headUserId: 'U006', headName: 'รัตนพล', status: 'ACTIVE', color: 'blue' },
-  { id: 'PC', name: 'PC (Purchasing)', nameTh: 'ฝ่ายจัดซื้อ', nameEn: 'Purchasing Department', headUserId: 'U004', headName: 'คุณเรย์', status: 'ACTIVE', color: 'purple' },
-  { id: 'HR&GA', name: 'HR&GA', nameTh: 'ฝ่ายทรัพยากรบุคคลและธุรการ', nameEn: 'Human Resources & General Affairs', headUserId: 'U004', headName: 'คุณเรย์', status: 'ACTIVE', color: 'rose' },
-  { id: 'HSE', name: 'HSE (Safety)', nameTh: 'ฝ่ายความปลอดภัยและสิ่งแวดล้อม', nameEn: 'Health, Safety & Environment', headUserId: 'U004', headName: 'คุณเรย์', status: 'ACTIVE', color: 'teal' },
-  { id: 'MKT', name: 'MKT (Marketing)', nameTh: 'ฝ่ายการตลาดและการขาย', nameEn: 'Marketing & Sales', headUserId: 'U010', headName: 'สมชาย การตลาด', status: 'ACTIVE', color: 'cyan' },
-  { id: 'ST', name: 'ST (Store)', nameTh: 'ฝ่ายจัดเก็บวัตถุดิบ', nameEn: 'Store & Inventory', headUserId: 'U005', headName: 'บีม', status: 'ACTIVE', color: 'slate' }
-];
+// 2. Master Departments & Constants (Sourced from qmsRegistry - Single Source of Truth)
+import {
+  MASTER_DEPARTMENTS,
+  MASTER_DATA_DEPT,
+  SYSTEM_CORE_DEPTS,
+  MASTER_DOC_TYPES,
+  MASTER_DOCUMENT_TYPES,
+  DEFAULT_SIGNATURE_SETTINGS,
+  DEFAULT_SLA_SETTINGS,
+  DEFAULT_APPROVAL_MATRIX
+} from '../config/qmsRegistry';
 
-export const MASTER_DATA_DEPT = MASTER_DEPARTMENTS;
-export const SYSTEM_CORE_DEPTS = ['DC', 'QC', 'QA/QC'];
-
-// 3. Master Document Types (2-Digit Base Running Number Standard: 01-99 ➔ 100+)
-export const MASTER_DOCUMENT_TYPES = [
-  { id: 'QM', code: 'QM', name: 'Quality Manual', nameTh: 'คู่มือคุณภาพ', namingPattern: 'QM-{Dept}-{##}', is_form_type: false, reviewCycleMonths: 12, retentionPeriodYears: 5, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'คู่มือระบบการบริหารคุณภาพตามมาตรฐานสากล' },
-  { id: 'SOP', code: 'SOP', name: 'Standard Operating Procedure', nameTh: 'ระเบียบปฏิบัติงาน', namingPattern: 'SOP-{Dept}-{##}', is_form_type: false, reviewCycleMonths: 12, retentionPeriodYears: 3, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'ขั้นตอนและระเบียบการดำเนินงานข้ามสายงาน' },
-  { id: 'WI', code: 'WI', name: 'Work Instruction', nameTh: 'คู่มือการปฏิบัติงาน', namingPattern: 'WI-{Dept}-{##}', is_form_type: false, reviewCycleMonths: 12, retentionPeriodYears: 3, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'คำแนะนำขั้นตอนการทำงานเฉพาะจุดปฏิบัติงาน' },
-  { id: 'FM', code: 'FM', name: 'Form / Record Format', nameTh: 'แบบฟอร์มบันทึกข้อมูล', namingPattern: 'FM-{Dept}-{##}', is_form_type: true, reviewCycleMonths: 24, retentionPeriodYears: 2, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'แบบฟอร์มเปล่าสำหรับบันทึกผลการปฏิบัติงาน' },
-  { id: 'SD', code: 'SD', name: 'Supporting Document', nameTh: 'เอกสารสนับสนุน', namingPattern: 'SD-{Dept}-{##}', is_form_type: false, reviewCycleMonths: 24, retentionPeriodYears: 3, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'เอกสารอ้างอิงและข้อมูลทางวิชาการสนับสนุน' },
-  { id: 'SPEC', code: 'SPEC', name: 'Standard Specification', nameTh: 'ข้อกำหนดและสเปกมาตรฐาน', namingPattern: 'SPEC-{Dept}-{##}', is_form_type: false, reviewCycleMonths: 12, retentionPeriodYears: 5, status: 'ACTIVE', category: 'INTERNAL', allowDar: true, description: 'เกณฑ์มาตรฐานคุณลักษณะวัตถุดิบและผลิตภัณฑ์' },
-  { id: 'ED', code: 'ED', name: 'External Document & Regulation', nameTh: 'เอกสารภายนอกและกฎหมาย', namingPattern: 'ED-{Dept}-{##}', is_form_type: false, isFormBypass: true, reviewCycleMonths: 12, retentionPeriodYears: 5, status: 'ACTIVE', category: 'EXTERNAL', allowDar: false, description: 'เอกสาร กฎหมาย มาตรฐาน และคู่มือจากหน่วยงานภายนอก' }
-];
-
-// 4. Default Signature & Security Settings (21 CFR Part 11 Compliant)
-export const DEFAULT_SIGNATURE_SETTINGS = {
-  pinLength: 6,
-  maxFailedAttempts: 3,
-  defaultPin: '123456',
-  requireTermsAcknowledgment: true,
-  requireReasonForSigning: true,
-  requireReAuthentication: true,
-  enableTimestampAuthority: true,
-  dualSignOffOnObsolete: true,
-  auditTrailLogging: true,
-  signatureStampFormat: 'STANDARD_WITH_METADATA', // 'STANDARD_WITH_METADATA', 'FORMAL_BOXED_STAMP', 'MINIMAL_LEAN'
-  allowDrawnSignature: true,
-  allowUploadedSignature: true,
-  allowTypographicSignature: true
+export {
+  MASTER_DEPARTMENTS,
+  MASTER_DATA_DEPT,
+  SYSTEM_CORE_DEPTS,
+  MASTER_DOC_TYPES,
+  MASTER_DOCUMENT_TYPES,
+  DEFAULT_SIGNATURE_SETTINGS,
+  DEFAULT_SLA_SETTINGS,
+  DEFAULT_APPROVAL_MATRIX
 };
-
-// 5. Default SLA Settings (Days)
-export const DEFAULT_SLA_SETTINGS = {
-  reviewSlaDays: 3,
-  approvalSlaDays: 3,
-  hardcopyReceiptSlaDays: 5,
-  recallSlaDays: 7,
-  darCreationSlaDays: 3
-};
-
-// 6. Default Approval Routing Matrix by Document Type
-export const DEFAULT_APPROVAL_MATRIX = [
-  { docType: 'QM', doc_type: 'QM', nameTh: 'คู่มือคุณภาพ (Quality Manual)', minRequesterLevel: 4, min_requester_level: 4, requiredReviewerLevel: 6, required_reviewer_level: 6, requiredApproverLevel: 8, required_approver_level: 8, requireAckDefault: true, require_ack_default: true, description: 'คู่มือระบบการบริหารคุณภาพตามมาตรฐานสากล' },
-  { docType: 'SOP', doc_type: 'SOP', nameTh: 'ระเบียบปฏิบัติงาน (Standard Operating Procedure)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 6, required_approver_level: 6, requireAckDefault: true, require_ack_default: true, description: 'ขั้นตอนและระเบียบการดำเนินงานข้ามสายงาน' },
-  { docType: 'WI', doc_type: 'WI', nameTh: 'คู่มือการปฏิบัติงาน (Work Instruction)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 5, required_approver_level: 5, requireAckDefault: false, require_ack_default: false, description: 'คำแนะนำขั้นตอนการทำงานเฉพาะจุดปฏิบัติงาน' },
-  { docType: 'FM', doc_type: 'FM', nameTh: 'แบบฟอร์มบันทึกข้อมูล (Form / Record Format)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 5, required_approver_level: 5, requireAckDefault: false, require_ack_default: false, description: 'แบบฟอร์มเปล่าสำหรับบันทึกผลการปฏิบัติงาน' },
-  { docType: 'SD', doc_type: 'SD', nameTh: 'เอกสารสนับสนุน (Supporting Document)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 5, required_approver_level: 5, requireAckDefault: true, require_ack_default: true, description: 'เอกสารอ้างอิงและข้อมูลทางวิชาการสนับสนุน' },
-  { docType: 'SPEC', doc_type: 'SPEC', nameTh: 'ข้อกำหนดและสเปกมาตรฐาน (Standard Specification)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 5, required_approver_level: 5, requireAckDefault: true, require_ack_default: true, description: 'เกณฑ์มาตรฐานคุณลักษณะวัตถุดิบและผลิตภัณฑ์' },
-  { docType: 'ED', doc_type: 'ED', nameTh: 'เอกสารภายนอกและกฎหมาย (External Document)', minRequesterLevel: 1, min_requester_level: 1, requiredReviewerLevel: 4, required_reviewer_level: 4, requiredApproverLevel: 6, required_approver_level: 6, requireAckDefault: false, require_ack_default: false, description: 'เอกสาร กฎหมาย มาตรฐาน และคู่มือจากหน่วยงานภายนอก' }
-];
 
 export const REQUEST_MASTER_DATA_USER = MASTER_DATA_USER.map(u => ({ 
   id: u.id, 
@@ -1966,7 +1925,7 @@ const useStore = create(persist((set, get) => ({
   canUserAccessDocument: (doc, user) => canUserAccessDocument(doc, user || get().currentUser),
   // ------------------------------------------------------------------
 
-  // Default user is DCC Admin (U001 - ธนาวุฒิ)
+  // Default user is DCC Admin
   currentUser: { 
     ...MASTER_DATA_USER[0], 
     department: 'DC', 
@@ -2281,7 +2240,7 @@ const useStore = create(persist((set, get) => ({
     let newTasks = [...state.tasks];
     let newNotifications = [...state.notifications];
 
-    const ownerId = doc.ownerId || (state.currentUser ? state.currentUser.id : 'U001');
+    const ownerId = doc.ownerId || (state.currentUser ? state.currentUser.id : '');
     const requesterName = state.currentUser?.fullName || state.currentUser?.name || doc.ownerName || 'User';
 
     const requestId = doc.requestNo || doc.requestId || doc.edrNumber || generateNextEdrNumber(state.externalRequests || []);
@@ -2499,7 +2458,7 @@ const useStore = create(persist((set, get) => ({
       edCode,
       department: dept,
       status: initialStatus,
-      ownerId: state.currentUser ? state.currentUser.id : 'U001',
+      ownerId: state.currentUser ? state.currentUser.id : (doc.ownerId || ''),
       rev: originRev,
       source: issuerValue,
       issuer: issuerValue,
@@ -2611,7 +2570,7 @@ const useStore = create(persist((set, get) => ({
         actionType: 'EXT_DOC_REGISTER',
         details: `Registered new external document: ${edCode} - ${doc.title}`,
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         actorRole: state.currentUser?.role || state.currentUser?.position,
         date: new Date().toISOString()
       }, ...(state.actionLog || [])],
@@ -2622,7 +2581,7 @@ const useStore = create(persist((set, get) => ({
         docCode: edCode,
         action: 'REGISTER',
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         date: new Date().toISOString(),
         details: `Registered external document ${edCode} (Status: ${initialStatus})`
       }, ...state.externalAuditTrail]
@@ -2664,7 +2623,7 @@ const useStore = create(persist((set, get) => ({
     const newId = `EXT-${Date.now()}`;
     const issuerValue = updates.issuer || updates.officialIssuer || updates.source || oldDoc.issuer || oldDoc.officialIssuer || oldDoc.source || '';
 
-    const ownerId = updates.ownerId || oldDoc.ownerId || (state.currentUser ? state.currentUser.id : 'U001');
+    const ownerId = updates.ownerId || oldDoc.ownerId || (state.currentUser ? state.currentUser.id : '');
     const requesterName = state.currentUser?.fullName || state.currentUser?.name || updates.ownerName || oldDoc.ownerName || 'User';
 
     const requestId = updates.requestNo || updates.requestId || updates.edrNumber || generateNextEdrNumber(state.externalRequests || []);
@@ -2892,7 +2851,7 @@ const useStore = create(persist((set, get) => ({
         actionType: 'EXT_DOC_REVISE_REQUEST',
         details: `Requested update for external document: ${edCode} - ${newDoc.title} to edition ${newDoc.edition || newDoc.sourceVersion || '-'}`,
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         actorRole: state.currentUser?.role || state.currentUser?.position,
         date: new Date().toISOString()
       }, ...(state.actionLog || [])],
@@ -2903,7 +2862,7 @@ const useStore = create(persist((set, get) => ({
         docCode: edCode,
         action: 'UPDATE_REQUEST',
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         date: new Date().toISOString(),
         details: `Requested update for ${edCode} to Rev ${newRevStr}`
       }, ...state.externalAuditTrail]
@@ -2972,7 +2931,7 @@ const useStore = create(persist((set, get) => ({
     const reviewerObj = (state.masterUsers || []).find(u => u.id === targetRevId);
     const approverObj = (state.masterUsers || []).find(u => u.id === targetAppId);
     const nowIso = new Date().toISOString();
-    const ownerId = state.currentUser ? state.currentUser.id : (oldDoc.ownerId || 'U001');
+    const ownerId = state.currentUser ? state.currentUser.id : (oldDoc.ownerId || '');
     const requesterName = state.currentUser?.fullName || state.currentUser?.name || oldDoc.ownerName || 'User';
     const edCode = oldDoc.edCode || oldDoc.doc_code || oldDoc.id;
 
@@ -3174,7 +3133,7 @@ const useStore = create(persist((set, get) => ({
           recalled_by: recalledBy,
           recalledBy: recalledBy,
           disposed_by_name: recalledBy,
-          disposed_by_id: state.currentUser?.id || 'U001',
+          disposed_by_id: state.currentUser?.id || '',
           dcc_notes: notes || c.dcc_notes,
           notes: notes || c.notes,
           witness_name: witnessName || c.witness_name,
@@ -3233,7 +3192,7 @@ const useStore = create(persist((set, get) => ({
       dispositionMethod: dispositionAction,
       disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
       disposed_by_name: recalledBy,
-      disposed_by_id: state.currentUser?.id || 'U001',
+      disposed_by_id: state.currentUser?.id || '',
       disposedAt: recalledAt,
       witnessName: witnessName || '',
       referenceNo: referenceNo || '',
@@ -3247,7 +3206,7 @@ const useStore = create(persist((set, get) => ({
       docCode: targetDocCode,
       action: finalStatus === 'DESTROYED' ? 'COPY_DESTROYED' : 'COPY_RECALLED',
       actor: recalledBy,
-      actorId: state.currentUser?.id || 'U001',
+      actorId: state.currentUser?.id || '',
       date: recalledAt,
       timestamp: recalledAt,
       details: `DCC บันทึกการจัดการสำเนา (${actionLabel}) จำนวน ${affectedCount || 1} ชุด ${notes ? `(หมายเหตุ: ${notes})` : ''}`
@@ -3390,7 +3349,7 @@ const useStore = create(persist((set, get) => ({
 
     const reqNo = matchingReq?.requestNo || matchingReq?.requestId || matchingReq?.id || task.referenceId || doc.edCode || 'EDR';
     const reqId = matchingReq?.id || matchingReq?.requestId || task.referenceId;
-    const requesterId = matchingReq?.requesterId || task.requesterId || doc.ownerId || 'U001';
+    const requesterId = matchingReq?.requesterId || task.requesterId || doc.ownerId || state.currentUser?.id || '';
     const edCode = doc.edCode || doc.doc_code || doc.docNo || matchingReq?.edCode || matchingReq?.doc_code || matchingReq?.docCode || task.docCode || doc.id || 'ED-???';
     const docCode = edCode;
     const docTitle = doc.title || doc.name || matchingReq?.title || task.docTitle || 'เอกสารภายนอก';
@@ -4422,7 +4381,7 @@ const useStore = create(persist((set, get) => ({
         type: 'EXTERNAL_REVIEW',
         taskType: 'EXTERNAL_REVIEW',
         assigneeId: reviewerId,
-        requesterId: updatedDoc.ownerId || state.currentUser?.id || 'U001',
+        requesterId: updatedDoc.ownerId || state.currentUser?.id || '',
         requesterName: state.currentUser?.fullName || state.currentUser?.name,
         requesterDepartment: updatedDoc.department,
         department: updatedDoc.department,
@@ -4455,7 +4414,7 @@ const useStore = create(persist((set, get) => ({
         type: 'EXTERNAL_APPROVAL',
         taskType: 'EXTERNAL_APPROVAL',
         assigneeId: approverId,
-        requesterId: updatedDoc.ownerId || state.currentUser?.id || 'U001',
+        requesterId: updatedDoc.ownerId || state.currentUser?.id || '',
         requesterName: state.currentUser?.fullName || state.currentUser?.name,
         requesterDepartment: updatedDoc.department,
         department: updatedDoc.department,
@@ -4547,7 +4506,7 @@ const useStore = create(persist((set, get) => ({
         title: updatedDoc.title,
         requestType: 'NEW',
         department: updatedDoc.department || 'QA',
-        requesterId: updatedDoc.ownerId || state.currentUser?.id || 'U001',
+        requesterId: updatedDoc.ownerId || state.currentUser?.id || '',
         requesterName: state.currentUser?.fullName || state.currentUser?.name || updatedDoc.ownerName || 'User',
         requesterDepartment: updatedDoc.department || 'QA',
         requesterRole: state.currentUser?.position || 'Requester',
@@ -4612,7 +4571,7 @@ const useStore = create(persist((set, get) => ({
         actionType: 'EXT_DOC_RESUBMIT',
         details: `Resubmitted external document: ${edCode} - ${updatedDoc.title} after revision`,
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         actorRole: state.currentUser?.role || state.currentUser?.position,
         date: new Date().toISOString()
       }, ...(state.actionLog || [])],
@@ -4621,7 +4580,7 @@ const useStore = create(persist((set, get) => ({
         docId: oldDoc.id,
         action: 'RESUBMIT',
         actor: state.currentUser?.name || 'User',
-        actorId: state.currentUser?.id || 'U001',
+        actorId: state.currentUser?.id || '',
         date: new Date().toISOString(),
         details: `Resubmitted external document after revision`
       }, ...state.externalAuditTrail]
@@ -4792,7 +4751,7 @@ const useStore = create(persist((set, get) => ({
       name: dar.name || dar.title || dar.docTitle || 'Untitled Document',
       docTitle: dar.docTitle || dar.name || dar.title || 'Untitled Document',
       department: dar.department || state.currentUser?.department || 'PD',
-      requesterId: dar.requesterId || dar.requester_id || state.currentUser?.id || 'EMP-001',
+      requesterId: dar.requesterId || dar.requester_id || state.currentUser?.id || (state.masterUsers?.[0]?.id || ''),
       date: dar.date || dar.createdAt?.split('T')[0] || todayStr,
       type: dar.type || 'NEW',
       fileId: dar.fileId || dar.file_id || dar.attachedFile?.fileId || null,
@@ -5218,47 +5177,90 @@ const useStore = create(persist((set, get) => ({
     tasks: state.tasks.filter(t => t.id !== taskId)
   })),
 
-  stampFinalApprovalPdf: async (darId) => {
+  finalizeAndPublishMaster: async (darId) => {
     const state = get();
-    const dar = state.dars.find(d => d.id === darId);
-    if (!dar || !dar.attachedFile || dar.attachedFile.type !== 'application/pdf') return;
+    const safeDars = state.dars || [];
+    const safeDarRequests = state.darRequests || [];
+    const dar = safeDars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId)
+      || safeDarRequests.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId);
+    if (!dar) return;
 
     try {
-      const fileBlob = await getFile(dar.attachedFile.fileId);
-      if (!fileBlob) return;
-      const arrayBuffer = await fileBlob.arrayBuffer();
-      
-      const timeline = state.timeline.filter(t => t.darId === dar.id);
-      // Timeline might not have 'Created' if old data, fallback to requester_name and dar.date
-      const requesterLog = timeline.find(t => t.action?.includes('Created') || t.action?.includes('Submitted')) || { user: dar.requester_name || dar.requesterName || dar.requesterId, date: dar.date || new Date().toISOString() };
-      const reviewerLog = timeline.find(t => t.action === 'Reviewed') || { user: '-', date: '-' };
-      const approverLog = timeline.find(t => t.action === 'Approved') || { user: '-', date: '-' };
+      const activeFileId = dar.fileId || dar.file_id || dar.attachedFile?.fileId || dar.attachedFile?.id || dar.id;
+      const rawBlob = await resolveFileBlob(dar, activeFileId);
+      if (!rawBlob) return;
 
-      const signOffData = {
-        requester: { name: requesterLog.user, position: 'ผู้จัดทำ (Requester)', timestamp: new Date(requesterLog.date).toLocaleDateString('th-TH') },
-        reviewer: { name: reviewerLog.user, position: 'ผู้ทบทวน (Reviewer)', timestamp: reviewerLog.date !== '-' ? new Date(reviewerLog.date).toLocaleDateString('th-TH') : '-' },
-        approver: { name: approverLog.user, position: 'ผู้อนุมัติ (Approver)', timestamp: approverLog.date !== '-' ? new Date(approverLog.date).toLocaleDateString('th-TH') : '-' }
-      };
+      const signatories = resolveProgressiveSignatories({
+        dar,
+        stage: 'MASTER',
+        masterUsers: state.masterUsers,
+        users: state.users,
+        currentUser: state.currentUser
+      });
 
-      const stampedBytes = await stampDocumentFirstPage(arrayBuffer, signOffData);
-      const stampedBlob = new Blob([stampedBytes], { type: 'application/pdf' });
-      const newFileId = `file_${Date.now()}_stamped_${dar.attachedFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      await saveFile(newFileId, stampedBlob);
+      const permanentlyStampedPdfBytes = await applyProgressiveSignatoryStamp(
+        rawBlob,
+        signatories
+      );
+      const stampedBlob = new Blob([permanentlyStampedPdfBytes], { type: 'application/pdf' });
 
-      set(s => ({
-        dars: s.dars.map(d => d.id === darId ? { 
-          ...d, 
-          attachedFile: { 
-            ...d.attachedFile, 
-            fileId: newFileId, 
-            size: stampedBlob.size, 
-            isStamped: true 
-          } 
-        } : d)
-      }));
+      const targetDocCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.title;
+      const targetDocId = dar.docIdRef || dar.docId || dar.doc_id;
+      const nowIso = new Date().toISOString();
+
+      const stampedBlobUrl = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL.createObjectURL(stampedBlob) : null;
+
+      if (activeFileId) await saveFile(activeFileId, stampedBlob).catch(() => {});
+      if (targetDocCode) await saveFile(targetDocCode, stampedBlob).catch(() => {});
+      if (targetDocId) await saveFile(targetDocId, stampedBlob).catch(() => {});
+      if (dar.id) await saveFile(dar.id, stampedBlob).catch(() => {});
+
+      set(s => {
+        const mapDoc = (d) => {
+          const isMatch = (targetDocId && String(d.id) === String(targetDocId)) ||
+                          (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode)) ||
+                          (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
+                          (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo));
+          if (isMatch) {
+            return {
+              ...d,
+              fileData: permanentlyStampedPdfBytes,
+              fileBlob: stampedBlob,
+              pdfUrl: stampedBlobUrl || d.pdfUrl,
+              fileUrl: stampedBlobUrl || d.fileUrl,
+              isSignatoryStamped: true,
+              stampedAt: nowIso
+            };
+          }
+          return d;
+        };
+
+        const updatedDocs = (s.documents || []).map(mapDoc);
+        const updatedMasterDocs = (s.masterDocuments || []).map(mapDoc);
+
+        const updatedDars = (s.dars || []).map(d => d.id === dar.id ? {
+          ...d,
+          fileData: permanentlyStampedPdfBytes,
+          fileBlob: stampedBlob,
+          pdfUrl: stampedBlobUrl || d.pdfUrl,
+          fileUrl: stampedBlobUrl || d.fileUrl,
+          isSignatoryStamped: true,
+          stampedAt: nowIso
+        } : d);
+
+        return {
+          documents: updatedDocs,
+          masterDocuments: updatedMasterDocs,
+          dars: updatedDars
+        };
+      });
     } catch (err) {
-      console.error('Failed to stamp PDF:', err);
+      console.warn('[useStore] finalizeAndPublishMaster stamping warning:', err);
     }
+  },
+
+  stampFinalApprovalPdf: async (darId) => {
+    return get().finalizeAndPublishMaster(darId);
   },
 
   stampFinalExternalApprovalPdf: async (docId) => {
@@ -5884,8 +5886,13 @@ const useStore = create(persist((set, get) => ({
       }
       
       // Asynchronous Stamp Generation for Approved DAR
-      if (store.stampFinalApprovalPdf && targetDarToPublish.attachedFile) {
-        store.stampFinalApprovalPdf(targetDarToPublish.id);
+      const dType = String(targetDarToPublish.type || targetDarToPublish.requestType || '').toUpperCase();
+      if (dType !== 'OBSOLETE' && dType !== 'OBSOLETE_DOCUMENT') {
+        if (store.finalizeAndPublishMaster) {
+          store.finalizeAndPublishMaster(targetDarToPublish.id);
+        } else if (store.stampFinalApprovalPdf) {
+          store.stampFinalApprovalPdf(targetDarToPublish.id);
+        }
       }
     }
   },
@@ -6061,18 +6068,19 @@ const useStore = create(persist((set, get) => ({
     } else {
       request.status = 'PENDING_DCC_DISTRIBUTION';
       const newTaskId = `t-${Date.now()}-ccd`;
+      const dccAdminId = resolveDccAdminUserId(state.masterUsers);
       newTasks.push({
         id: newTaskId,
         title: `แจกจ่ายสำเนาเพิ่มเติม (${doc.title})`,
         type: 'DCC_REPLACEMENT',
-        assigneeId: 'U001',
+        assigneeId: dccAdminId,
         department: 'DC',
         target_department: 'DC',
         owner_dept: 'DC',
         status: 'PENDING',
         requestId: request.id
       });
-      newNotifications.push({ id: Date.now() + Math.random(), userId: 'U001', title: 'คำขอเบิกสำเนา', message: `มีคำขอเบิกสำเนา ${doc.title} ที่ผ่านการอนุมัติแล้ว`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
+      newNotifications.push({ id: Date.now() + Math.random(), userId: dccAdminId, title: 'คำขอเบิกสำเนา', message: `มีคำขอเบิกสำเนา ${doc.title} ที่ผ่านการอนุมัติแล้ว`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
     }
 
     return {
@@ -6107,18 +6115,19 @@ const useStore = create(persist((set, get) => ({
       newCopyRequests = newCopyRequests.map(r => r.id === request.id ? updatedReq : r);
 
       const newTaskId = `t-${Date.now()}-ccd`;
+      const dccAdminId = resolveDccAdminUserId(state.masterUsers);
       newTasks.push({
         id: newTaskId,
         title: `แจกจ่ายสำเนาเพิ่มเติม (${request.docTitle})`,
         type: 'DCC_REPLACEMENT',
-        assigneeId: 'U001',
+        assigneeId: dccAdminId,
         department: 'DC',
         target_department: 'DC',
         owner_dept: 'DC',
         status: 'PENDING',
         requestId: request.id
       });
-      newNotifications.push({ id: Date.now() + Math.random(), userId: 'U001', title: 'คำขอเบิกสำเนา', message: `มีคำขอเบิกสำเนา ${request.docTitle} ที่ผ่านการอนุมัติแล้ว`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
+      newNotifications.push({ id: Date.now() + Math.random(), userId: dccAdminId, title: 'คำขอเบิกสำเนา', message: `มีคำขอเบิกสำเนา ${request.docTitle} ที่ผ่านการอนุมัติแล้ว`, isRead: false, link: '/tasks', timestamp: new Date().toISOString(), relatedTaskId: newTaskId });
       newNotifications.push({ id: Date.now() + Math.random(), userId: request.requesterId, title: 'คำขอเบิกสำเนาได้รับการอนุมัติ', message: `คำขอเบิกสำเนา ${request.docTitle} ได้รับการอนุมัติแล้ว รอ DCC แจกจ่าย`, isRead: false, link: '/tasks', timestamp: new Date().toISOString() });
     } else {
       const updatedReq = { ...request, status: 'REJECTED' };
@@ -7264,7 +7273,7 @@ const useStore = create(persist((set, get) => ({
     if (!copy) return state;
 
     const user = state.currentUser;
-    const isWildcard = user?.isDcc || user?.role === 'DCC_ADMIN' || user?.role === 'QMR' || user?.isQmr || user?.id === 'u5';
+    const isWildcard = user?.isDcc || user?.role === 'DCC_ADMIN' || user?.role === 'QMR' || user?.isQmr;
     const _userDepts = user?.affiliated_departments || user?.depts || (user?.primary_department ? [user.primary_department] : (user?.department ? [user.department] : []));
     
     const targetDept = copy.holder_dept || copy.department || copy.target_department || copy.dept_code;
@@ -7464,7 +7473,7 @@ const useStore = create(persist((set, get) => ({
         dispositionMethod: finalStatus.includes('OBSOLETE') ? 'STAMP_AND_ARCHIVE' : 'SHRED',
         disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
         disposed_by_name: recalledBy,
-        disposed_by_id: state.currentUser?.id || 'U001',
+        disposed_by_id: state.currentUser?.id || '',
         disposedAt: recalledAt,
         witnessName: '',
         referenceNo: targetTaskId,
@@ -7869,7 +7878,7 @@ const useStore = create(persist((set, get) => ({
         dispositionMethod: dispositionMethod || (finalStatus === 'ARCHIVED_OBSOLETE' ? 'STAMP_AND_ARCHIVE' : 'DESTROY_SCRAP'),
         disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
         disposed_by_name: recalledBy,
-        disposed_by_id: state.currentUser?.id || 'U001',
+        disposed_by_id: state.currentUser?.id || '',
         disposedAt: recalledAt,
         witnessName: witnessName || '',
         witness_name: witnessName || '',
@@ -8150,7 +8159,7 @@ const useStore = create(persist((set, get) => ({
             description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${createdDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
             type: 'DCC_DISTRIBUTE',
             status: 'PENDING',
-            assigneeId: 'U001',
+            assigneeId: resolveDccAdminUserId(state.masterUsers),
             assignedToRole: 'DCC_ADMIN',
             target_role: 'DCC',
             department: 'DC',
@@ -8274,6 +8283,14 @@ const useStore = create(persist((set, get) => ({
       get().publishDarRevision(dar.id);
     } else if (darType === 'OBSOLETE' || darType === 'OBSOLETE_DOCUMENT') {
       get().publishObsoleteDar(dar.id);
+    }
+
+    if (darType !== 'OBSOLETE' && darType !== 'OBSOLETE_DOCUMENT') {
+      if (get().finalizeAndPublishMaster) {
+        get().finalizeAndPublishMaster(dar.id).catch(err => {
+          console.warn('[publishApprovedDar] finalizeAndPublishMaster warning:', err);
+        });
+      }
     }
   },
 
@@ -8715,7 +8732,7 @@ const useStore = create(persist((set, get) => ({
         task_type: 'DISTRIBUTION',
         target_role: 'DCC',
         assignedToRole: 'DCC_ADMIN',
-        assigneeId: 'EMP-001',
+        assigneeId: resolveDccAdminUserId(state.masterUsers),
         department: 'DC',
         target_department: 'DC',
         docId: newDoc.id,
@@ -8755,9 +8772,9 @@ const useStore = create(persist((set, get) => ({
       const recallDocOfficialTitle = oldDoc?.name || newDoc.name || dar.name || targetCode;
       const recallTask = {
         id: recallTaskId,
-        type: 'DCC_RECALL',
-        taskType: 'RECALL',
-        task_type: 'RECALL',
+        type: 'RECALL_HARDCOPY',
+        taskType: 'DCC_RECALL_WITH_CHECKLIST',
+        task_type: 'DCC_RECALL_WITH_CHECKLIST',
         targetRole: 'DCC_ADMIN',
         target_role: 'DCC_ADMIN',
         assignedToRole: 'DCC_ADMIN',
@@ -9163,7 +9180,7 @@ const useStore = create(persist((set, get) => ({
       controlledCopyAuditTrail: [...newAuditLogs, ...state.controlledCopyAuditTrail],
       notifications: [{
         id: `notif-adhoc-${Date.now()}`,
-        userId: 'U001',
+        userId: resolveDccAdminUserId(state.masterUsers),
         title: 'มีคำขอออกสำเนาควบคุมเพิ่มเติม',
         message: `แผนก ${requesterDept} ขอรับสำเนาควบคุมสำหรับ ${docCode} เพิ่มเติม ${newLocationsList.length} จุด`,
         isRead: false,
@@ -9403,8 +9420,8 @@ const useStore = create(persist((set, get) => ({
     const newNotifications = [...(state.notifications || [])];
     newNotifications.push({
       id: `notif-rep-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      userId: (dccAdminId === 'EMP-001' || !dccAdminId) ? 'U001' : dccAdminId,
-      targetUserIds: [dccAdminId, 'U001', 'EMP-001'],
+      userId: dccAdminId,
+      targetUserIds: dccAdminId ? [dccAdminId] : [],
       targetRole: 'DCC_ADMIN',
       targetDepartment: 'DC',
       title: `มีคำขอออกสำเนาทดแทน (${isDamaged ? 'ชำรุด' : 'สูญหาย'})`,
@@ -10385,7 +10402,7 @@ const useStore = create(persist((set, get) => ({
       dispositionMethod: dispositionMethod,
       disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${userName} (DCC)`,
       disposed_by_name: userName,
-      disposed_by_id: state.currentUser?.id || 'U001',
+      disposed_by_id: state.currentUser?.id || '',
       disposedAt: nowIso,
       witnessName: witnessName || '',
       witness_name: witnessName || '',
@@ -10528,7 +10545,7 @@ const useStore = create(persist((set, get) => ({
 
     newNotifs.push({
       id: `notif-dcc-${Date.now()}`,
-      userId: 'U001',
+      userId: resolveDccAdminUserId(state.masterUsers),
       title: 'จัดพิมพ์เอกสารทดแทน',
       message: `ผู้จัดการได้อนุมัติเอกสารทดแทนสำหรับ ${oldInst.copy_no || oldInst.ccNumber} กรุณาจัดพิมพ์และแจกจ่าย`,
       isRead: false,
@@ -12337,7 +12354,7 @@ const useStore = create(persist((set, get) => ({
       // Auto-Healing Migration: Migrate QA/QC to QC for currentUser
       const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
       const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
-      if (isQaQc(persistedState.currentUser.department) || isQaQc(persistedState.currentUser.primary_department) || persistedState.currentUser.id === 'U005' || persistedState.currentUser.empId === 'EMP-005') {
+      if (isQaQc(persistedState.currentUser.department) || isQaQc(persistedState.currentUser.primary_department)) {
         persistedState.currentUser.department = 'QC';
         persistedState.currentUser.dept = 'QC';
         persistedState.currentUser.primary_department = 'QC';
@@ -12361,7 +12378,7 @@ const useStore = create(persist((set, get) => ({
       const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
       const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
       persistedState.masterUsers = persistedState.masterUsers.map(u => {
-        if (u.id === 'U005' || u.empId === 'EMP-005' || isQaQc(u.department) || isQaQc(u.primary_department)) {
+        if (isQaQc(u.department) || isQaQc(u.primary_department)) {
           return {
             ...u,
             department: 'QC',
@@ -12392,7 +12409,7 @@ const useStore = create(persist((set, get) => ({
       const cu = state.currentUser;
       const isQaQc = (d) => typeof d === 'string' && (d === 'QA/QC' || d.includes('QA/QC'));
       const replaceQaQc = (d) => isQaQc(d) ? 'QC' : d;
-      if (isQaQc(cu.department) || isQaQc(cu.primary_department) || cu.id === 'U005' || cu.empId === 'EMP-005') {
+      if (isQaQc(cu.department) || isQaQc(cu.primary_department)) {
         useStore.setState({
           currentUser: {
             ...cu,

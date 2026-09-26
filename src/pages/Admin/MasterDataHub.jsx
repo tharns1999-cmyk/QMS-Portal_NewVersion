@@ -40,6 +40,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import useStore, { SYSTEM_CORE_DEPTS } from '../../store/useStore';
+import { QMS_CONFIG } from '../../config/qmsRegistry';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
@@ -280,7 +281,7 @@ const MasterDataHub = () => {
   // Access Control: Only DCC Admin or Super Admin
   const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
-  // Fallback dept list
+  // Fallback dept list — sourced from registry (no hardcoded dept objects)
   const departmentsList = useMemo(() => {
     if (masterDepartments && masterDepartments.length > 0) return masterDepartments;
     if (storeDepts && storeDepts.length > 0) {
@@ -291,13 +292,8 @@ const MasterDataHub = () => {
         headName: 'Department Head'
       }));
     }
-    return [
-      { id: 'QC', code: 'QC', nameTh: 'ฝ่ายประกันและควบคุมคุณภาพ', nameEn: 'Quality Assurance & Control', headName: 'บีม' },
-      { id: 'PD', nameTh: 'ฝ่ายผลิต', nameEn: 'Production Department', headName: 'มนัสวีร์ ขจรศักดิ์' },
-      { id: 'EN', nameTh: 'ฝ่ายวิศวกรรม', nameEn: 'Engineering Department', headName: 'วิศวกรรมการผลิต' },
-      { id: 'WH', nameTh: 'ฝ่ายคลังสินค้า', nameEn: 'Warehouse Department', headName: 'คลังสินค้าและจัดส่ง' },
-      { id: 'HR', nameTh: 'ฝ่ายทรัพยากรบุคคล', nameEn: 'Human Resources', headName: 'ทรัพยากรบุคคล' }
-    ];
+    // Final fallback: use the centralised registry (zero hardcoding)
+    return QMS_CONFIG.departments.filter(d => !d.status || d.status === 'ACTIVE');
   }, [masterDepartments, storeDepts]);
 
   const allCopies = useMemo(() => {
@@ -345,11 +341,11 @@ const MasterDataHub = () => {
     if (user) {
       setEditingUser(user);
       let primary = user.primary_department || user.department || user.depts?.[0] || 'QA';
-      if (primary === 'QA/QC' || user.id === 'U005' || user.empId === 'EMP-005') primary = 'QC';
+      if (primary === 'QA/QC' || primary === 'QAQC') primary = 'QC';
       const rawAffiliated = user.affiliated_departments || user.depts || (user.department ? [user.department] : [primary]);
       let affiliated = Array.from(new Set([primary, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
-      if (user.id === 'U005' || user.empId === 'EMP-005' || primary === 'QC') {
-        affiliated = affiliated.map(d => d === 'QA/QC' ? 'QC' : d);
+      if (primary === 'QC') {
+        affiliated = affiliated.map(d => (d === 'QA/QC' || d === 'QAQC') ? 'QC' : d);
       }
       affiliated = Array.from(new Set(affiliated));
       setUserFormData({

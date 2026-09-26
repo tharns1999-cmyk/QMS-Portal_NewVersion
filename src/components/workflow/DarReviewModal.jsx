@@ -28,29 +28,14 @@ import { ACCESS_SCOPES, ACCESS_SCOPE_METADATA } from '../../utils/accessControl'
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import { calculateCopyAllocations, cleanLocationName } from '../../services/MasterDataService';
+import { formatThaiReadableDate } from '../../utils/dateFormatter';
 import toast from 'react-hot-toast';
 
 /**
  * Format ISO string or date string to readable Thai date
  */
 const formatThaiDate = (dateInput) => {
-  if (!dateInput) return '-';
-  try {
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return String(dateInput);
-
-    const thaiMonths = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-    ];
-
-    const day = d.getDate();
-    const month = thaiMonths[d.getMonth()];
-    const year = d.getFullYear() + 543; // Buddhist Era
-    return `${day} ${month} ${year}`;
-  } catch {
-    return String(dateInput);
-  }
+  return formatThaiReadableDate(dateInput);
 };
 
 /**

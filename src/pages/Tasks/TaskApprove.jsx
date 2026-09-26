@@ -31,6 +31,7 @@ const TaskApprove = () => {
     documents = [], 
     timeline = [], 
     processWorkflow, 
+    finalizeAndPublishMaster,
     currentUser, 
     canDownloadDocument, 
     masterUsers = [],
@@ -642,6 +643,14 @@ const TaskApprove = () => {
     try {
       navigate('/dcc/tasks', { replace: true });
       await processWorkflow(task.id, pendingAction, comment);
+      if (pendingAction === 'APPROVE' && !isObsolete) {
+        const darTargetId = dar?.id || task?.darId;
+        if (darTargetId && finalizeAndPublishMaster) {
+          finalizeAndPublishMaster(darTargetId).catch(err => {
+            console.warn('[TaskApprove] finalizeAndPublishMaster warning:', err);
+          });
+        }
+      }
       const actionText = pendingAction === 'APPROVE' 
         ? (isObsolete ? 'อนุมัติยกเลิกเอกสารสำเร็จแล้ว' : 'อนุมัติเอกสารสำเร็จแล้ว') 
         : pendingAction === 'REJECT' 

@@ -1,41 +1,58 @@
 /**
  * workflowResolver.js
- * 
+ *
  * Multi-Stage Linear Approval Pipeline & Candidate Eligibility Resolver
  * Enforces ISO 9001 / FSSC 22000 Segregation of Duties (SoD / 4-Eyes Principle)
  * and Minimum Level Thresholds (L...+ Thresholds).
- * 
+ *
  * Department Alignment Rule (ISO 9001 SoD):
  * - Reviewer and Approver must belong to the same department as the document (via
  *   primary_department or affiliated_departments) OR be part of cross-organizational
  *   authority departments (MGMT, EXEC, QMR) that have governance over all documents.
  * - Personnel from unrelated operational departments (e.g., Engineering approving QA
  *   documents) are strictly prohibited from entering the approval chain.
+ *
+ * Phase 2 Refactor: approval matrix & cross-org dept codes are now sourced
+ * exclusively from QMS_CONFIG registry (src/config/qmsRegistry.js).
+ * The local DEFAULT_APPROVAL_MATRIX constant has been removed to prevent drift.
  */
 
-/** Departments with cross-organizational authority (can review/approve any department's docs) */
-export const CROSS_ORG_DEPTS = ['MGMT', 'EXEC', 'QMR'];
+import {
+  CROSS_ORG_DEPTS as _REGISTRY_CROSS_ORG_DEPTS,
+  getApprovalThresholdsFromRegistry,
+  QMS_CONFIG,
+} from '../config/qmsRegistry';
 
-export const DEFAULT_APPROVAL_MATRIX = [
-  { docType: 'QM', doc_type: 'QM', minRequesterLevel: 4, requiredReviewerLevel: 6, requiredApproverLevel: 8 },
-  { docType: 'SOP', doc_type: 'SOP', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 6 },
-  { docType: 'WI', doc_type: 'WI', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
-  { docType: 'FM', doc_type: 'FM', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
-  { docType: 'SD', doc_type: 'SD', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
-  { docType: 'SPEC', doc_type: 'SPEC', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 5 },
-  { docType: 'ED', doc_type: 'ED', minRequesterLevel: 1, requiredReviewerLevel: 4, requiredApproverLevel: 6 }
-];
+/**
+ * Departments with cross-organizational authority — sourced from registry.
+ * Re-exported for backward compatibility with consumers that import from here.
+ */
+export const CROSS_ORG_DEPTS = _REGISTRY_CROSS_ORG_DEPTS;
 
+/**
+ * Resolve approval level thresholds for a given document type.
+ * Accepts an optional local approvalMatrix override (e.g. from admin config);
+ * falls back to the QMS_CONFIG registry matrix.
+ *
+ * @param {string} docType
+ * @param {Array|null} approvalMatrix  - optional override matrix
+ * @returns {{ minRequesterLevel: number, minReviewerLevel: number, minApproverLevel: number }}
+ */
 export const getApprovalThresholds = (docType, approvalMatrix) => {
-  const matrix = (approvalMatrix && approvalMatrix.length > 0) ? approvalMatrix : DEFAULT_APPROVAL_MATRIX;
-  const normDocType = String(docType || '').toUpperCase().trim();
-  const entry = matrix.find(m => (m.docType || m.doc_type || '').toUpperCase() === normDocType);
-  
-  return {
-    minRequesterLevel: entry?.minRequesterLevel ?? entry?.min_requester_level ?? 1,
-    minReviewerLevel: entry?.requiredReviewerLevel ?? entry?.required_reviewer_level ?? 4,
-    minApproverLevel: entry?.requiredApproverLevel ?? entry?.required_approver_level ?? 5,
-  };
+  // If an explicit override matrix is provided, use it; otherwise use registry.
+  if (approvalMatrix && approvalMatrix.length > 0) {
+    const normDocType = String(docType || '').toUpperCase().trim();
+    const entry = approvalMatrix.find(
+      (m) => String(m.docType || m.doc_type || '').toUpperCase().trim() === normDocType
+    );
+    return {
+      minRequesterLevel: entry?.minRequesterLevel ?? entry?.min_requester_level ?? 1,
+      minReviewerLevel: entry?.requiredReviewerLevel ?? entry?.required_reviewer_level ?? 4,
+      minApproverLevel: entry?.requiredApproverLevel ?? entry?.required_approver_level ?? 5,
+    };
+  }
+  // Default: delegate to registry helper (single source of truth)
+  return getApprovalThresholdsFromRegistry(docType);
 };
 
 /**

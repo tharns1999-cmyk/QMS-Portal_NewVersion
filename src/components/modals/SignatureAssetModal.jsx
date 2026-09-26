@@ -4,6 +4,7 @@ import { PenTool, X, Upload, Trash2, CheckCircle2, Save, RotateCcw, Type } from 
 import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
 import { generateCursiveSignatureDataUrl } from '../../utils/pdfStamper';
+import { QMS_POLICIES } from '../../config/qmsRegistry';
 
 const SIGNATURE_STYLES = [
   { id: 'BRUSH_SCRIPT', name: 'Brush Script (พู่กันศิลป์)', fontClass: 'font-serif italic font-bold' },
@@ -97,10 +98,20 @@ export default function SignatureAssetModal({
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('ขนาดไฟล์ภาพต้องไม่เกิน 2MB');
+
+    const maxBytes = QMS_POLICIES.FILE_POLICIES.MAX_SIGNATURE_SIZE_MB * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error(`ขนาดไฟล์ภาพต้องไม่เกิน ${QMS_POLICIES.FILE_POLICIES.MAX_SIGNATURE_SIZE_MB}MB`);
       return;
     }
+
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    const isAllowedExt = QMS_POLICIES.FILE_POLICIES.ALLOWED_SIGNATURE_EXTENSIONS.includes(ext) || file.type.startsWith('image/');
+    if (!isAllowedExt) {
+      toast.error(`รองรับเฉพาะไฟล์ ${QMS_POLICIES.FILE_POLICIES.ALLOWED_SIGNATURE_EXTENSIONS.join(', ')}`);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       setCurrentSignatureAsset(event.target.result);
@@ -301,7 +312,7 @@ export default function SignatureAssetModal({
                     <input
                       type="file"
                       id="signature-file-upload-asset"
-                      accept="image/png, image/jpeg, image/webp"
+                      accept={QMS_POLICIES.FILE_POLICIES.ALLOWED_SIGNATURE_EXTENSIONS.join(', ')}
                       onChange={handleFileUpload}
                       className="hidden"
                     />
@@ -313,7 +324,9 @@ export default function SignatureAssetModal({
                         <Upload size={18} />
                       </div>
                       <div className="text-slate-700 font-bold">คลิกเพื่ออัปโหลดรูปภาพลายเซ็น</div>
-                      <div className="text-[11px] text-slate-400">รองรับไฟล์ PNG, JPG, WEBP (โปร่งใสแนะนำ, สูงสุด 2MB)</div>
+                      <div className="text-[11px] text-slate-400">
+                        รองรับไฟล์ {QMS_POLICIES.FILE_POLICIES.ALLOWED_SIGNATURE_EXTENSIONS.map(x => x.replace('.', '').toUpperCase()).join(', ')} (โปร่งใสแนะนำ, สูงสุด {QMS_POLICIES.FILE_POLICIES.MAX_SIGNATURE_SIZE_MB}MB)
+                      </div>
                     </label>
                   </div>
 

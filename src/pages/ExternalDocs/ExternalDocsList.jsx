@@ -220,8 +220,7 @@ const ExternalDocsList = () => {
     currentUser?.role === 'DCC_ADMIN' || 
     currentUser?.isDccAdmin || 
     currentUser?.isDcc || 
-    currentUser?.role === 'ADMIN' ||
-    currentUser?.id === 'U001'
+    currentUser?.role === 'ADMIN'
   );
   const isAdmin = isDccAdmin;
   const uDept = currentUser?.department || currentUser?.dept || 'QA';

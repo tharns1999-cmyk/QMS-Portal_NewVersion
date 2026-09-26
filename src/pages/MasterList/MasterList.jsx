@@ -19,7 +19,7 @@ const MasterList = () => {
   } = useStore();
   
   // Access Control
-  const isAdmin = currentUser?.level >= 5 || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
+  const isAdmin = currentUser?.level >= 5 || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN';
   
   const [masterListDept, setMasterListDept] = useState('');
   const [masterListType, setMasterListType] = useState('');

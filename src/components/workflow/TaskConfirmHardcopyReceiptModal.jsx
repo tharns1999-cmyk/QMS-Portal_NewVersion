@@ -32,7 +32,7 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
   const dispatchedBy = copy?.dispatched_by || 'ฝ่ายควบคุมเอกสาร (DCC)';
 
   const isLevel6 = isLevel6Plus(currentUser);
-  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5';
+  const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN';
   const isAuthorized = !isLevel6 && (isWildcardUser || !dept || userMatchesDepartment(currentUser, dept));
 
   const formatThaiDate = (dateStr) => {

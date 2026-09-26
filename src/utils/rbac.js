@@ -59,8 +59,6 @@ export const canManageControlledCopy = (arg1, arg2, arg3) => {
     user.role === 'SUPER_ADMIN' ||
     user.isDcc ||
     user.isSuperAdmin ||
-    user.id === 'U001' ||
-    user.id === 'u5' ||
     (user.department && (user.department.toUpperCase() === 'DC' || user.department.toUpperCase() === 'DCC')) ||
     (user.dept && (user.dept.toUpperCase() === 'DC' || user.dept.toUpperCase() === 'DCC')) ||
     (user.primary_department && (user.primary_department.toUpperCase() === 'DC' || user.primary_department.toUpperCase() === 'DCC')) ||
