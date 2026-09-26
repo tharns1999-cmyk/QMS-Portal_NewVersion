@@ -6,6 +6,21 @@ import Layout from './components/layout/Layout';
 import SLAEngine from './components/SLAEngine';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
+// [Blueprint: รันตอน Mount เพื่อเคลียร์ Key ที่บวมเกิน 1.5MB]
+(() => {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const val = localStorage.getItem(key);
+      if (val && val.length > 1.5 * 1024 * 1024) {
+        console.warn(`[Auto-Purge] Removing bloated localStorage key: ${key} (${Math.round(val.length / 1024)} KB)`);
+        localStorage.removeItem(key);
+      }
+    }
+  } catch (e) {
+    console.error('Storage cleanup check failed', e);
+  }
+})();
 // --- Lazy Load Pages ---
 
 // Portal
@@ -83,13 +98,16 @@ export const AliasRedirect = ({ to }) => {
 };
 
 function App() {
+  const hydrateMasterData = useStore(state => state.hydrateMasterData);
   const initializePeriodicReviews = useStore(state => state.initializePeriodicReviews);
   const checkScheduledEffectiveDocs = useStore(state => state.checkScheduledEffectiveDocs);
 
   useEffect(() => {
+    // โหลดข้อมูลลายเซ็นและ Master Data ที่เคยแก้ไขกลับคืนมาทันทีที่เปิดแอป (Blueprint B)
+    hydrateMasterData?.();
     initializePeriodicReviews();
     checkScheduledEffectiveDocs?.();
-  }, [initializePeriodicReviews, checkScheduledEffectiveDocs]);
+  }, [hydrateMasterData, initializePeriodicReviews, checkScheduledEffectiveDocs]);
 
   return (
     <BrowserRouter>

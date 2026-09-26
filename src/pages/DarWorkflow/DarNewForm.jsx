@@ -40,6 +40,7 @@ const DarNewForm = () => {
   const { 
     currentUser, 
     addDar, 
+    submitDar,
     saveDarDraft, 
     deleteDar, 
     dars, 
@@ -108,6 +109,7 @@ const DarNewForm = () => {
   };
 
   const [formData, setFormData] = useState(initialFormState);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -211,13 +213,27 @@ const DarNewForm = () => {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type !== 'application/pdf') {
-      toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
-      e.target.value = '';
-      return;
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
+        e.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+      setFormData(prev => ({ ...prev, file }));
+
+      // Synchronous In-Memory Registry caching immediately upon selection
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      window.__PDF_CACHE__.set(file.name, file);
+      window.__UPLOADED_FILES_MAP__.set(file.name, file);
+      const previewCode = getPreviewCode();
+      if (previewCode) {
+        window.__PDF_CACHE__.set(previewCode, file);
+        window.__UPLOADED_FILES_MAP__.set(previewCode, file);
+      }
     }
-    setFormData({ ...formData, file });
   };
 
   const validate = () => {
@@ -306,33 +322,46 @@ const DarNewForm = () => {
   };
 
   const executeSubmit = async () => {
-    let attachedFile = null;
-    if (formData.file) {
-      const fileId = `file_${Date.now()}_${formData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      try {
-        // Save under fileId (primary key)
-        await saveFile(fileId, formData.file);
-        // Also register under document code alias for broader key resolution
-        const docCodeAlias = formData.docCode || getPreviewCode();
-        if (docCodeAlias) await saveFile(docCodeAlias, formData.file);
-        attachedFile = {
-          fileId: fileId,
-          name: formData.file.name,
-          size: formData.file.size,
-          type: formData.file.type,
-          file: formData.file, // Keep raw Blob in-memory (stripped by Zustand persist but available in same session)
-          uploadedAt: new Date().toISOString()
-        };
-      } catch (err) {
-        console.error('Error saving file:', err);
-        toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่');
-        return;
-      }
+    const activeFile = selectedFile || formData.file;
+    if (!activeFile) {
+      toast.error('กรุณาเลือกไฟล์ PDF ที่ต้องการอัปโหลด');
+      return;
+    }
+
+    const docCode = formData.docCode || getPreviewCode();
+    const fileId = `file_${Date.now()}_${activeFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const fileName = activeFile.name; // บังคับใช้ชื่อไฟล์จริงจาก OS ไม่ใช่ Title
+
+    let attachedFile = {
+      fileId: fileId,
+      name: fileName,
+      size: activeFile.size,
+      type: activeFile.type || 'application/pdf',
+      file: activeFile,
+      uploadedAt: new Date().toISOString()
+    };
+
+    // 1. บันทึกลง Synchronous In-Memory Registry ทันที (Synchronous Access)
+    window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+    window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+    [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+      cache.set(fileId, activeFile);
+      cache.set(fileName, activeFile);
+      if (docCode) cache.set(docCode, activeFile);
+    });
+
+    // 2. บันทึกลง IndexedDB ควบคู่กัน
+    try {
+      await saveFile(fileId, activeFile);
+      if (docCode) await saveFile(docCode, activeFile);
+    } catch (err) {
+      console.warn('saveFile error fallback:', err);
     }
 
     const newDar = {
       type: 'NEW',
       title: formData.title,
+      fileName: fileName, // บังคับใช้ชื่อไฟล์จริงจาก OS
       requesterId: currentUser?.id,
       requester_id: currentUser?.id,
       requester_name: currentUser?.name,
@@ -340,8 +369,9 @@ const DarNewForm = () => {
       date: new Date().toISOString().split('T')[0],
       submittedAt: new Date().toISOString(),
       docType: formData.docType,
-      docIdInput: getPreviewCode(),
-      document_code: formData.docCode || getPreviewCode(),
+      docIdInput: docCode,
+      document_code: docCode,
+      docCode: docCode,
       requestDetail: formData.requestDetail,
       request_detail: formData.requestDetail,
       requestReason: formData.requestReason,
@@ -358,26 +388,27 @@ const DarNewForm = () => {
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
       access_control: formData.access_control,
-      fileId: attachedFile?.fileId || null,
-      file_id: attachedFile?.fileId || null,
-      file: formData.file || null,
-      fileBlob: formData.file || null,
+      fileId: fileId,
+      file_id: fileId,
+      file: activeFile,
+      fileBlob: activeFile,
       attachedFile
     };
     if (targetDraftId && deleteDar) deleteDar(targetDraftId);
-    const result = addDar(newDar);
-    // After DAR is created, save the file under the DAR id alias for IndexedDB resolution
-    if (formData.file && attachedFile?.fileId) {
-      // addDar is sync (Zustand set) — get the newly created DAR id from store
-      try {
-        const { default: useStore } = await import('../../store/useStore');
-        const state = useStore.getState();
-        const createdDar = (state.dars || []).find(d => d.fileId === attachedFile.fileId);
-        if (createdDar?.id) {
-          await saveFile(createdDar.id, formData.file);
-        }
-      } catch { /* non-critical alias save — ignore if store not accessible */ }
+    
+    // ส่งทั้ง metadata และ File Object ตัวจริง
+    const result = await submitDar(newDar, activeFile);
+    
+    if (result) {
+      const allocatedId = result.id || result.darNumber || result.darNo;
+      if (allocatedId) {
+        [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+          cache.set(allocatedId, activeFile);
+          if (result.darNumber) cache.set(result.darNumber, activeFile);
+        });
+      }
     }
+    
     void result;
     setShowConfirm(false);
     toast.success('สร้างคำร้องสำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
@@ -607,7 +638,7 @@ const DarNewForm = () => {
                     </div>
                     <div className="text-left min-w-0 flex-1">
                       <p className="text-xs font-semibold text-[#1E293B] truncate">
-                        {formData.file ? formData.file.name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
+                        {(selectedFile || formData.file) ? (selectedFile || formData.file).name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
                       </p>
                       <p className="text-[10px] text-[#94A3B8]">รองรับไฟล์ PDF สูงสุด 25 MB</p>
                     </div>
@@ -835,16 +866,16 @@ const DarNewForm = () => {
               },
               {
                 label: 'ไฟล์เอกสารแนบ',
-                value: formData.file ? (
+                value: (selectedFile || formData.file) ? (
                   <div className="inline-flex items-center justify-between p-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors w-full sm:w-auto min-w-[240px]">
                     <div className="flex items-center gap-2 min-w-0 mr-2">
                       <FileText size={16} className="text-rose-500 shrink-0" />
-                      <span className="max-w-[180px] truncate text-xs font-medium text-slate-800" title={formData.file.name}>
-                        {formData.file.name}
+                      <span className="max-w-[180px] truncate text-xs font-medium text-slate-800" title={(selectedFile || formData.file).name}>
+                        {(selectedFile || formData.file).name}
                       </span>
                     </div>
                     <span className="text-[11px] font-mono text-slate-400 ml-2 whitespace-nowrap shrink-0">
-                      {(formData.file.size / (1024 * 1024)).toFixed(2)} MB
+                      {(((selectedFile || formData.file).size) / (1024 * 1024)).toFixed(2)} MB
                     </span>
                   </div>
                 ) : (

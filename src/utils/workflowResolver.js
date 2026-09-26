@@ -60,21 +60,47 @@ const createRouteResult = (user, level, dept) => {
  */
 const isCrossOrgAuthority = (user) => {
   if (!user) return false;
-  if (user.isQmr) return true;
-  const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : []));
-  return CROSS_ORG_DEPTS.some(d => (userDepts || []).includes(d));
+  if (user.isQmr || user.department === 'MGMT' || user.role === 'QMR' || user.level >= 6) return true;
+  
+  const userDepts = [
+    user.department, user.dept, user.primaryDepartment, user.primary_department,
+    ...(Array.isArray(user.secondaryDepartments) ? user.secondaryDepartments : []),
+    ...(Array.isArray(user.departments) ? user.departments : []),
+    ...(Array.isArray(user.affiliated_departments) ? user.affiliated_departments : []),
+    ...(Array.isArray(user.depts) ? user.depts : [])
+  ].filter(Boolean);
+
+  return CROSS_ORG_DEPTS.some(d => userDepts.includes(d));
 };
 
 /**
- * Checks if a user is affiliated with a specific department.
- * Strictly requires an explicit department match — empty affiliated_departments
- * does NOT imply "any department" (previously a critical bug that allowed
- * cross-department leakage into the approval chain).
+ * Checks if a user is affiliated with a specific department (Multi-Department Matcher).
+ * Strictly requires an explicit department match.
  */
-const isAffiliatedWithDept = (user, department) => {
-  const userDepts = user.affiliated_departments || user.depts || (user.primary_department ? [user.primary_department] : (user.department ? [user.department] : []));
-  return (userDepts || []).includes(department);
+export const isUserInDepartment = (user, department) => {
+  if (!user || !department) return false;
+
+  // 1. Primary department
+  if (user.department === department || user.dept === department || user.primaryDepartment === department || user.primary_department === department) {
+    return true;
+  }
+
+  // 2. Secondary / array departments
+  if (Array.isArray(user.secondaryDepartments) && user.secondaryDepartments.includes(department)) return true;
+  if (Array.isArray(user.departments) && user.departments.includes(department)) return true;
+  if (Array.isArray(user.affiliated_departments) && user.affiliated_departments.includes(department)) return true;
+  if (Array.isArray(user.depts) && user.depts.includes(department)) return true;
+
+  // 3. Central admin roles that have access to all
+  if (user.department === 'MGMT' || user.role === 'QMR' || user.level >= 6) {
+    return true;
+  }
+
+  return false;
 };
+
+// Keep old alias for backward compatibility
+const isAffiliatedWithDept = isUserInDepartment;
 
 /**
  * Resolves the appropriate Reviewer based on Document Type minimum threshold (L4+)

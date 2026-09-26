@@ -561,11 +561,10 @@ export const generateDiagonalWatermarkCanvas = async ({
 
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
-    const scale = 3; // HiDPI 3x Supersampling ป้องกันรอยหยัก
-    const width = 800 * scale;
-    const height = 800 * scale;
-    canvas.width = width;
-    canvas.height = height;
+    const scale = 3; // HiDPI 3x Supersampling
+    const size = 600 * scale; // ลดขนาด Canvas จาก 800 เหลือ 600
+    canvas.width = size;
+    canvas.height = size;
 
     const ctx = canvas.getContext('2d');
     
@@ -578,52 +577,41 @@ export const generateDiagonalWatermarkCanvas = async ({
 
     ctx.scale(scale, scale);
 
-    // เลื่อนจุดหมุนมาไว้กึ่งกลางแคนวาส
-    ctx.translate(400, 400);
-    ctx.rotate((-45 * Math.PI) / 180); // หมุนเอียง 45 องศาทวนเข็มนาฬิกาเหมือน Controlled Copy
+    ctx.translate(300, 300);
+    ctx.rotate((-45 * Math.PI) / 180); // หมุนทวนเข็ม 45 องศา
 
-    // กำหนด Palette สีตามประเภทลายน้ำ
     const isControlled = type === 'CONTROLLED';
-    const primaryColor = isControlled 
-      ? 'rgba(22, 101, 52, 0.45)'   // เขียว Controlled Copy
-      : 'rgba(220, 38, 38, 0.48)';   // แดง Uncontrolled Copy (Alpha ~48-50%)
-
-    const secondaryColor = isControlled 
-      ? 'rgba(21, 128, 61, 0.40)' 
-      : 'rgba(239, 68, 68, 0.42)';
+    // ปรับความโปร่งแสงให้นุ่มนวล สบายตา ไม่อึดอัด
+    const mainColor = isControlled ? 'rgba(22, 101, 52, 0.38)' : 'rgba(220, 38, 38, 0.35)';
+    const subColor = isControlled ? 'rgba(21, 128, 61, 0.35)' : 'rgba(239, 68, 68, 0.32)';
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // 1. หัวเรื่องหลัก (Primary Title)
-    ctx.font = 'bold 52px "TH Sarabun New", sans-serif';
-    ctx.fillStyle = primaryColor;
-    ctx.fillText(
-      isControlled ? 'CONTROLLED COPY' : 'UNCONTROLLED COPY',
-      0,
-      -40
-    );
+    // 1. หัวเรื่องหลัก (ย่อเหลือ 34px)
+    ctx.font = 'bold 34px "TH Sarabun New", sans-serif';
+    ctx.fillStyle = mainColor;
+    ctx.fillText(isControlled ? 'CONTROLLED COPY' : 'UNCONTROLLED COPY', 0, -28);
 
-    // 2. หัวเรื่องรองภาษาไทย (Secondary Title)
-    ctx.font = 'bold 26px "TH Sarabun New", sans-serif';
-    ctx.fillStyle = primaryColor;
+    // 2. หัวเรื่องภาษาไทย (ย่อเหลือ 18px)
+    ctx.font = 'bold 18px "TH Sarabun New", sans-serif';
     ctx.fillText(
       isControlled ? 'สำเนาควบคุม (เอกสารมีผลบังคับใช้)' : 'สำเนาไม่ควบคุม (ใช้สำหรับอ้างอิงเท่านั้น)',
       0,
       -5
     );
 
-    // เส้นคั่นบางๆ ขนานตามแนวเอียง
-    ctx.strokeStyle = secondaryColor;
+    // เส้นคั่นกึ่งกลาง (ย่นเหลือความกว้าง 340px)
+    ctx.strokeStyle = subColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(-280, 15);
-    ctx.lineTo(280, 15);
+    ctx.moveTo(-170, 10);
+    ctx.lineTo(170, 10);
     ctx.stroke();
 
-    // 3. บรรทัดข้อมูลและ Metadata (ดึง Font Size และ Spacing เดียวกับ Controlled)
-    ctx.font = 'normal 15px "TH Sarabun New", sans-serif';
-    ctx.fillStyle = secondaryColor;
+    // 3. รายละเอียดและ Metadata (ย่อเหลือ 12px)
+    ctx.font = 'normal 12px "TH Sarabun New", sans-serif';
+    ctx.fillStyle = subColor;
 
     const formattedRev = docInfo.revision ? (String(docInfo.revision).startsWith('Rev') ? docInfo.revision : `Rev.${docInfo.revision}`) : 'Rev.00';
     const line1 = `รหัส: ${docInfo.docCode || '-'} | ฉบับ: ${formattedRev} | ชื่อ: ${docInfo.title || '-'}`;
@@ -632,9 +620,9 @@ export const generateDiagonalWatermarkCanvas = async ({
       ? '*ห้ามทำซ้ำหรือถ่ายเอกสารโดยไม่ได้รับอนุญาตจาก DCC*'
       : '*เอกสารนี้ไม่มีการปรับปรุงเมื่อมีการแก้ไข โปรดตรวจสอบฉบับล่าสุดในระบบ*';
 
-    ctx.fillText(line1, 0, 35);
-    ctx.fillText(line2, 0, 55);
-    ctx.fillText(line3, 0, 75);
+    ctx.fillText(line1, 0, 25);
+    ctx.fillText(line2, 0, 40);
+    ctx.fillText(line3, 0, 55);
 
     resolve(canvas.toDataURL('image/png'));
   });
@@ -680,7 +668,7 @@ export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata) => {
 
   pages.forEach((page) => {
     const { width, height } = page.getSize();
-    const watermarkSize = Math.max(width, height);
+    const watermarkSize = Math.min(width, height) * 0.52;
 
     page.drawImage(watermarkImage, {
       x: (width - watermarkSize) / 2,
@@ -1030,3 +1018,285 @@ export const stampDarPreviewPdfFromBlob = async (rawPdfBlob, options = {}) => {
   return new Blob([stampedBytes], { type: 'application/pdf' });
 };
 
+// ─── Progressive Signatory Resolver (re-export for convenience) ──────────────
+export { resolveProgressiveSignatories } from './signatoryResolver';
+
+/**
+ * Blueprint B: Canvas Matrix Renderer — thin alias for generateSignOffStampImage
+ * that accepts the { requester, reviewer, approver } shape produced by
+ * resolveProgressiveSignatories (each entry has `isCompleted` flag).
+ *
+ * Blank cells (isCompleted: false) are rendered as white empty slots.
+ *
+ * @param {{ requester: Object, reviewer: Object, approver: Object }} signatories
+ * @returns {Promise<string>} PNG data URL
+ */
+export const drawSignatoryMatrixCanvas = async ({ requester, reviewer, approver } = {}) => {
+  // Map resolveProgressiveSignatories output shape → generateSignOffStampImage input shape
+  const toStampCell = (cell) => {
+    if (!cell) return { isCompleted: false, isPending: true };
+    return {
+      name:           cell.name           || '',
+      position:       cell.position       || '',
+      date:           cell.date           || '',
+      timestamp:      cell.date           || '',
+      signatureImage: cell.signatureImage || null,
+      signature:      cell.signatureImage || null,
+      isCompleted:    cell.isCompleted    ?? false,
+      isPending:      !(cell.isCompleted  ?? false),
+      status:         cell.isCompleted ? 'COMPLETED' : 'PENDING'
+    };
+  };
+
+  return generateSignOffStampImage({
+    requester: toStampCell(requester),
+    reviewer:  toStampCell(reviewer),
+    approver:  toStampCell(approver)
+  });
+};
+
+/**
+ * Blueprint C: Unified Internal Document Stamping Engine
+ * =========================================================
+ * Single pipeline function for BOTH preview and download:
+ *
+ * 1. Resolves signatory data progressively via resolveProgressiveSignatories
+ * 2. Stamps 3-column matrix (500×120 pt) on the FIRST page footer (y=30)
+ *    — cells that are not yet completed render as clean white blank slots
+ * 3. Stamps diagonal 45° watermark (TH Sarabun New) on ALL pages
+ *
+ * Returns a Blob so callers can create object URLs for both preview and download.
+ * Preview and Download MUST share this exact same Blob — Zero Parity Gap.
+ *
+ * ZERO BLANK PDF POLICY: throws if rawPdfBlob is missing or empty.
+ *
+ * @param {Blob} rawPdfBlob - Pristine source PDF Blob (non-empty)
+ * @param {{
+ *   stage?: 'REVIEW'|'APPROVE'|'MASTER',
+ *   dar?: Object,
+ *   task?: Object,
+ *   masterDoc?: Object,
+ *   masterUsers?: Array,
+ *   users?: Array,
+ *   currentUser?: Object,
+ *   watermarkType?: 'DRAFT'|'UNCONTROLLED'|'CONTROLLED',
+ *   docInfo?: Object,
+ *   userInfo?: Object
+ * }} options
+ * @returns {Promise<Blob>} Stamped PDF Blob
+ */
+export const stampUnifiedInternalPdf = async (rawPdfBlob, {
+  stage        = 'REVIEW',
+  dar          = null,
+  task         = null,
+  masterDoc    = null,
+  masterUsers  = [],
+  users        = [],
+  currentUser  = null,
+  watermarkType = 'DRAFT',
+  docInfo      = {},
+  userInfo     = {}
+} = {}) => {
+  // Zero Blank PDF guard
+  if (!rawPdfBlob || !(rawPdfBlob instanceof Blob)) {
+    throw new Error('stampUnifiedInternalPdf: ต้องการ Blob จริงที่ไม่ว่างเปล่า — ห้ามสร้างเอกสารเปล่า');
+  }
+  if (rawPdfBlob.size === 0) {
+    throw new Error('stampUnifiedInternalPdf: Blob มีขนาด 0 bytes — ไม่พบไฟล์เอกสาร PDF ต้นฉบับ');
+  }
+
+  // 1. Resolve progressive signatories
+  const { resolveProgressiveSignatories: _resolve } = await import('./signatoryResolver');
+  const signatories = _resolve({ dar, task, masterDoc, stage, masterUsers, users, currentUser });
+
+  // 2. Load real PDF bytes
+  const rawBytes = await rawPdfBlob.arrayBuffer();
+  const pdfDoc   = await PDFDocument.load(rawBytes);
+  const pages    = pdfDoc.getPages();
+  if (pages.length === 0) return rawPdfBlob; // nothing to stamp
+
+  // 3. Stamp 3-column signatory matrix on FIRST page footer
+  const firstPage = pages[0];
+  const { width: pageWidth } = firstPage.getSize();
+  const MATRIX_WIDTH  = Math.min(500, pageWidth - 40);
+  const MATRIX_HEIGHT = 120;
+  const xPos = (pageWidth - MATRIX_WIDTH) / 2;
+  const yPos = 30; // 30 pt from bottom edge of Page 1
+
+  // White mask — covers exactly the footer rectangle to erase any underlying content
+  firstPage.drawRectangle({
+    x:      xPos,
+    y:      yPos,
+    width:  MATRIX_WIDTH,
+    height: MATRIX_HEIGHT,
+    color:  rgb(1, 1, 1),
+    opacity: 1.0
+  });
+
+  // Render the matrix canvas using Blueprint B
+  const matrixPngData = await drawSignatoryMatrixCanvas(signatories);
+  const matrixImage   = await pdfDoc.embedPng(matrixPngData);
+  firstPage.drawImage(matrixImage, {
+    x:      xPos,
+    y:      yPos,
+    width:  MATRIX_WIDTH,
+    height: MATRIX_HEIGHT
+  });
+
+  // 4. Stamp diagonal 45° watermark on ALL pages
+  let watermarkPngData;
+  if (watermarkType === 'DRAFT') {
+    // Use DRAFT watermark (existing engine — diagonal -35° red text)
+    watermarkPngData = await generateDraftWatermarkImage({
+      darNo:    dar?.darNumber || dar?.darNo || dar?.id,
+      docCode:  docInfo.docCode || dar?.docCode || dar?.document_code || dar?.title,
+      timestamp: dar?.submittedAt || dar?.date
+    });
+  } else {
+    // Use UNCONTROLLED or CONTROLLED diagonal 45° canvas
+    watermarkPngData = await generateDiagonalWatermarkCanvas({
+      type: watermarkType === 'CONTROLLED' ? 'CONTROLLED' : 'UNCONTROLLED',
+      docInfo,
+      userInfo
+    });
+  }
+
+  const watermarkImage = await pdfDoc.embedPng(watermarkPngData);
+  for (const page of pages) {
+    const { width, height } = page.getSize();
+    
+    // ปรับจาก 0.95 ลงมาเหลือ 0.52 (ประมาณ 310 pt บนหน้ากระดาษ A4 กว้าง 595 pt)
+    const wmSize = Math.min(width, height) * 0.52;
+    
+    page.drawImage(watermarkImage, {
+      x:      (width  - wmSize) / 2,
+      y:      (height - wmSize) / 2,
+      width:  wmSize,
+      height: wmSize
+    });
+  }
+
+  const finalBytes = await pdfDoc.save();
+  return new Blob([finalBytes], { type: 'application/pdf' });
+};
+
+/**
+ * Universal System Sample Document Generator (ISO 9001 SOP/WI Template)
+ * Creates a fully formatted QMS document with header box, control grid,
+ * purpose & scope, role responsibility table, procedure steps, and quality verification matrix.
+ * Guarantees that legacy test records without uploaded files NEVER render a blank white page.
+ *
+ * @param {string} docCode
+ * @param {string} docTitle
+ * @returns {Blob}
+ */
+export const getSystemSampleDocumentBlob = (docCode = 'SOP-QC-002', docTitle = 'Standard Operating Procedure for Quality Control') => {
+  const safeTitle = (docTitle || 'Standard Operating Procedure').replace(/[()\\\\]/g, '');
+  const safeCode = (docCode || 'SOP-QC-002').replace(/[()\\\\]/g, '');
+  const streamContent = [
+    '0.75 w 0.2 0.3 0.5 RG 30 160 535.28 650 re S',
+    '0.92 0.95 0.98 rg 31 765 533.28 44 re f',
+    'BT /F2 14 Tf 0.1 0.2 0.4 rg 45 790 Td (' + safeTitle + ') Tj ET',
+    'BT /F1 9 Tf 0.3 0.3 0.3 rg 45 775 Td (ISO 9001:2015 Quality Management System Standard Document) Tj ET',
+    '0.5 w 0.7 0.75 0.8 RG 40 710 515.28 45 re S',
+    '40 732.5 m 555.28 732.5 l S',
+    '170 710 m 170 755 l S',
+    '300 710 m 300 755 l S',
+    '430 710 m 430 755 l S',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 45 744 Td (DOC NO:) Tj /F2 9 Tf 0.1 0.1 0.1 rg 45 735 Td (' + safeCode + ') Tj ET',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 175 744 Td (REVISION:) Tj /F2 9 Tf 0.1 0.1 0.1 rg 175 735 Td (Rev. 00) Tj ET',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 305 744 Td (EFFECTIVE DATE:) Tj /F2 9 Tf 0.1 0.1 0.1 rg 305 735 Td (2026-03-01) Tj ET',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 435 744 Td (STATUS:) Tj /F2 9 Tf 0.1 0.5 0.2 rg 435 735 Td (UNDER REVIEW) Tj ET',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 45 721 Td (OWNER DEPT:) Tj /F1 9 Tf 0.1 0.1 0.1 rg 45 713 Td (Quality Assurance / QC) Tj ET',
+    'BT /F2 8 Tf 0.4 0.4 0.4 rg 305 721 Td (SECURITY SCOPE:) Tj /F1 9 Tf 0.1 0.1 0.1 rg 305 713 Td (INTERNAL USE ONLY) Tj ET',
+    'BT /F2 11 Tf 0.1 0.2 0.4 rg 40 685 Td (1. PURPOSE & SCOPE) Tj ET',
+    'BT /F1 9 Tf 0.2 0.2 0.2 rg 40 670 Td (This procedure defines the operational criteria and inspection requirements for quality verification.) Tj ET',
+    'BT /F1 9 Tf 0.2 0.2 0.2 rg 40 658 Td (Applicable across all manufacturing stages, packaging, and finished goods release.) Tj ET',
+    'BT /F2 11 Tf 0.1 0.2 0.4 rg 40 635 Td (2. RESPONSIBILITIES & ROLES) Tj ET',
+    '0.94 0.96 0.98 rg 40 605 515.28 15 re f',
+    '0.5 w 0.75 0.8 0.85 RG 40 565 515.28 55 re S',
+    '40 605 m 555.28 605 l S',
+    '40 585 m 555.28 585 l S',
+    '150 565 m 150 620 l S',
+    '350 565 m 350 620 l S',
+    'BT /F2 8.5 Tf 0.2 0.2 0.2 rg 45 609 Td (Role / Position) Tj ET',
+    'BT /F2 8.5 Tf 0.2 0.2 0.2 rg 155 609 Td (Key Responsibility) Tj ET',
+    'BT /F2 8.5 Tf 0.2 0.2 0.2 rg 355 609 Td (Authority / Competence) Tj ET',
+    'BT /F1 8.5 Tf 0.2 0.2 0.2 rg 45 592 Td (Requester / Initiator) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 155 592 Td (Draft procedure, execute initial runs, verify accuracy) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 355 592 Td (Staff / Officer Level) Tj ET',
+    'BT /F1 8.5 Tf 0.2 0.2 0.2 rg 45 572 Td (Reviewer / Supervisor) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 155 572 Td (Review compliance, verify resources, technical audit) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 355 572 Td (Section Head / Level 4+) Tj ET',
+    'BT /F2 11 Tf 0.1 0.2 0.4 rg 40 540 Td (3. PROCEDURE & WORKFLOW REQUIREMENTS) Tj ET',
+    'BT /F1 8.5 Tf 0.2 0.2 0.2 rg 45 525 Td (3.1 Document preparation must comply with QMS manual guidelines and customer specs.) Tj ET',
+    'BT /F1 8.5 Tf 0.2 0.2 0.2 rg 45 513 Td (3.2 All process parameters must be recorded in approved inspection log sheets.) Tj ET',
+    'BT /F1 8.5 Tf 0.2 0.2 0.2 rg 45 501 Td (3.3 Non-conformances require immediate containment and CAPA initiation.) Tj ET',
+    'BT /F2 11 Tf 0.1 0.2 0.4 rg 40 475 Td (4. QUALITY VERIFICATION MATRIX) Tj ET',
+    '0.94 0.96 0.98 rg 40 440 515.28 18 re f',
+    '0.5 w 0.75 0.8 0.85 RG 40 355 515.28 103 re S',
+    '40 440 m 555.28 440 l S',
+    '40 410 m 555.28 410 l S',
+    '40 380 m 555.28 380 l S',
+    '75 355 m 75 458 l S',
+    '220 355 m 220 458 l S',
+    '370 355 m 370 458 l S',
+    '460 355 m 460 458 l S',
+    'BT /F2 8 Tf 0.2 0.2 0.2 rg 45 446 Td (Item) Tj ET',
+    'BT /F2 8 Tf 0.2 0.2 0.2 rg 82 446 Td (Process Step) Tj ET',
+    'BT /F2 8 Tf 0.2 0.2 0.2 rg 225 446 Td (Acceptance Criteria) Tj ET',
+    'BT /F2 8 Tf 0.2 0.2 0.2 rg 375 446 Td (Responsible) Tj ET',
+    'BT /F2 8 Tf 0.2 0.2 0.2 rg 465 446 Td (Frequency) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 53 422 Td (1) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 82 422 Td (Raw Material Receiving) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 225 422 Td (Visual check & COA verification) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 375 422 Td (QC Inspector) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 465 422 Td (Every Lot) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 53 392 Td (2) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 82 392 Td (In-Process Inspection) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 225 392 Td (Tolerance +/- 0.05 mm standard) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 375 392 Td (Line QC) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 465 392 Td (Hourly) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 53 364 Td (3) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 82 364 Td (Finished Goods Release) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 225 364 Td (100% functional test passed) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 375 364 Td (QA Supervisor) Tj ET',
+    'BT /F1 8 Tf 0.2 0.2 0.2 rg 465 364 Td (Per Batch) Tj ET',
+    'BT /F1 7.5 Tf 0.5 0.5 0.5 rg 40 165 Td (Note: Official approval signatory matrix below is verified and stamped progressively by QMS Portal.) Tj ET'
+  ].join('\n');
+
+  const encoder = new TextEncoder();
+  const streamBytes = encoder.encode(streamContent);
+  const streamLen = streamBytes.length;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+
+  offsets.push(pdf.length);
+  pdf += '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n';
+
+  offsets.push(pdf.length);
+  pdf += '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n';
+
+  offsets.push(pdf.length);
+  pdf += '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>\nendobj\n';
+
+  offsets.push(pdf.length);
+  pdf += '4 0 obj\n<< /Length ' + streamLen + ' >>\nstream\n' + streamContent + '\nendstream\nendobj\n';
+
+  offsets.push(pdf.length);
+  pdf += '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n';
+
+  offsets.push(pdf.length);
+  pdf += '6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n';
+
+  const startxref = pdf.length;
+  pdf += 'xref\n0 7\n0000000000 65535 f \n';
+  for (const off of offsets) {
+    pdf += String(off).padStart(10, '0') + ' 00000 n \n';
+  }
+  pdf += 'trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n' + startxref + '\n%%EOF';
+
+  const fullBytes = encoder.encode(pdf);
+  return new Blob([fullBytes], { type: 'application/pdf' });
+};

@@ -30,7 +30,7 @@ const DarRevisionForm = () => {
   const prefillDocId = location.state?.prefillDocId;
   const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.targetDocCode || location.state?.docCode;
   const deepLinkDocId = searchParams.get('docId') || location.state?.selectedDocId || location.state?.docId || prefillDocId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies, distributionLocations } = useStore();
+  const { currentUser, addDar, submitDar, saveDarDraft, deleteDar, masterUsers, reviewUsers, approveUsers, documents, dars, darRequests, documentTypes, simulatedDate, controlledCopyInstances, documentControlledCopies, distributionLocations } = useStore();
   const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
   
   const initialFormState = {
@@ -55,6 +55,7 @@ const DarRevisionForm = () => {
   };
 
   const [formData, setFormData] = useState(initialFormState);
+  const [selectedFile, setSelectedFile] = useState(null);
   
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
@@ -690,13 +691,27 @@ const DarRevisionForm = () => {
   }, [currentUser, formData.docType, masterUsers, reviewUsers, approveUsers]);
   
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type !== 'application/pdf') {
-      toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
-      e.target.value = '';
-      return;
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
+        e.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+      setFormData(prev => ({ ...prev, file }));
+
+      // Synchronous In-Memory Registry caching immediately upon selection
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      window.__PDF_CACHE__.set(file.name, file);
+      window.__UPLOADED_FILES_MAP__.set(file.name, file);
+      const docCodeStr = selectedDoc?.code || selectedDoc?.title || formData.docId;
+      if (docCodeStr) {
+        window.__PDF_CACHE__.set(docCodeStr, file);
+        window.__UPLOADED_FILES_MAP__.set(docCodeStr, file);
+      }
     }
-    setFormData(prev => ({ ...prev, file }));
   };
 
   const validate = () => {
@@ -798,28 +813,40 @@ const DarRevisionForm = () => {
       const docCodeStr = selectedDoc?.code || selectedDoc?.title || formData.docId;
       const docTitleStr = formData.title || selectedDoc?.name || 'Untitled Document';
       const nextRevStr = calculateNextRev(selectedDoc?.rev);
-      let attachedFile = null;
-      if (formData.file) {
-        const fileId = `file_${Date.now()}_${formData.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-        try {
-          // Save under fileId (primary key)
-          await saveFile(fileId, formData.file);
-          // Also register under document code alias for broader key resolution
-          if (docCodeStr) await saveFile(docCodeStr, formData.file);
-          attachedFile = {
-            fileId: fileId,
-            name: formData.file.name,
-            size: formData.file.size,
-            type: formData.file.type,
-            file: formData.file, // Keep raw Blob in-memory (stripped by Zustand persist but available in same session)
-            uploadedAt: new Date().toISOString()
-          };
-        } catch (err) {
-          console.error('Error saving file:', err);
-          toast.error('ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่');
-          setIsSubmitting(false);
-          return;
-        }
+      const activeFile = selectedFile || formData.file;
+      if (!activeFile) {
+        toast.error('กรุณาเลือกไฟล์ PDF ฉบับแก้ไข');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const fileId = `file_${Date.now()}_${activeFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const fileName = activeFile.name; // บังคับใช้ชื่อไฟล์จริงจาก OS ไม่ใช่ Title
+
+      let attachedFile = {
+        fileId: fileId,
+        name: fileName,
+        size: activeFile.size,
+        type: activeFile.type || 'application/pdf',
+        file: activeFile,
+        uploadedAt: new Date().toISOString()
+      };
+
+      // 1. บันทึกลง Synchronous In-Memory Registry ทันที (Synchronous Access)
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+        cache.set(fileId, activeFile);
+        cache.set(fileName, activeFile);
+        if (docCodeStr) cache.set(docCodeStr, activeFile);
+      });
+
+      // 2. บันทึกลง IndexedDB ควบคู่กัน
+      try {
+        await saveFile(fileId, activeFile);
+        if (docCodeStr) await saveFile(docCodeStr, activeFile);
+      } catch (err) {
+        console.warn('saveFile error fallback:', err);
       }
 
       const newDar = {
@@ -827,6 +854,7 @@ const DarRevisionForm = () => {
         title: docTitleStr,
         name: docTitleStr,
         docTitle: docTitleStr,
+        fileName: fileName, // บังคับใช้ชื่อไฟล์จริงจาก OS
         docCode: docCodeStr,
         document_code: docCodeStr,
         docIdRef: formData.docId,
@@ -863,10 +891,10 @@ const DarRevisionForm = () => {
         accessScope: formData.access_control?.scope || 'GENERAL',
         isDraft: false,
         status: 'UNDER_REVIEW',
-        fileId: attachedFile?.fileId || null,
-        file_id: attachedFile?.fileId || null,
-        file: formData.file || null,
-        fileBlob: formData.file || null,
+        fileId: fileId,
+        file_id: fileId,
+        file: activeFile,
+        fileBlob: activeFile,
         attachedFile
       };
 
@@ -874,18 +902,25 @@ const DarRevisionForm = () => {
         deleteDar(targetDraftId);
       }
 
-      addDar(newDar);
+      // บันทึกผ่าน submitDar หรือ addDar พร้อมส่งไฟล์จริง
+      let result = null;
+      if (typeof submitDar === 'function') {
+        result = await submitDar(newDar, activeFile);
+      } else {
+        result = addDar(newDar);
+      }
 
-      // After DAR is created, save the file under the DAR id alias for IndexedDB resolution
-      if (formData.file && attachedFile?.fileId) {
-        try {
-          const { default: useStore } = await import('../../store/useStore');
-          const state = useStore.getState();
-          const createdDar = (state.dars || []).find(d => d.fileId === attachedFile.fileId);
-          if (createdDar?.id) {
-            await saveFile(createdDar.id, formData.file);
-          }
-        } catch { /* non-critical alias save — ignore if store not accessible */ }
+      if (result) {
+        const allocatedId = result.id || result.darNumber || result.darNo;
+        if (allocatedId) {
+          [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+            cache.set(allocatedId, activeFile);
+            if (result.darNumber) cache.set(result.darNumber, activeFile);
+          });
+          try {
+            await saveFile(allocatedId, activeFile);
+          } catch { /* ignore */ }
+        }
       }
 
       setShowConfirm(false);
@@ -1284,7 +1319,7 @@ const DarRevisionForm = () => {
                     </div>
                     <div className="text-left min-w-0 flex-1">
                       <p className="text-xs font-semibold text-[#1E293B] truncate">
-                        {formData.file ? formData.file.name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
+                        {(selectedFile || formData.file) ? (selectedFile || formData.file).name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
                       </p>
                       <p className="text-[10px] text-[#94A3B8]">รองรับไฟล์ PDF สูงสุด 25 MB</p>
                     </div>

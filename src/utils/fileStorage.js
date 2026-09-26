@@ -293,3 +293,10 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
 
   return null;
 };
+
+/**
+ * Direct raw blob/data resolver from IndexedDB
+ */
+export const resolveRawFileBlob = async (key) => {
+  return await getFile(key);
+};

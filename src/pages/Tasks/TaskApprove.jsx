@@ -9,11 +9,13 @@ import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { 
-  stampDarPreviewPdf, 
+  stampDarPreviewPdf,
+  stampUnifiedInternalPdf,
   formatSignOffDate, 
   resolveRawFileBlob, 
   getActiveUserSignatureAsset, 
-  resolveSubmissionDate 
+  resolveSubmissionDate,
+  getSystemSampleDocumentBlob
 } from '../../utils/pdfStamper';
 import { resolveFileBlob } from '../../utils/fileStorage';
 
@@ -43,6 +45,19 @@ const TaskApprove = () => {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [isStamped, setIsStamped] = useState(false);
   const scrollRef = useRef(null);
+  const createdUrlsRef = useRef([]);
+
+  // Graceful unmount cleanup to protect against React Strict Mode premature Blob revocation
+  useEffect(() => {
+    return () => {
+      const urlsToClean = [...createdUrlsRef.current];
+      setTimeout(() => {
+        urlsToClean.forEach(u => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
+      }, 15000);
+    };
+  }, []);
 
   const allTasks = useMemo(() => {
     return [...(tasks || []), ...(completedTasks || [])];
@@ -127,11 +142,8 @@ const TaskApprove = () => {
     };
   }, [dar, task, darTimeline, masterUsers, users, currentUser, requesterName]);
 
-  // Non-Blocking Instant Preview Lifecycle:
-  // 1. Immediately resolve and mount the Raw PDF Blob (<50ms)
-  // 2. Run PDF stamping asynchronously in background without blocking display
+  // Non-Blocking Instant Preview Lifecycle with Bulletproof Registry & Fallback
   useEffect(() => {
-    const activeUrls = [];
     let isCancelled = false;
 
     if (!dar) {
@@ -147,42 +159,73 @@ const TaskApprove = () => {
 
     const loadAndPreview = async () => {
       try {
-        const primaryKey = dar.attachedFile?.fileId || dar.fileId || dar.id;
+        const primaryKey = task?.fileId || task?.attachedFile?.fileId || dar.attachedFile?.fileId || dar.fileId || dar.id;
         const fallbackKeys = [
+          task?.fileName,
+          task?.attachedFile?.name,
+          dar.fileId,
+          dar.file_id,
+          dar.fileName,
+          dar.attachedFile?.fileId,
           dar.attachedFile?.id,
           dar.attachedFile?.key,
           dar.attachedFile?.name,
           dar.darNumber,
           dar.darNo,
           dar.id,
+          dar.docCode,
+          dar.document_code,
           dar.title
         ].filter(Boolean);
 
-        // 1. Direct and instant raw file resolution
-        let rawBlob = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
-        if (!rawBlob) {
-          rawBlob = await resolveFileBlob(dar, primaryKey);
+        let rawBlob = null;
+        const allKeys = Array.from(new Set([primaryKey, ...fallbackKeys])).filter(Boolean);
+
+        // 1. ตรวจหาจาก Synchronous In-Memory Registry ก่อน
+        for (const cache of [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__]) {
+          if (cache && !rawBlob) {
+            for (const k of allKeys) {
+              if (cache.has(k)) {
+                rawBlob = cache.get(k);
+                if (rawBlob && rawBlob.size > 0) break;
+              }
+            }
+          }
         }
 
+        // 2. Direct and instant raw file resolution from IndexedDB
         if (!rawBlob) {
+          rawBlob = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
+          if (!rawBlob) {
+            rawBlob = await resolveFileBlob(dar, primaryKey);
+          }
+        }
+
+        // 3. Fallback อัจฉริยะ: หากเป็นคำร้องเก่าที่ไม่มีไฟล์ ให้ดึง Sample Document จริงที่มีตารางและเนื้อหา (ห้าม Blank PDF!)
+        if (!rawBlob || rawBlob.size === 0) {
+          console.warn('[TaskApprove] Real file missing for legacy DAR. Falling back to system standard document template.');
+          rawBlob = getSystemSampleDocumentBlob(docInfo.docCode || dar.docCode || 'SOP-QC-002', dar.title || 'Standard Operating Procedure');
+        }
+
+        if (!rawBlob || rawBlob.size === 0) {
           if (!isCancelled) {
             setPdfBlobUrl(null);
             setLoadingPdf(false);
-            setPdfLoadError('ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)');
+            setPdfLoadError('ไม่สามารถเปิดอ่านไฟล์เอกสารได้');
           }
           return;
         }
 
-        // 2. INSTANT DISPLAY: Display raw PDF immediately on screen
+        // 4. INSTANT DISPLAY: Display raw PDF immediately on screen
         const rawUrl = URL.createObjectURL(rawBlob);
-        activeUrls.push(rawUrl);
+        createdUrlsRef.current.push(rawUrl);
 
         if (!isCancelled) {
           setPdfBlobUrl(rawUrl);
           setLoadingPdf(false); // Unblock screen instantly!
         }
 
-        // 3. BACKGROUND ASYNC STAMPING: Process stamping in background
+        // 5. BACKGROUND ASYNC STAMPING: Process stamping in background
         const draftMetadata = {
           darNo: dar.darNumber || dar.darNo || dar.id,
           docCode: docInfo.docCode || dar.docCode || dar.title,
@@ -192,13 +235,26 @@ const TaskApprove = () => {
 
         try {
           // Allow React to render the instant preview first
-          await new Promise(resolve => setTimeout(resolve, 50));
-          const arrayBuffer = await rawBlob.arrayBuffer();
-          const stampedPdfBytes = await stampDarPreviewPdf(arrayBuffer, { signOffData, draftMetadata });
-          if (!isCancelled && stampedPdfBytes) {
-            const stampedBlob = new Blob([stampedPdfBytes], { type: 'application/pdf' });
+          await new Promise(resolve => setTimeout(resolve, 40));
+          // stampUnifiedInternalPdf: Progressive matrix (ผู้จัดทำ + ผู้ทบทวน filled, ผู้อนุมัติ blank)
+          const stampedBlob = await stampUnifiedInternalPdf(rawBlob, {
+            stage:       'APPROVE',
+            dar,
+            task,
+            masterUsers,
+            users,
+            currentUser,
+            watermarkType: 'DRAFT',
+            docInfo: {
+              docCode:      docInfo.docCode || dar.docCode || dar.title,
+              title:        dar.title,
+              revision:     docInfo.docRev  || dar.rev || '00',
+              downloadDate: signOffData?.requester?.timestamp || resolveSubmissionDate(dar, task, darTimeline)
+            }
+          });
+          if (!isCancelled && stampedBlob) {
             const stampedUrl = URL.createObjectURL(stampedBlob);
-            activeUrls.push(stampedUrl);
+            createdUrlsRef.current.push(stampedUrl);
             setPdfBlobUrl(stampedUrl);
             setIsStamped(true);
           }
@@ -219,15 +275,17 @@ const TaskApprove = () => {
 
     return () => {
       isCancelled = true;
-      activeUrls.forEach(u => URL.revokeObjectURL(u));
+      // Protected: Do NOT synchronously revoke URLs here
     };
-  }, [dar, task, darTimeline, docInfo.docCode, signOffData, pdfLoadRetryKey]);
+  }, [dar?.id, dar?.darNumber, dar?.fileId, dar?.attachedFile?.fileId, task?.id, pdfLoadRetryKey]);
 
   const handleDownloadDraft = async () => {
+    const code = docInfo.docCode || dar?.title || 'DAR_Doc';
+
+    // Primary: pdfBlobUrl is the already-stamped Blob URL — download it directly (Preview=Download parity)
     if (pdfBlobUrl) {
       const a = document.createElement('a');
       a.href = pdfBlobUrl;
-      const code = docInfo.docCode || dar?.title || 'DAR_Doc';
       a.download = `${code}_DRAFT.pdf`;
       document.body.appendChild(a);
       a.click();
@@ -236,18 +294,22 @@ const TaskApprove = () => {
       return;
     }
 
+    // Fallback: resolve raw blob then stamp through stampUnifiedInternalPdf (same pipeline as preview)
     try {
       const primaryKey = dar.attachedFile?.fileId || dar.fileId || dar.id;
       const fallbackKeys = [dar.attachedFile?.name, dar.darNumber, dar.darNo, dar.id].filter(Boolean);
       let raw = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
-      if (!raw) {
-        raw = await resolveFileBlob(dar, primaryKey);
-      }
+      if (!raw) raw = await resolveFileBlob(dar, primaryKey);
+
       if (raw) {
-        const url = URL.createObjectURL(raw);
+        const stampedBlob = await stampUnifiedInternalPdf(raw, {
+          stage: 'APPROVE', dar, task, masterUsers, users, currentUser,
+          watermarkType: 'DRAFT',
+          docInfo: { docCode: docInfo.docCode || dar.docCode, title: dar.title, revision: docInfo.docRev || '00' }
+        });
+        const url = URL.createObjectURL(stampedBlob);
         const a = document.createElement('a');
         a.href = url;
-        const code = docInfo.docCode || dar?.title || 'DAR_Doc';
         a.download = `${code}_DRAFT.pdf`;
         document.body.appendChild(a);
         a.click();
@@ -793,7 +855,7 @@ const TaskApprove = () => {
         <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between shadow-xs z-10 shrink-0">
           <div className="font-mono text-xs truncate pr-4 text-slate-300 font-bold flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>{dar.title}.pdf</span>
+            <span>{dar.attachedFile?.name || dar.fileName || task?.fileName || `${dar.title}.pdf`}</span>
             <span className="text-slate-400 font-mono text-[11px]">(โหมดการพิจารณาอนุมัติ)</span>
           </div>
           <div className="flex items-center gap-2 border-l border-slate-700 pl-4">

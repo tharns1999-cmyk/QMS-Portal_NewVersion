@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { stampDocumentFirstPage, stampExternalDocumentTopRight } from '../utils/pdfStamper';
-import { getFile, saveFile, resolveFileBlob } from '../utils/fileStorage';
+import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateSchedules, generateTasksForSchedules, calculateNextReviewDate } from '../services/PeriodicReviewService';
 import { 
@@ -1510,6 +1510,7 @@ export const getActivePhysicalCopies = (copies = [], doc = null) => {
 // ================= STORE ================= //
 export const getInitialStoreState = () => ({
   masterUsers: MASTER_DATA_USER,
+  isHydrated: false,
   requestUsers: REQUEST_MASTER_DATA_USER,
   reviewUsers: REVIEW_MASTER_DATA_USER,
   approveUsers: APPROVE_MASTER_DATA_USER,
@@ -4795,16 +4796,34 @@ const useStore = create(persist((set, get) => ({
       type: dar.type || 'NEW',
       fileId: dar.fileId || dar.file_id || dar.attachedFile?.fileId || null,
       file_id: dar.file_id || dar.fileId || dar.attachedFile?.fileId || null,
+      fileName: dar.fileName || dar.attachedFile?.name || null,
       attachedFile: dar.attachedFile || null,
       distributions: dar.distributions || []
     };
 
-    // Bind file to new DAR ID and allocated number in rawBlobRegistry & file storage
+    // Bind file to new DAR ID and allocated number in rawBlobRegistry, file storage & window.__PDF_CACHE__
     const activeFileKey = newDar.fileId || newDar.attachedFile?.fileId;
+    const targetBlob = (window.__PDF_CACHE__ && window.__PDF_CACHE__.get(activeFileKey)) ||
+      (window.__UPLOADED_FILES_MAP__ && window.__UPLOADED_FILES_MAP__.get(activeFileKey)) ||
+      dar.file || dar.attachedFile?.file;
+
+    if (targetBlob) {
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+        if (newDarId) cache.set(String(newDarId), targetBlob);
+        if (allocatedDarNumber) cache.set(String(allocatedDarNumber), targetBlob);
+        if (newDar.docCode) cache.set(String(newDar.docCode), targetBlob);
+        if (newDar.document_code) cache.set(String(newDar.document_code), targetBlob);
+        if (newDar.fileName) cache.set(String(newDar.fileName), targetBlob);
+      });
+    }
+
     if (activeFileKey) {
       import('../utils/fileStorage').then(({ inMemoryBlobRegistry, rawBlobRegistry, saveFile }) => {
         const existingBlob = (rawBlobRegistry && rawBlobRegistry.get(String(activeFileKey))) ||
-          (inMemoryBlobRegistry && inMemoryBlobRegistry.get(String(activeFileKey)));
+          (inMemoryBlobRegistry && inMemoryBlobRegistry.get(String(activeFileKey))) ||
+          targetBlob;
         if (existingBlob) {
           if (newDarId) {
             rawBlobRegistry?.set(String(newDarId), existingBlob);
@@ -4981,6 +5000,9 @@ const useStore = create(persist((set, get) => ({
         priority: reviewSla.isUrgent ? 'URGENT' : 'NORMAL',
         slaType: reviewSla.slaType,
         effectiveDate: reviewSla.effectiveDate,
+        fileId: newDar.fileId || newDar.attachedFile?.fileId || null,
+        fileName: newDar.fileName || newDar.attachedFile?.name || null,
+        attachedFile: newDar.attachedFile || null,
         status: 'NORMAL'
       });
       newNotifications.push({ 
@@ -5024,25 +5046,57 @@ const useStore = create(persist((set, get) => ({
     const finalDar = { ...dar, isDraft: false };
     const darId = finalDar.darNumber || finalDar.id || `DAR-${new Date().getFullYear()}-${String(get().dars.length + 1).padStart(3, '0')}`;
     const fileId = finalDar.fileId || `file-${darId}-${Date.now()}`;
-    const targetFile = rawFile || finalDar.file || finalDar.fileBlob;
+    
+    // 1. สกัดหาไฟล์จริงจากทุกช่องทางที่เป็นไปได้
+    const targetFile = rawFile || finalDar.file || finalDar.attachedFile?.file || finalDar.rawFile || finalDar.fileBlob;
+    const fileName = targetFile?.name || finalDar.fileName || finalDar.attachedFile?.name || `${darId}.pdf`;
+    finalDar.fileName = fileName;
 
+    // 2. ถ้ามีไฟล์จริง บันทึกลง Storage ทันที
     if (targetFile && (targetFile instanceof Blob || targetFile instanceof File)) {
+      // สำรองไฟล์ลง Global Memory (Synchronous Access) ตาม Blueprint B
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+        cache.set(fileId, targetFile);
+        cache.set(darId, targetFile);
+        cache.set(fileName, targetFile);
+        if (finalDar.docCode) cache.set(finalDar.docCode, targetFile);
+        if (finalDar.document_code) cache.set(finalDar.document_code, targetFile);
+      });
+
       const { saveFile } = await import('../utils/fileStorage');
-      await saveFile(fileId, targetFile);
-      await saveFile(darId, targetFile); // ทำ Alias ด้วยรหัส DAR
-      if (finalDar.docCode) await saveFile(finalDar.docCode, targetFile);
+      try {
+        await saveFile(fileId, targetFile);
+        await saveFile(darId, targetFile); // ทำ Alias ด้วยรหัส DAR
+        if (finalDar.docCode) await saveFile(finalDar.docCode, targetFile);
+        if (finalDar.document_code) await saveFile(finalDar.document_code, targetFile);
+      } catch (e) {
+        console.error('Failed to save file to IndexedDB:', e);
+      }
       
       finalDar.fileId = fileId;
       if (!finalDar.attachedFile) {
         finalDar.attachedFile = {
           fileId: fileId,
-          name: targetFile.name || finalDar.fileName || `${darId}.pdf`,
+          name: fileName,
           size: targetFile.size || 0,
           type: 'application/pdf'
+        };
+      } else {
+        finalDar.attachedFile = {
+          ...finalDar.attachedFile,
+          fileId: fileId,
+          name: fileName,
+          size: targetFile.size || finalDar.attachedFile.size || 0
         };
       }
     }
     return get().addDar(finalDar);
+  },
+
+  submitDarRequest: async (formData, rawFile) => {
+    return get().submitDar(formData, rawFile);
   },
 
   // Universal DAR Draft Save & Upsert Action
@@ -10550,166 +10604,221 @@ const useStore = create(persist((set, get) => ({
   // ================= MASTER DATA ACTIONS ================= //
 
   // --- 1. User Management Actions ---
-  addMasterUser: (userData) => set((state) => {
-    const newId = userData.id || `U${String(Date.now()).slice(-4)}`;
-    const empId = userData.empId || `EMP-${String((state.masterUsers || []).length + 1).padStart(3, '0')}`;
-    const primaryDept = userData.primary_department || userData.department || userData.dept || 'QA/QC';
-    const rawAffiliated = userData.affiliated_departments || userData.depts || (userData.department ? [userData.department] : [primaryDept]);
-    const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
-    const approvalLevel = Number(userData.approval_level || userData.level) || 1;
-    const isQmr = userData.role === 'QMR' || Boolean(userData.isQmr);
-    const isDcc = userData.role === 'DCC_ADMIN' || Boolean(userData.isDcc);
+  addMasterUser: (userData) => {
+    let finalUsersList = [];
+    let createdUser = null;
 
-    const basePermissions = ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'];
-    if (isDcc) basePermissions.push('DCC_ADMIN');
-    if (isQmr) basePermissions.push('QMR_ACCESS');
-    const userPermissions = (userData.permissions && userData.permissions.length > 0)
-      ? Array.from(new Set([...basePermissions, ...userData.permissions]))
-      : basePermissions;
+    set((state) => {
+      const newId = userData.id || `U${String(Date.now()).slice(-4)}`;
+      const empId = userData.empId || `EMP-${String((state.masterUsers || []).length + 1).padStart(3, '0')}`;
+      const primaryDept = userData.primary_department || userData.department || userData.dept || 'QA/QC';
+      const rawAffiliated = userData.affiliated_departments || userData.depts || (userData.department ? [userData.department] : [primaryDept]);
+      const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
+      const approvalLevel = Number(userData.approval_level || userData.level) || 1;
+      const isQmr = userData.role === 'QMR' || Boolean(userData.isQmr);
+      const isDcc = userData.role === 'DCC_ADMIN' || Boolean(userData.isDcc);
 
-    const newUser = {
-      id: newId,
-      empId,
-      name: userData.name,
-      fullName: userData.fullName || userData.name,
-      email: userData.email || `${newId.toLowerCase()}@company.com`,
-      department: primaryDept,
-      dept: primaryDept,
-      primary_department: primaryDept,
-      depts: affiliatedDepts,
-      affiliated_departments: affiliatedDepts,
-      position: userData.position || 'Staff',
-      role: userData.role || 'GENERAL_USER',
-      level: approvalLevel,
-      approval_level: approvalLevel,
-      isDcc,
-      isQmr,
-      status: userData.status || 'Active',
-      pin: userData.pin || '123456',
-      failedPinAttempts: 0,
-      isLocked: false,
-      lastPinChangedAt: new Date().toISOString(),
-      permissions: userPermissions,
-      canCreateDar: userData.canCreateDar !== undefined ? Boolean(userData.canCreateDar) : true,
-      canAccessTasks: userData.canAccessTasks !== undefined ? Boolean(userData.canAccessTasks) : true,
-      canViewRegister: userData.canViewRegister !== undefined ? Boolean(userData.canViewRegister) : true,
-      isWorkflowUser: userData.isWorkflowUser !== undefined ? Boolean(userData.isWorkflowUser) : true,
-      signatureType: userData.signatureType || 'TYPOGRAPHIC',
-      signatureStyle: userData.signatureStyle || 'MODERN_SANS',
-      signatureInitials: userData.signatureInitials || `${(userData.name || newId).slice(0, 3).toUpperCase()}-${primaryDept}`,
-      hasRegisteredSignature: userData.hasRegisteredSignature ?? true
-    };
+      const basePermissions = ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'];
+      if (isDcc) basePermissions.push('DCC_ADMIN');
+      if (isQmr) basePermissions.push('QMR_ACCESS');
+      const userPermissions = (userData.permissions && userData.permissions.length > 0)
+        ? Array.from(new Set([...basePermissions, ...userData.permissions]))
+        : basePermissions;
 
-    const updatedUsers = [...(state.masterUsers || []), newUser];
-    const userRoleObj = (u) => ({
-      id: u.id,
-      empId: u.empId || u.id,
-      name: u.name,
-      depts: u.affiliated_departments || u.depts,
-      affiliated_departments: u.affiliated_departments || u.depts,
-      department: u.primary_department || u.department,
-      primary_department: u.primary_department || u.department,
-      level: u.approval_level || u.level,
-      approval_level: u.approval_level || u.level
+      const newUser = {
+        id: newId,
+        empId,
+        name: userData.name,
+        fullName: userData.fullName || userData.name,
+        email: userData.email || `${newId.toLowerCase()}@company.com`,
+        department: primaryDept,
+        dept: primaryDept,
+        primary_department: primaryDept,
+        depts: affiliatedDepts,
+        affiliated_departments: affiliatedDepts,
+        position: userData.position || 'Staff',
+        role: userData.role || 'GENERAL_USER',
+        level: approvalLevel,
+        approval_level: approvalLevel,
+        isDcc,
+        isQmr,
+        status: userData.status || 'Active',
+        pin: userData.pin || '123456',
+        failedPinAttempts: 0,
+        isLocked: false,
+        lastPinChangedAt: new Date().toISOString(),
+        permissions: userPermissions,
+        canCreateDar: userData.canCreateDar !== undefined ? Boolean(userData.canCreateDar) : true,
+        canAccessTasks: userData.canAccessTasks !== undefined ? Boolean(userData.canAccessTasks) : true,
+        canViewRegister: userData.canViewRegister !== undefined ? Boolean(userData.canViewRegister) : true,
+        isWorkflowUser: userData.isWorkflowUser !== undefined ? Boolean(userData.isWorkflowUser) : true,
+        signatureType: userData.signatureType || 'TYPOGRAPHIC',
+        signatureStyle: userData.signatureStyle || 'MODERN_SANS',
+        signatureInitials: userData.signatureInitials || `${(userData.name || newId).slice(0, 3).toUpperCase()}-${primaryDept}`,
+        signatureImage: userData.signatureImage || null,
+        hasRegisteredSignature: Boolean(userData.signatureImage || userData.hasRegisteredSignature)
+      };
+
+      const updatedUsers = [...(state.masterUsers || []), newUser];
+      finalUsersList = updatedUsers;
+      createdUser = newUser;
+
+      const userRoleObj = (u) => ({
+        id: u.id,
+        empId: u.empId || u.id,
+        name: u.name,
+        depts: u.affiliated_departments || u.depts,
+        affiliated_departments: u.affiliated_departments || u.depts,
+        department: u.primary_department || u.department,
+        primary_department: u.primary_department || u.department,
+        level: u.approval_level || u.level,
+        approval_level: u.approval_level || u.level,
+        signatureImage: u.signatureImage
+      });
+
+      return {
+        masterUsers: updatedUsers,
+        requestUsers: updatedUsers.map(userRoleObj),
+        reviewUsers: updatedUsers.map(userRoleObj),
+        approveUsers: updatedUsers.map(userRoleObj),
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_USER_CREATED',
+          actor: state.currentUser?.name || 'DCC Officer',
+          details: `Created user ${newUser.name} (${newUser.id}) with role ${newUser.role}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     });
 
-    return {
-      masterUsers: updatedUsers,
-      requestUsers: updatedUsers.map(userRoleObj),
-      reviewUsers: updatedUsers.map(userRoleObj),
-      approveUsers: updatedUsers.map(userRoleObj),
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'MASTER_USER_CREATED',
-        actor: state.currentUser?.name || 'DCC Officer',
-        details: `Created user ${newUser.name} (${newUser.id}) with role ${newUser.role}`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
+    if (createdUser?.signatureImage) {
+      const sigKey = `user_sig_${createdUser.id}`;
+      saveFile(sigKey, createdUser.signatureImage).catch(err => console.error('Failed to save user signature:', err));
+    }
+    // Direct persistence of masterUsers to IndexedDB
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers list:', err));
+  },
 
-  updateMasterUser: (userId, userData) => set((state) => {
-    const updatedUsers = (state.masterUsers || []).map(u => {
-      if (u.id === userId) {
-        const primaryDept = userData.primary_department || userData.department || u.primary_department || u.department || 'QA/QC';
-        const rawAffiliated = userData.affiliated_departments || userData.depts || u.affiliated_departments || u.depts || [primaryDept];
-        const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
-        const approvalLevel = userData.approval_level !== undefined 
-          ? Number(userData.approval_level) 
-          : (userData.level !== undefined ? Number(userData.level) : (u.approval_level || u.level || 1));
-        const isQmr = userData.role === 'QMR' ? true : (userData.isQmr !== undefined ? Boolean(userData.isQmr) : Boolean(u.isQmr));
+  updateMasterUser: (userId, userData) => {
+    let finalUsersList = [];
 
-        const updated = {
-          ...u,
-          ...userData,
-          department: primaryDept,
-          dept: primaryDept,
-          primary_department: primaryDept,
-          depts: affiliatedDepts,
-          affiliated_departments: affiliatedDepts,
-          level: approvalLevel,
-          approval_level: approvalLevel,
-          isDcc: userData.role === 'DCC_ADMIN' ? true : (userData.role ? false : u.isDcc),
-          isQmr: isQmr,
-          permissions: (userData.permissions && userData.permissions.length > 0) ? userData.permissions : (u.permissions?.length > 0 ? u.permissions : ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER']),
-          canCreateDar: userData.canCreateDar !== undefined ? Boolean(userData.canCreateDar) : (u.canCreateDar ?? true),
-          canAccessTasks: userData.canAccessTasks !== undefined ? Boolean(userData.canAccessTasks) : (u.canAccessTasks ?? true),
-          canViewRegister: userData.canViewRegister !== undefined ? Boolean(userData.canViewRegister) : (u.canViewRegister ?? true),
-          isWorkflowUser: userData.isWorkflowUser !== undefined ? Boolean(userData.isWorkflowUser) : (u.isWorkflowUser ?? true)
-        };
-        return updated;
-      }
-      return u;
+    set((state) => {
+      const updatedUsers = (state.masterUsers || []).map(u => {
+        if (u.id === userId || u.userId === userId) {
+          const primaryDept = userData.primary_department || userData.department || u.primary_department || u.department || 'QA/QC';
+          const rawAffiliated = userData.affiliated_departments || userData.depts || u.affiliated_departments || u.depts || [primaryDept];
+          const affiliatedDepts = Array.from(new Set([primaryDept, ...(Array.isArray(rawAffiliated) ? rawAffiliated : [rawAffiliated])]));
+          const approvalLevel = userData.approval_level !== undefined 
+            ? Number(userData.approval_level) 
+            : (userData.level !== undefined ? Number(userData.level) : (u.approval_level || u.level || 1));
+          const isQmr = userData.role === 'QMR' ? true : (userData.isQmr !== undefined ? Boolean(userData.isQmr) : Boolean(u.isQmr));
+
+          const updated = {
+            ...u,
+            ...userData,
+            department: primaryDept,
+            dept: primaryDept,
+            primary_department: primaryDept,
+            depts: affiliatedDepts,
+            affiliated_departments: affiliatedDepts,
+            level: approvalLevel,
+            approval_level: approvalLevel,
+            isDcc: userData.role === 'DCC_ADMIN' ? true : (userData.role ? false : u.isDcc),
+            isQmr: isQmr,
+            permissions: (userData.permissions && userData.permissions.length > 0) ? userData.permissions : (u.permissions?.length > 0 ? u.permissions : ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER']),
+            canCreateDar: userData.canCreateDar !== undefined ? Boolean(userData.canCreateDar) : (u.canCreateDar ?? true),
+            canAccessTasks: userData.canAccessTasks !== undefined ? Boolean(userData.canAccessTasks) : (u.canAccessTasks ?? true),
+            canViewRegister: userData.canViewRegister !== undefined ? Boolean(userData.canViewRegister) : (u.canViewRegister ?? true),
+            isWorkflowUser: userData.isWorkflowUser !== undefined ? Boolean(userData.isWorkflowUser) : (u.isWorkflowUser ?? true)
+          };
+          return updated;
+        }
+        return u;
+      });
+
+      finalUsersList = updatedUsers;
+
+      const updatedCurrentUser = (state.currentUser?.id === userId || state.currentUser?.userId === userId)
+        ? { ...state.currentUser, ...(updatedUsers.find(u => u.id === userId || u.userId === userId) || {}) }
+        : state.currentUser;
+
+      const userRoleObj = (u) => ({
+        id: u.id,
+        empId: u.empId || u.id,
+        name: u.name,
+        depts: u.affiliated_departments || u.depts,
+        affiliated_departments: u.affiliated_departments || u.depts,
+        department: u.primary_department || u.department,
+        primary_department: u.primary_department || u.department,
+        level: u.approval_level || u.level,
+        approval_level: u.approval_level || u.level,
+        signatureImage: u.signatureImage
+      });
+
+      return {
+        masterUsers: updatedUsers,
+        currentUser: updatedCurrentUser,
+        requestUsers: updatedUsers.map(userRoleObj),
+        reviewUsers: updatedUsers.map(userRoleObj),
+        approveUsers: updatedUsers.map(userRoleObj),
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_USER_UPDATED',
+          actor: state.currentUser?.name || 'DCC Officer',
+          details: `Updated user ${userId}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     });
 
-    const updatedCurrentUser = state.currentUser?.id === userId
-      ? { ...state.currentUser, ...(updatedUsers.find(u => u.id === userId) || {}) }
-      : state.currentUser;
+    if (userData?.signatureImage) {
+      const sigKey = `user_sig_${userId}`;
+      saveFile(sigKey, userData.signatureImage).catch(err => console.error('Failed to save signature to IndexedDB:', err));
+    }
+    // Direct persistence of masterUsers to IndexedDB
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers to IndexedDB:', err));
+  },
 
-    const userRoleObj = (u) => ({
-      id: u.id,
-      empId: u.empId || u.id,
-      name: u.name,
-      depts: u.affiliated_departments || u.depts,
-      affiliated_departments: u.affiliated_departments || u.depts,
-      department: u.primary_department || u.department,
-      primary_department: u.primary_department || u.department,
-      level: u.approval_level || u.level,
-      approval_level: u.approval_level || u.level
+  toggleUserStatus: (userId) => {
+    let finalUsersList = [];
+
+    set((state) => {
+      const updatedUsers = (state.masterUsers || []).map(u => {
+        if (u.id === userId || u.userId === userId) {
+          const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+          return { ...u, status: newStatus };
+        }
+        return u;
+      });
+
+      finalUsersList = updatedUsers;
+
+      const userRoleObj = (u) => ({
+        id: u.id,
+        empId: u.empId || u.id,
+        name: u.name,
+        depts: u.affiliated_departments || u.depts,
+        affiliated_departments: u.affiliated_departments || u.depts,
+        department: u.primary_department || u.department,
+        primary_department: u.primary_department || u.department,
+        level: u.approval_level || u.level,
+        approval_level: u.approval_level || u.level,
+        signatureImage: u.signatureImage
+      });
+
+      return {
+        masterUsers: updatedUsers,
+        requestUsers: updatedUsers.map(userRoleObj),
+        reviewUsers: updatedUsers.map(userRoleObj),
+        approveUsers: updatedUsers.map(userRoleObj)
+      };
     });
 
-    return {
-      masterUsers: updatedUsers,
-      currentUser: updatedCurrentUser,
-      requestUsers: updatedUsers.map(userRoleObj),
-      reviewUsers: updatedUsers.map(userRoleObj),
-      approveUsers: updatedUsers.map(userRoleObj),
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'MASTER_USER_UPDATED',
-        actor: state.currentUser?.name || 'DCC Officer',
-        details: `Updated user ${userId}`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
-
-  toggleUserStatus: (userId) => set((state) => {
-    const updatedUsers = (state.masterUsers || []).map(u => {
-      if (u.id === userId) {
-        const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-        return { ...u, status: newStatus };
-      }
-      return u;
-    });
-
-    return {
-      masterUsers: updatedUsers,
-      requestUsers: updatedUsers.map(u => ({ id: u.id, name: u.name, depts: u.depts, department: u.department, level: u.level })),
-      reviewUsers: updatedUsers.map(u => ({ id: u.id, name: u.name, depts: u.depts, department: u.department, level: u.level })),
-      approveUsers: updatedUsers.map(u => ({ id: u.id, name: u.name, depts: u.depts, department: u.department, level: u.level }))
-    };
-  }),
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers status to IndexedDB:', err));
+  },
 
   resetUserPassword: (userId) => set((state) => {
     return {
@@ -10723,82 +10832,300 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  resetUserPin: (userId) => set((state) => {
-    const defaultPin = state.signatureSettings?.defaultPin || '123456';
-    const updatedUsers = (state.masterUsers || []).map(u => {
-      if (u.id === userId) {
-        return { 
-          ...u, 
-          pin: defaultPin, 
-          failedPinAttempts: 0, 
-          isLocked: false, 
-          lastPinChangedAt: new Date().toISOString() 
-        };
-      }
-      return u;
+  resetUserPin: (userId) => {
+    let finalUsersList = [];
+
+    set((state) => {
+      const defaultPin = state.signatureSettings?.defaultPin || '123456';
+      const updatedUsers = (state.masterUsers || []).map(u => {
+        if (u.id === userId || u.userId === userId) {
+          return { 
+            ...u, 
+            pin: defaultPin, 
+            failedPinAttempts: 0, 
+            isLocked: false, 
+            lastPinChangedAt: new Date().toISOString() 
+          };
+        }
+        return u;
+      });
+
+      finalUsersList = updatedUsers;
+
+      return {
+        masterUsers: updatedUsers,
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_USER_PIN_RESET',
+          actor: state.currentUser?.name || 'DCC Officer',
+          details: `Reset signing PIN to default for user ${userId}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     });
 
-    return {
-      masterUsers: updatedUsers,
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'MASTER_USER_PIN_RESET',
-        actor: state.currentUser?.name || 'DCC Officer',
-        details: `Reset signing PIN to default for user ${userId}`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers after PIN reset:', err));
+  },
 
-  unlockUserAccount: (userId) => set((state) => {
-    const updatedUsers = (state.masterUsers || []).map(u => {
-      if (u.id === userId) {
-        return { ...u, isLocked: false, failedPinAttempts: 0 };
-      }
-      return u;
+  unlockUserAccount: (userId) => {
+    let finalUsersList = [];
+
+    set((state) => {
+      const updatedUsers = (state.masterUsers || []).map(u => {
+        if (u.id === userId || u.userId === userId) {
+          return { ...u, isLocked: false, failedPinAttempts: 0 };
+        }
+        return u;
+      });
+
+      finalUsersList = updatedUsers;
+
+      return {
+        masterUsers: updatedUsers,
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          actionType: 'MASTER_USER_UNLOCKED',
+          actor: state.currentUser?.name || 'DCC Officer',
+          details: `Unlocked account for user ${userId}`,
+          timestamp: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     });
 
-    return {
-      masterUsers: updatedUsers,
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'MASTER_USER_UNLOCKED',
-        actor: state.currentUser?.name || 'DCC Officer',
-        details: `Unlocked account for user ${userId}`,
-        timestamp: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers after unlock:', err));
+  },
 
-  updateUserSignatureProfile: (userId, profileData) => set((state) => {
-    const updatedUsers = (state.masterUsers || []).map(u => {
-      if (u.id === userId) {
+  updateUserSignatureProfile: (userId, profileData) => {
+    let finalUsersList = [];
+
+    set((state) => {
+      const updatedUsers = (state.masterUsers || []).map(u => {
+        if (u.id === userId || u.userId === userId) {
+          return {
+            ...u,
+            ...profileData,
+            hasRegisteredSignature: true,
+            lastSignatureUpdatedAt: new Date().toISOString()
+          };
+        }
+        return u;
+      });
+
+      finalUsersList = updatedUsers;
+
+      const updatedCurrentUser = (state.currentUser?.id === userId || state.currentUser?.userId === userId)
+        ? { ...state.currentUser, ...(updatedUsers.find(u => u.id === userId || u.userId === userId) || {}) }
+        : state.currentUser;
+
+      const userRoleObj = (u) => ({
+        id: u.id,
+        empId: u.empId || u.id,
+        name: u.name,
+        depts: u.affiliated_departments || u.depts,
+        affiliated_departments: u.affiliated_departments || u.depts,
+        department: u.primary_department || u.department,
+        primary_department: u.primary_department || u.department,
+        level: u.approval_level || u.level,
+        approval_level: u.approval_level || u.level,
+        signatureImage: u.signatureImage
+      });
+
+      return {
+        masterUsers: updatedUsers,
+        currentUser: updatedCurrentUser,
+        requestUsers: updatedUsers.map(userRoleObj),
+        reviewUsers: updatedUsers.map(userRoleObj),
+        approveUsers: updatedUsers.map(userRoleObj),
+        actionLog: [{
+          id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          actionType: 'MASTER_USER_SIGNATURE_UPDATED',
+          action: 'อัปเดตโปรไฟล์ลายเซ็นดิจิทัล',
+          actor: state.currentUser?.name || 'DCC Officer',
+          user: state.currentUser?.name || 'DCC Officer',
+          details: `Updated digital signature profile for user ${userId} (${profileData.signatureType || 'TYPOGRAPHIC'})`,
+          timestamp: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          date: new Date().toISOString(),
+          category: 'SYSTEM'
+        }, ...(state.actionLog || [])]
+      };
+    });
+
+    if (profileData?.signatureImage) {
+      const sigKey = `user_sig_${userId}`;
+      saveFile(sigKey, profileData.signatureImage).catch(err => console.error('Failed to persist signature to IndexedDB:', err));
+    }
+    const cleanUsers = (finalUsersList || []).map(u => ({ ...u, signatureImage: null }));
+    saveFile('master_users_persistent_data', cleanUsers).catch(err => console.error('Failed to sync masterUsers list:', err));
+  },
+
+  // 1. Action บันทึกลายเซ็นผู้ใช้ พร้อม Sync ลง IndexedDB ถาวร (Blueprint A)
+  updateUserSignature: async (userId, signatureDataUrl) => {
+    // บันทึกภาพ Base64 ลง IndexedDB ทันที
+    const sigKey = `user_sig_${userId}`;
+    try {
+      await saveFile(sigKey, signatureDataUrl);
+    } catch (e) {
+      console.error('Failed to persist signature to IndexedDB:', e);
+    }
+
+    // อัปเดต State ภายใน Store
+    const updatedUsers = (get().masterUsers || []).map(user => {
+      if (user.id === userId || user.userId === userId) {
         return {
-          ...u,
-          ...profileData,
-          hasRegisteredSignature: true,
+          ...user,
+          signatureImage: signatureDataUrl,
+          hasSignature: Boolean(signatureDataUrl),
+          hasRegisteredSignature: Boolean(signatureDataUrl),
+          updatedAt: new Date().toISOString(),
           lastSignatureUpdatedAt: new Date().toISOString()
         };
       }
-      return u;
+      return user;
     });
 
-    return {
+    const userRoleObj = (u) => ({
+      id: u.id,
+      empId: u.empId || u.id,
+      name: u.name,
+      depts: u.affiliated_departments || u.depts,
+      affiliated_departments: u.affiliated_departments || u.depts,
+      department: u.primary_department || u.department,
+      primary_department: u.primary_department || u.department,
+      level: u.approval_level || u.level,
+      approval_level: u.approval_level || u.level,
+      signatureImage: u.signatureImage
+    });
+
+    const currentUser = get().currentUser;
+    const updatedCurrentUser = (currentUser?.id === userId || currentUser?.userId === userId)
+      ? { ...currentUser, signatureImage: signatureDataUrl, hasSignature: Boolean(signatureDataUrl), hasRegisteredSignature: Boolean(signatureDataUrl) }
+      : currentUser;
+
+    set({
       masterUsers: updatedUsers,
-      actionLog: [{
-        id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        actionType: 'MASTER_USER_SIGNATURE_UPDATED',
-        action: 'อัปเดตโปรไฟล์ลายเซ็นดิจิทัล',
-        actor: state.currentUser?.name || 'DCC Officer',
-        user: state.currentUser?.name || 'DCC Officer',
-        details: `Updated digital signature profile for user ${userId} (${profileData.signatureType || 'TYPOGRAPHIC'})`,
-        timestamp: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        date: new Date().toISOString(),
-        category: 'SYSTEM'
-      }, ...(state.actionLog || [])]
-    };
-  }),
+      currentUser: updatedCurrentUser,
+      requestUsers: updatedUsers.map(userRoleObj),
+      reviewUsers: updatedUsers.map(userRoleObj),
+      approveUsers: updatedUsers.map(userRoleObj)
+    });
+
+    // บันทึก MasterUsers Array ล่าสุดลง IndexedDB (ตัดก้อน base64 ออก เพื่อรักษา metadata)
+    try {
+      const cleanUsers = updatedUsers.map(u => ({
+        ...u,
+        signatureImage: null // ป้องกันข้อมูลบวม ให้ดึงจาก user_sig_${userId} แยกต่างหาก
+      }));
+      await saveFile('master_users_persistent_data', cleanUsers);
+    } catch (e) {
+      console.error('Failed to sync masterUsers list:', e);
+    }
+  },
+
+  // 3. ฟังก์ชัน Hydrate ประกอบร่างข้อมูลตอนเปิดเว็บ/Refresh (Blueprint A)
+  hydrateMasterData: async () => {
+    try {
+      // 3.1 ดึงรายชื่อ MasterUsers ล่าสุดจาก IndexedDB
+      const savedUsersRaw = await resolveRawFileBlob('master_users_persistent_data');
+      let savedUsers = savedUsersRaw;
+      if (typeof savedUsers === 'string') {
+        try {
+          savedUsers = JSON.parse(savedUsers);
+        } catch {
+          // not json string
+        }
+      }
+
+      let baseUsers = get().masterUsers || [];
+
+      if (savedUsers && Array.isArray(savedUsers) && savedUsers.length > 0) {
+        // Saved data from IndexedDB takes precedence to prevent seed overwrite
+        const savedMap = new Map();
+        savedUsers.forEach(u => {
+          const key = u.id || u.userId;
+          if (key) savedMap.set(key, u);
+        });
+
+        // Start with saved users, and append any unedited initial seed users if not already present
+        const mergedUsers = [...savedUsers];
+        (baseUsers || []).forEach(seedUser => {
+          const key = seedUser.id || seedUser.userId;
+          if (key && !savedMap.has(key)) {
+            mergedUsers.push(seedUser);
+          }
+        });
+        baseUsers = mergedUsers;
+      }
+
+      // 3.2 ดึงภาพลายเซ็นเฉพาะตัวของแต่ละ User จาก IndexedDB มาประกอบคืน
+      const hydratedUsers = await Promise.all(
+        baseUsers.map(async (user) => {
+          const userId = user.id || user.userId;
+          const sigKey = `user_sig_${userId}`;
+          let savedSig = await resolveRawFileBlob(sigKey);
+
+          if (typeof Blob !== 'undefined' && savedSig instanceof Blob) {
+            savedSig = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(savedSig);
+            });
+          }
+
+          const finalSig = savedSig || user.signatureImage || null;
+          return {
+            ...user,
+            signatureImage: finalSig,
+            hasSignature: Boolean(finalSig),
+            hasRegisteredSignature: Boolean(finalSig || user.hasRegisteredSignature)
+          };
+        })
+      );
+
+      const userRoleObj = (u) => ({
+        id: u.id,
+        empId: u.empId || u.id,
+        name: u.name,
+        depts: u.affiliated_departments || u.depts,
+        affiliated_departments: u.affiliated_departments || u.depts,
+        department: u.primary_department || u.department,
+        primary_department: u.primary_department || u.department,
+        level: u.approval_level || u.level,
+        approval_level: u.approval_level || u.level,
+        signatureImage: u.signatureImage
+      });
+
+      const current = get().currentUser;
+      const updatedCurrentUser = current 
+        ? (hydratedUsers.find(u => u.id === current.id || u.userId === current.id) 
+            ? { ...current, ...(hydratedUsers.find(u => u.id === current.id || u.userId === current.id) || {}) } 
+            : current)
+        : current;
+
+      set({
+        masterUsers: hydratedUsers,
+        currentUser: updatedCurrentUser,
+        requestUsers: hydratedUsers.map(userRoleObj),
+        reviewUsers: hydratedUsers.map(userRoleObj),
+        approveUsers: hydratedUsers.map(userRoleObj),
+        isHydrated: true
+      });
+
+      // Seed protection: If no savedUsers existed yet in IndexedDB, persist baseline
+      if (!savedUsers || !Array.isArray(savedUsers) || savedUsers.length === 0) {
+        const cleanUsers = hydratedUsers.map(u => ({ ...u, signatureImage: null }));
+        await saveFile('master_users_persistent_data', cleanUsers);
+      }
+
+      console.log('✅ Master data & signatures hydrated successfully from IndexedDB');
+    } catch (error) {
+      console.error('Error hydrating master data from IndexedDB:', error);
+      set({ isHydrated: true });
+    }
+  },
 
   // --- 2. Department Management Actions ---
   addDepartment: (deptData) => {
@@ -11959,6 +12286,11 @@ const useStore = create(persist((set, get) => ({
     return persistedState;
   },
   onRehydrateStorage: () => (state) => {
+    // 0. Master Data & Signature Asset Hydration Lifecycle from IndexedDB
+    if (state && typeof state.hydrateMasterData === 'function') {
+      state.hydrateMasterData();
+    }
+
     // Auto-Healing Migration for currentUser on app boot
     if (state && state.currentUser) {
       const cu = state.currentUser;
@@ -12116,10 +12448,22 @@ const useStore = create(persist((set, get) => ({
   },
   partialize: (state) => ({
     currentUser: state.currentUser,
-    masterUsers: state.masterUsers,
-    requestUsers: state.requestUsers,
-    reviewUsers: state.reviewUsers,
-    approveUsers: state.approveUsers,
+    masterUsers: state.masterUsers?.map(u => ({
+      ...u,
+      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+    })),
+    requestUsers: state.requestUsers?.map(u => ({
+      ...u,
+      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+    })),
+    reviewUsers: state.reviewUsers?.map(u => ({
+      ...u,
+      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+    })),
+    approveUsers: state.approveUsers?.map(u => ({
+      ...u,
+      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+    })),
     masterDepartments: state.masterDepartments,
     departments: state.departments,
     documentTypes: state.documentTypes,
@@ -12128,10 +12472,31 @@ const useStore = create(persist((set, get) => ({
     slaSettings: state.slaSettings,
     approvalMatrix: state.approvalMatrix,
     approval_matrix: state.approval_matrix,
-    tasks: state.tasks,
+    tasks: state.tasks?.map(t => ({
+      ...t,
+      attachedFile: t.attachedFile ? {
+        name: t.attachedFile.name,
+        fileId: t.attachedFile.fileId,
+        size: t.attachedFile.size
+      } : null
+    })),
     notifications: state.notifications,
-    dars: state.dars,
-    darRequests: state.darRequests || state.dars,
+    dars: state.dars?.map(d => ({
+      ...d,
+      attachedFile: d.attachedFile ? {
+        name: d.attachedFile.name,
+        fileId: d.attachedFile.fileId,
+        size: d.attachedFile.size
+      } : null
+    })),
+    darRequests: (state.darRequests || state.dars)?.map(d => ({
+      ...d,
+      attachedFile: d.attachedFile ? {
+        name: d.attachedFile.name,
+        fileId: d.attachedFile.fileId,
+        size: d.attachedFile.size
+      } : null
+    })),
     timeline: state.timeline,
     documents: state.documents,
     masterDocuments: state.masterDocuments || state.documents,
@@ -12146,7 +12511,34 @@ const useStore = create(persist((set, get) => ({
     periodicReviewSchedules: state.periodicReviewSchedules,
     periodicReviewTasks: state.periodicReviewTasks,
     periodicReviewRecords: state.periodicReviewRecords
-  })
+  }),
+  storage: createJSONStorage(() => ({
+    getItem: (name) => {
+      return localStorage.getItem(name);
+    },
+    setItem: (name, value) => {
+      try {
+        localStorage.setItem(name, value);
+      } catch (error) {
+        if (error.name === 'QuotaExceededError' || error.code === 22) {
+          console.warn(`[Storage] LocalStorage quota exceeded on key "${name}". Running emergency purge.`);
+          
+          const keysToPurge = ['recent_preview_cache', 'temp_pdf_data', 'draft_backups'];
+          keysToPurge.forEach(k => localStorage.removeItem(k));
+
+          try {
+            const compactValue = typeof value === 'object' ? JSON.stringify({ id: value?.id }) : '';
+            localStorage.setItem(name, compactValue);
+          } catch (innerErr) {
+            console.error('[Storage] Safe fallback failed to write. Skipping storage operation.');
+          }
+        } else {
+          console.error('[Storage] LocalStorage error:', error);
+        }
+      }
+    },
+    removeItem: (name) => localStorage.removeItem(name),
+  }))
 }));
 
 // Auto-cleanup legacy local storage cache and heal stale tasks in storage

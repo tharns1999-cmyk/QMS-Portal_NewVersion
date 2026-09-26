@@ -70,6 +70,7 @@ const MasterDataHub = () => {
     resetUserPin,
     unlockUserAccount,
     updateUserSignatureProfile,
+    updateUserSignature,
     addDepartment,
     updateDepartment,
     toggleDepartmentStatus,
@@ -854,8 +855,8 @@ const MasterDataHub = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveSignatureProfile = (e) => {
-    e.preventDefault();
+  const handleSaveSignatureProfile = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedUserForSignature) return;
 
     try {
@@ -867,6 +868,12 @@ const MasterDataHub = () => {
         );
       }
 
+      // 1. Direct persistence to IndexedDB
+      if (finalSigImage && typeof updateUserSignature === 'function') {
+        await updateUserSignature(selectedUserForSignature.id, finalSigImage);
+      }
+
+      // 2. Sync user signature profile metadata
       updateUserSignatureProfile(selectedUserForSignature.id, {
         ...signatureFormData,
         signatureImage: finalSigImage || signatureFormData.signatureImage,
