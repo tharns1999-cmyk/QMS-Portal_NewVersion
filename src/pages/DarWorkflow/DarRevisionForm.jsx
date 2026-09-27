@@ -77,16 +77,6 @@ const DarRevisionForm = () => {
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSlaPriorityChange = (newPriority) => {
-    const isFast = newPriority === 'FAST_TRACK';
-    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
-    setFormData(prev => ({
-      ...prev,
-      slaPriority: newPriority,
-      isFastTrack: isFast,
-      dueDate: computedDueDate
-    }));
-  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
@@ -747,8 +737,7 @@ const DarRevisionForm = () => {
     if (!formData.docId) newErrors.docId = 'กรุณาเลือกเอกสารที่ต้องการแก้ไข';
     if (!formData.title) newErrors.title = 'กรุณาระบุชื่อเอกสารใหม่ (หรือใช้ชื่อเดิม)';
     if (!formData.changeSummary) newErrors.changeSummary = 'กรุณาสรุปการเปลี่ยนแปลง';
-    if (!formData.changeReason) newErrors.changeReason = 'กรุณาเลือกเหตุผลที่แก้ไข';
-    if (formData.changeReason === 'OTHER' && !formData.otherReason) newErrors.otherReason = 'กรุณาระบุเหตุผลอื่นๆ';
+    if (!formData.changeReason?.trim() && !formData.reason?.trim()) newErrors.changeReason = 'กรุณาระบุเหตุผลที่ร้องขอ';
 
     if (formData.relatedStandards?.includes('อื่น ๆ (Others)') && !formData.otherStandardDetail?.trim()) {
       newErrors.otherStandardDetail = 'กรุณาระบุมาตรฐานอื่นๆ';
@@ -792,10 +781,11 @@ const DarRevisionForm = () => {
       changeSummary: formData.changeSummary,
       change_summary: formData.changeSummary,
       reasonDetails: formData.changeSummary,
-      changeReason: formData.changeReason,
-      change_reason: formData.changeReason,
-      reasonCategory: formData.changeReason,
-      otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
+      changeReason: formData.changeReason || formData.reason || '',
+      change_reason: formData.changeReason || formData.reason || '',
+      reason: formData.changeReason || formData.reason || '',
+      requestReason: formData.changeReason || formData.reason || '',
+      reasonCategory: formData.changeReason || formData.reason || '',
       confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
       confidentiality: formData.confidentialityLevel || 'INTERNAL',
       slaPriority: formData.slaPriority || 'NORMAL',
@@ -906,10 +896,11 @@ const DarRevisionForm = () => {
         submittedAt: new Date().toISOString(),
         changeSummary: formData.changeSummary || '',
         change_summary: formData.changeSummary || '',
-        changeReason: formData.changeReason || '',
-        change_reason: formData.changeReason || '',
-        reasonCategory: formData.changeReason || '',
-        otherReason: formData.changeReason === 'OTHER' ? formData.otherReason : undefined,
+        changeReason: formData.changeReason || formData.reason || '',
+        change_reason: formData.changeReason || formData.reason || '',
+        reason: formData.changeReason || formData.reason || '',
+        requestReason: formData.changeReason || formData.reason || '',
+        reasonCategory: formData.changeReason || formData.reason || '',
         confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
         confidentiality: formData.confidentialityLevel || 'INTERNAL',
         slaPriority: formData.slaPriority || 'NORMAL',
@@ -1191,53 +1182,7 @@ const DarRevisionForm = () => {
                 </div>
               </div>
 
-              {/* 5. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-rev-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ระดับชั้นความลับ (Confidentiality)
-                </label>
-                <select
-                  id="dar-rev-confidentiality-level"
-                  value={formData.confidentialityLevel || 'INTERNAL'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
-                >
-                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
-                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
-                  ))}
-                </select>
-              </div>
 
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-rev-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ความเร่งด่วน (SLA Policy)
-                </label>
-                <select
-                  id="dar-rev-sla-priority"
-                  value={formData.slaPriority || 'NORMAL'}
-                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
-                >
-                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
-                    <option key={sla.id} value={sla.id}>
-                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-rev-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  วันครบกำหนดตาม SLA (Due Date)
-                </label>
-                <input
-                  type="date"
-                  id="dar-rev-due-date"
-                  value={formData.dueDate || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
-                />
-              </div>
 
             </div>
 
@@ -1329,33 +1274,22 @@ const DarRevisionForm = () => {
                 {/* 1. เหตุผลการขอแก้ไข */}
                 <div>
                   <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                    เหตุผลการขอแก้ไข (Reason for Change) <span className="text-[#EF4444]">*</span>
+                    เหตุผลในการร้องขอ <span className="text-[#EF4444]">*</span>
                   </label>
-                  <select
-                    value={formData.changeReason}
-                    onChange={(e) => setFormData(prev => ({ ...prev, changeReason: e.target.value }))}
-                    className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.changeReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                  >
-                    <option value="">-- เลือกเหตุผลการแก้ไข (ISO 9001) --</option>
-                    {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('REVISE')).map(r => (
-                      <option key={r.id} value={r.id}>{r.labelTh} ({r.id})</option>
-                    ))}
-                    <option value="OTHER">อื่น ๆ (Other)</option>
-                  </select>
+                  <textarea
+                    rows={3}
+                    required
+                    value={formData.changeReason || formData.reason || ''}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      changeReason: e.target.value,
+                      reason: e.target.value,
+                      requestReason: e.target.value
+                    }))}
+                    placeholder="ระบุวัตถุประสงค์และเหตุผลในการขอดำเนินการ..."
+                    className={`w-full px-3.5 py-2.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.changeReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                  />
                   {errors.changeReason && <p className="text-rose-500 text-xs mt-1">{errors.changeReason}</p>}
-
-                  {formData.changeReason === 'OTHER' && (
-                    <div className="mt-2.5">
-                      <input
-                        type="text"
-                        value={formData.otherReason}
-                        onChange={(e) => setFormData(prev => ({ ...prev, otherReason: e.target.value }))}
-                        className={`w-full h-10 px-3.5 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] ${errors.otherReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                        placeholder="ระบุเหตุผลความจำเป็น..."
-                      />
-                      {errors.otherReason && <p className="text-rose-500 text-xs mt-1">{errors.otherReason}</p>}
-                    </div>
-                  )}
                 </div>
 
                 {/* 2. สรุปรายละเอียดการเปลี่ยนแปลง */}
@@ -1797,7 +1731,7 @@ const DarRevisionForm = () => {
                 label: 'เหตุผลการร้องขอแก้ไข',
                 value: (
                   <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.changeReason === 'OTHER' ? `อื่นๆ: ${formData.otherReason || '-'}` : (formData.changeReason || '-')}
+                    {formData.reason || formData.changeReason || '-'}
                   </div>
                 )
               },

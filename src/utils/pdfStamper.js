@@ -744,7 +744,26 @@ export const generateUncontrolledWatermarkImage = async (metadata) => {
  * @param {string} subText - Secondary subtitle text
  * @param {Object} [options={}] - Custom options (font, opacity, color)
  */
-export const drawIsoDiagonalWatermark = (page, text = 'UNCONTROLLED COPY', subText = '(สำเนาไม่ควบคุม)', options = {}) => {
+export const drawIsoDiagonalWatermark = (pageOrBytes, text = 'UNCONTROLLED COPY', subText = '(สำเนาไม่ควบคุม)', options = {}) => {
+  if (!pageOrBytes) return pageOrBytes;
+
+  // Support polymorphic invocation: If passed a PDF document / bytes / ArrayBuffer / Blob instead of a single page
+  if (typeof pageOrBytes.getSize !== 'function') {
+    return (async () => {
+      let rawBytes = pageOrBytes;
+      if (typeof Blob !== 'undefined' && rawBytes instanceof Blob) {
+        rawBytes = await rawBytes.arrayBuffer();
+      }
+      const pdfDoc = await PDFDocument.load(rawBytes);
+      const pages = pdfDoc.getPages();
+      for (const p of pages) {
+        drawIsoDiagonalWatermark(p, text, subText, options);
+      }
+      return await pdfDoc.save();
+    })();
+  }
+
+  const page = pageOrBytes;
   const { width, height } = page.getSize();
   
   // คำนวณขนาดฟอนต์ให้ได้สัดส่วนกับหน้ากระดาษจริงเสมอ

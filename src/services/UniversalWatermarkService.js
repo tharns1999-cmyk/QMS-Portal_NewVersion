@@ -19,8 +19,16 @@ import { cleanLocationName } from './MasterDataService';
 import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf, drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
 import { getFile, resolveFileBlob } from '../utils/fileStorage';
 import { generateQmsDownloadName } from '../utils/documentNamingHelper';
+import { WATERMARK_CONFIG } from '../config/qmsRegistry';
+import { drawStandardIsoWatermark, generateWatermarkCanvas, applyCanvasWatermarkToPdf } from './watermarkEngine';
 
-export { drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp };
+export {
+  drawIsoDiagonalWatermark,
+  applyProgressiveSignatoryStamp,
+  drawStandardIsoWatermark,
+  generateWatermarkCanvas,
+  applyCanvasWatermarkToPdf
+};
 
 export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
@@ -161,9 +169,101 @@ export const WATERMARK_PRESETS = {
   }
 };
 
+/**
+ * Sequential Stamping Pipeline for Master PDF Download:
+ * Step 1 (Signatures Burn-in): If document is approved (ACTIVE, APPROVED, EFFECTIVE, stage === 'MASTER'),
+ * resolve signatories from dar.workflowSteps / masterDoc.signatories and call applyProgressiveSignatoryStamp.
+ * Step 2 (Watermark Layer): Stamp large diagonal watermark (e.g. UNCONTROLLED COPY ~50pt) using drawIsoDiagonalWatermark.
+ * Step 3: Returns the finalized PDF bytes.
+ */
+export const prepareMasterPdfForDownload = async ({ document: docInput, dar, masterUsers, watermarkType = 'UNCONTROLLED' }) => {
+  const document = docInput || {};
+
+  // 1. ดึงข้อมูลไบนารีดั้งเดิมของ PDF
+  let pdfBytes = document.fileData || document.originalPdfBytes || document.fileBlob || document.file;
+  if (!pdfBytes) {
+    const fallbackKey = document.fileId || document.file_id || document.id || document.docCode || document.document_code || dar?.id;
+    const resolvedBlob = await resolveFileBlob(document, fallbackKey);
+    if (resolvedBlob) {
+      pdfBytes = await resolvedBlob.arrayBuffer();
+    }
+  }
+  if (typeof Blob !== 'undefined' && pdfBytes instanceof Blob) {
+    pdfBytes = await pdfBytes.arrayBuffer();
+  }
+
+  if (!pdfBytes) {
+    throw new Error('ไม่พบข้อมูลไฟล์ PDF สำหรับเตรียมดาวน์โหลด');
+  }
+
+  // 2. ตรวจสอบและประทับตารางลายเซ็น 3x3 หากเป็นเอกสารที่ผ่านการอนุมัติแล้ว
+  const statusUpper = String(document.status || dar?.status || 'ACTIVE').toUpperCase();
+  const isApproved = ['ACTIVE', 'APPROVED', 'EFFECTIVE'].includes(statusUpper) || 
+                     dar?.status === 'APPROVED' || 
+                     document.stage === 'MASTER' || 
+                     dar?.stage === 'MASTER';
+
+  const docCode = document.document_code || document.doc_code || document.docCode || document.edCode || document.title || '';
+  const isInternal = !document.isExternal && document.docType !== 'ED' && !String(docCode).startsWith('ED-') && !String(docCode).startsWith('EXT-');
+
+  if (isApproved && isInternal) {
+    let resolvedMasterUsers = masterUsers;
+    let resolvedUsers = [];
+    let resolvedDar = dar;
+
+    if (!resolvedMasterUsers || resolvedMasterUsers.length === 0 || !resolvedDar) {
+      try {
+        const { default: useStore } = await import('../store/useStore');
+        const store = useStore.getState();
+        if (store) {
+          if (!resolvedMasterUsers) resolvedMasterUsers = store.masterUsers || [];
+          resolvedUsers = store.users || [];
+          if (!resolvedDar && store.dars) {
+            resolvedDar = store.dars.find(d => 
+              d.id === document.darId || 
+              d.darNumber === document.darNumber || 
+              d.docNo === docCode || 
+              d.docCode === docCode ||
+              d.title === document.title
+            );
+          }
+        }
+      } catch {}
+    }
+
+    const { resolveProgressiveSignatories } = await import('../utils/signatoryResolver');
+    const signatories = resolveProgressiveSignatories({
+      dar: resolvedDar || document,
+      masterDoc: document,
+      stage: 'MASTER',
+      masterUsers: resolvedMasterUsers || [],
+      users: resolvedUsers || []
+    });
+
+    // ประทับตรายางตาราง 3x3 (ผู้จัดทำ, ผู้ทบทวน, ผู้อนุมัติ) ถาวร
+    pdfBytes = await applyProgressiveSignatoryStamp(pdfBytes, signatories);
+  }
+
+  // 3. ประทับลายน้ำตามมาตรฐาน ISO (True Geometric Centering Watermark Engine)
+  const normWatermark = String(watermarkType || 'UNCONTROLLED').toUpperCase();
+  if (normWatermark !== 'NONE' && normWatermark !== 'CLEAN') {
+    pdfBytes = await drawStandardIsoWatermark(pdfBytes, normWatermark, {
+      ...document,
+      docCode,
+      status: statusUpper
+    });
+  }
+
+  return pdfBytes;
+};
+
 export class UniversalWatermarkService {
+  static drawStandardIsoWatermark = drawStandardIsoWatermark;
+  static generateWatermarkCanvas = generateWatermarkCanvas;
+  static applyCanvasWatermarkToPdf = applyCanvasWatermarkToPdf;
   static drawIsoDiagonalWatermark = drawIsoDiagonalWatermark;
   static applyProgressiveSignatoryStamp = applyProgressiveSignatoryStamp;
+  static prepareMasterPdfForDownload = prepareMasterPdfForDownload;
 
   /**
    * Cached custom font buffer for Thai support
@@ -844,8 +944,21 @@ export class UniversalWatermarkService {
     try {
       if (doc instanceof ArrayBuffer) rawPdfBytes = doc;
       else if (doc instanceof Uint8Array) rawPdfBytes = doc.buffer;
+      else if (typeof Blob !== 'undefined' && doc instanceof Blob) rawPdfBytes = await doc.arrayBuffer();
       else if (meta instanceof ArrayBuffer) rawPdfBytes = meta;
       else if (meta instanceof Uint8Array) rawPdfBytes = meta.buffer;
+      else if (typeof Blob !== 'undefined' && meta instanceof Blob) rawPdfBytes = await meta.arrayBuffer();
+      else if (doc?.fileBlob && typeof doc.fileBlob.arrayBuffer === 'function') rawPdfBytes = await doc.fileBlob.arrayBuffer();
+      else if (doc?.fileData instanceof ArrayBuffer) rawPdfBytes = doc.fileData;
+      else if (doc?.fileData instanceof Uint8Array) rawPdfBytes = doc.fileData.buffer;
+      else if (doc?.fileData && typeof doc.fileData.arrayBuffer === 'function') rawPdfBytes = await doc.fileData.arrayBuffer();
+      else if (doc?.originalPdfBytes instanceof ArrayBuffer) rawPdfBytes = doc.originalPdfBytes;
+      else if (doc?.originalPdfBytes instanceof Uint8Array) rawPdfBytes = doc.originalPdfBytes.buffer;
+      else if (doc?.file && typeof doc.file.arrayBuffer === 'function') rawPdfBytes = await doc.file.arrayBuffer();
+      else if (meta?.fileBlob && typeof meta.fileBlob.arrayBuffer === 'function') rawPdfBytes = await meta.fileBlob.arrayBuffer();
+      else if (meta?.fileData instanceof ArrayBuffer) rawPdfBytes = meta.fileData;
+      else if (meta?.fileData instanceof Uint8Array) rawPdfBytes = meta.fileData.buffer;
+      else if (meta?.fileData && typeof meta.fileData.arrayBuffer === 'function') rawPdfBytes = await meta.fileData.arrayBuffer();
 
       if (!rawPdfBytes) {
         const merged = { ...meta, ...doc };
@@ -938,7 +1051,53 @@ export class UniversalWatermarkService {
    * Reserved for Active Forms / Templates (Bypass) and DCC Admin / Master Custodian (ISO 9001 Clause 7.5.3)
    */
   static async downloadCleanPdf(doc, meta = {}, openInTab = false) {
-    const rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
+    let rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
+
+    const isForm = this.isBlankFormBypass({ ...doc, ...meta });
+    const statusUpper = String(doc.status || meta.status || 'ACTIVE').toUpperCase();
+    const isMasterDoc = statusUpper === 'ACTIVE' || statusUpper === 'EFFECTIVE' || statusUpper === 'APPROVED' || doc.stage === 'MASTER' || meta.stage === 'MASTER';
+    const docCode = doc.document_code || doc.doc_code || doc.edCode || doc.title || meta.docCode || 'DOCUMENT';
+    const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
+    const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(docCode).startsWith('ED-') && !String(docCode).startsWith('EXT-');
+
+    if (!isForm && isMasterDoc && isInternal) {
+      try {
+        const { resolveProgressiveSignatories } = await import('../utils/signatoryResolver');
+        let relatedDar = doc.dar;
+        let masterUsers = [];
+        let users = [];
+        try {
+          const { default: useStore } = await import('../store/useStore');
+          const store = useStore.getState();
+          if (store) {
+            masterUsers = store.masterUsers || [];
+            users = store.users || [];
+            if (!relatedDar && store.dars) {
+              relatedDar = store.dars.find(d => 
+                d.id === doc.darId || 
+                d.darNumber === doc.darNumber || 
+                d.docNo === docCode || 
+                d.docCode === docCode ||
+                d.title === docTitle
+              );
+            }
+          }
+        } catch {}
+
+        const signatories = resolveProgressiveSignatories({
+          dar: relatedDar || doc,
+          masterDoc: doc,
+          stage: 'MASTER',
+          masterUsers,
+          users,
+          currentUser: meta.currentUser || { name: meta.userName, department: meta.userDept }
+        });
+        rawPdfBytes = await applyProgressiveSignatoryStamp(rawPdfBytes, signatories);
+      } catch (err) {
+        console.warn('[UniversalWatermarkService] downloadCleanPdf stamping warning:', err);
+      }
+    }
+
     const blob = new Blob([rawPdfBytes], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
 
@@ -949,9 +1108,6 @@ export class UniversalWatermarkService {
 
     const link = document.createElement('a');
     link.href = url;
-    const docCode = doc.document_code || doc.doc_code || doc.edCode || doc.title || meta.docCode || 'DOCUMENT';
-    const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
-    const isForm = this.isBlankFormBypass({ ...doc, ...meta });
     const filename = meta.filename || generateQmsDownloadName({
       docCode,
       title: docTitle,
@@ -985,12 +1141,13 @@ export class UniversalWatermarkService {
 
     let rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
 
-    // Fallback Stamping on Download: If master document is ACTIVE, EFFECTIVE, or APPROVED, burn 3x3 table first
+    // Sequential Stamping Pipeline:
+    // Step 1 (Signatures Burn-in): If master document is ACTIVE, EFFECTIVE, APPROVED, or stage === 'MASTER'
     const statusUpper = String(doc.status || meta.status || 'ACTIVE').toUpperCase();
-    const isMasterDoc = statusUpper === 'ACTIVE' || statusUpper === 'EFFECTIVE' || statusUpper === 'APPROVED';
+    const isMasterDoc = statusUpper === 'ACTIVE' || statusUpper === 'EFFECTIVE' || statusUpper === 'APPROVED' || doc.stage === 'MASTER' || meta.stage === 'MASTER';
     const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(docCode).startsWith('ED-') && !String(docCode).startsWith('EXT-');
 
-    if (isMasterDoc && isInternal && !doc.isSignatoryStamped) {
+    if (isMasterDoc && isInternal) {
       try {
         const { resolveProgressiveSignatories } = await import('../utils/signatoryResolver');
         let relatedDar = doc.dar;
@@ -1015,7 +1172,7 @@ export class UniversalWatermarkService {
         } catch {}
 
         const signatories = resolveProgressiveSignatories({
-          dar: relatedDar,
+          dar: relatedDar || doc,
           masterDoc: doc,
           stage: 'MASTER',
           masterUsers,
@@ -1028,7 +1185,7 @@ export class UniversalWatermarkService {
       }
     }
 
-    const watermarkedBytes = await this.stampPdf(rawPdfBytes, watermarkType, {
+    const watermarkedBytes = await drawStandardIsoWatermark(rawPdfBytes, watermarkType, {
       ...doc,
       docCode,
       docTitle,

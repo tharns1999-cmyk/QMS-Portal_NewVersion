@@ -5186,8 +5186,20 @@ const useStore = create(persist((set, get) => ({
     if (!dar) return;
 
     try {
+      const targetDocCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.title;
+      const targetDocId = dar.docIdRef || dar.docId || dar.doc_id;
+
       const activeFileId = dar.fileId || dar.file_id || dar.attachedFile?.fileId || dar.attachedFile?.id || dar.id;
-      const rawBlob = await resolveFileBlob(dar, activeFileId);
+      let rawBlob = dar.fileData || dar.originalPdfBytes || dar.fileBlob;
+      if (!rawBlob) {
+        rawBlob = await resolveFileBlob(dar, activeFileId);
+      }
+      if (!rawBlob) {
+        try {
+          const { getSystemSampleDocumentBlob } = await import('../utils/pdfStamper');
+          rawBlob = getSystemSampleDocumentBlob(targetDocCode || 'SOP-QC-002', dar.title || 'Standard Operating Procedure');
+        } catch {}
+      }
       if (!rawBlob) return;
 
       const signatories = resolveProgressiveSignatories({
@@ -5204,21 +5216,44 @@ const useStore = create(persist((set, get) => ({
       );
       const stampedBlob = new Blob([permanentlyStampedPdfBytes], { type: 'application/pdf' });
 
-      const targetDocCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.title;
-      const targetDocId = dar.docIdRef || dar.docId || dar.doc_id;
       const nowIso = new Date().toISOString();
-
       const stampedBlobUrl = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL.createObjectURL(stampedBlob) : null;
 
-      if (activeFileId) await saveFile(activeFileId, stampedBlob).catch(() => {});
-      if (targetDocCode) await saveFile(targetDocCode, stampedBlob).catch(() => {});
-      if (targetDocId) await saveFile(targetDocId, stampedBlob).catch(() => {});
-      if (dar.id) await saveFile(dar.id, stampedBlob).catch(() => {});
+      // Collect all keys to persist into IndexedDB
+      const keysToSave = new Set();
+      if (activeFileId) keysToSave.add(activeFileId);
+      if (targetDocCode) keysToSave.add(targetDocCode);
+      if (targetDocId) keysToSave.add(targetDocId);
+      if (dar.id) keysToSave.add(dar.id);
+      if (dar.darNo) keysToSave.add(dar.darNo);
+      if (dar.darNumber) keysToSave.add(dar.darNumber);
+
+      const allExistingDocs = [...(state.documents || []), ...(state.masterDocuments || [])];
+      for (const d of allExistingDocs) {
+        const isMatch = (targetDocId && String(d.id) === String(targetDocId)) ||
+                        (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode)) ||
+                        (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
+                        (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo));
+        if (isMatch) {
+          if (d.id) keysToSave.add(d.id);
+          if (d.fileId) keysToSave.add(d.fileId);
+          if (d.document_code) keysToSave.add(d.document_code);
+          if (d.code) keysToSave.add(d.code);
+          if (d.docNo) keysToSave.add(d.docNo);
+          if (d.docCode) keysToSave.add(d.docCode);
+        }
+      }
+
+      for (const key of keysToSave) {
+        if (key) {
+          await saveFile(key, stampedBlob).catch(() => {});
+        }
+      }
 
       set(s => {
         const mapDoc = (d) => {
           const isMatch = (targetDocId && String(d.id) === String(targetDocId)) ||
-                          (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode)) ||
+                          (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode)) ||
                           (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
                           (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo));
           if (isMatch) {
@@ -5238,7 +5273,7 @@ const useStore = create(persist((set, get) => ({
         const updatedDocs = (s.documents || []).map(mapDoc);
         const updatedMasterDocs = (s.masterDocuments || []).map(mapDoc);
 
-        const updatedDars = (s.dars || []).map(d => d.id === dar.id ? {
+        const updatedDars = (s.dars || []).map(d => (d.id === dar.id || d.darNo === dar.darNo) ? {
           ...d,
           fileData: permanentlyStampedPdfBytes,
           fileBlob: stampedBlob,

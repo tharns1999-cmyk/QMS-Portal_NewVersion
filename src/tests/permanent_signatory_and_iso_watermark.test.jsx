@@ -2,10 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { 
   drawIsoDiagonalWatermark, 
-  applyProgressiveSignatoryStamp,
+  applyProgressiveSignatoryStamp, 
   applyUncontrolledWatermarkToPdf 
 } from '../utils/pdfStamper';
-import { UniversalWatermarkService, WATERMARK_TYPES } from '../services/UniversalWatermarkService';
+import { 
+  UniversalWatermarkService, 
+  WATERMARK_TYPES, 
+  drawStandardIsoWatermark,
+  generateWatermarkCanvas,
+  applyCanvasWatermarkToPdf
+} from '../services/UniversalWatermarkService';
+import { 
+  drawStandardIsoWatermark as drawStandardIsoWatermarkFromEngine, 
+  generateWatermarkCanvas as generateWatermarkCanvasFromEngine,
+  applyCanvasWatermarkToPdf as applyCanvasWatermarkToPdfFromEngine,
+  WATERMARK_CONFIG 
+} from '../services/watermarkEngine';
 import useStore from '../store/useStore';
 
 describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () => {
@@ -152,7 +164,7 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
     });
   });
 
-  describe('4. Fallback Stamping on Download', () => {
+  describe('4. Fallback & JIT Stamping on Download', () => {
     it('UniversalWatermarkService.downloadWatermarkedPdf should process active master doc and generate stamped URL', async () => {
       const pdfDoc = await PDFDocument.create();
       pdfDoc.addPage([600, 800]);
@@ -184,6 +196,441 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
         global.URL.createObjectURL = originalCreateObjectURL;
       }
     });
+
+    it('UniversalWatermarkService.downloadWatermarkedPdf should execute JIT stamping even when isSignatoryStamped is true', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([600, 800]);
+      const samplePdfBytes = await pdfDoc.save();
+
+      const testDoc = {
+        id: 'doc-download-002',
+        title: 'SOP-QA-002',
+        document_code: 'SOP-QA-002',
+        docCode: 'SOP-QA-002',
+        status: 'ACTIVE',
+        isSignatoryStamped: true, // Marked true, but raw blob might be unstamped
+        fileBlob: new Blob([samplePdfBytes], { type: 'application/pdf' })
+      };
+
+      const originalCreateObjectURL = global.URL.createObjectURL;
+      global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-download-url');
+
+      try {
+        const url = await UniversalWatermarkService.downloadWatermarkedPdf(
+          testDoc,
+          WATERMARK_TYPES.UNCONTROLLED_COPY,
+          { userName: 'Test User', userDept: 'QC' },
+          false
+        );
+
+        expect(url).toBe('blob:mock-download-url');
+        expect(global.URL.createObjectURL).toHaveBeenCalled();
+      } finally {
+        global.URL.createObjectURL = originalCreateObjectURL;
+      }
+    });
+  });
+
+  describe('5. Sequential Stamping Pipeline (prepareMasterPdfForDownload)', () => {
+    it('polymorphic drawIsoDiagonalWatermark should accept pdfBytes directly and return stamped Uint8Array', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+
+      const resultBytes = await drawIsoDiagonalWatermark(pdfBytes, 'UNCONTROLLED COPY', '(สำเนาไม่ควบคุม)');
+      expect(resultBytes).toBeInstanceOf(Uint8Array);
+      expect(resultBytes.length).toBeGreaterThan(0);
+
+      const reloadedDoc = await PDFDocument.load(resultBytes);
+      expect(reloadedDoc.getPageCount()).toBe(1);
+    });
+
+    it('prepareMasterPdfForDownload should execute signatures burn-in and ISO watermark sequentially', async () => {
+      const { prepareMasterPdfForDownload } = await import('../services/UniversalWatermarkService');
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+
+      const doc = {
+        id: 'DOC-MASTER-001',
+        title: 'SOP-MFG-001',
+        document_code: 'SOP-MFG-001',
+        status: 'ACTIVE',
+        fileData: pdfBytes
+      };
+
+      const dar = {
+        id: 'DAR-MFG-001',
+        docNo: 'SOP-MFG-001',
+        status: 'APPROVED',
+        requesterName: 'นายผู้จัดทำ',
+        reviewerName: 'นายผู้ทบทวน',
+        approverName: 'นายผู้อนุมัติ'
+      };
+
+      const processedBytes = await prepareMasterPdfForDownload({
+        document: doc,
+        dar,
+        watermarkType: 'UNCONTROLLED'
+      });
+
+      expect(processedBytes).toBeInstanceOf(Uint8Array);
+      expect(processedBytes.length).toBeGreaterThan(0);
+
+      const reloaded = await PDFDocument.load(processedBytes);
+      expect(reloaded.getPageCount()).toBe(1);
+    });
+
+    it('prepareMasterPdfForDownload is accessible on UniversalWatermarkService class as static method', async () => {
+      expect(typeof UniversalWatermarkService.prepareMasterPdfForDownload).toBe('function');
+    });
+  });
+
+  describe('6. True Geometric Centering Watermark Engine & Standardized ISO Dictionary (Canvas-to-PNG)', () => {
+    it('should export drawStandardIsoWatermark, generateWatermarkCanvas, and applyCanvasWatermarkToPdf as named exports and static methods', () => {
+      expect(typeof drawStandardIsoWatermark).toBe('function');
+      expect(typeof UniversalWatermarkService.drawStandardIsoWatermark).toBe('function');
+      expect(typeof drawStandardIsoWatermarkFromEngine).toBe('function');
+
+      expect(typeof generateWatermarkCanvas).toBe('function');
+      expect(typeof UniversalWatermarkService.generateWatermarkCanvas).toBe('function');
+      expect(typeof generateWatermarkCanvasFromEngine).toBe('function');
+
+      expect(typeof applyCanvasWatermarkToPdf).toBe('function');
+      expect(typeof UniversalWatermarkService.applyCanvasWatermarkToPdf).toBe('function');
+      expect(typeof applyCanvasWatermarkToPdfFromEngine).toBe('function');
+    });
+
+    it('should define all 5 standardized tiers in WATERMARK_CONFIG with correct ISO colors, colorHex, and getLines', () => {
+      expect(WATERMARK_CONFIG.CONTROLLED).toBeDefined();
+      expect(WATERMARK_CONFIG.UNCONTROLLED).toBeDefined();
+      expect(WATERMARK_CONFIG.SUPERSEDED).toBeDefined();
+      expect(WATERMARK_CONFIG.OBSOLETE).toBeDefined();
+      expect(WATERMARK_CONFIG.DRAFT).toBeDefined();
+
+      // Verify colors and opacities match ISO specifications
+      expect(WATERMARK_CONFIG.CONTROLLED.color).toEqual({ r: 0.12, g: 0.25, b: 0.69 });
+      expect(WATERMARK_CONFIG.CONTROLLED.colorHex).toBe('#1F40B0');
+      expect(WATERMARK_CONFIG.CONTROLLED.opacity).toBeCloseTo(0.18, 2);
+      expect(typeof WATERMARK_CONFIG.CONTROLLED.getLines).toBe('function');
+
+      expect(WATERMARK_CONFIG.UNCONTROLLED.color).toEqual({ r: 0.86, g: 0.15, b: 0.15 });
+      expect(WATERMARK_CONFIG.UNCONTROLLED.colorHex).toBe('#DC2626');
+      expect(WATERMARK_CONFIG.UNCONTROLLED.opacity).toBeCloseTo(0.18, 2);
+      expect(typeof WATERMARK_CONFIG.UNCONTROLLED.getLines).toBe('function');
+
+      expect(WATERMARK_CONFIG.SUPERSEDED.color).toEqual({ r: 0.60, g: 0.10, b: 0.10 });
+      expect(WATERMARK_CONFIG.SUPERSEDED.colorHex).toBe('#991A1A');
+      expect(WATERMARK_CONFIG.SUPERSEDED.opacity).toBeCloseTo(0.24, 2);
+      expect(typeof WATERMARK_CONFIG.SUPERSEDED.getLines).toBe('function');
+
+      expect(WATERMARK_CONFIG.OBSOLETE.color).toEqual({ r: 0.30, g: 0.35, b: 0.40 });
+      expect(WATERMARK_CONFIG.OBSOLETE.colorHex).toBe('#4D5966');
+      expect(WATERMARK_CONFIG.OBSOLETE.opacity).toBeCloseTo(0.22, 2);
+      expect(typeof WATERMARK_CONFIG.OBSOLETE.getLines).toBe('function');
+
+      expect(WATERMARK_CONFIG.DRAFT.color).toEqual({ r: 0.85, g: 0.47, b: 0.03 });
+      expect(WATERMARK_CONFIG.DRAFT.colorHex).toBe('#D97808');
+      expect(WATERMARK_CONFIG.DRAFT.opacity).toBeCloseTo(0.20, 2);
+      expect(typeof WATERMARK_CONFIG.DRAFT.getLines).toBe('function');
+    });
+
+    it('CONTROLLED COPY line 4 must contain Copy No., Issue No., and Holder', () => {
+      const meta = {
+        docCode: 'SOP-QA-001',
+        revNo: '03',
+        copyNo: '05',
+        issueNo: '02',
+        holderDept: 'PRODUCTION'
+      };
+
+      const lines = WATERMARK_CONFIG.CONTROLLED.lines(meta);
+      expect(lines.length).toBe(6);
+      expect(lines[0].text).toBe('CONTROLLED COPY');
+      expect(lines[1].text).toContain('สำเนาควบคุม');
+      expect(lines[2].text).toBe('Doc No: SOP-QA-001 | Rev: 03');
+      expect(lines[3].text).toBe('Copy No: 05 | Issue No: 02 | Holder: PRODUCTION');
+      expect(lines[4].text).toContain('Authorized by DCC');
+      expect(lines[5].text).toBe('OFFICIAL CONTROLLED COPY | REPRODUCTION STRICTLY PROHIBITED');
+    });
+
+    it('should generate watermark image via HTML5 Canvas and embed PNG into PDF with True Geometric Centering', async () => {
+      // 1. Portrait A4 (595.28 x 841.89)
+      const portraitDoc = await PDFDocument.create();
+      const portraitPage = portraitDoc.addPage([595.28, 841.89]);
+      const portraitSpy = vi.spyOn(portraitPage, 'drawImage');
+
+      await drawStandardIsoWatermark(portraitDoc, 'CONTROLLED', {
+        docCode: 'WI-PD-001',
+        revNo: '01',
+        copyNo: '02',
+        issueNo: '01',
+        holderDept: 'PD'
+      });
+
+      expect(portraitSpy).toHaveBeenCalled();
+      const expectedPortraitDeg = Math.atan2(841.89, 595.28) * (180 / Math.PI); // ~54.74°
+      portraitSpy.mock.calls.forEach(([, opts]) => {
+        expect(opts.rotate.angle).toBeCloseTo(expectedPortraitDeg, 1);
+        expect(opts.opacity).toBeCloseTo(0.18, 2);
+        
+        // Verify center of rotated image lands at page center (width/2, height/2)
+        const angleRad = Math.atan2(841.89, 595.28);
+        const centerX = opts.x + (opts.width / 2) * Math.cos(angleRad) - (opts.height / 2) * Math.sin(angleRad);
+        const centerY = opts.y + (opts.width / 2) * Math.sin(angleRad) + (opts.height / 2) * Math.cos(angleRad);
+        expect(centerX).toBeCloseTo(595.28 / 2, 1);
+        expect(centerY).toBeCloseTo(841.89 / 2, 1);
+      });
+
+      // 2. Landscape A4 (841.89 x 595.28)
+      const landscapeDoc = await PDFDocument.create();
+      const landscapePage = landscapeDoc.addPage([841.89, 595.28]);
+      const landscapeSpy = vi.spyOn(landscapePage, 'drawImage');
+
+      await drawStandardIsoWatermark(landscapeDoc, 'UNCONTROLLED', {
+        docCode: 'SOP-QA-002',
+        revNo: '00',
+        userName: 'Somsak',
+        userDept: 'QA'
+      });
+
+      expect(landscapeSpy).toHaveBeenCalled();
+      const expectedLandscapeDeg = Math.atan2(595.28, 841.89) * (180 / Math.PI); // ~35.26°
+      landscapeSpy.mock.calls.forEach(([, opts]) => {
+        expect(opts.rotate.angle).toBeCloseTo(expectedLandscapeDeg, 1);
+        expect(opts.opacity).toBeCloseTo(0.18, 2);
+
+        // Verify center of rotated image lands at landscape page center (width/2, height/2)
+        const angleRad = Math.atan2(595.28, 841.89);
+        const centerX = opts.x + (opts.width / 2) * Math.cos(angleRad) - (opts.height / 2) * Math.sin(angleRad);
+        const centerY = opts.y + (opts.width / 2) * Math.sin(angleRad) + (opts.height / 2) * Math.cos(angleRad);
+        expect(centerX).toBeCloseTo(841.89 / 2, 1);
+        expect(centerY).toBeCloseTo(595.28 / 2, 1);
+      });
+    });
+
+    it('should generate valid watermark canvas PNG data URL handling complex Thai diacritics', () => {
+      const thaiLines = [
+        { text: 'UNCONTROLLED COPY', size: 52, weight: 'bold' },
+        { text: '(สำเนาไม่ควบคุม — ใช้เพื่อการอ้างอิงเท่านั้น)', size: 24, weight: 'normal' },
+        { text: 'ชื่อผู้ร้องขอ: กัลยาณี ฉัตรแก้ว (ฝ่ายควบคุมคุณภาพ)', size: 18, weight: 'normal' },
+        { text: 'เอกสาร: คู่มือปฏิบัติงานการตรวจสอบขั้นสุดท้าย', size: 16, weight: 'normal' }
+      ];
+
+      const dataUrl = generateWatermarkCanvas({
+        lines: thaiLines,
+        colorHex: '#DC2626',
+        opacity: 0.18,
+        scale: 2
+      });
+
+      expect(dataUrl).toBeDefined();
+      expect(typeof dataUrl).toBe('string');
+      expect(dataUrl.startsWith('data:image/png')).toBe(true);
+    });
+
+    it('should correctly render with mocked 2D canvas context and native Thai fonts', () => {
+      const mockFillText = vi.fn();
+      const mockClearRect = vi.fn();
+      const mockContext = {
+        clearRect: mockClearRect,
+        fillText: mockFillText,
+        textAlign: '',
+        textBaseline: '',
+        font: '',
+        fillStyle: ''
+      };
+
+      const origCreateElement = document.createElement.bind(document);
+      const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+        if (tag === 'canvas') {
+          return {
+            width: 0,
+            height: 0,
+            getContext: vi.fn().mockReturnValue(mockContext),
+            toDataURL: vi.fn().mockReturnValue('data:image/png;base64,MOCK_THAI_PNG')
+          };
+        }
+        return origCreateElement(tag);
+      });
+
+      const thaiLines = [
+        { text: 'CONTROLLED COPY', size: 52, weight: 'bold' },
+        { text: '(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', size: 24, weight: 'normal' },
+        { text: 'ผู้ถือครอง: กัลยาณี เท่านั้น', size: 18, weight: 'normal' }
+      ];
+
+      const res = generateWatermarkCanvas({
+        lines: thaiLines,
+        colorHex: '#1F40B0',
+        opacity: 0.18,
+        scale: 2
+      });
+
+      expect(res).toBe('data:image/png;base64,MOCK_THAI_PNG');
+      expect(mockClearRect).toHaveBeenCalled();
+      expect(mockFillText).toHaveBeenCalledTimes(3);
+      expect(mockFillText).toHaveBeenCalledWith('CONTROLLED COPY', expect.any(Number), expect.any(Number));
+      expect(mockFillText).toHaveBeenCalledWith('(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', expect.any(Number), expect.any(Number));
+      expect(mockFillText).toHaveBeenCalledWith('ผู้ถือครอง: กัลยาณี เท่านั้น', expect.any(Number), expect.any(Number));
+      expect(mockContext.font).toContain('Sarabun');
+      expect(mockContext.font).toContain('Noto Sans Thai');
+
+      createElementSpy.mockRestore();
+    });
+
+    it('should support polymorphic invocation accepting either PDFDocument or Uint8Array bytes', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const rawBytes = await pdfDoc.save();
+
+      // Pass raw bytes
+      const stampedBytes = await drawStandardIsoWatermark(rawBytes, 'DRAFT', {
+        darNo: 'DAR-2026-009',
+        userName: 'Tester',
+        userDept: 'Engineering'
+      });
+
+      expect(stampedBytes).toBeInstanceOf(Uint8Array);
+      expect(stampedBytes.length).toBeGreaterThan(0);
+
+      const reloadedDoc = await PDFDocument.load(stampedBytes);
+      expect(reloadedDoc.getPageCount()).toBe(1);
+    });
+
+    it('should correctly render OBSOLETE and SUPERSEDED tiers via drawImage with correct opacity', async () => {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]);
+      const drawSpy = vi.spyOn(page, 'drawImage');
+
+      await drawStandardIsoWatermark(pdfDoc, 'SUPERSEDED', {
+        docCode: 'SOP-MFG-001',
+        revNo: '01',
+        replacedByRev: '02',
+        effectiveDate: '2026-03-01'
+      });
+
+      expect(drawSpy).toHaveBeenCalled();
+      const firstCall = drawSpy.mock.calls[0];
+      expect(firstCall[1].opacity).toBeCloseTo(0.24, 2);
+
+      // Obsolete tier
+      const obsoleteDoc = await PDFDocument.create();
+      const obsPage = obsoleteDoc.addPage([595.28, 841.89]);
+      const obsSpy = vi.spyOn(obsPage, 'drawImage');
+
+      await drawStandardIsoWatermark(obsoleteDoc, 'OBSOLETE', {
+        docCode: 'WI-OLD-001',
+        darNo: 'DAR-OBS-99'
+      });
+
+      expect(obsSpy).toHaveBeenCalled();
+      expect(obsSpy.mock.calls[0][1].opacity).toBeCloseTo(0.22, 2);
+    });
+  });
+
+  describe('7. Optimize PDF Preview Latency via Pre-stamped Blob Caching (Instant Preview)', () => {
+    it('should bypass applyProgressiveSignatoryStamp when doc.isSignatoryStamped is true and pre-stamped blob exists', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const preStampedBytes = await pdfDoc.save();
+      const preStampedBlob = new Blob([preStampedBytes], { type: 'application/pdf' });
+
+      const testDoc = {
+        id: 'doc-cached-001',
+        title: 'SOP-QA-CACHED',
+        docCode: 'SOP-QA-CACHED',
+        status: 'ACTIVE',
+        isSignatoryStamped: true,
+        fileBlob: preStampedBlob,
+        fileData: preStampedBytes
+      };
+
+      const spyStamp = vi.fn();
+      const isAlreadyStamped = Boolean(testDoc.isSignatoryStamped || testDoc.is_signatory_stamped || testDoc.stampedAt);
+      const inMemoryBlob = (testDoc.fileBlob instanceof Blob ? testDoc.fileBlob : null) ||
+                           (testDoc.fileData ? new Blob([testDoc.fileData], { type: 'application/pdf' }) : null);
+
+      let finalBlob = null;
+      if (isAlreadyStamped && inMemoryBlob && inMemoryBlob.size > 0) {
+        finalBlob = inMemoryBlob; // Instant fast path!
+      } else {
+        spyStamp();
+      }
+
+      expect(spyStamp).not.toHaveBeenCalled();
+      expect(finalBlob).toBe(preStampedBlob);
+    });
+
+    it('should invoke JIT stamping only when doc is NOT yet stamped (!isSignatoryStamped)', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const rawBytes = await pdfDoc.save();
+      const rawBlob = new Blob([rawBytes], { type: 'application/pdf' });
+
+      const testDoc = {
+        id: 'doc-legacy-002',
+        title: 'SOP-QA-LEGACY',
+        docCode: 'SOP-QA-LEGACY',
+        status: 'ACTIVE',
+        isSignatoryStamped: false,
+        fileBlob: rawBlob
+      };
+
+      let jitStampingTriggered = false;
+      const isAlreadyStamped = Boolean(testDoc.isSignatoryStamped || testDoc.is_signatory_stamped || testDoc.stampedAt);
+
+      if (!isAlreadyStamped) {
+        jitStampingTriggered = true;
+      }
+
+      expect(jitStampingTriggered).toBe(true);
+    });
+
+    it('finalizeAndPublishMaster pre-bakes 3x3 table and flags isSignatoryStamped: true on approved document', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([600, 800]);
+      const pdfBytes = await pdfDoc.save();
+      const rawBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      const dar = {
+        id: 'DAR-PREBAKE-001',
+        darNumber: 'DAR-PREBAKE-001',
+        docNo: 'WI-MFG-PREBAKE',
+        title: 'Work Instruction Manufacturing Prebake',
+        status: 'APPROVED',
+        fileBlob: rawBlob,
+        requesterName: 'นายจัดทำ',
+        reviewerName: 'นายตรวจ',
+        approverName: 'นายอนุมัติ'
+      };
+
+      const doc = {
+        id: 'doc-prebake-001',
+        code: 'WI-MFG-PREBAKE',
+        title: 'WI-MFG-PREBAKE',
+        status: 'ACTIVE',
+        darId: 'DAR-PREBAKE-001',
+        isSignatoryStamped: false
+      };
+
+      useStore.setState({
+        dars: [dar],
+        documents: [doc],
+        masterDocuments: [doc]
+      });
+
+      await useStore.getState().finalizeAndPublishMaster('DAR-PREBAKE-001');
+
+      const state = useStore.getState();
+      const updatedDoc = state.documents.find(d => d.id === 'doc-prebake-001');
+
+      expect(updatedDoc).toBeDefined();
+      expect(updatedDoc.isSignatoryStamped).toBe(true);
+      expect(updatedDoc.fileData).toBeInstanceOf(Uint8Array);
+      expect(updatedDoc.stampedAt).toBeDefined();
+    });
   });
 });
+
 

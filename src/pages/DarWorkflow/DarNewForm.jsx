@@ -124,16 +124,6 @@ const DarNewForm = () => {
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleSlaPriorityChange = (newPriority) => {
-    const isFast = newPriority === 'FAST_TRACK';
-    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
-    setFormData(prev => ({
-      ...prev,
-      slaPriority: newPriority,
-      isFastTrack: isFast,
-      dueDate: computedDueDate
-    }));
-  };
 
   // Universal Hydration Lifecycle: ดึงข้อมูลแบบร่างกลับมาหยอดลงฟอร์มทันทีที่เปิดหน้า
   useEffect(() => {
@@ -223,7 +213,7 @@ const DarNewForm = () => {
     if (!formData.docType) newErrors.docType = 'กรุณาเลือกชนิดเอกสาร';
     if (!formData.title) newErrors.title = 'กรุณาระบุชื่อเอกสาร';
     if (!formData.requestDetail) newErrors.requestDetail = 'กรุณาระบุรายละเอียดคำร้องขอ';
-    if (!formData.requestReason) newErrors.requestReason = 'กรุณาระบุเหตุผลที่ร้องขอ';
+    if (!formData.requestReason?.trim() && !formData.reason?.trim()) newErrors.requestReason = 'กรุณาระบุเหตุผลที่ร้องขอ';
     
     if (formData.relatedStandards?.includes('อื่น ๆ (Others)') && !formData.otherStandardDetail?.trim()) {
       newErrors.otherStandardDetail = 'กรุณาระบุมาตรฐานอื่นๆ';
@@ -265,9 +255,10 @@ const DarNewForm = () => {
       document_code: formData.docCode || formData.docIdInput,
       requestDetail: formData.requestDetail,
       request_detail: formData.requestDetail,
-      reasonDetails: formData.requestDetail,
-      requestReason: formData.requestReason,
-      request_reason: formData.requestReason,
+      reasonDetails: formData.requestReason || formData.reason || '',
+      requestReason: formData.requestReason || formData.reason || '',
+      request_reason: formData.requestReason || formData.reason || '',
+      reason: formData.requestReason || formData.reason || '',
       reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
       confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
       confidentiality: formData.confidentialityLevel || 'INTERNAL',
@@ -366,8 +357,10 @@ const DarNewForm = () => {
       docCode: docCode,
       requestDetail: formData.requestDetail,
       request_detail: formData.requestDetail,
-      requestReason: formData.requestReason,
-      request_reason: formData.requestReason,
+      requestReason: formData.requestReason || formData.reason || '',
+      request_reason: formData.requestReason || formData.reason || '',
+      reason: formData.requestReason || formData.reason || '',
+      reasonDetails: formData.requestReason || formData.reason || '',
       reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
       confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
       confidentiality: formData.confidentialityLevel || 'INTERNAL',
@@ -559,53 +552,7 @@ const DarNewForm = () => {
                 </div>
               </div>
 
-              {/* 5. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ระดับชั้นความลับ (Confidentiality)
-                </label>
-                <select
-                  id="dar-confidentiality-level"
-                  value={formData.confidentialityLevel || 'INTERNAL'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
-                >
-                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
-                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
-                  ))}
-                </select>
-              </div>
 
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ความเร่งด่วน (SLA Policy)
-                </label>
-                <select
-                  id="dar-sla-priority"
-                  value={formData.slaPriority || 'NORMAL'}
-                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
-                >
-                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
-                    <option key={sla.id} value={sla.id}>
-                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="lg:col-span-4">
-                <label htmlFor="dar-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  วันครบกำหนดตาม SLA (Due Date)
-                </label>
-                <input
-                  type="date"
-                  id="dar-due-date"
-                  value={formData.dueDate || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
-                />
-              </div>
             </div>
           </div>
 
@@ -639,36 +586,21 @@ const DarNewForm = () => {
 
                 {/* 2. เหตุผลความจำเป็นในการร้องขอ */}
                 <div className="flex-1 flex flex-col">
-                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                    <label htmlFor="dar-reason-select" className="block text-sm font-semibold text-[#334155]">
-                      เหตุผลความจำเป็นในการร้องขอ <span className="text-[#EF4444]">*</span>
-                    </label>
-                    <select
-                      id="dar-reason-select"
-                      value={formData.reasonCategory || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const match = QMS_POLICIES.CHANGE_REASONS.find(r => r.id === val);
-                        setFormData(prev => ({
-                          ...prev,
-                          reasonCategory: val,
-                          requestReason: match ? match.labelTh : prev.requestReason
-                        }));
-                      }}
-                      className="text-xs px-2 py-1 bg-slate-100 border border-slate-200 rounded-md text-slate-700 outline-none cursor-pointer"
-                    >
-                      <option value="">-- เลือกเหตุผลมาตรฐาน (ISO 9001) --</option>
-                      {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('NEW')).map(r => (
-                        <option key={r.id} value={r.id}>{r.labelTh}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <label className="block text-sm font-semibold text-[#334155] mb-1.5">
+                    เหตุผลในการร้องขอ <span className="text-[#EF4444]">*</span>
+                  </label>
                   <textarea 
                     rows={5}
-                    value={formData.requestReason}
-                    onChange={(e) => setFormData({...formData, requestReason: e.target.value})}
+                    required
+                    value={formData.requestReason || formData.reason || ''}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      requestReason: e.target.value,
+                      reason: e.target.value,
+                      reasonDetails: e.target.value
+                    }))}
                     className={`w-full flex-1 min-h-[100px] lg:min-h-[125px] p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.requestReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                    placeholder="ระบุเหตุผลความจำเป็นในการจัดทำ หรือเลือกจากมาตรฐาน ISO ข้างบน..."
+                    placeholder="ระบุวัตถุประสงค์และเหตุผลในการขอดำเนินการ..."
                   />
                   {errors.requestReason && <p className="text-rose-500 text-xs mt-1">{errors.requestReason}</p>}
                 </div>

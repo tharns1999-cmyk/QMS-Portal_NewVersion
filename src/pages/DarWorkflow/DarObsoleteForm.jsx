@@ -72,16 +72,6 @@ const DarObsoleteForm = () => {
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleSlaPriorityChange = (newPriority) => {
-    const isFast = newPriority === 'FAST_TRACK';
-    const computedDueDate = calculateDueDateBySla(newPriority, formData.date || new Date());
-    setFormData(prev => ({
-      ...prev,
-      slaPriority: newPriority,
-      isFastTrack: isFast,
-      dueDate: computedDueDate
-    }));
-  };
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
@@ -299,8 +289,7 @@ const DarObsoleteForm = () => {
   const validate = () => {
     const newErrors = {};
     if (!formData.docId) newErrors.docId = 'กรุณาเลือกเอกสารที่ต้องการยกเลิก';
-    if (!formData.obsoleteReason) newErrors.obsoleteReason = 'กรุณาเลือกเหตุผลการยกเลิก';
-    if (formData.obsoleteReason === 'OTHER' && !formData.otherReason) newErrors.otherReason = 'กรุณาระบุเหตุผลอื่นๆ';
+    if (!formData.obsoleteReason?.trim() && !formData.reason?.trim()) newErrors.obsoleteReason = 'กรุณาระบุเหตุผลในการร้องขอ';
     if (!formData.obsoleteDetail) newErrors.obsoleteDetail = 'กรุณาระบุรายละเอียดการยกเลิก';
 
     if (selectedDoc && totalControlledCopies > 0 && !formData.recallPlan) {
@@ -347,10 +336,11 @@ const DarObsoleteForm = () => {
       doc_id: formData.docId,
       targetDocumentId: formData.docId,
       document_code: selectedDoc ? resolveDocCode(selectedDoc) : (formData.docCode || formData.docId),
-      obsoleteReason: formData.obsoleteReason,
-      obsolete_reason: formData.obsoleteReason,
-      reasonCategory: formData.obsoleteReason,
-      otherReason: formData.obsoleteReason === 'OTHER' ? formData.otherReason : undefined,
+      obsoleteReason: formData.obsoleteReason || formData.reason || '',
+      obsolete_reason: formData.obsoleteReason || formData.reason || '',
+      reason: formData.obsoleteReason || formData.reason || '',
+      requestReason: formData.obsoleteReason || formData.reason || '',
+      reasonCategory: formData.obsoleteReason || formData.reason || '',
       obsoleteDetail: formData.obsoleteDetail,
       obsolete_detail: formData.obsoleteDetail,
       reasonDetails: formData.obsoleteDetail,
@@ -625,53 +615,7 @@ const DarObsoleteForm = () => {
                 </p>
               </div>
 
-              {/* 3. ระดับชั้นความลับ & ความเร่งด่วนตาม SLA Policy */}
-              <div className="md:col-span-4">
-                <label htmlFor="dar-obs-confidentiality-level" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ระดับชั้นความลับ (Confidentiality)
-                </label>
-                <select
-                  id="dar-obs-confidentiality-level"
-                  value={formData.confidentialityLevel || 'INTERNAL'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, confidentialityLevel: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer"
-                >
-                  {QMS_POLICIES.CONFIDENTIALITY_LEVELS.map(c => (
-                    <option key={c.code} value={c.code}>{c.nameTh} ({c.code})</option>
-                  ))}
-                </select>
-              </div>
 
-              <div className="md:col-span-4">
-                <label htmlFor="dar-obs-sla-priority" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  ความเร่งด่วน (SLA Policy)
-                </label>
-                <select
-                  id="dar-obs-sla-priority"
-                  value={formData.slaPriority || 'NORMAL'}
-                  onChange={(e) => handleSlaPriorityChange(e.target.value)}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] cursor-pointer font-medium"
-                >
-                  {Object.values(QMS_POLICIES.SLA_POLICIES).map(sla => (
-                    <option key={sla.id} value={sla.id}>
-                      {sla.label} (เป้าหมาย {sla.targetDays} วัน)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-4">
-                <label htmlFor="dar-obs-due-date" className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  วันครบกำหนดตาม SLA (Due Date)
-                </label>
-                <input
-                  type="date"
-                  id="dar-obs-due-date"
-                  value={formData.dueDate || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                  className="w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] font-mono focus:outline-none focus:border-[#0D99FF]"
-                />
-              </div>
 
             </div>
 
@@ -791,36 +735,25 @@ const DarObsoleteForm = () => {
             </div>
 
             <div className="space-y-4.5">
-              {/* 1. เหตุผลการยกเลิก (Obsolete Reason) */}
+              {/* 1. เหตุผลในการร้องขอ */}
               <div>
                 <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                  เหตุผลการยกเลิก (Obsolete Reason) <span className="text-[#EF4444]">*</span>
+                  เหตุผลในการร้องขอ <span className="text-[#EF4444]">*</span>
                 </label>
-                <select 
-                  value={formData.obsoleteReason}
-                  onChange={(e) => setFormData(prev => ({...prev, obsoleteReason: e.target.value}))}
-                  className={`w-full h-10.5 px-3.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all ${errors.obsoleteReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                >
-                  <option value="">-- เลือกเหตุผลการยกเลิก (ISO 9001) --</option>
-                  {QMS_POLICIES.CHANGE_REASONS.filter(r => r.applicableTo.includes('OBSOLETE')).map(r => (
-                    <option key={r.id} value={r.id}>{r.labelTh} ({r.id})</option>
-                  ))}
-                  <option value="OTHER">อื่น ๆ (Other)</option>
-                </select>
+                <textarea 
+                  rows={3}
+                  required
+                  value={formData.obsoleteReason || formData.reason || ''}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev, 
+                    obsoleteReason: e.target.value,
+                    reason: e.target.value,
+                    requestReason: e.target.value
+                  }))}
+                  placeholder="ระบุวัตถุประสงค์และเหตุผลในการขอดำเนินการ..."
+                  className={`w-full px-3.5 py-2.5 text-sm bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.obsoleteReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
+                />
                 {errors.obsoleteReason && <p className="text-rose-500 text-xs mt-1">{errors.obsoleteReason}</p>}
-                
-                {formData.obsoleteReason === 'OTHER' && (
-                  <div className="mt-2.5">
-                    <input 
-                      type="text"
-                      value={formData.otherReason}
-                      onChange={(e) => setFormData(prev => ({...prev, otherReason: e.target.value}))}
-                      className={`w-full h-10 px-3.5 text-xs bg-white border border-[#CBD5E1] rounded-lg text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] ${errors.otherReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                      placeholder="ระบุเหตุผลความจำเป็น..."
-                    />
-                    {errors.otherReason && <p className="text-rose-500 text-xs mt-1">{errors.otherReason}</p>}
-                  </div>
-                )}
               </div>
 
               {/* 2. รายละเอียดเพิ่มเติมและผลกระทบ (Details & Impact) */}
@@ -1004,7 +937,7 @@ const DarObsoleteForm = () => {
                 label: 'เหตุผลการยกเลิก',
                 value: (
                   <div className="text-sm text-slate-800 font-medium bg-[#F5F5F5] p-2.5 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.obsoleteReason === 'OTHER' ? `อื่นๆ: ${formData.otherReason || '-'}` : (formData.obsoleteReason || '-')}
+                    {formData.reason || formData.obsoleteReason || '-'}
                   </div>
                 )
               },

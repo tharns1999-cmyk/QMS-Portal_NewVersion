@@ -78,6 +78,103 @@ export const DEFAULT_SLA_SETTINGS = {
 };
 
 // ==========================================
+// 1.1 Standardized Watermark Dictionary (ISO 9001:2015)
+// ==========================================
+export const WATERMARK_CONFIG = {
+  // 1. สำเนาควบคุม (แจกจ่ายทางการสำหรับหน้างาน)
+  CONTROLLED: {
+    color: { r: 0.12, g: 0.25, b: 0.69 }, // Navy Blue
+    colorHex: '#1F40B0',
+    opacity: 0.18,
+    lines: (meta = {}) => [
+      { text: 'CONTROLLED COPY', scale: 1.0, size: 52, isBold: true, weight: 'bold' },
+      { text: '(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', scale: 0.44, size: 24, isBold: false, weight: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, scale: 0.30, size: 18, isBold: false, weight: 'normal' },
+      { text: `Copy No: ${meta.copyNo || '01'} | Issue No: ${meta.issueNo || '01'} | Holder: ${meta.holderDept || meta.targetDept || 'DCC'}`, scale: 0.27, size: 16, isBold: false, weight: 'normal' },
+      { text: `Issued Date: ${meta.issuedDate || meta.effectiveDate || '-'} | Authorized by DCC`, scale: 0.23, size: 14, isBold: false, weight: 'normal' },
+      { text: 'OFFICIAL CONTROLLED COPY | REPRODUCTION STRICTLY PROHIBITED', scale: 0.19, size: 12, isBold: false, weight: 'normal' }
+    ],
+    getLines(meta = {}) {
+      return this.lines(meta);
+    }
+  },
+
+  // 2. สำเนาไม่ควบคุม (ดาวน์โหลดเพื่อเปิดดู/อ้างอิง)
+  UNCONTROLLED: {
+    color: { r: 0.86, g: 0.15, b: 0.15 }, // Coral Red
+    colorHex: '#DC2626',
+    opacity: 0.18,
+    lines: (meta = {}) => [
+      { text: 'UNCONTROLLED COPY', scale: 1.0, size: 52, isBold: true, weight: 'bold' },
+      { text: '(สำเนาไม่ควบคุม — ใช้เพื่อการอ้างอิงเท่านั้น)', scale: 0.44, size: 24, isBold: false, weight: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, scale: 0.30, size: 18, isBold: false, weight: 'normal' },
+      { text: `Downloaded by: ${meta.userName || 'Authorized User'} (${meta.userDept || 'QMS'}) | ${meta.timestamp || ''}`, scale: 0.25, size: 16, isBold: false, weight: 'normal' },
+      { text: 'DO NOT DUPLICATE | VERIFY LATEST REVISION BEFORE USE', scale: 0.20, size: 12, isBold: false, weight: 'normal' }
+    ],
+    getLines(meta = {}) {
+      return this.lines(meta);
+    }
+  },
+
+  // 3. เอกสารฉบับยกเลิกเนื่องจากมีฉบับใหม่แทนที่ (Superseded)
+  SUPERSEDED: {
+    color: { r: 0.60, g: 0.10, b: 0.10 }, // Crimson
+    colorHex: '#991A1A',
+    opacity: 0.24,
+    lines: (meta = {}) => [
+      { text: 'SUPERSEDED DOCUMENT', scale: 0.95, size: 50, isBold: true, weight: 'bold' },
+      { text: '(เอกสารฉบับยกเลิก — มีฉบับใหม่บังคับใช้แทน)', scale: 0.44, size: 24, isBold: false, weight: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Former Rev: ${meta.revNo ?? '00'}`, scale: 0.30, size: 18, isBold: false, weight: 'normal' },
+      { text: `Replaced by Rev: ${meta.replacedByRev || 'Latest'} | As of: ${meta.effectiveDate || ''}`, scale: 0.25, size: 16, isBold: false, weight: 'normal' },
+      { text: 'FOR HISTORICAL & AUDIT REFERENCE ONLY | DO NOT USE IN PRODUCTION', scale: 0.20, size: 12, isBold: false, weight: 'normal' }
+    ],
+    getLines(meta = {}) {
+      return this.lines(meta);
+    }
+  },
+
+  // 4. เอกสารยกเลิกถาวร (Obsolete)
+  OBSOLETE: {
+    color: { r: 0.30, g: 0.35, b: 0.40 }, // Slate Gray
+    colorHex: '#4D5966',
+    opacity: 0.22,
+    lines: (meta = {}) => [
+      { text: 'OBSOLETE DOCUMENT', scale: 0.95, size: 50, isBold: true, weight: 'bold' },
+      { text: '(เอกสารยกเลิกการใช้งานถาวร)', scale: 0.44, size: 24, isBold: false, weight: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | DAR Ref: ${meta.darNo || '-'}`, scale: 0.30, size: 18, isBold: false, weight: 'normal' },
+      { text: `Discontinued Date: ${meta.obsoleteDate || ''} | Reason: Process Retired`, scale: 0.25, size: 16, isBold: false, weight: 'normal' },
+      { text: 'PERMANENTLY RETIRED | NOT VALID FOR OPERATIONAL USE', scale: 0.20, size: 12, isBold: false, weight: 'normal' }
+    ],
+    getLines(meta = {}) {
+      return this.lines(meta);
+    }
+  },
+
+  // 5. เอกสารร่างระหว่างจัดทำ/ทบทวน (Draft)
+  DRAFT: {
+    color: { r: 0.85, g: 0.47, b: 0.03 }, // Amber
+    colorHex: '#D97808',
+    opacity: 0.20,
+    lines: (meta = {}) => [
+      { text: 'DRAFT / UNDER REVIEW', scale: 0.95, size: 50, isBold: true, weight: 'bold' },
+      { text: '(เอกสารร่าง — อยู่ระหว่างจัดทำ/ทบทวน)', scale: 0.44, size: 24, isBold: false, weight: 'normal' },
+      { text: `Workflow Ref: ${meta.darNo || 'DRAFT'} | Current Step: In-Review`, scale: 0.30, size: 18, isBold: false, weight: 'normal' },
+      { text: `Initiated By: ${meta.userName || 'Requester'} (${meta.userDept || '-'})`, scale: 0.25, size: 16, isBold: false, weight: 'normal' },
+      { text: 'NOT YET EFFECTIVE | UNAPPROVED DRAFT COPY', scale: 0.20, size: 12, isBold: false, weight: 'normal' }
+    ],
+    getLines(meta = {}) {
+      return this.lines(meta);
+    }
+  }
+};
+
+// Aliases for system compatibility
+WATERMARK_CONFIG.CONTROLLED_COPY = WATERMARK_CONFIG.CONTROLLED;
+WATERMARK_CONFIG.UNCONTROLLED_COPY = WATERMARK_CONFIG.UNCONTROLLED;
+WATERMARK_CONFIG.OFFICIAL_MASTER_COPY = WATERMARK_CONFIG.CONTROLLED;
+WATERMARK_CONFIG.DRAFT_WATERMARK = WATERMARK_CONFIG.DRAFT;
+
+// ==========================================
 // 2. Main Config & Policies Objects
 // ==========================================
 export const QMS_CONFIG = Object.freeze({

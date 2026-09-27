@@ -18,6 +18,7 @@ const Viewer = () => {
   const { documents, currentUser, canDownloadDocument } = useStore();
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [realPdfUrl, setRealPdfUrl] = useState(null);
+  const [activePdfBlob, setActivePdfBlob] = useState(null);
   const [_loadingPdf, setLoadingPdf] = useState(false);
   const [zoomMode, setZoomMode] = useState('FitH'); // 'FitH' | '100' | '125' | '150' | '75'
   
@@ -36,6 +37,26 @@ const Viewer = () => {
     let isCancelled = false;
 
     if (doc) {
+      // 1. Fast Path: Check if pre-stamped binary exists directly in memory (Instant 0ms display)
+      const isAlreadyStamped = Boolean(doc.isSignatoryStamped || doc.is_signatory_stamped || doc.stampedAt);
+      const inMemoryBlob = (doc.fileBlob instanceof Blob ? doc.fileBlob : null) ||
+                           (doc.pdfBlob instanceof Blob ? doc.pdfBlob : null) ||
+                           (doc.fileData ? new Blob([doc.fileData], { type: 'application/pdf' }) : null);
+
+      if (isAlreadyStamped && inMemoryBlob && inMemoryBlob.size > 0) {
+        activeUrl = URL.createObjectURL(inMemoryBlob);
+        setRealPdfUrl(activeUrl);
+        setActivePdfBlob(inMemoryBlob);
+        setLoadingPdf(false);
+        return () => {
+          isCancelled = true;
+          setActivePdfBlob(null);
+          if (activeUrl) {
+            URL.revokeObjectURL(activeUrl);
+          }
+        };
+      }
+
       setLoadingPdf(true);
       resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
         .then(async (blob) => {
@@ -45,7 +66,8 @@ const Viewer = () => {
             const isMasterDoc = status === 'ACTIVE' || status === 'EFFECTIVE' || status === 'APPROVED' || isArchive;
             const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(doc.title || doc.docCode || '').startsWith('ED-') && !String(doc.title || doc.docCode || '').startsWith('EXT-');
 
-            if (isMasterDoc && isInternal && !doc.isSignatoryStamped) {
+            // Only run JIT stamping if the document has NOT been stamped yet
+            if (isMasterDoc && isInternal && !isAlreadyStamped) {
               try {
                 const store = useStore.getState();
                 const relatedDar = (store.dars || []).find(d => 
@@ -65,6 +87,11 @@ const Viewer = () => {
                 });
                 const stampedBytes = await applyProgressiveSignatoryStamp(blob, signatories);
                 displayBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+
+                // Pre-bake and cache into Store & IndexedDB so future opens are 100% instant!
+                if (store.finalizeAndPublishMaster && (doc.darId || relatedDar?.id)) {
+                  store.finalizeAndPublishMaster(doc.darId || relatedDar?.id).catch(() => {});
+                }
               } catch (stampErr) {
                 console.warn('[Viewer] Stamping 3x3 table warning:', stampErr);
               }
@@ -72,6 +99,7 @@ const Viewer = () => {
 
             activeUrl = URL.createObjectURL(displayBlob);
             setRealPdfUrl(activeUrl);
+            setActivePdfBlob(displayBlob);
           }
         })
         .catch(err => {
@@ -84,6 +112,7 @@ const Viewer = () => {
 
     return () => {
       isCancelled = true;
+      setActivePdfBlob(null);
       if (activeUrl) {
         URL.revokeObjectURL(activeUrl);
       }
@@ -127,15 +156,20 @@ const Viewer = () => {
   const handleDownload = async (openInTab = false) => {
     if (!doc) return;
     try {
-      const watermarkType = currentUser.isDcc ? WATERMARK_TYPES.OFFICIAL_MASTER_COPY : WATERMARK_TYPES.UNCONTROLLED_COPY;
+      const watermarkType = currentUser?.isDcc ? WATERMARK_TYPES.OFFICIAL_MASTER_COPY : WATERMARK_TYPES.UNCONTROLLED_COPY;
       
-      await UniversalWatermarkService.downloadWatermarkedPdf(doc, watermarkType, {
-        userName: currentUser.name,
-        userDept: currentUser.department || currentUser.dept || 'PD',
+      const docToDownload = {
+        ...doc,
+        ...(activePdfBlob ? { fileBlob: activePdfBlob, fileData: activePdfBlob } : {})
+      };
+
+      await UniversalWatermarkService.downloadWatermarkedPdf(docToDownload, watermarkType, {
+        userName: currentUser?.name,
+        userDept: currentUser?.department || currentUser?.dept || 'PD',
         effectiveDate: doc.effectiveDate
       }, openInTab);
 
-      toast.success(openInTab ? 'เปิดเอกสาร PDF ในแท็บใหม่สำเร็จ' : `ดาวน์โหลดเอกสาร (${currentUser.isDcc ? 'Master' : 'Uncontrolled Copy'}) สำเร็จ`);
+      toast.success(openInTab ? 'เปิดเอกสาร PDF ในแท็บใหม่สำเร็จ' : `ดาวน์โหลดเอกสาร (${currentUser?.isDcc ? 'Master' : 'Uncontrolled Copy'}) สำเร็จ`);
     } catch (err) {
       console.error(err);
       toast.error('เกิดข้อผิดพลาดในการสร้าง PDF');
