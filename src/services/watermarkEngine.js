@@ -8,23 +8,25 @@ export { WATERMARK_CONFIG, drawIsoDiagonalWatermark };
 export const THAI_SAFE_FALLBACK_MAP = {
   '(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)': '(CONTROLLED COPY - OPERATIONAL USE ONLY)',
   '(สำเนาไม่ควบคุม — ใช้เพื่อการอ้างอิงเท่านั้น)': '(FOR REFERENCE ONLY - UNCONTROLLED COPY)',
+  '(สำเนาไม่ควบคุม — สำหรับอ้างอิงเท่านั้น)': '(FOR REFERENCE ONLY - UNCONTROLLED COPY)',
   '(เอกสารฉบับยกเลิก — มีฉบับใหม่บังคับใช้แทน)': '(SUPERSEDED DOCUMENT - REPLACED BY NEW REVISION)',
+  '(เอกสารฉบับยกเลิก — มีฉบับใหม่ประกาศใช้แทน)': '(SUPERSEDED DOCUMENT - REPLACED BY NEW REVISION)',
   '(เอกสารยกเลิกการใช้งานถาวร)': '(PERMANENTLY RETIRED - OBSOLETE)',
   '(เอกสารร่าง — อยู่ระหว่างจัดทำ/ทบทวน)': '(DRAFT - UNDER REVIEW / NOT EFFECTIVE)'
 };
 
 /**
- * สร้างแผ่นภาพลายน้ำแบบคมชัดสูงด้วย HTML5 Canvas
+ * สร้างแผ่นภาพลายน้ำแบบคมชัดสูงด้วย HTML5 Canvas (Ultra-HD 4x Resolution)
  * ใช้ Text Rendering Engine ของเบราว์เซอร์เพื่อเรนเดอร์ภาษาไทยวรรณยุกต์ซ้อน (OpenType Shaping) ได้อย่างสมบูรณ์แบบ 100%
  *
  * @param {Object} options
- * @param {Array<{text: string, size?: number, scale?: number, weight?: string, isBold?: boolean}>} options.lines
+ * @param {Array<{text: string, size?: number, scale?: number, weight?: string, isBold?: boolean, letterSpacing?: number}>} options.lines
  * @param {string} [options.colorHex='#DC2626']
  * @param {number} [options.opacity=0.18]
- * @param {number} [options.scale=2]
+ * @param {number} [options.scale=4]
  * @returns {string} PNG Data URL
  */
-export const generateWatermarkCanvas = ({ lines = [], colorHex = '#DC2626', opacity = 0.18, scale = 2 }) => {
+export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opacity: _opacity = 0.16, scale = 4 }) => {
   // Safe fallback if DOM or Canvas 2D is unavailable (e.g. Node/JSDOM in testing environments)
   const TRANSPARENT_1X1_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
@@ -32,54 +34,119 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#DC2626', opac
     return TRANSPARENT_1X1_PNG;
   }
 
+  // แปลงขนาดและสไตล์ของแต่ละบรรทัด
+  const normalizedLines = (lines || []).map(line => {
+    if (typeof line === 'string') {
+      return { text: line, size: 24, weight: '400', letterSpacing: 0 };
+    }
+    const rawSize = line.size || (line.scale ? Math.round(52 * line.scale) : 24);
+    const weight = line.weight || (line.isBold ? '600' : '400');
+    return {
+      text: line.text || '',
+      size: rawSize,
+      weight,
+      letterSpacing: typeof line.letterSpacing === 'number' ? line.letterSpacing : 0
+    };
+  });
+
+  if (normalizedLines.length === 0) {
+    return TRANSPARENT_1X1_PNG;
+  }
+
+  // วัดขนาดความกว้างจริงของข้อความทุกบรรทัดเพื่อทำ Auto-Fit Bounding Box
+  const dummyCanvas = document.createElement('canvas');
+  const dummyCtx = dummyCanvas && dummyCanvas.getContext ? dummyCanvas.getContext('2d') : null;
+
+  let maxTextWidth = 0;
+  let totalHeight = 0;
+  const lineSpacingRatio = 1.34;
+
+  normalizedLines.forEach((line) => {
+    const fontSize = line.size * scale;
+    const fontStr = `${line.weight || '400'} ${fontSize}px 'Sarabun', 'Noto Sans Thai', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
+    if (dummyCtx) {
+      dummyCtx.font = fontStr;
+    }
+
+    let measuredWidth = 0;
+    if (dummyCtx && typeof dummyCtx.measureText === 'function') {
+      try {
+        const metrics = dummyCtx.measureText(line.text);
+        if (metrics && typeof metrics.width === 'number' && metrics.width > 0) {
+          measuredWidth = metrics.width;
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    // Fallback if measureText is not implemented (e.g. JSDOM mock context) or returns 0
+    if (!measuredWidth || measuredWidth <= 0) {
+      measuredWidth = (line.text || '').length * (fontSize * 0.58);
+    }
+
+    const textW = measuredWidth + ((line.letterSpacing || 0) * scale * (line.text || '').length);
+    if (textW > maxTextWidth) {
+      maxTextWidth = textW;
+    }
+    totalHeight += (fontSize * lineSpacingRatio);
+  });
+
+  // สร้าง Canvas ขนาดกระชับ พอดีกับข้อความจริง (บวก Padding เล็กน้อยเพื่อป้องกันสระ/วรรณยุกต์ล้น)
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext ? canvas.getContext('2d') : null;
+  const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
 
   if (!ctx) {
     return TRANSPARENT_1X1_PNG;
   }
 
-  // ตั้งค่าขนาด Canvas พื้นฐาน (ความละเอียดสูง 2x - 3x สำหรับ Retina Display)
-  const canvasWidth = 1000 * scale;
-  const canvasHeight = 400 * scale;
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
+  const horizontalPadding = 50 * scale;
+  const verticalPadding = 35 * scale;
 
-  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  canvas.width = Math.ceil(maxTextWidth + horizontalPadding * 2);
+  canvas.height = Math.ceil(totalHeight + verticalPadding * 2);
+
+  // ตั้งค่าความคมชัดสูงสุด (Ultra-HD High-DPI Sharpness)
+  if ('imageSmoothingEnabled' in ctx) {
+    ctx.imageSmoothingEnabled = true;
+  }
+  if ('imageSmoothingQuality' in ctx) {
+    ctx.imageSmoothingQuality = 'high';
+  }
+
+  if (typeof ctx.clearRect === 'function') {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const centerX = canvasWidth / 2;
-  const centerY = canvasHeight / 2;
-
-  // แปลงขนาดและสไตล์ของแต่ละบรรทัด
-  const normalizedLines = (lines || []).map(line => {
-    if (typeof line === 'string') {
-      return { text: line, size: 24 * scale, weight: 'normal' };
-    }
-    const rawSize = line.size || (line.scale ? Math.round(52 * line.scale) : 24);
-    const weight = line.weight || (line.isBold ? 'bold' : 'normal');
-    return {
-      text: line.text || '',
-      size: rawSize * scale,
-      weight
-    };
-  });
-
-  if (normalizedLines.length === 0) {
-    return canvas.toDataURL ? canvas.toDataURL('image/png') : TRANSPARENT_1X1_PNG;
-  }
-
-  // คำนวณความสูงรวมเพื่อจัดให้อยู่ตรงกลางแนวดิ่ง (Vertical Centering)
-  const lineHeightMultiplier = 1.35;
-  const totalHeight = normalizedLines.reduce((acc, l) => acc + (l.size * lineHeightMultiplier), 0);
-  let currentY = centerY - (totalHeight / 2) + ((normalizedLines[0]?.size || 24 * scale) * 0.5);
+  const centerX = canvas.width / 2;
+  let currentY = verticalPadding + (normalizedLines[0].size * scale * 0.6);
 
   normalizedLines.forEach((line) => {
-    ctx.font = `${line.weight} ${line.size}px 'Sarabun', 'Noto Sans Thai', 'TH Sarabun New', 'Helvetica Neue', sans-serif`;
+    const fontSize = line.size * scale;
+    ctx.font = `${line.weight || '400'} ${fontSize}px 'Sarabun', 'Noto Sans Thai', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
     ctx.fillStyle = colorHex;
-    ctx.fillText(line.text, centerX, currentY);
-    currentY += line.size * lineHeightMultiplier;
+
+    // จัด Letter Spacing หากมีกำหนดไว้
+    if (line.letterSpacing && 'letterSpacing' in ctx) {
+      try {
+        ctx.letterSpacing = `${line.letterSpacing * scale}px`;
+      } catch {
+        // Safe fallback
+      }
+    } else if ('letterSpacing' in ctx) {
+      try {
+        ctx.letterSpacing = '0px';
+      } catch {
+        // Safe fallback
+      }
+    }
+
+    if (typeof ctx.fillText === 'function') {
+      ctx.fillText(line.text, centerX, currentY);
+    }
+    currentY += (fontSize * lineSpacingRatio);
   });
 
   return canvas.toDataURL ? canvas.toDataURL('image/png') : TRANSPARENT_1X1_PNG;
@@ -99,42 +166,45 @@ export const applyCanvasWatermarkToPdf = async (pdfDoc, watermarkConfig, meta = 
     ? watermarkConfig.getLines(meta)
     : (typeof watermarkConfig.lines === 'function' ? watermarkConfig.lines(meta) : []);
 
-  const colorHex = watermarkConfig.colorHex || '#DC2626';
-  const opacity = typeof watermarkConfig.opacity === 'number' ? watermarkConfig.opacity : 0.18;
+  const colorHex = watermarkConfig.colorHex || '#1F40B0';
+  const opacity = typeof watermarkConfig.opacity === 'number' ? watermarkConfig.opacity : 0.16;
 
   const pngDataUrl = generateWatermarkCanvas({
     lines,
     colorHex,
-    opacity
+    opacity,
+    scale: 4
   });
 
   const watermarkImage = await pdfDoc.embedPng(pngDataUrl);
 
   for (const page of pages) {
     const { width, height } = page.getSize();
-    const angleRad = Math.atan2(height, width);
-    const angleDeg = angleRad * (180 / Math.PI);
+    const isPortrait = height >= width;
 
-    // ปรับขนาดภาพตามสัดส่วนกระดาษจริง
-    const imgWidth = Math.min(width, height) * 0.95;
+    // ปรับองศาความชันให้ลาดลงมาทางขวา สวยงาม สบายตา (Ergonomic Watermark Angle)
+    // Portrait: 30° / Landscape: 25°
+    const angleDeg = isPortrait ? 30 : 25;
+    const angleRad = (angleDeg * Math.PI) / 180;
+
+    // ขยายขนาดลายน้ำให้เด่นชัด (ครอบคลุม 85% ของความกว้างหน้ากระดาษแนวตั้ง / 70% แนวนอน)
+    const imgWidth = isPortrait ? (width * 0.85) : (width * 0.70);
     const imgHeight = imgWidth * (watermarkImage.height / watermarkImage.width);
 
     // True Geometric Centering:
-    // จัดศูนย์กลางลายน้ำแท้จริง โดยคำนวณ origin offset ให้จุดกึ่งกลางของภาพหมุนตรงกับกึ่งกลางกระดาษ (width / 2, height / 2) พอดี
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const originX = centerX - (imgWidth / 2) * Math.cos(angleRad) + (imgHeight / 2) * Math.sin(angleRad);
-    const originY = centerY - (imgWidth / 2) * Math.sin(angleRad) - (imgHeight / 2) * Math.cos(angleRad);
+    // สูตรหมุนรอบจุดกึ่งกลางกระดาษเป๊ะ 100% ชดเชยจุดเริ่มต้น (Bottom-Left) ของ pdf-lib
+    const cosA = Math.cos(angleRad);
+    const sinA = Math.sin(angleRad);
+    const drawX = (width / 2) - ((imgWidth / 2) * cosA - (imgHeight / 2) * sinA);
+    const drawY = (height / 2) - ((imgWidth / 2) * sinA + (imgHeight / 2) * cosA);
 
     page.drawImage(watermarkImage, {
-      x: originX,
-      y: originY,
+      x: drawX,
+      y: drawY,
       width: imgWidth,
       height: imgHeight,
       rotate: degrees(angleDeg),
-      xSkew: degrees(0),
-      ySkew: degrees(0),
-      opacity: opacity
+      opacity: typeof watermarkConfig.opacity === 'number' ? watermarkConfig.opacity : 0.16
     });
   }
 };
@@ -163,18 +233,36 @@ export const drawStandardIsoWatermark = async (pdfDocOrBytes, watermarkType = 'U
   }
 
   const normType = String(watermarkType || 'UNCONTROLLED').toUpperCase();
+  if (normType === 'CLEAN' || normType === 'CLEAN_MASTER' || normType === 'MASTER_CLEAN' || normType === 'NONE') {
+    if (isStandaloneBytes) {
+      return await pdfDoc.save();
+    }
+    return pdfDoc;
+  }
+
   const config = WATERMARK_CONFIG[normType] || 
                  WATERMARK_CONFIG[normType.replace('_COPY', '')] || 
+                 (!normType.includes('UNCONTROLLED') && normType.includes('CONTROLLED') ? WATERMARK_CONFIG.CONTROLLED : null) ||
                  WATERMARK_CONFIG.UNCONTROLLED;
+
+  const rawCopy = meta.copyNo || meta.copyNumber || meta.copy_no || meta.ccNumber || '01';
+  const copyMatch = String(rawCopy).match(/\d+/);
+  const cleanCopyNo = copyMatch ? copyMatch[0].padStart(2, '0') : String(rawCopy).padStart(2, '0');
+
+  const rawIssue = meta.issueNo || meta.issueNumber || meta.issue_no || '01';
+  const issueMatch = String(rawIssue).match(/\d+/);
+  const cleanIssueNo = issueMatch ? issueMatch[0].padStart(2, '0') : '01';
 
   const normalizedMeta = {
     ...meta,
     docCode: meta.docCode || meta.document_code || meta.doc_code || meta.title || '-',
     revNo: meta.revNo ?? meta.rev ?? meta.revision ?? meta.docVersion ?? '00',
-    copyNo: meta.copyNo || meta.copyNumber || meta.ccNumber || '01',
-    issueNo: meta.issueNo || meta.issueNumber || meta.issue_no || '01',
-    holderDept: meta.holderDept || meta.targetDept || meta.recipientDepartment || meta.department || meta.userDept || 'DCC',
-    issuedDate: meta.issuedDate || meta.effectiveDate || '-',
+    copyNo: cleanCopyNo,
+    issueNo: cleanIssueNo,
+    holderDept: meta.holderDept || meta.recipientDept || meta.targetDept || meta.recipientDepartment || meta.department || meta.userDept || 'DCC',
+    location: meta.location || meta.loc || meta.pointOfUse || meta.targetLocation || meta.locationName || meta.station_name || '-',
+    loc: meta.location || meta.loc || meta.pointOfUse || meta.targetLocation || meta.locationName || meta.station_name || '-',
+    issuedDate: meta.issuedDate || meta.dispatchDate || meta.dateIssued || meta.effectiveDate || '-',
     effectiveDate: meta.effectiveDate || meta.issuedDate || '-',
     userName: meta.userName || meta.name || 'Authorized User',
     userDept: meta.userDept || meta.department || 'QMS',

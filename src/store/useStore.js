@@ -217,7 +217,7 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
 
 export const resolveDccAdminUserId = (masterUsers) => {
   const admin = (masterUsers || []).find(u => isDccAdmin(u));
-  return admin?.id || masterUsers?.[0]?.id || '';
+  return admin?.id || masterUsers?.[0]?.id || 'U001';
 };
 
 /**
@@ -1217,7 +1217,7 @@ export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
         const copy = targetCopyId ? safeInstances.find(i => String(i.id) === targetCopyId) : null;
         if (copy) {
           // Never drop recall task for damaged copy until copy is destroyed or archived
-          const isNotYetDestroyed = copy.status !== 'DESTROYED' && copy.status !== 'RECALLED_DESTROYED' && copy.status !== 'ARCHIVED_OBSOLETE' && copy.status !== 'LOST' && copy.status !== 'LOST_RECORDED';
+          const isNotYetDestroyed = copy.status !== 'DESTROYED' && copy.status !== 'RECALLED_DESTROYED' && copy.status !== 'ARCHIVED_OBSOLETE' && copy.status !== 'LOST' && copy.status !== 'LOST_RECORDED' && copy.status !== 'LOST_VOIDED' && copy.status !== 'DISPOSED_LOST';
           if ((copy.isDamaged || copy.is_damaged || t.isDamaged || t.is_damaged) && isNotYetDestroyed) {
             return true;
           }
@@ -3053,6 +3053,48 @@ const useStore = create(persist((set, get) => ({
         date: new Date().toISOString(),
         details: 'Downloaded confidential document'
       }, ...state.externalAuditTrail]
+    };
+  }),
+
+  logDocumentDownload: (docOrId, downloadMode = 'UNCONTROLLED', user = null) => set((state) => {
+    const docId = typeof docOrId === 'object' ? (docOrId.id || docOrId.docCode || docOrId.document_code) : docOrId;
+    const doc = (state.documents || []).find(d => d.id === docId || d.docCode === docId || d.document_code === docId) || (typeof docOrId === 'object' ? docOrId : {});
+    const actor = user || state.currentUser || { name: 'Authorized User', department: 'QMS' };
+    const docCode = doc.docCode || doc.document_code || doc.edCode || doc.title || docId || '-';
+    const docTitle = doc.name || doc.docTitle || doc.title || '-';
+
+    const isClean = downloadMode === 'CLEAN' || downloadMode === 'CLEAN_MASTER' || downloadMode === 'MASTER_CLEAN';
+    const isControlled = downloadMode === 'CONTROLLED' || downloadMode === 'CONTROLLED_COPY';
+    const actionLabel = isClean ? 'DOWNLOAD_CLEAN_MASTER' : (isControlled ? 'DOWNLOAD_CONTROLLED' : 'DOWNLOAD_UNCONTROLLED');
+    const details = isClean
+      ? `Downloaded Clean Master PDF (3x3 Signatory Table, No Watermark) for "${docCode} - ${docTitle}"`
+      : (isControlled
+          ? `Downloaded Controlled Copy PDF for "${docCode} - ${docTitle}"`
+          : `Downloaded Uncontrolled Copy PDF with Red Watermark for "${docCode} - ${docTitle}"`);
+
+    const auditEntry = {
+      id: `audit-dl-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      documentId: doc.id || docId,
+      docCode,
+      docTitle,
+      action: actionLabel,
+      actionType: actionLabel,
+      downloadMode: isClean ? 'CLEAN_MASTER' : (isControlled ? 'CONTROLLED' : 'UNCONTROLLED'),
+      user: actor.name || actor.username || 'Authorized User',
+      userName: actor.name || actor.username || 'Authorized User',
+      actor: actor.name || actor.username || 'Authorized User',
+      userId: actor.id || actor.empId || 'U000',
+      userDept: actor.department || actor.dept || 'QMS',
+      department: actor.department || actor.dept || 'QMS',
+      timestamp: new Date().toISOString(),
+      date: new Date().toISOString(),
+      details
+    };
+
+    return {
+      controlledCopyAuditTrail: [auditEntry, ...(state.controlledCopyAuditTrail || [])],
+      externalAuditTrail: [auditEntry, ...(state.externalAuditTrail || [])],
+      actionLog: [auditEntry, ...(state.actionLog || [])]
     };
   }),
 
@@ -6381,8 +6423,8 @@ const useStore = create(persist((set, get) => ({
                   locationId: locId,
                   station_id: locId,
                   station_name: locName,
-                  is_master: false,
-                  isMaster: false,
+                  is_master: Boolean(isOrigin || dist.is_master || dist.isMaster),
+                  isMaster: Boolean(isOrigin || dist.is_master || dist.isMaster),
                   is_owner: isOrigin,
                   isOwner: isOrigin,
                   copy_type: 'CONTROLLED',
@@ -6665,8 +6707,8 @@ const useStore = create(persist((set, get) => ({
                       locationId: locId,
                       station_id: locId,
                       station_name: locName,
-                      is_master: false,
-                      isMaster: false,
+                      is_master: Boolean(isOrigin || dist.is_master || dist.isMaster),
+                      isMaster: Boolean(isOrigin || dist.is_master || dist.isMaster),
                       is_owner: isOrigin,
                       isOwner: isOrigin,
                       copy_type: 'CONTROLLED',
@@ -7867,10 +7909,13 @@ const useStore = create(persist((set, get) => ({
   }),
 
   completeCopyRecallAndArchive: ({ documentCode, collectedCopyIds, dispositionMethod, notes, witnessName, referenceNo, taskId }) => set((state) => {
+    const isLostVoided = dispositionMethod === 'LOST_VOIDED';
     const collectedSet = new Set((collectedCopyIds || []).map(id => String(id)));
     const recalledAt = new Date().toISOString();
     const recalledBy = state.currentUser ? state.currentUser.name : 'DCC Officer';
-    const finalStatus = dispositionMethod === 'STAMP_AND_ARCHIVE' ? 'ARCHIVED_OBSOLETE' : 'DESTROYED';
+    const finalStatus = isLostVoided 
+      ? 'LOST_VOIDED' 
+      : (dispositionMethod === 'STAMP_AND_ARCHIVE' ? 'ARCHIVED_OBSOLETE' : 'DESTROYED');
 
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
@@ -7882,14 +7927,21 @@ const useStore = create(persist((set, get) => ({
           ...copy,
           status: finalStatus,
           disposition_method: dispositionMethod,
+          dispositionMethod: dispositionMethod,
           disposition_type: finalStatus,
+          dispositionType: finalStatus,
           recalled_at: recalledAt,
           recalled_by: recalledBy,
+          disposed_at: recalledAt,
+          disposedAt: recalledAt,
+          disposed_by: state.currentUser?.name || recalledBy,
+          disposedBy: state.currentUser?.name || recalledBy,
           dcc_notes: notes || '',
           witness_name: witnessName || '',
           reference_no: referenceNo || '',
           dateRecalled: recalledAt.split('T')[0],
-          dateDestroyed: finalStatus === 'DESTROYED' ? recalledAt.split('T')[0] : copy.dateDestroyed
+          dateDestroyed: finalStatus === 'DESTROYED' ? recalledAt.split('T')[0] : copy.dateDestroyed,
+          dateVoided: isLostVoided ? recalledAt.split('T')[0] : undefined
         };
       }
       return copy;
@@ -7910,7 +7962,7 @@ const useStore = create(persist((set, get) => ({
         department: copy.holder_dept || copy.department || '',
         location: copy.location || copy.locationName || copy.station_name || '',
         dispositionType: finalStatus,
-        dispositionMethod: dispositionMethod || (finalStatus === 'ARCHIVED_OBSOLETE' ? 'STAMP_AND_ARCHIVE' : 'DESTROY_SCRAP'),
+        dispositionMethod: dispositionMethod || (finalStatus === 'ARCHIVED_OBSOLETE' ? 'STAMP_AND_ARCHIVE' : (isLostVoided ? 'LOST_VOIDED' : 'DESTROY_SCRAP')),
         disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${recalledBy} (DCC)`,
         disposed_by_name: recalledBy,
         disposed_by_id: state.currentUser?.id || '',
@@ -7936,7 +7988,7 @@ const useStore = create(persist((set, get) => ({
         if (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.length > 0) {
           const allResolved = t.supersededCopyIds.every(id => {
             const c = updatedCopies.find(copy => String(copy.id) === String(id));
-            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED';
+            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED' || c.status === 'LOST_VOIDED' || c.status === 'DISPOSED_LOST';
           });
           if (allResolved) {
             return {
@@ -7969,21 +8021,29 @@ const useStore = create(persist((set, get) => ({
 
     const cleanedTasks = cleanupDccTasks(updatedTasks, updatedCopies, state.documents, state.dars);
 
+    const dispLabel = isLostVoided
+      ? 'บันทึกจำหน่ายสูญหาย (Lost / Voided)'
+      : (dispositionMethod === 'STAMP_AND_ARCHIVE'
+        ? 'ประทับตรา OBSOLETE และเก็บเข้าคลังประวัติ'
+        : 'ทำลาย (Shred/Destroy)');
+
+    const auditAction = isLostVoided ? 'DISPOSE_CONTROLLED_COPY_LOST' : 'CONTROLLED_COPY_DISPOSITION';
+
     const auditLog = {
       id: `audit-disp-${Date.now()}`,
       timestamp: recalledAt,
       user: recalledBy,
-      action: 'CONTROLLED_COPY_DISPOSITION',
+      action: auditAction,
       docTitle: documentCode,
-      remarks: `DCC ทำการ ${dispositionMethod === 'STAMP_AND_ARCHIVE' ? 'ประทับตรา OBSOLETE และเก็บเข้าคลังประวัติ' : 'ทำลาย (Shred/Destroy)'} สำหรับเอกสาร ${documentCode} จำนวน ${collectedSet.size} ชุด ${notes ? `(${notes})` : ''}`
+      remarks: `DCC ทำการ ${dispLabel} สำหรับเอกสาร ${documentCode} จำนวน ${collectedSet.size} ชุด ${notes ? `(${notes})` : ''}`
     };
 
     const actionLogEntry = {
       id: `LOG-DISP-${Date.now()}`,
-      actionType: 'CONTROLLED_COPY_DISPOSITION',
-      action: 'CONTROLLED_COPY_DISPOSITION',
+      actionType: auditAction,
+      action: auditAction,
       actor: recalledBy,
-      details: `DCC ดำเนินการ ${dispositionMethod} สำหรับ ${documentCode} (${collectedSet.size} ชุด): ${notes || 'เรียบร้อย'}`,
+      details: `DCC ดำเนินการ ${dispLabel} สำหรับ ${documentCode} (${collectedSet.size} ชุด): ${notes || 'เรียบร้อย'}`,
       timestamp: recalledAt
     };
 
@@ -10398,6 +10458,8 @@ const useStore = create(persist((set, get) => ({
     const inst = copies.find(i => String(i.id) === targetId);
     if (!inst) return state;
 
+    const isLostVoided = dispositionMethod === 'LOST_VOIDED';
+    const finalStatus = isLostVoided ? 'LOST_VOIDED' : 'DESTROYED';
     const nowIso = new Date().toISOString();
     const userName = state.currentUser ? state.currentUser.name : 'DCC Officer';
 
@@ -10405,17 +10467,24 @@ const useStore = create(persist((set, get) => ({
       if (String(i.id) === targetId) {
         return {
           ...i,
-          status: 'DESTROYED',
-          disposition_type: 'DESTROYED',
+          status: finalStatus,
+          disposition_type: finalStatus,
+          dispositionType: finalStatus,
+          disposition_method: dispositionMethod,
+          dispositionMethod: dispositionMethod,
           destroyed_at: nowIso,
           destroyed_by: userName,
           recalled_at: i.recalled_at || nowIso,
           recalled_by: i.recalled_by || userName,
-          disposition_method: dispositionMethod,
+          disposed_at: nowIso,
+          disposedAt: nowIso,
+          disposed_by: userName,
+          disposedBy: userName,
           dcc_notes: notes || i.dcc_notes || '',
           witness_name: witnessName || i.witness_name || '',
           reference_no: referenceNo || i.reference_no || '',
-          dateDestroyed: nowIso.split('T')[0]
+          dateDestroyed: finalStatus === 'DESTROYED' ? nowIso.split('T')[0] : i.dateDestroyed,
+          dateVoided: isLostVoided ? nowIso.split('T')[0] : undefined
         };
       }
       return i;
@@ -10433,7 +10502,7 @@ const useStore = create(persist((set, get) => ({
       copy_no: inst.copy_no || inst.ccNumber || '01',
       department: inst.holder_dept || inst.department || '',
       location: inst.location || inst.locationName || inst.station_name || '',
-      dispositionType: 'DESTROYED',
+      dispositionType: finalStatus,
       dispositionMethod: dispositionMethod,
       disposedBy: state.currentUser ? `${state.currentUser.name} (${state.currentUser.empId || state.currentUser.role || 'DCC'})` : `${userName} (DCC)`,
       disposed_by_name: userName,
@@ -10463,7 +10532,7 @@ const useStore = create(persist((set, get) => ({
         if (t.supersededCopyIds && Array.isArray(t.supersededCopyIds) && t.supersededCopyIds.length > 0) {
           const allResolved = t.supersededCopyIds.every(id => {
             const c = updatedCopies.find(copy => String(copy.id) === String(id));
-            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED';
+            return !c || c.status === 'DESTROYED' || c.status === 'ARCHIVED_OBSOLETE' || c.status === 'OBSOLETE' || c.status === 'RECALLED' || c.status === 'LOST_VOIDED' || c.status === 'DISPOSED_LOST';
           });
           if (allResolved) {
             return {
@@ -10492,17 +10561,20 @@ const useStore = create(persist((set, get) => ({
 
     const cleanedTasks = cleanupDccTasks(updatedTasks, updatedCopies, state.documents, state.dars);
 
+    const auditAction = isLostVoided ? 'DISPOSE_CONTROLLED_COPY_LOST' : 'CONTROLLED_COPY_DISPOSITION';
     const auditLog = {
       id: `audit-destroy-${Date.now()}`,
       timestamp: nowIso,
       user: userName,
-      action: 'CONTROLLED_COPY_DISPOSITION',
+      action: auditAction,
       docTitle: inst.doc_code || inst.docTitle,
       docRev: inst.doc_version || inst.rev,
       ccNumber: inst.copy_no || inst.ccNumber,
       oldStatus: inst.status,
-      newStatus: 'DESTROYED',
-      remarks: `DCC บันทึกการทำลาย (${dispositionMethod}) สำหรับสำเนา Copy ${inst.copy_no || inst.ccNumber} ของ ${inst.doc_code || inst.docTitle} เรียบร้อยแล้ว`
+      newStatus: finalStatus,
+      remarks: isLostVoided
+        ? `DCC บันทึกจำหน่ายสูญหาย (Lost / Voided) สำหรับสำเนา Copy ${inst.copy_no || inst.ccNumber} ของ ${inst.doc_code || inst.docTitle} เรียบร้อยแล้ว`
+        : `DCC บันทึกการทำลาย (${dispositionMethod}) สำหรับสำเนา Copy ${inst.copy_no || inst.ccNumber} ของ ${inst.doc_code || inst.docTitle} เรียบร้อยแล้ว`
     };
 
     return {
@@ -10514,9 +10586,12 @@ const useStore = create(persist((set, get) => ({
       controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        actionType: 'CC_DESTROYED',
+        actionType: isLostVoided ? 'DISPOSE_CONTROLLED_COPY_LOST' : 'CC_DESTROYED',
+        action: isLostVoided ? 'DISPOSE_CONTROLLED_COPY_LOST' : 'CC_DESTROYED',
         actor: userName,
-        details: `Destroyed copy ${targetId} via ${dispositionMethod}`,
+        details: isLostVoided
+          ? `Disposed lost copy ${targetId} via LOST_VOIDED`
+          : `Destroyed copy ${targetId} via ${dispositionMethod}`,
         timestamp: nowIso
       }, ...(state.actionLog || [])]
     };

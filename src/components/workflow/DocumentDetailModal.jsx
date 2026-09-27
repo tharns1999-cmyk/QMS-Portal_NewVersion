@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -24,7 +24,8 @@ import {
   MoreHorizontal,
   CornerDownLeft,
   RotateCw,
-  Loader2
+  Loader2,
+  Printer
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterDataService';
@@ -159,6 +160,77 @@ const getWorkflowStepTimestamp = (dar, stepType, timeline) => {
   return '-';
 };
 
+/**
+ * Lightweight Headless Menu Compound Component
+ */
+const MenuContext = createContext({ isOpen: false, setIsOpen: () => {} });
+
+const Menu = ({ as: Component = 'div', className = '', children }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  return (
+    <MenuContext.Provider value={{ isOpen, setIsOpen }}>
+      <Component ref={menuRef} className={className}>
+        {children}
+      </Component>
+    </MenuContext.Provider>
+  );
+};
+
+Menu.Button = ({ className = '', children, ...props }) => {
+  const { isOpen, setIsOpen } = useContext(MenuContext);
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={() => setIsOpen(!isOpen)}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+};
+
+Menu.Items = ({ className = '', children }) => {
+  const { isOpen } = useContext(MenuContext);
+  if (!isOpen) return null;
+  return (
+    <div className={className}>
+      {children}
+    </div>
+  );
+};
+
+Menu.Item = ({ children }) => {
+  const { setIsOpen } = useContext(MenuContext);
+  const [active, setActive] = useState(false);
+
+  return (
+    <div
+      onMouseEnter={() => setActive(true)}
+      onMouseLeave={() => setActive(false)}
+      onClick={() => setIsOpen(false)}
+    >
+      {typeof children === 'function' ? children({ active }) : children}
+    </div>
+  );
+};
+
 const DocumentDetailModal = ({ 
   isOpen, 
   onClose, 
@@ -203,6 +275,15 @@ const DocumentDetailModal = ({
   const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
+  const isDccAdmin = Boolean(
+    currentUser?.isDcc || 
+    currentUser?.role === 'DCC_ADMIN' || 
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.isDccAdmin || 
+    currentUser?.department === 'DC' || 
+    currentUser?.department === 'DCC'
+  );
+
   // Robust permission check supporting both argument signatures: (doc, user) and (user, doc)
   const canDownload = useMemo(() => {
     if (!doc || !currentUser) return false;
@@ -224,7 +305,7 @@ const DocumentDetailModal = ({
   };
 
   // Real PDF download handler with Universal File Resolver & Watermark Pipeline
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = async (mode = 'UNCONTROLLED') => {
     if (!doc) return;
     if (isDownloadingPdf) return;
 
@@ -248,7 +329,7 @@ const DocumentDetailModal = ({
       }
 
       const isForm = UniversalWatermarkService.isBlankFormBypass(doc);
-      const isDccUser = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN');
+      const isCleanMode = mode === 'CLEAN' || mode === 'CLEAN_MASTER' || isForm;
 
       const docCode = resolveDocCode(doc) || doc.docNo || doc.title || 'DOCUMENT';
       const docRev = normalizeRev(doc.rev || doc.revision || doc.doc_version || '01');
@@ -258,7 +339,8 @@ const DocumentDetailModal = ({
         title: docTitle,
         revision: docRev,
         systemStatus: doc.status || 'ACTIVE',
-        isControlledPrint: isDccUser
+        isControlledPrint: false,
+        isCleanMaster: isCleanMode
       });
 
       // Attach resolved blob to doc clone to ensure UniversalWatermarkService consumes it directly
@@ -272,19 +354,39 @@ const DocumentDetailModal = ({
         docTitle
       };
 
-      if (isForm) {
+      if (isCleanMode) {
         await UniversalWatermarkService.downloadCleanPdf(docWithFile, {
           userName: currentUser?.name || 'User',
           userDept: currentUser?.department || currentUser?.dept || 'User Station',
           docCode,
           docTitle,
+          currentUser,
+          isCleanMaster: true,
           filename: cleanFileName
         }, false);
+      } else if (mode === 'CONTROLLED' || mode === 'CONTROLLED_COPY') {
+        const watermarkType = WATERMARK_TYPES.CONTROLLED_COPY;
+        await UniversalWatermarkService.downloadWatermarkedPdf(
+          docWithFile,
+          watermarkType,
+          {
+            userName: currentUser?.name || 'User',
+            userDept: currentUser?.department || currentUser?.dept || 'User Station',
+            holderDept: doc.department || currentUser?.department || 'DCC',
+            location: doc.location || doc.pointOfUse || doc.locationName || doc.department || 'DCC Office',
+            docCode,
+            docTitle,
+            docVersion: docRev,
+            copyNo: '01',
+            issueNo: '01',
+            isControlledPrint: true,
+            currentUser,
+            filename: cleanFileName
+          },
+          false
+        );
       } else {
-        const watermarkType = isDccUser 
-          ? WATERMARK_TYPES.CONTROLLED_COPY 
-          : WATERMARK_TYPES.UNCONTROLLED_COPY;
-
+        const watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
         const watermarkConfig = resolveWatermarkConfig(docWithFile, { currentUser });
 
         await UniversalWatermarkService.downloadWatermarkedPdf(
@@ -299,9 +401,10 @@ const DocumentDetailModal = ({
             docCode,
             docTitle,
             docVersion: docRev,
-            watermarkType: isDccUser ? 'CONTROLLED_COPY' : 'UNCONTROLLED_COPY',
-            downloadMode: isDccUser ? 'CONTROLLED_COPY' : 'UNCONTROLLED_COPY',
-            isUncontrolledCopy: !isDccUser,
+            watermarkType: 'UNCONTROLLED_COPY',
+            downloadMode: 'UNCONTROLLED_COPY',
+            isUncontrolledCopy: true,
+            currentUser,
             filename: cleanFileName
           },
           false
@@ -321,6 +424,46 @@ const DocumentDetailModal = ({
       }
     } finally {
       setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadControlledCopy = async (targetCopy) => {
+    try {
+      const copyNum = targetCopy.copy_no || targetCopy.copyNo || targetCopy.ccNumber || '01';
+      const toastId = toast.loading(`กำลังจัดเตรียมสำเนาควบคุม Copy ${copyNum}...`);
+      const rawBlob = await resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId);
+      const docCode = resolveDocCode(doc) || doc.docNo || doc.title || 'DOCUMENT';
+      const docRev = normalizeRev(doc.rev || doc.revision || doc.doc_version || '01');
+      const docTitle = resolveDocTitle(doc) || doc.name || doc.docName || doc.title || '';
+
+      const docWithFile = {
+        ...doc,
+        fileBlob: rawBlob,
+        file: rawBlob,
+        attachedFile: doc.attachedFile || rawBlob,
+        title: docCode,
+        docCode,
+        docTitle
+      };
+
+      await UniversalWatermarkService.downloadWatermarkedPdf(docWithFile, WATERMARK_TYPES.CONTROLLED_COPY, {
+        currentUser,
+        docCode,
+        docTitle,
+        docVersion: docRev,
+        copyNo: targetCopy.copy_no || targetCopy.copyNo || targetCopy.ccNumber || '01',
+        issueNo: targetCopy.issue_no || targetCopy.issueNo || '01',
+        holderDept: targetCopy.holder_dept || targetCopy.department || targetCopy.holderDept || 'DCC',
+        location: targetCopy.location || targetCopy.pointOfUse || targetCopy.targetLocation || targetCopy.locationName || targetCopy.station_name || '-',
+        issuedDate: targetCopy.issuedDate || targetCopy.receipt_confirmed_at || targetCopy.dateIssued || new Date().toISOString().split('T')[0],
+        isControlledPrint: true
+      });
+
+      toast.dismiss(toastId);
+      toast.success(`ดาวน์โหลดสำเนาควบคุม Copy ${copyNum} สำเร็จ`);
+    } catch (err) {
+      console.error('[DocumentDetailModal] Controlled copy download failed:', err);
+      toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดสำเนาควบคุม');
     }
   };
 
@@ -1309,21 +1452,64 @@ const DocumentDetailModal = ({
                         </button>
                       )}
 
-                      {/* Action: ดาวน์โหลด PDF */}
+                      {/* Action: ดาวน์โหลด PDF (Role-Based Download Menu) */}
                       {canDownload && (
-                        <button
-                          type="button"
-                          disabled={isDownloadingPdf}
-                          onClick={handleDownloadPdf}
-                          className="h-10 px-4 bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[#1E1E1E] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                        >
-                          {isDownloadingPdf ? (
-                            <Loader2 size={15} className="animate-spin text-slate-600" />
-                          ) : (
-                            <Download size={15} strokeWidth={1.75} />
-                          )}
-                          <span>{isDownloadingPdf ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด PDF'}</span>
-                        </button>
+                        isDccAdmin ? (
+                          <Menu as="div" className="relative inline-block text-left">
+                            <Menu.Button 
+                              disabled={isDownloadingPdf}
+                              className="h-10 px-4 text-xs sm:text-sm font-semibold text-[#1E1E1E] dark:text-slate-200 bg-white dark:bg-slate-800 border border-[#E5E5E5] dark:border-slate-600 hover:bg-[#F5F5F5] dark:hover:bg-slate-700 rounded-xl flex items-center gap-2 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              {isDownloadingPdf ? (
+                                <Loader2 size={15} className="animate-spin text-slate-600" />
+                              ) : (
+                                <Download size={15} strokeWidth={1.75} className="text-slate-500" />
+                              )}
+                              <span>{isDownloadingPdf ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด PDF'}</span>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                            </Menu.Button>
+                            <Menu.Items className="absolute left-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-1.5 z-50">
+                              <Menu.Item>
+                                {({ active }) => (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadPdf('UNCONTROLLED')}
+                                    className={`${active ? 'bg-slate-100 dark:bg-slate-700' : ''} w-full text-left px-3 py-2 text-xs rounded-lg text-slate-700 dark:text-slate-200 flex flex-col cursor-pointer`}
+                                  >
+                                    <span className="font-semibold text-slate-900 dark:text-white">📄 สำเนาไม่ควบคุม (Uncontrolled)</span>
+                                    <span className="text-[11px] text-slate-400">สำหรับเปิดดูและอ้างอิงทั่วไป (ลายน้ำสีแดง)</span>
+                                  </button>
+                                )}
+                              </Menu.Item>
+                              <Menu.Item>
+                                {({ active }) => (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadPdf('CLEAN')}
+                                    className={`${active ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300' : ''} w-full text-left px-3 py-2 text-xs rounded-lg flex flex-col mt-1 border-t border-slate-100 dark:border-slate-700 cursor-pointer`}
+                                  >
+                                    <span className="font-semibold text-blue-600 dark:text-blue-400">📥 เอกสารแม่บทคลีน (Clean Master)</span>
+                                    <span className="text-[11px] text-slate-400">ตารางลายเซ็นครบ ไม่มีลายน้ำขวางหน้ากระดาษ</span>
+                                  </button>
+                                )}
+                              </Menu.Item>
+                            </Menu.Items>
+                          </Menu>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isDownloadingPdf}
+                            onClick={() => handleDownloadPdf('UNCONTROLLED')}
+                            className="h-10 px-4 text-xs sm:text-sm font-semibold text-[#1E1E1E] dark:text-slate-200 bg-white dark:bg-slate-800 border border-[#E5E5E5] dark:border-slate-600 hover:bg-[#F5F5F5] dark:hover:bg-slate-700 rounded-xl flex items-center gap-2 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {isDownloadingPdf ? (
+                              <Loader2 size={15} className="animate-spin text-slate-600" />
+                            ) : (
+                              <Download size={15} strokeWidth={1.75} className="text-slate-500" />
+                            )}
+                            <span>{isDownloadingPdf ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด PDF'}</span>
+                          </button>
+                        )
                       )}
 
                       {/* Action 2: Watermark Studio (DCC Admin Only) */}
@@ -1457,16 +1643,29 @@ const DocumentDetailModal = ({
                                       </div>
                                     ) : isOrigin ? (
                                       /* Case C (Copy 01 Origin): แสดงเฉพาะปุ่มฉุกเฉิน [ ⚠️ แจ้งชำรุด/สูญหาย ] */
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedReplacementCopy(copy)}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-md border border-rose-200 transition-colors cursor-pointer"
-                                        title="แจ้งชำรุด / สูญหาย"
-                                        aria-label="แจ้งชำรุด/สูญหาย แจ้งชำรุด/เล่มใหม่"
-                                      >
-                                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                        <span>แจ้งชำรุด/สูญหาย</span>
-                                      </button>
+                                      <div className="inline-flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedReplacementCopy(copy)}
+                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-md border border-rose-200 transition-colors cursor-pointer"
+                                          title="แจ้งชำรุด / สูญหาย"
+                                          aria-label="แจ้งชำรุด/สูญหาย แจ้งชำรุด/เล่มใหม่"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                          <span>แจ้งชำรุด/สูญหาย</span>
+                                        </button>
+                                        {isDccAdmin && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDownloadControlledCopy(copy)}
+                                            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer border border-transparent hover:border-blue-200"
+                                            title={`พิมพ์/ดาวน์โหลดสำเนาควบคุม Copy ${copy.copy_no || copy.ccNumber} (${locName})`}
+                                            aria-label={`พิมพ์สำเนา Copy ${copy.copy_no || copy.ccNumber}`}
+                                          >
+                                            <Printer className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
                                     ) : (
                                       /* Case C (Copy 02+): แสดงกลุ่มปุ่มแบบ Compact Flex: ขอย้ายจุด, ส่งคืน, แจ้งชำรุด */
                                       <div className="inline-flex items-center gap-1.5">
@@ -1493,6 +1692,17 @@ const DocumentDetailModal = ({
                                         >
                                           <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                         </button>
+                                        {isDccAdmin && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDownloadControlledCopy(copy)}
+                                            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer border border-transparent hover:border-blue-200"
+                                            title={`พิมพ์/ดาวน์โหลดสำเนาควบคุม Copy ${copy.copy_no || copy.ccNumber} (${locName})`}
+                                            aria-label={`พิมพ์สำเนา Copy ${copy.copy_no || copy.ccNumber}`}
+                                          >
+                                            <Printer className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
                                       </div>
                                     )
                                   ) : (

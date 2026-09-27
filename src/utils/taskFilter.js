@@ -237,23 +237,23 @@ export const isActionableTask = (task, currentUser) => {
 
   // 4. Department-Pooled Receipt Task (Physical controlled copy confirmation at department stations):
   // Strictly scoped to destination department. Never leak to DCC or other departments.
-  // 🛡️ Phase 2: Level 1–5 Assignment & Visibility Guard (Exempt Level 6+)
+  // 🛡️ ISO 9001 Segregation of Duties:
+  // Receipt tasks MUST strictly be handled by the recipient/holding department members.
+  // Even DCC Admin and QMR must NOT receive other departments' receipt tasks in personal inboxes.
   // Executive users (Level 6+: GM, Plant Manager, QMR, or level >= 6 / 'L6'):
-  // Cut all RECEIPT tasks from task inbox and badge counters even if they belong to/oversee that department.
-  // Exception: DCC Admin and QMR have wildcard oversight across all departments.
+  // Cut all RECEIPT tasks from task inbox and badge counters.
   if (isReceiptTask(task)) {
-    if (dccAdmin || currentUser?.role === 'QMR' || currentUser?.isQmr) {
-      return true;
-    }
     if (isLevel6Plus(currentUser)) {
       return false;
     }
 
-    const taskDept = task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.recipientDepartment || task.recipient_department || task.assignedToDept || task.currentHandlerDepartment || task.department || task.holder_dept || '';
-    const isDeptMatch = userMatchesDepartment(currentUser, taskDept) || userDepts.some(uDept => isSameDepartment(uDept, taskDept));
-    const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
-    const isAssigneeMatch = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || task.assigneeName === currentUser?.name));
-    return isDeptMatch || isAssigneeMatch;
+    const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.recipientDepartment || task.recipient_department || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || task.holderDept || task.targetDept || '';
+    const isDeptMatch = userMatchesDepartment(currentUser, taskDept) || 
+      userDepts.some(uDept => isSameDepartment(uDept, taskDept)) ||
+      isSameDepartment(currentUser?.department, taskDept) ||
+      isSameDepartment(currentUser?.primary_department, taskDept);
+
+    return isDeptMatch;
   }
 
   // 🛡️ Separation of Duties: Requester must NEVER review or approve their own submission
@@ -309,6 +309,37 @@ export const isActionableTask = (task, currentUser) => {
   return false;
 };
 
+/**
+ * Filter tasks for current user with strict department segregation for RECEIPT tasks
+ */
+export const filterTasksForUser = (tasks, currentUser) => {
+  if (!tasks || !currentUser) return [];
+
+  const userDept = currentUser.department || currentUser.primary_department;
+  const isDcc = isDccAdmin(currentUser);
+
+  return tasks.filter((task) => {
+    // 1. งานตรวจรับเล่ม (RECEIPT): ต้องเป็นของแผนกตัวเองเท่านั้น (Strict Segregation)
+    // แม้เป็น DCC Admin ก็ไม่มีสิทธิ์รับงานตรวจรับแทนแผนกอื่น
+    if (isReceiptTask(task) || task.type === 'RECEIPT' || task.taskType === 'RECEIPT' || task.task_type === 'CONFIRM_RECEIPT') {
+      const targetDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.targetDept || task.holderDept || task.holder_dept;
+      return userMatchesDepartment(currentUser, targetDept) || isSameDepartment(targetDept, userDept);
+    }
+
+    // 2. งาน DCC โดยเฉพาะ (แจกจ่าย, เรียกคืน): เฉพาะ DCC Admin
+    if (isDccExclusiveTask(task) || ['DISTRIBUTE', 'DISTRIBUTION', 'RECALL', 'DCC_REPLACEMENT'].includes(task.type)) {
+      return isDcc;
+    }
+
+    // 3. งาน Workflow ทั่วไป (Review, Approve): ตามสิทธิ์เดิม
+    if (isDcc) {
+      return true; // Bypass เฉพาะงานกำกับดูแลทั่วไปที่ไม่ใช่งานตรวจรับเล่มหน้างาน
+    }
+
+    return isSameDepartment(task.department, userDept) || task.assignedTo === currentUser.id || task.assigneeId === currentUser.id;
+  });
+};
+
 export default {
   isDccAdmin,
   isDccExclusiveTask,
@@ -320,6 +351,7 @@ export default {
   isLevel6Plus,
   isLevel1To5,
   isReceiptTask,
-  isActionableTask
+  isActionableTask,
+  filterTasksForUser
 };
 

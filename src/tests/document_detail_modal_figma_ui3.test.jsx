@@ -195,11 +195,21 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
     expect(downloadPdfBtn).toBeInTheDocument();
 
     fireEvent.click(downloadPdfBtn);
+    const uncontrolledOpt = screen.queryByRole('button', { name: /สำเนาไม่ควบคุม/i });
+    if (uncontrolledOpt) {
+      fireEvent.click(uncontrolledOpt);
+    }
 
     const { waitFor } = await import('@testing-library/react');
     await waitFor(() => {
       expect(downloadSpy).toHaveBeenCalled();
     });
+    // Critical ISO 9001 Assertion: Must NOT be called with CONTROLLED or CONTROLLED_COPY
+    const calledWatermarkType = downloadSpy.mock.calls[0]?.[1];
+    expect(calledWatermarkType).not.toBe('CONTROLLED');
+    expect(calledWatermarkType).not.toBe('CONTROLLED_COPY');
+    expect(calledWatermarkType).toBe('UNCONTROLLED_COPY');
+
     await waitFor(() => {
       expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('สำเร็จ'));
     });
@@ -232,6 +242,10 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
 
     const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
     fireEvent.click(downloadPdfBtn);
+    const uncontrolledOpt = screen.queryByRole('button', { name: /สำเนาไม่ควบคุม/i });
+    if (uncontrolledOpt) {
+      fireEvent.click(uncontrolledOpt);
+    }
 
     const { waitFor } = await import('@testing-library/react');
     // Verify: error toast is triggered, no phantom success toast, and watermarking is NOT called
@@ -266,6 +280,10 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
 
     const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
     fireEvent.click(downloadPdfBtn);
+    const uncontrolledOpt = screen.queryByRole('button', { name: /สำเนาไม่ควบคุม/i });
+    if (uncontrolledOpt) {
+      fireEvent.click(uncontrolledOpt);
+    }
 
     const { waitFor } = await import('@testing-library/react');
     await waitFor(() => {
@@ -274,5 +292,89 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
     await waitFor(() => {
       expect(successSpy).toHaveBeenCalledWith(expect.stringContaining('สำเร็จ'));
     });
+  });
+
+  it('10. Role-Based Menu: DCC Admin sees 2 choices (Uncontrolled Copy & Clean Master) and can download Clean Master', async () => {
+    const { UniversalWatermarkService } = await import('../services/UniversalWatermarkService');
+    const fileStorage = await import('../utils/fileStorage');
+    const toast = (await import('react-hot-toast')).default;
+
+    const fakePdfBlob = new Blob(['%PDF-1.4 mock content'], { type: 'application/pdf' });
+    vi.spyOn(fileStorage, 'resolveFileBlob').mockResolvedValue(fakePdfBlob);
+    const cleanSpy = vi.spyOn(UniversalWatermarkService, 'downloadCleanPdf').mockResolvedValue('blob:mock-clean');
+    const watermarkSpy = vi.spyOn(UniversalWatermarkService, 'downloadWatermarkedPdf').mockResolvedValue('blob:mock-wm');
+    cleanSpy.mockClear();
+    watermarkSpy.mockClear();
+    vi.spyOn(toast, 'loading').mockReturnValue('t-200');
+    vi.spyOn(toast, 'dismiss').mockImplementation(() => {});
+    vi.spyOn(toast, 'success').mockImplementation(() => {});
+
+    render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
+
+    const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
+    fireEvent.click(downloadPdfBtn);
+
+    // Verify Dropdown items exist
+    const uncontrolledOption = screen.getByRole('button', { name: /สำเนาไม่ควบคุม/i });
+    const cleanOption = screen.getByRole('button', { name: /เอกสารแม่บทคลีน/i });
+    expect(uncontrolledOption).toBeInTheDocument();
+    expect(cleanOption).toBeInTheDocument();
+
+    // Click Clean Master
+    fireEvent.click(cleanOption);
+
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(cleanSpy).toHaveBeenCalled();
+    });
+    expect(watermarkSpy).not.toHaveBeenCalled();
+  });
+
+  it('11. Non-DCC User: Single click directly downloads Uncontrolled Copy without dropdown menu', async () => {
+    const { UniversalWatermarkService } = await import('../services/UniversalWatermarkService');
+    const fileStorage = await import('../utils/fileStorage');
+    const toast = (await import('react-hot-toast')).default;
+
+    const regularUser = {
+      id: 'U099',
+      name: 'พนักงานทั่วไป (PROD)',
+      department: 'PD',
+      depts: ['PD'],
+      role: 'USER',
+      level: 1,
+      isDcc: false
+    };
+
+    useStore.setState({ currentUser: regularUser });
+
+    const fakePdfBlob = new Blob(['%PDF-1.4 regular content'], { type: 'application/pdf' });
+    vi.spyOn(fileStorage, 'resolveFileBlob').mockResolvedValue(fakePdfBlob);
+    const watermarkSpy = vi.spyOn(UniversalWatermarkService, 'downloadWatermarkedPdf').mockResolvedValue('blob:mock-regular');
+    watermarkSpy.mockClear();
+    vi.spyOn(toast, 'loading').mockReturnValue('t-300');
+    vi.spyOn(toast, 'dismiss').mockImplementation(() => {});
+    vi.spyOn(toast, 'success').mockImplementation(() => {});
+
+    render(<DocumentDetailModal isOpen={true} onClose={() => {}} document={sampleDoc} />);
+
+    const downloadPdfBtn = screen.getByRole('button', { name: /ดาวน์โหลด PDF/i });
+    fireEvent.click(downloadPdfBtn);
+
+    // Non-DCC user should immediately trigger downloadWatermarkedPdf with UNCONTROLLED_COPY
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(() => {
+      expect(watermarkSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        'UNCONTROLLED_COPY',
+        expect.anything(),
+        false
+      );
+    });
+
+    // Dropdown options should NOT exist
+    expect(screen.queryByRole('button', { name: /เอกสารแม่บทคลีน/i })).not.toBeInTheDocument();
+
+    // Reset store state
+    useStore.setState({ currentUser });
   });
 });

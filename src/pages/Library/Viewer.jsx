@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert, ChevronDown } from 'lucide-react';
 import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
 import { resolveFileBlob } from '../../utils/fileStorage';
 import { applyProgressiveSignatoryStamp } from '../../utils/pdfStamper';
@@ -128,7 +128,29 @@ const Viewer = () => {
   const title = doc ? doc.title : docId;
   const docStatus = doc?.status || (isArchive ? 'OBSOLETE' : '');
   const watermarkConfig = getWatermarkConfig(docStatus);
-  const canDownload = doc && !isArchive && docStatus === 'EFFECTIVE' ? canDownloadDocument(doc, currentUser) : false;
+  const isDccAdmin = Boolean(
+    currentUser?.isDcc || 
+    currentUser?.role === 'DCC_ADMIN' || 
+    currentUser?.isDccAdmin || 
+    currentUser?.department === 'DC' || 
+    currentUser?.department === 'DCC'
+  );
+  const canDownload = doc && !isArchive && (docStatus === 'EFFECTIVE' || docStatus === 'ACTIVE' || docStatus === 'APPROVED' || isDccAdmin) 
+    ? (typeof canDownloadDocument === 'function' ? canDownloadDocument(doc, currentUser) : true) 
+    : false;
+
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const downloadMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target)) {
+        setIsDownloadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Access Control Guard
   if (doc && !hasDocumentAccess(doc, currentUser)) {
@@ -153,23 +175,42 @@ const Viewer = () => {
     );
   }
 
-  const handleDownload = async (openInTab = false) => {
+  const handleDownload = async (downloadMode = 'UNCONTROLLED', openInTab = false) => {
     if (!doc) return;
+    setIsDownloadMenuOpen(false);
     try {
-      const watermarkType = currentUser?.isDcc ? WATERMARK_TYPES.OFFICIAL_MASTER_COPY : WATERMARK_TYPES.UNCONTROLLED_COPY;
-      
+      let watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
+      let isCleanMaster = false;
+
+      if (downloadMode === 'CLEAN' || downloadMode === 'CLEAN_MASTER') {
+        watermarkType = 'CLEAN';
+        isCleanMaster = true;
+      } else if (downloadMode === 'CONTROLLED' || downloadMode === 'CONTROLLED_COPY') {
+        watermarkType = WATERMARK_TYPES.CONTROLLED_COPY;
+      } else {
+        watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
+      }
+
       const docToDownload = {
         ...doc,
         ...(activePdfBlob ? { fileBlob: activePdfBlob, fileData: activePdfBlob } : {})
       };
 
       await UniversalWatermarkService.downloadWatermarkedPdf(docToDownload, watermarkType, {
-        userName: currentUser?.name,
-        userDept: currentUser?.department || currentUser?.dept || 'PD',
-        effectiveDate: doc.effectiveDate
+        userName: currentUser?.name || 'Authorized User',
+        userDept: currentUser?.department || currentUser?.dept || 'QMS',
+        holderDept: doc.department || currentUser?.department || 'DCC',
+        location: doc.location || doc.pointOfUse || doc.locationName || doc.department || 'DCC Office',
+        effectiveDate: doc.effectiveDate,
+        isCleanMaster,
+        currentUser
       }, openInTab);
 
-      toast.success(openInTab ? 'เปิดเอกสาร PDF ในแท็บใหม่สำเร็จ' : `ดาวน์โหลดเอกสาร (${currentUser?.isDcc ? 'Master' : 'Uncontrolled Copy'}) สำเร็จ`);
+      const label = isCleanMaster
+        ? 'เอกสารแม่บทคลีน (Clean Master)'
+        : (watermarkType === WATERMARK_TYPES.CONTROLLED_COPY ? 'สำเนาควบคุม (Controlled Copy)' : 'สำเนาไม่ควบคุม (Uncontrolled Copy)');
+
+      toast.success(openInTab ? `เปิด ${label} ในแท็บใหม่สำเร็จ` : `ดาวน์โหลด ${label} สำเร็จ`);
     } catch (err) {
       console.error(err);
       toast.error('เกิดข้อผิดพลาดในการสร้าง PDF');
@@ -181,7 +222,7 @@ const Viewer = () => {
       {/* Viewer Toolbar */}
       <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between border-b border-slate-700/80 z-20 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors" title="ย้อนกลับ">
+          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer" title="ย้อนกลับ">
             <ArrowLeft size={18} />
           </button>
           <div className="font-bold text-sm md:text-base truncate max-w-[200px] md:max-w-md flex items-center gap-2">
@@ -194,7 +235,7 @@ const Viewer = () => {
         <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={() => setIsStudioOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0D99FF] hover:bg-[#007BE5] text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0D99FF] hover:bg-[#007BE5] text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
             title="ทดสอบดูและดาวน์โหลดลายน้ำทั้ง 7 รูปแบบ"
           >
             <Sparkles size={14} /> <span className="hidden sm:inline">Watermark Studio</span>
@@ -203,7 +244,7 @@ const Viewer = () => {
           <div className="hidden md:flex items-center gap-1 bg-slate-700/80 rounded-xl px-2.5 py-1">
             <button 
               onClick={() => setZoomMode(prev => prev === 'FitH' ? '100' : String(Math.max(50, parseInt(prev, 10) - 25)))} 
-              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors cursor-pointer" 
               title="ซูมออก"
             >
               <ZoomOut size={15} />
@@ -217,7 +258,7 @@ const Viewer = () => {
             </button>
             <button 
               onClick={() => setZoomMode(prev => prev === 'FitH' ? '125' : String(Math.min(200, parseInt(prev, 10) + 25)))} 
-              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors cursor-pointer" 
               title="ซูมเข้า"
             >
               <ZoomIn size={15} />
@@ -228,19 +269,74 @@ const Viewer = () => {
             {canDownload ? (
               <>
                 <button 
-                  onClick={() => handleDownload(true)}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-[#0D99FF] hover:text-[#0D99FF] transition-colors" 
-                  title="เปิดดู PDF ตัวจริงในแท็บใหม่ (Open PDF Tab)"
+                  onClick={() => handleDownload('UNCONTROLLED', true)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-[#0D99FF] hover:text-white transition-colors cursor-pointer" 
+                  title="เปิดดู PDF ในแท็บใหม่ (Open PDF Tab)"
                 >
                   <ExternalLink size={16} />
                 </button>
-                <button 
-                  onClick={() => handleDownload(false)}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-emerald-400 hover:text-emerald-300 transition-colors" 
-                  title={doc?.title?.startsWith('FM') ? "Download Form" : (currentUser.isDcc ? "Download Master PDF" : "ดาวน์โหลดเอกสาร PDF (Uncontrolled Copy)")}
-                >
-                  <Download size={16} />
-                </button>
+
+                {isDccAdmin ? (
+                  <div className="relative inline-block text-left" ref={downloadMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsDownloadMenuOpen(prev => !prev)}
+                      className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                      title="เลือกรูปแบบการดาวน์โหลด (DCC Admin)"
+                    >
+                      <Download size={14} />
+                      <span>ดาวน์โหลด</span>
+                      <ChevronDown size={14} className={`opacity-80 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isDownloadMenuOpen && (
+                      <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload('UNCONTROLLED')}
+                          className="w-full text-left px-3 py-2 text-xs rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex flex-col transition-colors cursor-pointer"
+                        >
+                          <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1">
+                            📄 สำเนาไม่ควบคุม (Uncontrolled Copy)
+                          </span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">ติดลายน้ำสีแดง สำหรับดูอ้างอิง</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDownload('CLEAN')}
+                          className="w-full text-left px-3 py-2 text-xs rounded-lg text-blue-700 dark:text-blue-300 bg-blue-50/70 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex flex-col mt-1 border-t border-slate-100 dark:border-slate-700 transition-colors cursor-pointer"
+                        >
+                          <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            📥 เอกสารแม่บทฉบับคลีน (Clean Master)
+                          </span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">ไม่มีลายน้ำ มีเฉพาะตารางลายเซ็น 3x3</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDownload('CONTROLLED')}
+                          className="w-full text-left px-3 py-2 text-xs rounded-lg text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex flex-col mt-1 border-t border-slate-100 dark:border-slate-700 transition-colors cursor-pointer"
+                        >
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            📑 สำเนาควบคุม (Controlled Copy)
+                          </span>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">ติดลายน้ำสีน้ำเงิน สำหรับหน้างาน</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={() => handleDownload('UNCONTROLLED')}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer" 
+                    title="ดาวน์โหลดสำเนาไม่ควบคุม (Uncontrolled Copy)"
+                  >
+                    <Download size={14} />
+                    <span>ดาวน์โหลด (สำเนาไม่ควบคุม)</span>
+                  </button>
+                )}
               </>
             ) : (
               <button className="w-8 h-8 rounded-lg opacity-40 cursor-not-allowed flex items-center justify-center text-slate-400" title={isArchive ? "Archive Document (Download Disabled)" : "ไม่มีสิทธิ์ดาวน์โหลด"}>

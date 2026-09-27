@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import useStore from '../../store/useStore';
-import { Database, Download, Search, Eye, X, FilterX } from 'lucide-react';
+import { Database, Download, Search, Eye, X, FilterX, ChevronDown } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames } from '../../utils/darHelper';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import toast from 'react-hot-toast';
 
 const MasterList = () => {
   const { 
@@ -20,12 +22,67 @@ const MasterList = () => {
   
   // Access Control
   const isAdmin = currentUser?.level >= 5 || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN';
+  const isDccAdmin = Boolean(
+    currentUser?.isDcc || 
+    currentUser?.role === 'DCC_ADMIN' || 
+    currentUser?.isDccAdmin || 
+    currentUser?.department === 'DC' || 
+    currentUser?.department === 'DCC'
+  );
   
   const [masterListDept, setMasterListDept] = useState('');
   const [masterListType, setMasterListType] = useState('');
   const [masterListStatus, setMasterListStatus] = useState('EFFECTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [isPreviewMenuOpen, setIsPreviewMenuOpen] = useState(false);
+  const previewMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (previewMenuRef.current && !previewMenuRef.current.contains(e.target)) {
+        setIsPreviewMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleDownloadDoc = async (targetDoc, downloadMode = 'UNCONTROLLED') => {
+    if (!targetDoc) return;
+    try {
+      let watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
+      let isCleanMaster = false;
+
+      if (downloadMode === 'CLEAN' || downloadMode === 'CLEAN_MASTER') {
+        watermarkType = 'CLEAN';
+        isCleanMaster = true;
+      } else if (downloadMode === 'CONTROLLED' || downloadMode === 'CONTROLLED_COPY') {
+        watermarkType = WATERMARK_TYPES.CONTROLLED_COPY;
+      } else {
+        watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY;
+      }
+
+      await UniversalWatermarkService.downloadWatermarkedPdf(targetDoc, watermarkType, {
+        userName: currentUser?.name || 'Authorized User',
+        userDept: currentUser?.department || currentUser?.dept || 'QMS',
+        holderDept: targetDoc.department || currentUser?.department || 'DCC',
+        location: targetDoc.location || targetDoc.pointOfUse || targetDoc.locationName || targetDoc.department || 'DCC Office',
+        effectiveDate: targetDoc.effectiveDate,
+        isCleanMaster,
+        currentUser
+      }, false);
+
+      const label = isCleanMaster
+        ? 'เอกสารแม่บทคลีน (Clean Master)'
+        : (watermarkType === WATERMARK_TYPES.CONTROLLED_COPY ? 'สำเนาควบคุม (Controlled Copy)' : 'สำเนาไม่ควบคุม (Uncontrolled Copy)');
+
+      toast.success(`ดาวน์โหลด ${label} สำเร็จ`);
+    } catch (err) {
+      console.error(err);
+      toast.error('เกิดข้อผิดพลาดในการดาวน์โหลดเอกสาร');
+    }
+  };
 
   // Filter Logic
   let filteredDocs = documents || [];
@@ -290,13 +347,22 @@ const MasterList = () => {
                       {getStatusBadge(doc.status)}
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <button 
-                        onClick={() => setPreviewDoc(doc)}
-                        className="action-icon-btn text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
-                        title="ดูรายละเอียดเอกสาร"
-                      >
-                        <Eye size={14} />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={() => setPreviewDoc(doc)}
+                          className="action-icon-btn text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
+                          title="ดูรายละเอียดเอกสาร"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadDoc(doc, 'UNCONTROLLED')}
+                          className="action-icon-btn text-emerald-600 hover:bg-emerald-50 cursor-pointer"
+                          title="ดาวน์โหลดสำเนาไม่ควบคุม (Uncontrolled Copy)"
+                        >
+                          <Download size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )})}
@@ -354,10 +420,84 @@ const MasterList = () => {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
+              {isDccAdmin ? (
+                <div className="relative inline-block text-left" ref={previewMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewMenuOpen(prev => !prev)}
+                    className="px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                    title="เลือกรูปแบบการดาวน์โหลด (DCC Admin)"
+                  >
+                    <Download size={14} />
+                    <span>ดาวน์โหลด PDF</span>
+                    <ChevronDown size={14} className={`opacity-80 transition-transform ${isPreviewMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isPreviewMenuOpen && (
+                    <div className="absolute left-0 bottom-full mb-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPreviewMenuOpen(false);
+                          handleDownloadDoc(previewDoc, 'UNCONTROLLED');
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs rounded-lg text-slate-700 hover:bg-slate-100 flex flex-col transition-colors cursor-pointer"
+                      >
+                        <span className="font-semibold text-slate-900 flex items-center gap-1">
+                          📄 สำเนาไม่ควบคุม (Uncontrolled Copy)
+                        </span>
+                        <span className="text-[11px] text-slate-500 mt-0.5">ติดลายน้ำสีแดง สำหรับดูอ้างอิง</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPreviewMenuOpen(false);
+                          handleDownloadDoc(previewDoc, 'CLEAN');
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs rounded-lg text-blue-700 bg-blue-50/80 hover:bg-blue-100 flex flex-col mt-1 border-t border-slate-100 transition-colors cursor-pointer"
+                      >
+                        <span className="font-semibold text-blue-600 flex items-center gap-1">
+                          📥 เอกสารแม่บทฉบับคลีน (Clean Master)
+                        </span>
+                        <span className="text-[11px] text-slate-500 mt-0.5">ไม่มีลายน้ำ มีเฉพาะตารางลายเซ็น 3x3</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPreviewMenuOpen(false);
+                          handleDownloadDoc(previewDoc, 'CONTROLLED');
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs rounded-lg text-emerald-700 hover:bg-emerald-50 flex flex-col mt-1 border-t border-slate-100 transition-colors cursor-pointer"
+                      >
+                        <span className="font-semibold text-emerald-600 flex items-center gap-1">
+                          📑 สำเนาควบคุม (Controlled Copy)
+                        </span>
+                        <span className="text-[11px] text-slate-500 mt-0.5">ติดลายน้ำสีน้ำเงิน สำหรับหน้างาน</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadDoc(previewDoc, 'UNCONTROLLED')}
+                  className="px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  title="ดาวน์โหลดสำเนาไม่ควบคุม (Uncontrolled Copy)"
+                >
+                  <Download size={14} />
+                  <span>ดาวน์โหลด (สำเนาไม่ควบคุม)</span>
+                </button>
+              )}
+
               <button 
                 type="button"
-                onClick={() => setPreviewDoc(null)} 
+                onClick={() => {
+                  setPreviewDoc(null);
+                  setIsPreviewMenuOpen(false);
+                }} 
                 className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer shadow-2xs"
               >
                 ปิดหน้าต่าง

@@ -8,7 +8,8 @@ import {
   UserCheck, 
   Tag, 
   CheckCircle2, 
-  AlertTriangle 
+  AlertTriangle,
+  AlertOctagon 
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
@@ -51,8 +52,16 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
     }
   }, [isOpen, group]);
 
-  const allCollected = collectedCopyIds.length === copies.length && copies.length > 0;
-  const isReadyToSubmit = collectedCopyIds.length > 0 && Boolean(dispositionMethod);
+  const isLostVoided = dispositionMethod === 'LOST_VOIDED';
+  const hasLostCopy = copies.some(c => c.status === 'LOST' || c.status === 'LOST_RECORDED' || c.status === 'DECLARED_LOST' || c.isLost);
+  const isPhysicalBypassed = isLostVoided || hasLostCopy;
+
+  const targetCopyIds = (isLostVoided && collectedCopyIds.length === 0)
+    ? copies.map(c => c.id)
+    : collectedCopyIds;
+
+  const allCollected = targetCopyIds.length === copies.length && copies.length > 0;
+  const isReadyToSubmit = Boolean(dispositionMethod) && (isPhysicalBypassed || collectedCopyIds.length > 0);
 
   if (!isOpen || !group) return null;
 
@@ -68,8 +77,20 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
     );
   };
 
+  const handleSelectDisposition = (method) => {
+    setDispositionMethod(method);
+    if (method === 'LOST_VOIDED') {
+      if (!dccNotes || dccNotes.trim() === '' || dccNotes === 'บันทึกทำลายเล่มจริงเรียบร้อย') {
+        setDccNotes('บันทึกจำหน่ายเนื่องจากสำเนาสูญหายตามคำร้อง หากตรวจพบภายหลังต้องส่งทำลายทันที');
+      }
+    } else if (dccNotes === 'บันทึกจำหน่ายเนื่องจากสำเนาสูญหายตามคำร้อง หากตรวจพบภายหลังต้องส่งทำลายทันที') {
+      setDccNotes('');
+    }
+  };
+
   const handleConfirmDisposition = () => {
-    if (collectedCopyIds.length === 0) {
+    const finalCopyIds = targetCopyIds;
+    if (finalCopyIds.length === 0 && !isLostVoided) {
       toast.error('กรุณาเลือกสำเนาที่รับเล่มมาแล้วอย่างน้อย 1 ชุด');
       return;
     }
@@ -80,7 +101,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
 
     completeCopyRecallAndArchive({
       documentCode: group.docCode,
-      collectedCopyIds,
+      collectedCopyIds: finalCopyIds,
       dispositionMethod,
       witnessName: witnessName.trim(),
       referenceNo: referenceNo.trim(),
@@ -88,14 +109,16 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
       taskId: group.taskId,
     });
 
-    const label = dispositionMethod === 'STAMP_AND_ARCHIVE'
-      ? 'ประทับตรา OBSOLETE และเก็บเข้าคลังประวัติ'
-      : 'ทำลาย (Shred / Destroy)';
+    const label = dispositionMethod === 'LOST_VOIDED'
+      ? 'บันทึกจำหน่ายสูญหาย (Lost / Voided)'
+      : (dispositionMethod === 'STAMP_AND_ARCHIVE'
+        ? 'ประทับตรา OBSOLETE และเก็บเข้าคลังประวัติ'
+        : 'ทำลาย (Shred / Destroy)');
 
-    toast.success(`บันทึกการเรียกคืน ${collectedCopyIds.length}/${copies.length} ชุด — ${label} สำเร็จ`);
+    toast.success(`บันทึกการจัดการ ${finalCopyIds.length}/${copies.length} ชุด — ${label} สำเร็จ`);
     if (onComplete) {
       onComplete({ 
-        collectedCopyIds, 
+        collectedCopyIds: finalCopyIds, 
         dispositionMethod, 
         witnessName, 
         referenceNo, 
@@ -151,19 +174,27 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
 
             {/* ---------- LEFT COLUMN (5/12): Physical Copy Check-in ---------- */}
             <div className="md:col-span-5 flex flex-col space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[11px] flex items-center justify-center font-mono">1</span>
-                  <span>1. ตรวจรับเล่มสำเนาจริง</span>
-                  <span className="sr-only">ขั้นตอนที่ 1</span>
-                  <span className="font-mono font-normal text-slate-500">
-                    ({collectedCopyIds.length}/{copies.length})
-                  </span>
-                </label>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-col gap-1 min-w-0">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                    <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[11px] flex items-center justify-center font-mono shrink-0">1</span>
+                    <span>1. ตรวจรับเล่มสำเนาจริง</span>
+                    <span className="sr-only">ขั้นตอนที่ 1</span>
+                    <span className="font-mono font-normal text-slate-500">
+                      ({collectedCopyIds.length}/{copies.length})
+                    </span>
+                  </label>
+                  {isPhysicalBypassed && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 w-fit">
+                      <AlertOctagon size={11} className="shrink-0 text-amber-600" />
+                      <span>ยืนยันจำหน่ายโดยไม่มีเล่มจริง (No Physical Copy Returned)</span>
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer"
+                  className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer shrink-0 mt-0.5"
                 >
                   {collectedCopyIds.length === copies.length ? 'ยกเลิกทั้งหมด' : 'เลือกทั้งหมด'}
                 </button>
@@ -174,6 +205,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                 {copies.map((copy) => {
                   const isChecked = collectedCopyIds.includes(copy.id);
                   const isDamaged = copy.isDamaged || copy.status === 'DAMAGED_PENDING_RECALL';
+                  const isLost = copy.isLost || copy.status === 'LOST' || copy.status === 'LOST_RECORDED' || copy.status === 'DECLARED_LOST';
 
                   return (
                     <label
@@ -201,6 +233,11 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                           {isDamaged && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
                               ชำรุด
+                            </span>
+                          )}
+                          {isLost && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                              สูญหาย
                             </span>
                           )}
                         </div>
@@ -241,11 +278,11 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                   <span>2. วิธีการจัดการทางกายภาพ (Disposition Method)</span>
                   <span className="text-rose-500 ml-0.5">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Option 1: Shred / Destroy */}
-                  <label className={`p-3.5 rounded-xl border cursor-pointer flex flex-col gap-1.5 transition-all ${
-                    dispositionMethod === 'DESTROY_SCRAP'
-                      ? 'ring-2 ring-sky-500 border-transparent bg-sky-50/30 shadow-xs'
+                  <label className={`p-3 rounded-xl border cursor-pointer flex flex-col gap-1.5 transition-all ${
+                    dispositionMethod === 'DESTROY_SCRAP' || dispositionMethod === 'SHRED'
+                      ? 'ring-2 ring-rose-500 border-transparent bg-rose-50/40 shadow-xs'
                       : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
                   }`}>
                     <div className="flex items-center gap-2">
@@ -253,9 +290,9 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                         type="radio"
                         name="dispositionMethod"
                         value="DESTROY_SCRAP"
-                        checked={dispositionMethod === 'DESTROY_SCRAP'}
-                        onChange={() => setDispositionMethod('DESTROY_SCRAP')}
-                        className="text-sky-600 w-4 h-4 shrink-0 cursor-pointer"
+                        checked={dispositionMethod === 'DESTROY_SCRAP' || dispositionMethod === 'SHRED'}
+                        onChange={() => handleSelectDisposition('DESTROY_SCRAP')}
+                        className="text-rose-600 w-4 h-4 shrink-0 cursor-pointer"
                       />
                       <div className="flex items-center gap-1.5">
                         <Flame size={15} className="text-rose-500 shrink-0" />
@@ -270,9 +307,9 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                   </label>
 
                   {/* Option 2: Stamp OBSOLETE & Archive */}
-                  <label className={`p-3.5 rounded-xl border cursor-pointer flex flex-col gap-1.5 transition-all ${
-                    dispositionMethod === 'STAMP_AND_ARCHIVE'
-                      ? 'ring-2 ring-sky-500 border-transparent bg-sky-50/30 shadow-xs'
+                  <label className={`p-3 rounded-xl border cursor-pointer flex flex-col gap-1.5 transition-all ${
+                    dispositionMethod === 'STAMP_AND_ARCHIVE' || dispositionMethod === 'ARCHIVE_OBSOLETE'
+                      ? 'ring-2 ring-sky-500 border-transparent bg-sky-50/40 shadow-xs'
                       : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
                   }`}>
                     <div className="flex items-center gap-2">
@@ -280,8 +317,8 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                         type="radio"
                         name="dispositionMethod"
                         value="STAMP_AND_ARCHIVE"
-                        checked={dispositionMethod === 'STAMP_AND_ARCHIVE'}
-                        onChange={() => setDispositionMethod('STAMP_AND_ARCHIVE')}
+                        checked={dispositionMethod === 'STAMP_AND_ARCHIVE' || dispositionMethod === 'ARCHIVE_OBSOLETE'}
+                        onChange={() => handleSelectDisposition('STAMP_AND_ARCHIVE')}
                         className="text-sky-600 w-4 h-4 shrink-0 cursor-pointer"
                       />
                       <div className="flex items-center gap-1.5">
@@ -293,6 +330,33 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                     </div>
                     <p className="text-[11px] text-slate-500 leading-relaxed pl-6">
                       ประทับตรายกเลิกสีแดงบนเล่มจริง และจัดเก็บเข้าแฟ้มประวัติ Master Archive
+                    </p>
+                  </label>
+
+                  {/* Option 3: บันทึกสูญหาย (Lost / Voided) */}
+                  <label className={`p-3 rounded-xl border cursor-pointer flex flex-col gap-1.5 transition-all ${
+                    dispositionMethod === 'LOST_VOIDED'
+                      ? 'ring-2 ring-amber-500 border-transparent bg-amber-50/40 shadow-xs'
+                      : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="dispositionMethod"
+                        value="LOST_VOIDED"
+                        checked={dispositionMethod === 'LOST_VOIDED'}
+                        onChange={() => handleSelectDisposition('LOST_VOIDED')}
+                        className="text-amber-600 w-4 h-4 shrink-0 cursor-pointer"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <AlertOctagon size={15} className="text-amber-500 shrink-0" />
+                        <span className="font-bold text-slate-900 text-xs">
+                          บันทึกสูญหาย (Lost/Void)
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed pl-6">
+                      ตัดจำหน่ายเล่มสูญหาย ประกาศยกเลิกสิทธิ์เล่มเดิม
                     </p>
                   </label>
                 </div>
@@ -314,7 +378,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                       type="text"
                       value={referenceNo}
                       onChange={(e) => setReferenceNo(e.target.value)}
-                      placeholder="เช่น REF-DISP-2026-001"
+                      placeholder={isLostVoided ? 'เช่น DAR-2026-045, MEMO-LOST-001' : 'เช่น REF-DISP-2026-001'}
                       className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all"
                     />
                   </div>
@@ -326,7 +390,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                       type="text"
                       value={witnessName}
                       onChange={(e) => setWitnessName(e.target.value)}
-                      placeholder="เช่น คุณบีม (QC)"
+                      placeholder={isLostVoided ? 'ผู้รับรองเหตุสูญหาย / หัวหน้างานแผนกผู้ถือครอง' : 'เช่น คุณบีม (QC)'}
                       className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all"
                     />
                   </div>
@@ -340,7 +404,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
                     rows={2}
                     value={dccNotes}
                     onChange={(e) => setDccNotes(e.target.value)}
-                    placeholder="ระบุข้อความบันทึกเพิ่มเติมสำหรับการตรวจประเมิน..."
+                    placeholder={isLostVoided ? 'บันทึกจำหน่ายเนื่องจากสำเนาสูญหายตามคำร้อง หากตรวจพบภายหลังต้องส่งทำลายทันที' : 'ระบุข้อความบันทึกเพิ่มเติมสำหรับการตรวจประเมิน...'}
                     className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all resize-none"
                   />
                 </div>
@@ -356,13 +420,17 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
             {isReadyToSubmit ? (
               <span className="text-emerald-600 font-semibold inline-flex items-center gap-1.5">
                 <CheckCircle2 size={14} />
-                <span>✓ พร้อมลงทะเบียน ({collectedCopyIds.length} ชุด)</span>
+                <span>
+                  {isLostVoided
+                    ? `✓ พร้อมจำหน่ายสูญหาย (${targetCopyIds.length} ชุด — ไม่มีเล่มจริง)`
+                    : `✓ พร้อมลงทะเบียน (${collectedCopyIds.length} ชุด)`}
+                </span>
               </span>
             ) : (
               <span className="text-amber-700 font-medium inline-flex items-center gap-1.5">
                 <AlertTriangle size={13} className="text-amber-600 shrink-0" />
                 <span>
-                  {collectedCopyIds.length === 0
+                  {collectedCopyIds.length === 0 && !isPhysicalBypassed
                     ? 'ยังไม่ได้ตรวจรับเล่มสำเนา'
                     : !dispositionMethod
                     ? `⚠️ ตรวจรับแล้ว ${collectedCopyIds.length}/${copies.length} ชุด (ยังไม่เลือกวิธีทำลาย)`

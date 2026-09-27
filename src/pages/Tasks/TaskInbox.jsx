@@ -902,7 +902,7 @@ export function normalizeTaskCategory(task) {
     task.title?.includes('ตรวจรับเล่ม') ||
     task.title?.includes('ตรวจรับเอกสาร')
   ) return 'RECEIPT';
-  if (rawType === 'DCC_DISTRIBUTE' || rawType === 'DCC_ISSUE') return 'DCC_DISTRIBUTE';
+  if (rawType === 'DCC_DISTRIBUTE' || rawType === 'DCC_ISSUE' || rawType === 'DISTRIBUTION') return 'DCC_DISTRIBUTE';
   if (rawType === 'DCC_RECALL' || rawType === 'DCC_RECALL_WITH_CHECKLIST' || rawType === 'RECALL' || rawType === 'RECALL_HARDCOPY' || rawType === 'OBSOLETE_RECALL' || task.taskType === 'RECALL' || task.taskType === 'DCC_RECALL_WITH_CHECKLIST') return 'DCC_RECALL';
   if (rawType.startsWith('DCC_')) return 'DCC_ACTION';
   return rawType;
@@ -964,7 +964,7 @@ const TaskInbox = () => {
 
   useEffect(() => {
     setDeptFilter('ALL');
-  }, [currentUser?.id]);
+  }, [currentUser?.id, activeTab]);
 
   const resolveTaskDept = useCallback((task) => {
     if (!task) return '';
@@ -993,12 +993,10 @@ const TaskInbox = () => {
     return (tasks || [])
       .filter(t => isActionableTask(t, currentUser))
       .filter(t => dccAdmin || !isDccExclusiveTask(t))
-      .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && !dccAdmin && !(currentUser?.role === 'QMR' || currentUser?.isQmr) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
+      .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
       .filter(t => {
-        if (dccAdmin || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
-
-        // 🛡️ Phase 1 & 3: Department Pool / Shared Task for Physical Controlled Copy Receipt
-        // All staff in the destination department with Level < 6 can view and act on receipt tasks
+        // 1. งานตรวจรับเล่ม (RECEIPT): ต้องเป็นของแผนกตัวเองเท่านั้น (Strict Segregation)
+        // แม้เป็น DCC Admin หรือ QMR ก็ไม่มีสิทธิ์รับงานตรวจรับแทนแผนกอื่น
         const isReceipt = isReceiptTask(t) || normalizeTaskCategory(t) === 'RECEIPT';
         if (isReceipt) {
           if (isLevel6Executive || isLevel6Plus(currentUser)) return false;
@@ -1008,6 +1006,8 @@ const TaskInbox = () => {
             isSameDepartment(currentUser?.primary_department, tDept) ||
             userMatchesDepartment(currentUser, tDept);
         }
+
+        if (dccAdmin || currentUser?.role === 'QMR' || currentUser?.isQmr) return true;
 
         const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
         const isAssignee = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || t.assigneeName === currentUser?.name));
@@ -1023,6 +1023,14 @@ const TaskInbox = () => {
   }, [tasks, currentUser, dccAdmin, isLevel6Executive, userDepts, resolveTaskDept]);
 
   const availableDepts = useMemo(() => {
+    // 🛡️ When in RECEIPT tab: strictly scoped to recipient department(s) of receipt tasks
+    if (activeTab === 'RECEIPT') {
+      const receiptTasks = (userTasks || []).filter(t => normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t));
+      const deptsFromReceipt = receiptTasks.map(t => normalizeCanonicalDept(resolveTaskDept(t))).filter(Boolean);
+      const combined = Array.from(new Set([...userDepts, ...deptsFromReceipt].map(d => normalizeCanonicalDept(d))));
+      return combined.filter(Boolean);
+    }
+
     if (!dccAdmin) {
       // 🛡️ Phase 2: Strict Department Isolation - Non-DCC users see affiliated departments plus any directly assigned task's department
       const deptsFromAssignedTasks = (userTasks || [])
@@ -1037,7 +1045,13 @@ const TaskInbox = () => {
     const deptsFromTasks = (userTasks || []).map(t => normalizeCanonicalDept(resolveTaskDept(t))).filter(Boolean);
     const combined = Array.from(new Set([...userDepts, ...deptsFromTasks].map(d => normalizeCanonicalDept(d))));
     return combined.filter(Boolean);
-  }, [dccAdmin, userDepts, userTasks, resolveTaskDept, currentUser]);
+  }, [dccAdmin, userDepts, userTasks, resolveTaskDept, currentUser, activeTab]);
+
+  useEffect(() => {
+    if (deptFilter !== 'ALL' && !availableDepts.includes(deptFilter)) {
+      setDeptFilter('ALL');
+    }
+  }, [availableDepts, deptFilter]);
 
   const filteredTasks = useMemo(() => {
     let filtered = userTasks;
@@ -1280,7 +1294,7 @@ const TaskInbox = () => {
             </span>
             <button
               type="button"
-              aria-label={dccAdmin ? `งานทั้งหมดทุกแผนก (${userTasks.length})` : `งานทั้งหมดทุกแผนก ทุกแผนกที่สังกัด (${userTasks.length})`}
+              aria-label={dccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${activeTab === 'ALL' ? userTasks.length : userTasks.filter(t => normalizeTaskCategory(t) === activeTab).length})` : `งานทั้งหมดทุกแผนก ทุกแผนกที่สังกัด (${activeTab === 'ALL' ? userTasks.length : userTasks.filter(t => normalizeTaskCategory(t) === activeTab).length})`}
               onClick={() => setDeptFilter('ALL')}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap shrink-0 border cursor-pointer ${
                 deptFilter === 'ALL'
@@ -1288,10 +1302,10 @@ const TaskInbox = () => {
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100/80'
               }`}
             >
-              {dccAdmin ? `งานทั้งหมดทุกแผนก (${userTasks.length})` : `ทุกแผนกที่สังกัด (${userTasks.length})`}
+              {dccAdmin ? `🏢 งานทั้งหมดทุกแผนก (${activeTab === 'ALL' ? userTasks.length : userTasks.filter(t => normalizeTaskCategory(t) === activeTab).length})` : `ทุกแผนกที่สังกัด (${activeTab === 'ALL' ? userTasks.length : userTasks.filter(t => normalizeTaskCategory(t) === activeTab).length})`}
             </button>
             {availableDepts.map(dept => {
-              const deptCount = userTasks.filter(t => isTaskMatchingDept(t, dept)).length;
+              const deptCount = userTasks.filter(t => (activeTab === 'ALL' || normalizeTaskCategory(t) === activeTab) && isTaskMatchingDept(t, dept)).length;
               const isPrimary = isSameDepartment(primaryDept, dept);
               const isSelected = deptFilter === dept;
               return (
@@ -1370,7 +1384,9 @@ const TaskInbox = () => {
               const isReplacement = Boolean(task.is_replacement || task.isReplacement || task.replacementReason === 'DAMAGED');
               const isUrgentFastTrack = task.isUrgent || task.priority === 'URGENT' || task.slaType === 'FAST_TRACK';
 
-              const finalDocTitle = isExternal ? (extDoc?.title || docTitle) : docTitle;
+              const finalDocTitle = isExternal 
+                ? (extDoc?.title || docTitle) 
+                : ((isReceiptTask(task) && !task.docTitle && !task.docName && !task.doc_title) ? task.title : (docTitle || task.docTitle || task.title || task.documentName));
 
               return (
                 <div
@@ -1459,10 +1475,13 @@ const TaskInbox = () => {
                       {/* 3. ชื่อเอกสาร (Document Title) */}
                       <span 
                         className="text-slate-900 font-medium text-[13px] sm:text-sm leading-snug tracking-tight line-clamp-1"
-                        title={typeof finalDocTitle === 'string' ? finalDocTitle : undefined}
+                        title={task.title || (typeof finalDocTitle === 'string' ? finalDocTitle : undefined)}
                       >
                         {finalDocTitle || task.docTitle || task.title || task.documentName}
                       </span>
+                      {!isReceiptTask(task) && task.title && task.title !== (finalDocTitle || task.docTitle) && (
+                        <span className="sr-only"> ({task.title})</span>
+                      )}
 
                       {isReplacement && (
                         <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">

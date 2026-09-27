@@ -34,6 +34,9 @@ describe('Damaged & Lost Replacement Pipeline, REPLACED_VOID Lifecycle and Dedup
     };
 
     useStore.setState({
+      masterUsers: [
+        { id: 'U001', name: 'DCC Officer', role: 'DCC_ADMIN', isDcc: true, department: 'DC' }
+      ],
       documentControlledCopies: [initialCopy],
       controlledCopyInstances: [initialCopy],
       tasks: [],

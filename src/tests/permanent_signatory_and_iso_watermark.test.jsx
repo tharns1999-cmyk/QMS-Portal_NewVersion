@@ -311,12 +311,12 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       // Verify colors and opacities match ISO specifications
       expect(WATERMARK_CONFIG.CONTROLLED.color).toEqual({ r: 0.12, g: 0.25, b: 0.69 });
       expect(WATERMARK_CONFIG.CONTROLLED.colorHex).toBe('#1F40B0');
-      expect(WATERMARK_CONFIG.CONTROLLED.opacity).toBeCloseTo(0.18, 2);
+      expect(WATERMARK_CONFIG.CONTROLLED.opacity).toBeCloseTo(0.16, 2);
       expect(typeof WATERMARK_CONFIG.CONTROLLED.getLines).toBe('function');
 
       expect(WATERMARK_CONFIG.UNCONTROLLED.color).toEqual({ r: 0.86, g: 0.15, b: 0.15 });
       expect(WATERMARK_CONFIG.UNCONTROLLED.colorHex).toBe('#DC2626');
-      expect(WATERMARK_CONFIG.UNCONTROLLED.opacity).toBeCloseTo(0.18, 2);
+      expect(WATERMARK_CONFIG.UNCONTROLLED.opacity).toBeCloseTo(0.16, 2);
       expect(typeof WATERMARK_CONFIG.UNCONTROLLED.getLines).toBe('function');
 
       expect(WATERMARK_CONFIG.SUPERSEDED.color).toEqual({ r: 0.60, g: 0.10, b: 0.10 });
@@ -335,13 +335,15 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(typeof WATERMARK_CONFIG.DRAFT.getLines).toBe('function');
     });
 
-    it('CONTROLLED COPY line 4 must contain Copy No., Issue No., and Holder', () => {
+    it('CONTROLLED COPY lines must contain Copy No., Issue No., Holder, and Loc', () => {
       const meta = {
         docCode: 'SOP-QA-001',
         revNo: '03',
         copyNo: '05',
         issueNo: '02',
-        holderDept: 'PRODUCTION'
+        holderDept: 'PRODUCTION',
+        location: 'QC Office (สำนักงานประกันและควบคุมคุณภาพ)',
+        issuedDate: '2026-08-20'
       };
 
       const lines = WATERMARK_CONFIG.CONTROLLED.lines(meta);
@@ -350,7 +352,7 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(lines[1].text).toContain('สำเนาควบคุม');
       expect(lines[2].text).toBe('Doc No: SOP-QA-001 | Rev: 03');
       expect(lines[3].text).toBe('Copy No: 05 | Issue No: 02 | Holder: PRODUCTION');
-      expect(lines[4].text).toContain('Authorized by DCC');
+      expect(lines[4].text).toBe('Loc: QC Office (สำนักงานประกันและควบคุมคุณภาพ) | Issued: 2026-08-20');
       expect(lines[5].text).toBe('OFFICIAL CONTROLLED COPY | REPRODUCTION STRICTLY PROHIBITED');
     });
 
@@ -369,13 +371,14 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       });
 
       expect(portraitSpy).toHaveBeenCalled();
-      const expectedPortraitDeg = Math.atan2(841.89, 595.28) * (180 / Math.PI); // ~54.74°
+      const expectedPortraitDeg = 30; // Ergonomic 30° for Portrait
       portraitSpy.mock.calls.forEach(([, opts]) => {
         expect(opts.rotate.angle).toBeCloseTo(expectedPortraitDeg, 1);
-        expect(opts.opacity).toBeCloseTo(0.18, 2);
+        expect(opts.opacity).toBeCloseTo(0.16, 2);
+        expect(opts.width).toBeCloseTo(595.28 * 0.85, 1);
         
         // Verify center of rotated image lands at page center (width/2, height/2)
-        const angleRad = Math.atan2(841.89, 595.28);
+        const angleRad = (30 * Math.PI) / 180;
         const centerX = opts.x + (opts.width / 2) * Math.cos(angleRad) - (opts.height / 2) * Math.sin(angleRad);
         const centerY = opts.y + (opts.width / 2) * Math.sin(angleRad) + (opts.height / 2) * Math.cos(angleRad);
         expect(centerX).toBeCloseTo(595.28 / 2, 1);
@@ -395,13 +398,14 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       });
 
       expect(landscapeSpy).toHaveBeenCalled();
-      const expectedLandscapeDeg = Math.atan2(595.28, 841.89) * (180 / Math.PI); // ~35.26°
+      const expectedLandscapeDeg = 25; // Ergonomic 25° for Landscape
       landscapeSpy.mock.calls.forEach(([, opts]) => {
         expect(opts.rotate.angle).toBeCloseTo(expectedLandscapeDeg, 1);
-        expect(opts.opacity).toBeCloseTo(0.18, 2);
+        expect(opts.opacity).toBeCloseTo(0.16, 2);
+        expect(opts.width).toBeCloseTo(841.89 * 0.70, 1);
 
         // Verify center of rotated image lands at landscape page center (width/2, height/2)
-        const angleRad = Math.atan2(595.28, 841.89);
+        const angleRad = (25 * Math.PI) / 180;
         const centerX = opts.x + (opts.width / 2) * Math.cos(angleRad) - (opts.height / 2) * Math.sin(angleRad);
         const centerY = opts.y + (opts.width / 2) * Math.sin(angleRad) + (opts.height / 2) * Math.cos(angleRad);
         expect(centerX).toBeCloseTo(841.89 / 2, 1);
@@ -475,6 +479,71 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(mockFillText).toHaveBeenCalledWith('ผู้ถือครอง: กัลยาณี เท่านั้น', expect.any(Number), expect.any(Number));
       expect(mockContext.font).toContain('Sarabun');
       expect(mockContext.font).toContain('Noto Sans Thai');
+
+      createElementSpy.mockRestore();
+    });
+
+    it('should generate Ultra-HD 4x canvas with high-quality smoothing and letter-spacing for refined typography', () => {
+      const mockFillText = vi.fn();
+      const mockClearRect = vi.fn();
+      const mockContext = {
+        clearRect: mockClearRect,
+        fillText: mockFillText,
+        textAlign: '',
+        textBaseline: '',
+        font: '',
+        fillStyle: '',
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: 'low',
+        letterSpacing: '0px'
+      };
+
+      let canvasWidth = 0;
+      let canvasHeight = 0;
+
+      const origCreateElement = document.createElement.bind(document);
+      const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+        if (tag === 'canvas') {
+          return {
+            set width(val) { canvasWidth = val; },
+            get width() { return canvasWidth; },
+            set height(val) { canvasHeight = val; },
+            get height() { return canvasHeight; },
+            getContext: vi.fn().mockReturnValue(mockContext),
+            toDataURL: vi.fn().mockReturnValue('data:image/png;base64,MOCK_ULTRA_HD_4X_PNG')
+          };
+        }
+        return origCreateElement(tag);
+      });
+
+      const lines = WATERMARK_CONFIG.CONTROLLED.getLines({
+        docCode: 'SOP-QA-001',
+        revNo: '00',
+        copyNo: '01',
+        issueNo: '01',
+        holderDept: 'QA',
+        location: 'QA Lab'
+      });
+
+      // Verify typography weights & letter spacing
+      expect(lines[0].weight).toBe('600');
+      expect(lines[0].letterSpacing).toBe(3);
+      expect(lines[1].weight).toBe('400');
+      expect(lines[2].weight).toBe('400');
+      expect(lines[3].weight).toBe('400');
+      expect(lines[4].weight).toBe('400');
+      expect(lines[5].weight).toBe('400');
+
+      const res = generateWatermarkCanvas({
+        lines,
+        colorHex: '#1F40B0'
+      });
+
+      expect(res).toBe('data:image/png;base64,MOCK_ULTRA_HD_4X_PNG');
+      expect(mockContext.imageSmoothingEnabled).toBe(true);
+      expect(mockContext.imageSmoothingQuality).toBe('high');
+      expect(canvasWidth).toBeGreaterThan(1500); // 4x scale canvas width
+      expect(mockFillText).toHaveBeenCalled();
 
       createElementSpy.mockRestore();
     });
@@ -629,6 +698,153 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(updatedDoc.isSignatoryStamped).toBe(true);
       expect(updatedDoc.fileData).toBeInstanceOf(Uint8Array);
       expect(updatedDoc.stampedAt).toBeDefined();
+    });
+  });
+
+  describe('8. DCC Admin Clean Master Download & Role-Based Download Menu', () => {
+    it('prepareMasterPdfForDownload with isCleanMaster: true applies 3x3 table but bypasses watermark', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+
+      const doc = {
+        id: 'doc-clean-001',
+        docCode: 'SOP-DCC-001',
+        title: 'Master Procedure',
+        status: 'ACTIVE',
+        fileData: pdfBytes
+      };
+
+      const dar = {
+        id: 'dar-clean-001',
+        docNo: 'SOP-DCC-001',
+        status: 'APPROVED',
+        requesterName: 'นายจัดทำ',
+        reviewerName: 'นายตรวจ',
+        approverName: 'นายอนุมัติ'
+      };
+
+      const cleanBytes = await UniversalWatermarkService.prepareMasterPdfForDownload({
+        document: doc,
+        dar,
+        isCleanMaster: true,
+        watermarkType: 'CLEAN'
+      });
+
+      expect(cleanBytes).toBeDefined();
+      expect(cleanBytes).toBeInstanceOf(Uint8Array);
+
+      // Verify clean document has pages
+      const reloadedDoc = await PDFDocument.load(cleanBytes);
+      expect(reloadedDoc.getPageCount()).toBe(1);
+    });
+
+    it('UniversalWatermarkService.downloadWatermarkedPdf logs audit trail with mode CLEAN_MASTER and names file with _MASTER_CLEAN', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+
+      const doc = {
+        id: 'doc-clean-audit-001',
+        docCode: 'SOP-QA-999',
+        title: 'Clean Master SOP',
+        status: 'ACTIVE',
+        rev: '02',
+        fileData: pdfBytes
+      };
+
+      useStore.setState({
+        currentUser: { id: 'U001', name: 'DCC Admin', department: 'DCC', isDcc: true, role: 'DCC_ADMIN' },
+        controlledCopyAuditTrail: [],
+        externalAuditTrail: []
+      });
+
+      // Spy on appendChild and click to capture download filename
+      let capturedFilename = '';
+      const appendSpy = vi.spyOn(document.body, 'appendChild').mockImplementation((el) => {
+        if (el && el.tagName === 'A' && el.download) {
+          capturedFilename = el.download;
+        }
+        return el;
+      });
+      const removeSpy = vi.spyOn(document.body, 'removeChild').mockImplementation((el) => el);
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      try {
+        await UniversalWatermarkService.downloadWatermarkedPdf(doc, 'CLEAN', {
+          userName: 'DCC Admin',
+          userDept: 'DCC',
+          isCleanMaster: true
+        });
+
+        expect(capturedFilename).toContain('MASTER_CLEAN');
+        expect(capturedFilename).toContain('SOP-QA-999');
+        expect(capturedFilename).toContain('Rev02');
+
+        const state = useStore.getState();
+        const latestAudit = (state.controlledCopyAuditTrail || [])[0];
+        expect(latestAudit).toBeDefined();
+        expect(latestAudit.action).toBe('DOWNLOAD_CLEAN_MASTER');
+        expect(latestAudit.downloadMode).toBe('CLEAN_MASTER');
+        expect(latestAudit.user).toBe('DCC Admin');
+      } finally {
+        appendSpy.mockRestore();
+        removeSpy.mockRestore();
+        clickSpy.mockRestore();
+      }
+    });
+
+    it('UniversalWatermarkService.downloadWatermarkedPdf logs audit trail with mode UNCONTROLLED and names file with _UNCONTROLLED', async () => {
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.addPage([595.28, 841.89]);
+      const pdfBytes = await pdfDoc.save();
+
+      const doc = {
+        id: 'doc-uncontrolled-001',
+        docCode: 'WI-PD-777',
+        title: 'Work Instruction PD',
+        status: 'ACTIVE',
+        rev: '01',
+        fileData: pdfBytes
+      };
+
+      useStore.setState({
+        currentUser: { id: 'U003', name: 'Somchai Staff', department: 'PD', isDcc: false, role: 'USER' },
+        controlledCopyAuditTrail: [],
+        externalAuditTrail: []
+      });
+
+      let capturedFilename = '';
+      const appendSpy = vi.spyOn(document.body, 'appendChild').mockImplementation((el) => {
+        if (el && el.tagName === 'A' && el.download) {
+          capturedFilename = el.download;
+        }
+        return el;
+      });
+      const removeSpy = vi.spyOn(document.body, 'removeChild').mockImplementation((el) => el);
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      try {
+        await UniversalWatermarkService.downloadWatermarkedPdf(doc, WATERMARK_TYPES.UNCONTROLLED_COPY, {
+          userName: 'Somchai Staff',
+          userDept: 'PD',
+          isCleanMaster: false
+        });
+
+        expect(capturedFilename).toContain('UNCONTROLLED');
+        expect(capturedFilename).toContain('WI-PD-777');
+        expect(capturedFilename).toContain('Rev01');
+
+        const state = useStore.getState();
+        const latestAudit = (state.controlledCopyAuditTrail || [])[0];
+        expect(latestAudit).toBeDefined();
+        expect(latestAudit.action).toBe('DOWNLOAD_UNCONTROLLED');
+        expect(latestAudit.downloadMode).toBe('UNCONTROLLED');
+      } finally {
+        appendSpy.mockRestore();
+        removeSpy.mockRestore();
+        clickSpy.mockRestore();
+      }
     });
   });
 });

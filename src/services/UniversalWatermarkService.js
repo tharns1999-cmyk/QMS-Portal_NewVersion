@@ -17,9 +17,8 @@ import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { cleanLocationName } from './MasterDataService';
 import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf, drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
-import { getFile, resolveFileBlob } from '../utils/fileStorage';
+import { resolveFileBlob } from '../utils/fileStorage';
 import { generateQmsDownloadName } from '../utils/documentNamingHelper';
-import { WATERMARK_CONFIG } from '../config/qmsRegistry';
 import { drawStandardIsoWatermark, generateWatermarkCanvas, applyCanvasWatermarkToPdf } from './watermarkEngine';
 
 export {
@@ -34,12 +33,20 @@ export const WATERMARK_TYPES = {
   UNCONTROLLED_COPY: 'UNCONTROLLED_COPY',
   OFFICIAL_MASTER_COPY: 'OFFICIAL_MASTER_COPY',
   STRICTLY_CONFIDENTIAL: 'STRICTLY_CONFIDENTIAL',
+  CONTROLLED: 'CONTROLLED',
   CONTROLLED_COPY: 'CONTROLLED_COPY',
   CONTROLLED_COPY_REPLACEMENT: 'CONTROLLED_COPY_REPLACEMENT',
   OBSOLETE: 'OBSOLETE',
   SUPERSEDED: 'SUPERSEDED',
   DRAFT: 'DRAFT',
   DRAFT_WATERMARK: 'DRAFT_WATERMARK'
+};
+
+export const DOWNLOAD_MODES = {
+  UNCONTROLLED: 'UNCONTROLLED',
+  CLEAN_MASTER: 'CLEAN_MASTER',
+  CLEAN: 'CLEAN',
+  CONTROLLED: 'CONTROLLED'
 };
 
 /**
@@ -176,7 +183,14 @@ export const WATERMARK_PRESETS = {
  * Step 2 (Watermark Layer): Stamp large diagonal watermark (e.g. UNCONTROLLED COPY ~50pt) using drawIsoDiagonalWatermark.
  * Step 3: Returns the finalized PDF bytes.
  */
-export const prepareMasterPdfForDownload = async ({ document: docInput, dar, masterUsers, watermarkType = 'UNCONTROLLED' }) => {
+export const prepareMasterPdfForDownload = async ({ 
+  document: docInput, 
+  dar, 
+  masterUsers, 
+  watermarkType = 'UNCONTROLLED',
+  isCleanMaster = false,
+  meta = {}
+}) => {
   const document = docInput || {};
 
   // 1. ดึงข้อมูลไบนารีดั้งเดิมของ PDF
@@ -244,13 +258,21 @@ export const prepareMasterPdfForDownload = async ({ document: docInput, dar, mas
     pdfBytes = await applyProgressiveSignatoryStamp(pdfBytes, signatories);
   }
 
-  // 3. ประทับลายน้ำตามมาตรฐาน ISO (True Geometric Centering Watermark Engine)
+  // 3. ตรวจสอบโหมด Clean Master (สำหรับ DCC Admin ข้ามลายน้ำทแยงมุม เพื่อให้ได้เอกสารคลีนที่มีเฉพาะตาราง 3x3)
   const normWatermark = String(watermarkType || 'UNCONTROLLED').toUpperCase();
-  if (normWatermark !== 'NONE' && normWatermark !== 'CLEAN') {
+  const shouldBypassWatermark = isCleanMaster || 
+    normWatermark === 'CLEAN' || 
+    normWatermark === 'CLEAN_MASTER' || 
+    normWatermark === 'MASTER_CLEAN' || 
+    normWatermark === 'NONE';
+
+  if (!shouldBypassWatermark) {
     pdfBytes = await drawStandardIsoWatermark(pdfBytes, normWatermark, {
       ...document,
       docCode,
-      status: statusUpper
+      status: statusUpper,
+      revNo: document.revNo ?? document.revision ?? document.rev ?? '00',
+      ...meta
     });
   }
 
@@ -477,8 +499,16 @@ export class UniversalWatermarkService {
       effectiveDate,
       obsoleteDate,
       scope: metadata.scope || metadata.internalExternal || (isExternal ? 'EXTERNAL' : 'INTERNAL'),
-      copyNo: String(metadata.copyNo || metadata.copy_no || '01').padStart(2, '0'),
-      issueNo: String(metadata.issueNo || metadata.issue_no || '01').padStart(2, '0'),
+      copyNo: (() => {
+        const raw = metadata.copyNo || metadata.copy_no || metadata.copyNumber || metadata.ccNumber || '01';
+        const m = String(raw).match(/\d+/);
+        return m ? m[0].padStart(2, '0') : String(raw).padStart(2, '0');
+      })(),
+      issueNo: (() => {
+        const raw = metadata.issueNo || metadata.issue_no || metadata.issueNumber || '01';
+        const m = String(raw).match(/\d+/);
+        return m ? m[0].padStart(2, '0') : '01';
+      })(),
       location: metadata.location || metadata.locationName || metadata.station_name || metadata.locationId || metadata.station_id || `${holderDept} Head Office`,
       holderDept,
       holderDeptName,
@@ -1131,12 +1161,20 @@ export class UniversalWatermarkService {
    * Helper: Directly download watermarked PDF in browser or open in new tab
    */
   static async downloadWatermarkedPdf(doc, watermarkType = WATERMARK_TYPES.UNCONTROLLED_COPY, meta = {}, openInTab = false) {
+    const normWatermark = String(watermarkType || 'UNCONTROLLED').toUpperCase();
+    const isCleanMode = Boolean(
+      meta.isCleanMaster || 
+      normWatermark === 'CLEAN' || 
+      normWatermark === 'CLEAN_MASTER' || 
+      normWatermark === 'MASTER_CLEAN'
+    );
+
     const isFormBypass = this.isBlankFormBypass({ ...doc, ...meta });
-    if (isFormBypass && watermarkType !== WATERMARK_TYPES.OBSOLETE && watermarkType !== 'OBSOLETE') {
+    if (isFormBypass && watermarkType !== WATERMARK_TYPES.OBSOLETE && watermarkType !== 'OBSOLETE' && !isCleanMode) {
       return await this.downloadCleanPdf(doc, { ...doc, ...meta }, openInTab);
     }
 
-    const docCode = doc.edCode || doc.doc_code || doc.document_code || doc.title || meta.docCode || 'DOC-001';
+    const docCode = doc.docCode || doc.doc_code || doc.document_code || doc.docNo || doc.code || doc.edCode || meta.docCode || doc.title || 'DOC-001';
     const docTitle = doc.docTitle || doc.docName || doc.name || (doc.title !== docCode ? doc.title : '') || meta.docTitle || '';
 
     let rawPdfBytes = await this.resolveRawPdfBytes(doc, meta);
@@ -1185,23 +1223,56 @@ export class UniversalWatermarkService {
       }
     }
 
-    const watermarkedBytes = await drawStandardIsoWatermark(rawPdfBytes, watermarkType, {
-      ...doc,
-      docCode,
-      docTitle,
-      docVersion: doc.rev || doc.revision || doc.doc_version || meta.docVersion,
-      docType: doc.docType || doc.doc_type || doc.documentType || doc.type || (docCode || '').split('-')[0],
-      documentType: doc.documentType || doc.docType || doc.doc_type,
-      category: doc.category,
-      type: doc.type,
-      status: doc.status || meta.status || 'ACTIVE',
-      userName: meta.userName,
-      userDept: meta.userDept || doc.department,
-      effectiveDate: doc.effectiveDate || meta.effectiveDate,
-      ...meta
-    });
+    let finalPdfBytes = rawPdfBytes;
+    if (!isCleanMode && normWatermark !== 'NONE') {
+      finalPdfBytes = await drawStandardIsoWatermark(rawPdfBytes, watermarkType, {
+        ...doc,
+        docCode,
+        docTitle,
+        docVersion: doc.rev || doc.revision || doc.doc_version || meta.docVersion,
+        docType: doc.docType || doc.doc_type || doc.documentType || doc.type || (docCode || '').split('-')[0],
+        documentType: doc.documentType || doc.docType || doc.doc_type,
+        category: doc.category,
+        type: doc.type,
+        status: doc.status || meta.status || 'ACTIVE',
+        userName: meta.userName,
+        userDept: meta.userDept || doc.department,
+        effectiveDate: doc.effectiveDate || meta.effectiveDate,
+        ...meta
+      });
+    }
 
-    const blob = new Blob([watermarkedBytes], { type: 'application/pdf' });
+    const isControlled = !normWatermark.includes('UNCONTROLLED') && (
+      watermarkType === WATERMARK_TYPES.CONTROLLED_COPY || 
+      watermarkType === 'CONTROLLED_COPY' || 
+      watermarkType === 'CONTROLLED' ||
+      watermarkType === WATERMARK_TYPES.CONTROLLED ||
+      watermarkType === WATERMARK_TYPES.CONTROLLED_COPY_REPLACEMENT ||
+      watermarkType === 'CONTROLLED_COPY_REPLACEMENT' ||
+      normWatermark.startsWith('CONTROLLED') ||
+      watermarkType === WATERMARK_TYPES.OFFICIAL_MASTER_COPY || 
+      watermarkType === 'OFFICIAL_MASTER_COPY' ||
+      meta.downloadMode === 'CONTROLLED_COPY' || 
+      meta.downloadMode === 'CONTROLLED' || 
+      Boolean(meta.isControlledPrint)
+    );
+
+    // Audit Trail Logging: Record download history into Store
+    try {
+      const { default: useStore } = await import('../store/useStore');
+      const store = useStore.getState();
+      if (store && typeof store.logDocumentDownload === 'function') {
+        store.logDocumentDownload(
+          doc,
+          isCleanMode ? 'CLEAN_MASTER' : (isControlled ? 'CONTROLLED' : 'UNCONTROLLED'),
+          meta.currentUser || { name: meta.userName, department: meta.userDept }
+        );
+      }
+    } catch (auditErr) {
+      console.warn('[UniversalWatermarkService] Audit log warning:', auditErr);
+    }
+
+    const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
 
     if (openInTab) {
@@ -1211,12 +1282,6 @@ export class UniversalWatermarkService {
 
     const link = document.createElement('a');
     link.href = url;
-    const isControlled = watermarkType === WATERMARK_TYPES.CONTROLLED_COPY || 
-      watermarkType === 'CONTROLLED_COPY' || 
-      watermarkType === WATERMARK_TYPES.OFFICIAL_MASTER_COPY || 
-      watermarkType === 'OFFICIAL_MASTER_COPY' ||
-      meta.downloadMode === 'CONTROLLED_COPY' || 
-      Boolean(meta.isControlledPrint);
       
     const resolvedStatus = doc.status || meta.status || (
       watermarkType === WATERMARK_TYPES.OBSOLETE || watermarkType === 'OBSOLETE' 
@@ -1231,7 +1296,9 @@ export class UniversalWatermarkService {
       title: docTitle,
       revision: doc.rev || doc.revision || doc.doc_version || meta.docVersion || '00',
       systemStatus: resolvedStatus,
-      isControlledPrint: isControlled
+      isControlledPrint: isControlled,
+      isCleanMaster: isCleanMode,
+      watermarkType: isCleanMode ? 'CLEAN_MASTER' : watermarkType
     });
     link.download = filename;
     document.body.appendChild(link);

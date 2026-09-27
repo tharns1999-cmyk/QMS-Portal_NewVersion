@@ -20,11 +20,13 @@ import {
   Flame,
   Copy,
   ChevronRight,
-  ChevronDown
+  ChevronDown,
+  AlertOctagon
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import toast from 'react-hot-toast';
+import { formatQmsDate } from '../../utils/dateFormatter';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
@@ -357,7 +359,8 @@ const ControlledCopyRegister = () => {
 
     allCopies.forEach(copy => {
       if (!copy) return;
-      // Exclude lost copies completely
+      // Exclude disposed / voided or already-recorded lost copies
+      if (copy.status === 'LOST_VOIDED' || copy.status === 'DISPOSED_LOST' || copy.status === 'DESTROYED' || copy.status === 'ARCHIVED_OBSOLETE') return;
       if (copy.status === 'LOST' || copy.status === 'LOST_RECORDED' || copy.status === 'DECLARED_LOST') return;
 
       const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
@@ -660,46 +663,74 @@ const ControlledCopyRegister = () => {
   // --- ACTIONS ---
 
   // 1. Single Print with Location-Specific Watermark
-  const handlePrintSingle = async (copy) => {
-    setProcessingCopyId(copy.id);
-    const toastId = toast.loading(`กำลังประทับลายน้ำ 45° สำหรับ ${copy.doc_code || copy.docTitle} (Copy ${copy.copy_no || copy.ccNumber})...`);
+  const handlePrintSingleCopy = async (item) => {
+    setProcessingCopyId(item.id);
+    const rawCopy = item.copyNo || item.copy_no || item.copyNumber || item.ccNumber || '01';
+    const copyMatch = String(rawCopy).match(/\d+/);
+    const cleanCopyNo = copyMatch ? copyMatch[0].padStart(2, '0') : String(rawCopy).padStart(2, '0');
+
+    const toastId = toast.loading(`กำลังประทับลายน้ำ CONTROLLED COPY สำหรับ ${item.docCode || item.doc_code || item.docTitle || 'Document'} (Copy ${cleanCopyNo})...`);
     try {
-      const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
-        || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id))
-        || {
-          id: copy.doc_id || copy.id,
-          title: copy.doc_code || copy.docTitle || 'ED-QA-01',
-          name: copy.docName || copy.docTitle || 'Controlled Procedure Document',
-          rev: copy.doc_version || copy.rev || '01',
-          department: copy.holder_dept || copy.department || 'QA',
-          effectiveDate: copy.dateIssued || new Date().toISOString().split('T')[0]
-        };
+      // 1. ดึงข้อมูล Master Document ที่สอดคล้องกับ item
+      const targetDoc = (documents || []).find(d => 
+        String(d.id) === String(item.docId || item.doc_id) ||
+        (d.code && (d.code === item.docCode || d.code === item.doc_code)) ||
+        (d.docCode && (d.docCode === item.docCode || d.docCode === item.doc_code))
+      ) || (externalDocuments || []).find(d => 
+        String(d.id) === String(item.docId || item.doc_id || item.external_doc_id) ||
+        (d.code && (d.code === item.docCode || d.code === item.doc_code)) ||
+        (d.docCode && (d.docCode === item.docCode || d.docCode === item.doc_code))
+      ) || {
+        id: item.docId || item.doc_id || item.id,
+        title: item.docCode || item.doc_code || item.docTitle || 'SOP-QMS-001',
+        code: item.docCode || item.doc_code || item.docTitle || 'SOP-QMS-001',
+        name: item.docName || item.docTitle || 'Controlled Standard Procedure',
+        revision: item.revNo ?? item.doc_version ?? item.rev ?? '00',
+        department: item.recipientDept || item.department || item.holderDept || item.holder_dept || 'DCC',
+        effectiveDate: item.issuedDate || item.dispatchDate || item.dateIssued || formatQmsDate(new Date())
+      };
 
-      const preset = copy.is_replacement 
-        ? WATERMARK_TYPES.CONTROLLED_COPY_REPLACEMENT 
-        : WATERMARK_TYPES.CONTROLLED_COPY;
+      // 2. Format Issue No. ให้เป็นตัวเลข 2 หลัก (เช่น "Issue 02 (ทดแทน)" หรือ 2 -> "02")
+      const rawIssue = item.issueNo || item.issue_no || item.issueNumber || '01';
+      const issueMatch = String(rawIssue).match(/\d+/);
+      const cleanIssueNo = issueMatch ? issueMatch[0].padStart(2, '0') : '01';
 
-      const isExternal = Boolean(copy.is_external || copy.isExternal || copy.doc_type === 'ED' || (copy.doc_code || copy.docTitle || '').startsWith('ED-'));
+      const holderDept = item.recipientDept || item.department || item.holderDept || item.holder_dept || '-';
+      const location = item.location || item.pointOfUse || item.targetLocation || item.locationName || item.station_name || '-';
+      const issuedDate = item.issuedDate || item.dispatchDate || item.dateIssued || formatQmsDate(new Date());
 
-      await UniversalWatermarkService.downloadWatermarkedPdf(doc, preset, {
-        docCode: copy.doc_code || copy.docTitle || doc.title,
-        docTitle: doc.title || doc.docTitle || doc.name || copy.docName,
-        sourceVersion: doc.sourceVersion || doc.edition,
-        source: doc.source,
+      const docCode = targetDoc.code || targetDoc.docCode || item.docCode || item.doc_code || item.document_code || item.docTitle || targetDoc.title || 'DOC-001';
+      const revNo = targetDoc.revision ?? targetDoc.revNo ?? targetDoc.rev ?? item.revNo ?? item.doc_version ?? item.rev ?? '00';
+
+      const isExternal = Boolean(item.is_external || item.isExternal || targetDoc.isExternal || targetDoc.docType === 'ED' || (docCode || '').startsWith('ED-'));
+
+      // 3. เรียก Watermark Service โหมด CONTROLLED พร้อมส่งพารามิเตอร์ครบชุด
+      await UniversalWatermarkService.downloadWatermarkedPdf(targetDoc, WATERMARK_TYPES.CONTROLLED_COPY, {
+        currentUser,
+        docCode,
+        docTitle: targetDoc.title || targetDoc.docTitle || targetDoc.name || item.docName || '',
+        sourceVersion: targetDoc.sourceVersion || targetDoc.edition,
+        source: targetDoc.source,
         isExternal,
         is_external: isExternal,
-        doc_type: isExternal ? 'ED' : (doc.type || 'SOP'),
-        copyNo: copy.copy_no || copy.ccNumber || '01',
-        location: copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`,
-        issueNo: copy.issue_no || copy.issueNumber || '01',
-        holderDept: copy.holder_dept || copy.department,
-        userName: currentUser?.name || 'DCC Officer'
+        doc_type: isExternal ? 'ED' : (targetDoc.type || targetDoc.docType || 'SOP'),
+        revNo,
+        docVersion: revNo,
+        copyNo: cleanCopyNo,
+        issueNo: cleanIssueNo,
+        holderDept,
+        recipientDept: holderDept,
+        location,
+        loc: location,
+        issuedDate,
+        isControlledPrint: true,
+        is_replacement: Boolean(item.is_replacement || item.isReplacement || cleanIssueNo !== '01')
       });
 
-      toast.success(`ดาวน์โหลดเอกสารพร้อมลายน้ำ Copy ${copy.copy_no || copy.ccNumber} สำเร็จ`, { id: toastId });
+      toast.success(`ดาวน์โหลดเอกสารพร้อมลายน้ำ Copy ${cleanCopyNo} สำเร็จ`, { id: toastId });
     } catch (err) {
-      console.error(err);
-      toast.error('เกิดข้อผิดพลาดในการพิมพ์เอกสาร', { id: toastId });
+      console.error('Failed to print controlled copy:', err);
+      toast.error('ไม่สามารถพิมพ์สำเนาควบคุมได้', { id: toastId });
     } finally {
       setProcessingCopyId(null);
     }
@@ -721,29 +752,63 @@ const ControlledCopyRegister = () => {
 
     try {
       for (let i = 0; i < targets.length; i++) {
-        const copy = targets[i];
-        if (!copy) continue;
-        const doc = (documents || []).find(d => String(d.id) === String(copy.doc_id || copy.docId))
-          || (externalDocuments || []).find(d => String(d.id) === String(copy.doc_id || copy.docId || copy.external_doc_id))
-          || {
-          id: copy.doc_id || copy.id,
-          title: copy.doc_code || copy.docTitle || 'SOP-QMS-001',
-          name: copy.docName || 'Controlled Standard Procedure',
-          rev: copy.doc_version || copy.rev || '01',
-          department: copy.holder_dept || copy.department || 'PD',
-          effectiveDate: copy.dateIssued || new Date().toISOString().split('T')[0]
+        const item = targets[i];
+        if (!item) continue;
+        const targetDoc = (documents || []).find(d => 
+          String(d.id) === String(item.docId || item.doc_id) ||
+          (d.code && (d.code === item.docCode || d.code === item.doc_code)) ||
+          (d.docCode && (d.docCode === item.docCode || d.docCode === item.doc_code))
+        ) || (externalDocuments || []).find(d => 
+          String(d.id) === String(item.docId || item.doc_id || item.external_doc_id) ||
+          (d.code && (d.code === item.docCode || d.code === item.doc_code)) ||
+          (d.docCode && (d.docCode === item.docCode || d.docCode === item.doc_code))
+        ) || {
+          id: item.docId || item.doc_id || item.id,
+          title: item.docCode || item.doc_code || item.docTitle || 'SOP-QMS-001',
+          code: item.docCode || item.doc_code || item.docTitle || 'SOP-QMS-001',
+          name: item.docName || item.docTitle || 'Controlled Standard Procedure',
+          revision: item.revNo ?? item.doc_version ?? item.rev ?? '00',
+          department: item.recipientDept || item.department || item.holderDept || item.holder_dept || 'DCC',
+          effectiveDate: item.issuedDate || item.dispatchDate || item.dateIssued || formatQmsDate(new Date())
         };
 
-        const preset = copy.is_replacement 
-          ? WATERMARK_TYPES.CONTROLLED_COPY_REPLACEMENT 
-          : WATERMARK_TYPES.CONTROLLED_COPY;
+        const rawCopy = item.copyNo || item.copy_no || item.copyNumber || item.ccNumber || '01';
+        const copyMatch = String(rawCopy).match(/\d+/);
+        const cleanCopyNo = copyMatch ? copyMatch[0].padStart(2, '0') : String(rawCopy).padStart(2, '0');
 
-        await UniversalWatermarkService.downloadWatermarkedPdf(doc, preset, {
-          copyNo: copy.copy_no || copy.ccNumber || '01',
-          location: copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`,
-          issueNo: copy.issue_no || copy.issueNumber || '01',
-          holderDept: copy.holder_dept || copy.department,
-          userName: currentUser?.name || 'DCC Officer'
+        const rawIssue = item.issueNo || item.issue_no || item.issueNumber || '01';
+        const issueMatch = String(rawIssue).match(/\d+/);
+        const cleanIssueNo = issueMatch ? issueMatch[0].padStart(2, '0') : '01';
+
+        const holderDept = item.recipientDept || item.department || item.holderDept || item.holder_dept || '-';
+        const location = item.location || item.pointOfUse || item.targetLocation || item.locationName || item.station_name || '-';
+        const issuedDate = item.issuedDate || item.dispatchDate || item.dateIssued || formatQmsDate(new Date());
+
+        const docCode = targetDoc.code || targetDoc.docCode || item.docCode || item.doc_code || item.document_code || item.docTitle || targetDoc.title || 'DOC-001';
+        const revNo = targetDoc.revision ?? targetDoc.revNo ?? targetDoc.rev ?? item.revNo ?? item.doc_version ?? item.rev ?? '00';
+
+        const isExternal = Boolean(item.is_external || item.isExternal || targetDoc.isExternal || targetDoc.docType === 'ED' || (docCode || '').startsWith('ED-'));
+
+        await UniversalWatermarkService.downloadWatermarkedPdf(targetDoc, WATERMARK_TYPES.CONTROLLED_COPY, {
+          currentUser,
+          docCode,
+          docTitle: targetDoc.title || targetDoc.docTitle || targetDoc.name || item.docName || '',
+          sourceVersion: targetDoc.sourceVersion || targetDoc.edition,
+          source: targetDoc.source,
+          isExternal,
+          is_external: isExternal,
+          doc_type: isExternal ? 'ED' : (targetDoc.type || targetDoc.docType || 'SOP'),
+          revNo,
+          docVersion: revNo,
+          copyNo: cleanCopyNo,
+          issueNo: cleanIssueNo,
+          holderDept,
+          recipientDept: holderDept,
+          location,
+          loc: location,
+          issuedDate,
+          isControlledPrint: true,
+          is_replacement: Boolean(item.is_replacement || item.isReplacement || cleanIssueNo !== '01')
         });
 
         // Small pause between downloads to prevent browser pop-up blocking
@@ -955,7 +1020,7 @@ const ControlledCopyRegister = () => {
                 ) : (
                   <Printer size={14} />
                 )}
-                {selectedCopyIds.length > 0 ? `พิมพ์ที่เลือก (${selectedCopyIds.length})` : 'พิมพ์ทั้งหมด'}
+                {selectedCopyIds.length > 0 ? `พิมพ์ที่เลือก (${selectedCopyIds.length})` : 'พิมพ์ทั้งหมด (Batch Print All)'}
               </button>
 
               <button
@@ -1054,7 +1119,7 @@ const ControlledCopyRegister = () => {
                           <td className="py-3.5 px-3.5 text-center align-middle">
                             <div className="flex items-center justify-center gap-2">
                               <button
-                                onClick={() => handlePrintSingle(copy)}
+                                onClick={() => handlePrintSingleCopy(copy)}
                                 disabled={isProcessing}
                                 className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
                                 title="พิมพ์สำเนาพร้อมลายน้ำระบุจุดใช้งาน"
@@ -1194,7 +1259,8 @@ const ControlledCopyRegister = () => {
                     <td className="py-3.5 px-3.5 text-center align-middle">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
                         <span className="w-2 h-2 rounded-full bg-[#D49800] animate-pulse" />
-                        รอตรวจรับ ({copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department})
+                        <span>รอตรวจรับ ({copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department})</span>
+                        <span className="sr-only">รอยืนยันรับเล่ม</span>
                       </span>
                     </td>
                     <td className="py-3.5 px-3.5 text-xs text-slate-600 font-mono align-middle">
@@ -1346,21 +1412,13 @@ const ControlledCopyRegister = () => {
                       <button
                         type="button"
                         onClick={() => setRecallModalGroup(group)}
-                        disabled={!canDispose}
-                        title={
-                          canDispose 
-                            ? "เปิดหน้าต่างบันทึกจัดการสำเนา (ทำลายทิ้ง หรือ จัดเก็บเข้าคลังประวัติ)" 
-                            : "ต้องติ๊กรับเล่มจริงจากหน้างานเข้ามาที่ DCC อย่างน้อย 1 เล่มก่อนจึงจะสามารถทำลายหรือจัดเก็บได้"
-                        }
-                        className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 shrink-0 ${
-                          canDispose 
-                            ? 'bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-md shadow-blue-500/20 cursor-pointer active:scale-98' 
-                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80'
-                        }`}
+                        title="เปิดหน้าต่างบันทึกจัดการสำเนา (ทำลายทิ้ง หรือ จัดเก็บเข้าคลังประวัติ)"
+                        aria-label="จัดการเรียกคืนสำเนา (Disposition & Archive)"
+                        className="px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 shrink-0 bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-md shadow-blue-500/20 cursor-pointer active:scale-98"
                       >
                         <FolderOpen size={16} />
-                        <span>ดำเนินการจัดการสำเนา (Disposition &amp; Archive)</span>
-                        {canDispose && (
+                        <span>จัดการเรียกคืนสำเนา (Disposition &amp; Archive)</span>
+                        {receivedCount > 0 && (
                           <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white font-mono">
                             {receivedCount}
                           </span>
@@ -1976,6 +2034,7 @@ const ControlledCopyRegister = () => {
                         })() : '-';
 
                         const isDestroy = rec.dispositionType === 'DESTROYED';
+                        const isLostVoided = rec.dispositionType === 'LOST_VOIDED' || rec.dispositionMethod === 'LOST_VOIDED';
 
                         return (
                           <tr key={rec.id || index} className="hover:bg-slate-50/60 transition-colors">
@@ -2002,7 +2061,16 @@ const ControlledCopyRegister = () => {
                               </div>
                             </td>
                             <td className="py-3 px-3.5 whitespace-nowrap">
-                              {isDestroy ? (
+                              {isLostVoided ? (
+                                <div className="space-y-1">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <AlertOctagon size={12} /> จำหน่ายสูญหาย (Lost / Voided)
+                                  </span>
+                                  <div className="text-[10px] text-slate-400">
+                                    {rec.dispositionMethod || 'ตัดจำหน่ายเล่มสูญหาย ประกาศยกเลิกสิทธิ์'}
+                                  </div>
+                                </div>
+                              ) : isDestroy ? (
                                 <div className="space-y-1">
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                     <Flame size={12} /> ย่อยทำลาย (Destroyed)

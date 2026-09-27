@@ -293,7 +293,7 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
   });
 
   describe('3. Wildcard Bypass for DCC Admin & QMR', () => {
-    it('allows DCC_ADMIN to see and access tasks across all departments without explicit membership', () => {
+    it('allows DCC_ADMIN to access DCC operational tasks but strictly blocks other department receipt tasks', () => {
       const dccAdmin = {
         id: 'u-dcc-wildcard',
         name: 'DCC Officer Wildcard',
@@ -319,6 +319,13 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
             status: 'PENDING'
           },
           {
+            id: 'task-dcc-dist',
+            type: 'DISTRIBUTION',
+            title: 'แจกจ่าย SOP-DC-999',
+            target_department: 'DCC',
+            status: 'PENDING'
+          },
+          {
             id: 'task-wh-dept',
             type: 'REVIEW',
             title: 'ทบทวน SOP-WH-999',
@@ -331,12 +338,14 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
 
       renderWithRouter(<TaskInbox />);
 
-      // DCC Admin sees DCC/Receipt tasks across departments, but NOT department Review/Approve tasks of other departments
-      expect(screen.getByText(/ตรวจรับ SOP-EN-999/i)).toBeInTheDocument();
+      // DCC Admin strictly CANNOT see other department receipt tasks (ISO 9001 Segregation of Duties)
+      expect(screen.queryByText(/ตรวจรับ SOP-EN-999/i)).not.toBeInTheDocument();
+      // DCC Admin MUST see DCC operational tasks
+      expect(screen.getByText(/แจกจ่าย SOP-DC-999/i)).toBeInTheDocument();
       expect(screen.queryByText(/ทบทวน SOP-WH-999/i)).not.toBeInTheDocument();
     });
 
-    it('allows QMR to see and access tasks across all departments without explicit membership', () => {
+    it('allows QMR to see workflow approval tasks across all departments but strictly blocks station receipt tasks', () => {
       const qmrUser = {
         id: 'u-qmr-wildcard',
         name: 'QMR Officer',
@@ -374,7 +383,9 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
 
       renderWithRouter(<TaskInbox />);
 
-      expect(screen.getByText(/ตรวจรับ WI-QA-888/i)).toBeInTheDocument();
+      // Physical receipt is strictly segregated to recipient department staff
+      expect(screen.queryByText(/ตรวจรับ WI-QA-888/i)).not.toBeInTheDocument();
+      // Cross-department approval is accessible to QMR
       expect(screen.getByText(/อนุมัติ WI-PD-888/i)).toBeInTheDocument();
     });
   });

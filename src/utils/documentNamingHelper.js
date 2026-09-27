@@ -7,30 +7,38 @@
 
 export const generateQmsDownloadName = ({
   docCode = 'DOC',
-  title = 'Document',
+  title = '',
   revision = '00',
   systemStatus = 'DRAFT', // 'DRAFT', 'ACTIVE', 'EFFECTIVE', 'SUPERSEDED', 'OBSOLETE'
-  isControlledPrint = false
+  isControlledPrint = false,
+  isCleanMaster = false,
+  watermarkType = null
 }) => {
   // ทำความสะอาดชื่อไฟล์ ตัดอักขระพิเศษ ป้องกันอักขระที่ระบบปฏิบัติการไม่รองรับ
   const rawCode = String(docCode || 'DOC').trim();
   const cleanCode = rawCode.replace(/[^a-zA-Z0-9-]/g, '') || 'DOC';
 
-  const rawTitle = String(title || 'Document').trim();
+  const rawTitle = title ? String(title).trim() : '';
   const cleanTitle = rawTitle
-    .replace(/[^a-zA-Z0-9ก-๙\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_') || 'Document';
+    ? rawTitle
+        .replace(/[^a-zA-Z0-9ก-๙\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '_')
+    : '';
 
   const rawRev = String(revision ?? '00').replace(/\D/g, '');
   const cleanRev = rawRev ? rawRev.padStart(2, '0') : '00';
 
   let statusSuffix = 'DRAFT';
   const normalizedStatus = String(systemStatus || 'DRAFT').toUpperCase();
+  const normWm = String(watermarkType || '').toUpperCase();
+  const isClean = Boolean(isCleanMaster || normWm === 'CLEAN' || normWm === 'CLEAN_MASTER' || normWm === 'MASTER_CLEAN');
 
-  if (normalizedStatus === 'SUPERSEDED') {
+  if (isClean) {
+    statusSuffix = 'MASTER_CLEAN';
+  } else if (normalizedStatus === 'SUPERSEDED' || normWm === 'SUPERSEDED') {
     statusSuffix = 'SUPERSEDED';
-  } else if (normalizedStatus === 'OBSOLETE') {
+  } else if (normalizedStatus === 'OBSOLETE' || normWm === 'OBSOLETE') {
     statusSuffix = 'OBSOLETE';
   } else if (normalizedStatus === 'ACTIVE' || normalizedStatus === 'EFFECTIVE') {
     statusSuffix = isControlledPrint ? 'CONTROLLED' : 'UNCONTROLLED';
@@ -39,7 +47,8 @@ export const generateQmsDownloadName = ({
     statusSuffix = 'DRAFT';
   }
 
-  return `${cleanCode}_${cleanTitle}_Rev${cleanRev}_${statusSuffix}.pdf`;
+  const prefix = cleanTitle ? `${cleanCode}_${cleanTitle}` : cleanCode;
+  return `${prefix}_Rev${cleanRev}_${statusSuffix}.pdf`;
 };
 
 /**
