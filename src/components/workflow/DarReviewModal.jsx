@@ -27,29 +27,15 @@ import useStore from '../../store/useStore';
 import { ACCESS_SCOPES, ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { calculateCopyAllocations, cleanLocationName } from '../../services/MasterDataService';
+import { formatThaiReadableDate } from '../../utils/dateFormatter';
 import toast from 'react-hot-toast';
 
 /**
  * Format ISO string or date string to readable Thai date
  */
 const formatThaiDate = (dateInput) => {
-  if (!dateInput) return '-';
-  try {
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return String(dateInput);
-
-    const thaiMonths = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-    ];
-
-    const day = d.getDate();
-    const month = thaiMonths[d.getMonth()];
-    const year = d.getFullYear() + 543; // Buddhist Era
-    return `${day} ${month} ${year}`;
-  } catch {
-    return String(dateInput);
-  }
+  return formatThaiReadableDate(dateInput);
 };
 
 /**
@@ -98,13 +84,23 @@ const DarReviewModal = ({
 
   const scopeMeta = ACCESS_SCOPE_METADATA[accessControl.scope] || ACCESS_SCOPE_METADATA.GENERAL;
 
-  // Controlled Copies & Distributions
-  const distributions = dar.distributions || dar.distribution_locations || [];
-  const totalPhysicalCopies = distributions.filter(d => d.copyType === 'CONTROLLED' || d.type === 'CONTROLLED').length;
-  const isDigitalOnly = distributions.length === 0;
+  // Controlled Copies & Distributions (ISO 9001: Master strictly held at DCC, all distributed copies are Controlled Copies)
+  const isFormDoc = String(dar.docType || dar.doc_type || docInfo.docCode || '').startsWith('FM');
+  const rawDistributions = dar.distributions || dar.distribution_locations || [];
+  const allocations = calculateCopyAllocations(ownerDept, rawDistributions);
+  const allControlledCopies = isFormDoc && rawDistributions.length === 0 ? [] : (allocations?.allAllocations || []);
+  const totalControlledCopies = allControlledCopies.length;
+  const isDigitalOnly = isFormDoc || totalControlledCopies === 0;
 
   // Standards Badges
   const relatedStandards = dar.relatedStandards || dar.standards || [];
+
+  const isObsolete = Boolean(
+    dar?.type === 'OBSOLETE' || 
+    dar?.darType === 'OBSOLETE' || 
+    dar?.type === 'CANCEL' ||
+    dar?.requestType === 'OBSOLETE'
+  );
 
   // Handlers
   const handleApproveClick = () => {
@@ -175,38 +171,39 @@ const DarReviewModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 10 }}
         transition={{ duration: 0.2 }}
-        className="bg-white border border-[#E5E5E5] rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.1)] w-full max-w-4xl overflow-hidden my-6 flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col z-10 my-auto animate-in fade-in zoom-in-95 duration-150"
       >
         {/* ========================================================================= */}
         {/* Header & Status Strip */}
         {/* ========================================================================= */}
-        <div className="bg-[#FAFAFA] border-b border-[#E5E5E5] px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0D99FF] flex items-center justify-center border border-blue-100 shrink-0">
+        <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 sm:py-4 flex items-start sm:items-center justify-between gap-3 shrink-0">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-[#0D99FF] flex items-center justify-center border border-blue-100 dark:border-blue-900/50 shrink-0">
               <FileCheck2 size={20} />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-1 rounded-md border border-[#B8E1FF]">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span className="font-mono text-xs font-bold text-[#0D99FF] bg-[#E5F4FF] dark:bg-blue-950/50 px-2.5 py-1 rounded-md border border-[#B8E1FF] dark:border-blue-800">
                   📄 คำร้อง DAR: {dar.id} • Rev.{docInfo.docRev || '00'}
                 </span>
                 {getStatusBadge()}
               </div>
-              <p className="text-xs text-[#666666] mt-1">
-                ยื่นคำร้องโดย: <strong className="text-[#1E1E1E]">{requesterName}</strong> • ฝ่าย{ownerDept} | วันที่ยื่น: {formatThaiDate(dar.createdAt || dar.date || new Date())}
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                ยื่นคำร้องโดย: <strong className="text-slate-900 dark:text-slate-100">{requesterName}</strong> • ฝ่าย{ownerDept} | วันที่ยื่น: {formatThaiDate(dar.createdAt || dar.date || new Date())}
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-center transition-colors cursor-pointer shrink-0"
             title="ปิดหน้าต่าง"
           >
             <X size={18} />
@@ -268,30 +265,34 @@ const DarReviewModal = ({
           </div>
 
           {/* ┌─ [2] วัตถุประสงค์และเหตุผล ──────────────────────────────────────────────┐ */}
-          <div className="bg-white border border-[#E5E5E5] rounded-xl p-4 space-y-3 shadow-2xs">
-            <div className="border-b border-slate-100 pb-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#444444] flex items-center gap-1.5">
-                <MessageSquare size={15} className="text-amber-500" /> 2. วัตถุประสงค์และเหตุผล (Purpose & Justification)
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-4 space-y-3 shadow-2xs">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <MessageSquare size={15} className="text-amber-500 shrink-0" /> 2. วัตถุประสงค์และเหตุผล (Purpose & Justification)
               </h4>
             </div>
 
-            <div className="space-y-2.5 text-xs">
-              <div className="bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0] min-w-0 space-y-1">
-                <span className="font-bold text-slate-700 block">
-                  {getDarReason(dar).title}:
+            <div className="space-y-3">
+              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
+                  {getDarReason(dar).title}
                 </span>
-                <p className="text-slate-800 leading-relaxed whitespace-pre-wrap font-normal min-w-0 break-words break-all [overflow-wrap:anywhere]">
-                  {getDarReason(dar).value || 'ไม่มีข้อมูลเหตุผล'}
-                </p>
+                <div className="sm:col-span-3">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
+                    {getDarReason(dar).value || dar.reason || 'ไม่มีข้อมูลเหตุผล'}
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0] min-w-0 space-y-1">
-                <span className="font-bold text-slate-700 block">
-                  {getDarDetail(dar).title}:
+              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
+                  {getDarDetail(dar).title}
                 </span>
-                <p className="text-slate-800 leading-relaxed whitespace-pre-wrap font-normal min-w-0 break-words break-all [overflow-wrap:anywhere]">
-                  {getDarDetail(dar).value || 'ไม่มีข้อมูลรายละเอียดเพิ่มเติม'}
-                </p>
+                <div className="sm:col-span-3">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
+                    {getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || 'ไม่มีข้อมูลรายละเอียดเพิ่มเติม'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -312,10 +313,10 @@ const DarReviewModal = ({
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">ระดับชั้นความลับ (Access Scope)</span>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
-                      {accessControl.scope === 'GENERAL' && '🌐 เปิดเผยทั่วไป — ทุกคนเข้าถึงได้'}
-                      {accessControl.scope === 'DEPT_ONLY' && `🔒 เฉพาะแผนก — ล็อกเฉพาะคนในแผนก ${ownerDept}`}
-                      {accessControl.scope === 'TARGETED' && '🏢 เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม'}
-                      {accessControl.scope === 'RESTRICTED' && '🛡️ ลับเฉพาะบุคคล/ตำแหน่ง'}
+                      {accessControl.scope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>เปิดเผยทั่วไป — ทุกคนเข้าถึงได้</span></>}
+                      {accessControl.scope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก — ล็อกเฉพาะคนในแผนก {ownerDept}</span></>}
+                      {accessControl.scope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก — อนุญาตเฉพาะกลุ่ม</span></>}
+                      {accessControl.scope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะบุคคล/ตำแหน่ง</span></>}
                     </span>
                   </div>
 
@@ -370,25 +371,39 @@ const DarReviewModal = ({
                   <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <span className="text-[#666666]">ยอดจัดสรรสำเนา:</span>
                     <span className="font-bold font-mono text-[#1E1E1E]">
-                      Master: 1 ชุด | เล่มควบคุม: {totalPhysicalCopies} ชุด
+                      {isDigitalOnly 
+                        ? '📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)' 
+                        : `ต้นฉบับ (Master): จัดเก็บที่ DCC | เล่มควบคุมแจกจ่าย: ${totalControlledCopies} ชุด`}
                     </span>
                   </div>
 
                   <div>
                     <span className="text-[#777777] block text-[11px] mb-1">รายการสำเนาและจุดประจำหน้างาน:</span>
-                    <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                      <div className="flex items-center justify-between p-1.5 bg-indigo-50/60 rounded border border-indigo-100 text-[11px]">
-                        <span className="font-bold text-indigo-900">Master 01 (ต้นฉบับ)</span>
-                        <span className="text-indigo-700 font-medium">{ownerDept} Head Office (ล็อกถาวร)</span>
-                      </div>
-
-                      {distributions.length > 0 ? (
-                        distributions.map((d, i) => (
-                          <div key={i} className="flex items-center justify-between p-1.5 bg-slate-50 rounded border border-slate-200 text-[11px]">
-                            <span className="font-bold text-slate-800">Copy {String(i + 1).padStart(2, '0')}</span>
-                            <span className="text-slate-600 truncate max-w-[180px]">{d.location || d.stationName || d.departmentId || 'จุดหน้างาน'}</span>
-                          </div>
-                        ))
+                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                      {!isDigitalOnly && allControlledCopies.length > 0 ? (
+                        allControlledCopies.map((d, i) => {
+                          const isOrigin = d.copyNo === '01' || d.isOwner || i === 0;
+                          const rawLoc = d.location || d.station_name || d.stationName || d.locationName || d.name || d.departmentId || 'จุดหน้างาน';
+                          const cleanLoc = cleanLocationName(rawLoc);
+                          const deptTag = d.departmentId || d.dept || ownerDept;
+                          return (
+                            <div 
+                              key={i} 
+                              className={`flex items-center justify-between p-1.5 rounded border text-[11px] ${
+                                isOrigin 
+                                  ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950' 
+                                  : 'bg-slate-50 border-slate-200 text-slate-800'
+                              }`}
+                            >
+                              <span className="font-bold font-mono text-indigo-900">
+                                Copy {d.copyNo || String(i + 1).padStart(2, '0')} (เล่มควบคุม)
+                              </span>
+                              <span className="text-slate-600 truncate max-w-[220px]">
+                                {cleanLoc} {isOrigin ? `(${ownerDept} — ล็อกถาวร)` : `(${deptTag})`}
+                              </span>
+                            </div>
+                          );
+                        })
                       ) : (
                         <div className="p-2 text-center text-slate-400 text-[11px] italic bg-slate-50 rounded">
                           📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)
@@ -454,12 +469,12 @@ const DarReviewModal = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* Action Toolbar & Comments (Footer) */}
+        {/* Action Toolbar & Comments (Footer - Blueprint B) */}
         {/* ========================================================================= */}
-        <div className="bg-[#FAFAFA] border-t border-[#E5E5E5] px-6 py-4 space-y-3 shrink-0">
+        <div className="bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 space-y-3 shrink-0">
           {!readOnly && (
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#444444] flex items-center gap-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <MessageSquare size={14} className="text-[#0D99FF]" /> ความเห็นประกอบการพิจารณา (Approval / Rejection Comments)
               </label>
               <textarea
@@ -467,39 +482,39 @@ const DarReviewModal = ({
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="ระบุความเห็นหรือข้อเสนอแนะในการแก้ไข (ถ้ามี)..."
-                className="w-full px-3 py-2 text-xs bg-white border border-[#E5E5E5] rounded-lg text-[#1E1E1E] placeholder:text-[#999999] focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-none resize-none"
+                className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] outline-hidden resize-none"
               />
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs font-bold text-slate-600 hover:text-[#1E1E1E] px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors w-full sm:w-auto cursor-pointer"
+              className="w-full sm:w-auto text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer border border-slate-200/60 sm:border-transparent"
             >
               ปิดหน้าต่าง (Close)
             </button>
 
             {!readOnly && (
-              <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-                {onReturn && (
-                  <button
-                    type="button"
-                    onClick={handleReturnClick}
-                    className="bg-white border border-[#FFCD29] text-[#946C00] hover:bg-[#FFFBEA] text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RotateCcw size={14} /> ส่งกลับแก้ไข (Request Changes)
-                  </button>
-                )}
-
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
                 {onReject && (
                   <button
                     type="button"
                     onClick={handleRejectClick}
-                    className="bg-white border border-[#F24822] text-[#F24822] hover:bg-[#FFF2F0] text-xs font-bold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="w-full sm:w-auto bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <Ban size={14} /> ไม่อนุมัติ (Reject)
+                    <Ban size={14} /> <span>ไม่อนุมัติ (Reject)</span>
+                  </button>
+                )}
+
+                {onReturn && (
+                  <button
+                    type="button"
+                    onClick={handleReturnClick}
+                    className="w-full sm:w-auto bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <RotateCcw size={14} /> <span>ส่งกลับแก้ไข (Request Changes)</span>
                   </button>
                 )}
 
@@ -507,9 +522,13 @@ const DarReviewModal = ({
                   <button
                     type="button"
                     onClick={handleApproveClick}
-                    className="bg-[#14AE5C] hover:bg-[#0F8A49] text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    className={`w-full sm:w-auto ${
+                      isObsolete
+                        ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800 shadow-rose-600/20'
+                        : 'bg-[#14AE5C] hover:bg-[#0F8A49]'
+                    } text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer`}
                   >
-                    <CheckCircle size={15} /> {role === 'REVIEWER' ? 'ผ่านการทบทวน (Approve Review)' : 'อนุมัติคำร้อง (Approve)'}
+                    <CheckCircle size={15} /> <span>{role === 'REVIEWER' ? 'ผ่านการทบทวน (Approve Review)' : isObsolete ? 'อนุมัติยกเลิกเอกสาร (Approve Obsolete)' : 'อนุมัติคำร้อง (Approve)'}</span>
                   </button>
                 )}
               </div>

@@ -158,7 +158,7 @@ describe('Library Universal Audit Scope, Status Normalization & Obsolete Form Sy
       // SOP-PD-001 with status="ACTIVE" must be displayed under default EFFECTIVE tab
       expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
       expect(screen.getByText(/ขั้นตอนการผสมวัตถุดิบ \(Active\)/i)).toBeInTheDocument();
-      expect(screen.getByText('มีผลบังคับใช้')).toBeInTheDocument();
+      expect(screen.getAllByText(/มีผลบังคับใช้/i).length).toBeGreaterThan(0);
     });
 
     it('allows PD User to switch to "SUPERSEDED" tab and view historical superseded records for audit', () => {
@@ -176,7 +176,7 @@ describe('Library Universal Audit Scope, Status Normalization & Obsolete Form Sy
 
       // Should display SOP-PD-001-OLD (SUPERSEDED_ARCHIVED)
       expect(screen.getByText('SOP-PD-001-OLD')).toBeInTheDocument();
-      expect(screen.getByText(/ฉบับตกรุ่น/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/ฉบับตกรุ่น/i).length).toBeGreaterThan(0);
 
       // Should NOT display active doc under Superseded filter
       expect(screen.queryByText('SOP-PD-001')).not.toBeInTheDocument();

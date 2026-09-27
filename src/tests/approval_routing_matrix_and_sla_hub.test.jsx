@@ -26,7 +26,7 @@ describe('Approval Routing Matrix & SLA Management Hub (Tab 6) Tests', () => {
       renderWithRouter(<MasterDataHub />);
 
       // Switch to Tab 6
-      const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+      const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
       fireEvent.click(slaTabBtn);
 
       // Verify Section 1 Header & 4 Cards
@@ -57,7 +57,7 @@ describe('Approval Routing Matrix & SLA Management Hub (Tab 6) Tests', () => {
     it('updates SLA days in local state and persists to store upon clicking Save', () => {
       renderWithRouter(<MasterDataHub />);
 
-      const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+      const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
       fireEvent.click(slaTabBtn);
 
       // Find the inputs for Review SLA and Approve SLA
@@ -84,7 +84,7 @@ describe('Approval Routing Matrix & SLA Management Hub (Tab 6) Tests', () => {
     it('opens modal to edit matrix entry for QM and updates required levels', () => {
       renderWithRouter(<MasterDataHub />);
 
-      const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+      const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
       fireEvent.click(slaTabBtn);
 
       // Find edit button for QM

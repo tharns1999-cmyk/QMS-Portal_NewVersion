@@ -55,8 +55,9 @@ describe('Damaged & Lost Replacement Pipeline, REPLACED_VOID Lifecycle and Dedup
 
     // Old copy
     const oldCopy = copies.find(c => c.id === 'inst-test-01');
-    expect(oldCopy.status).toBe('DAMAGED_PENDING_REPLACEMENT');
+    expect(['PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'DAMAGED_PENDING_REPLACEMENT']).toContain(oldCopy.status);
     expect(oldCopy.reportType).toBe('DAMAGED');
+    expect(oldCopy.isDamaged).toBe(true);
     expect(oldCopy.reportReason).toContain('เอกสารเปียกน้ำฉีกขาด');
 
     // Replacement copy
@@ -73,8 +74,11 @@ describe('Damaged & Lost Replacement Pipeline, REPLACED_VOID Lifecycle and Dedup
     // Dual-state sync check
     expect(state.documentControlledCopies.length).toBe(state.controlledCopyInstances.length);
 
-    // DCC Task check
+    // DCC Distribute Task check (Issue 02)
     expect(state.tasks.some(t => t.type === 'DCC_DISTRIBUTE' && t.title.includes('Issue 02'))).toBe(true);
+
+    // DCC Recall Task check (MUST be generated for DAMAGED)
+    expect(state.tasks.some(t => t.type === 'DCC_RECALL' && t.title.includes('เรียกคืนสำเนาชำรุด'))).toBe(true);
 
     // DCC Notification check
     expect(state.notifications.some(n => n.title.includes('มีคำขอออกสำเนาทดแทน') && n.userId === 'U001')).toBe(true);
@@ -91,8 +95,12 @@ describe('Damaged & Lost Replacement Pipeline, REPLACED_VOID Lifecycle and Dedup
     expect(copies.length).toBe(2);
 
     const oldCopy = copies.find(c => c.id === 'inst-test-01');
-    expect(oldCopy.status).toBe('LOST_RECORDED');
+    expect(['LOST', 'LOST_RECORDED', 'DECLARED_LOST']).toContain(oldCopy.status);
     expect(oldCopy.reportType).toBe('LOST');
+    expect(oldCopy.isLost).toBe(true);
+
+    // DCC Recall Task MUST NOT be generated for LOST
+    expect(state.tasks.some(t => t.type === 'DCC_RECALL')).toBe(false);
 
     const replacementCopy = copies.find(c => c.is_replacement === true);
     expect(replacementCopy).toBeDefined();

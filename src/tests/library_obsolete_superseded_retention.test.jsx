@@ -122,7 +122,7 @@ describe('Immutable Document Revision History, Persistent Obsolete/Superseded Li
 
     // Must find SOP-PD-01
     expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
-    expect(screen.getByText(/ฉบับตกรุ่น/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/ฉบับตกรุ่น/i).length).toBeGreaterThan(0);
   });
 
   it('Scenario 3 (DCC Global Audit Visibility): DCC user sees all statuses across all departments', () => {
@@ -132,9 +132,6 @@ describe('Immutable Document Revision History, Persistent Obsolete/Superseded Li
         <Library />
       </MemoryRouter>
     );
-
-    // Switch to Global View
-    fireEvent.click(screen.getByRole('button', { name: /Global View/i }));
 
     // Click "ทั้งหมด (All Records)" tab
     fireEvent.click(screen.getByRole('button', { name: /ทั้งหมด \(All Records\)/i }));

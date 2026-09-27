@@ -38,24 +38,9 @@ const ActionLog = () => {
     currentUser?.isDcc || 
     currentUser?.role === 'DCC_ADMIN' || 
     currentUser?.role === 'DCC_STAFF' || 
-    currentUser?.role === 'SUPER_ADMIN' || 
-    currentUser?.id === 'U001' || 
-    currentUser?.id === 'u5'
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.isDccAdmin
   );
-
-  if (!isDccAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 text-center min-h-[50vh]">
-        <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mb-3 shadow-xs">
-          <ShieldAlert size={28} />
-        </div>
-        <h2 className="text-xl font-bold text-[#1E293B]">Access Denied (จำกัดสิทธิ์)</h2>
-        <p className="text-sm text-[#64748B] mt-1 max-w-md">
-          เฉพาะเจ้าหน้าที่ DCC และผู้ดูแลระบบเท่านั้นที่สามารถดูบันทึกประวัติการทำงานของระบบได้
-        </p>
-      </div>
-    );
-  }
 
   // --- Safe Extraction Helpers (Guaranteed string return, zero React 19 child crash) ---
 
@@ -330,6 +315,20 @@ const ActionLog = () => {
     { id: 'PERIODIC_REVIEW', label: 'ทบทวนตามรอบ', icon: Calendar, count: allNormalizedLogs.filter(l => l.category === 'PERIODIC_REVIEW').length },
     { id: 'SYSTEM', label: 'ระบบ/ข้อมูลหลัก', icon: Settings, count: allNormalizedLogs.filter(l => l.category === 'SYSTEM').length },
   ];
+
+  if (!isDccAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 text-center min-h-[50vh]">
+        <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mb-3 shadow-xs">
+          <ShieldAlert size={28} />
+        </div>
+        <h2 className="text-xl font-bold text-[#1E293B]">Access Denied (จำกัดสิทธิ์)</h2>
+        <p className="text-sm text-[#64748B] mt-1 max-w-md">
+          เฉพาะเจ้าหน้าที่ DCC และผู้ดูแลระบบเท่านั้นที่สามารถดูบันทึกประวัติการทำงานของระบบได้
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">

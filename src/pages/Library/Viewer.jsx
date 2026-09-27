@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert } from 'lucide-react';
-import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
+import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
+import { resolveFileBlob } from '../../utils/fileStorage';
+import { applyProgressiveSignatoryStamp } from '../../utils/pdfStamper';
+import { resolveProgressiveSignatories } from '../../utils/signatoryResolver';
 import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import toast from 'react-hot-toast';
 import { hasDocumentAccess } from '../../utils/accessControl';
@@ -14,10 +17,118 @@ const Viewer = () => {
   const isArchive = searchParams.get('archive') === 'true';
   const { documents, currentUser, canDownloadDocument } = useStore();
   const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [realPdfUrl, setRealPdfUrl] = useState(null);
+  const [activePdfBlob, setActivePdfBlob] = useState(null);
+  const [_loadingPdf, setLoadingPdf] = useState(false);
+  const [zoomMode, setZoomMode] = useState('FitH'); // 'FitH' | '100' | '125' | '150' | '75'
   
-  const doc = documents.find(d => d.id === docId);
+  const doc = (documents || []).find(d => 
+    String(d.id) === String(docId) ||
+    String(d.document_code) === String(docId) ||
+    String(d.doc_code) === String(docId) ||
+    String(d.docCode) === String(docId) ||
+    String(d.code) === String(docId) ||
+    String(d.docNo) === String(docId) ||
+    String(d.title) === String(docId)
+  );
+
+  useEffect(() => {
+    let activeUrl = null;
+    let isCancelled = false;
+
+    if (doc) {
+      // 1. Fast Path: Check if pre-stamped binary exists directly in memory (Instant 0ms display)
+      const isAlreadyStamped = Boolean(doc.isSignatoryStamped || doc.is_signatory_stamped || doc.stampedAt);
+      const inMemoryBlob = (doc.fileBlob instanceof Blob ? doc.fileBlob : null) ||
+                           (doc.pdfBlob instanceof Blob ? doc.pdfBlob : null) ||
+                           (doc.fileData ? new Blob([doc.fileData], { type: 'application/pdf' }) : null);
+
+      if (isAlreadyStamped && inMemoryBlob && inMemoryBlob.size > 0) {
+        activeUrl = URL.createObjectURL(inMemoryBlob);
+        setRealPdfUrl(activeUrl);
+        setActivePdfBlob(inMemoryBlob);
+        setLoadingPdf(false);
+        return () => {
+          isCancelled = true;
+          setActivePdfBlob(null);
+          if (activeUrl) {
+            URL.revokeObjectURL(activeUrl);
+          }
+        };
+      }
+
+      setLoadingPdf(true);
+      resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
+        .then(async (blob) => {
+          if (!isCancelled && blob) {
+            let displayBlob = blob;
+            const status = (doc.status || (isArchive ? 'OBSOLETE' : '')).toUpperCase();
+            const isMasterDoc = status === 'ACTIVE' || status === 'EFFECTIVE' || status === 'APPROVED' || isArchive;
+            const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(doc.title || doc.docCode || '').startsWith('ED-') && !String(doc.title || doc.docCode || '').startsWith('EXT-');
+
+            // Only run JIT stamping if the document has NOT been stamped yet
+            if (isMasterDoc && isInternal && !isAlreadyStamped) {
+              try {
+                const store = useStore.getState();
+                const relatedDar = (store.dars || []).find(d => 
+                  d.id === doc.darId || 
+                  d.darNumber === doc.darNumber || 
+                  d.docNo === doc.document_code || 
+                  d.docCode === doc.document_code ||
+                  d.title === doc.title
+                );
+                const signatories = resolveProgressiveSignatories({
+                  dar: relatedDar,
+                  masterDoc: doc,
+                  stage: 'MASTER',
+                  masterUsers: store.masterUsers,
+                  users: store.users,
+                  currentUser: store.currentUser
+                });
+                const stampedBytes = await applyProgressiveSignatoryStamp(blob, signatories);
+                displayBlob = new Blob([stampedBytes], { type: 'application/pdf' });
+
+                // Pre-bake and cache into Store & IndexedDB so future opens are 100% instant!
+                if (store.finalizeAndPublishMaster && (doc.darId || relatedDar?.id)) {
+                  store.finalizeAndPublishMaster(doc.darId || relatedDar?.id).catch(() => {});
+                }
+              } catch (stampErr) {
+                console.warn('[Viewer] Stamping 3x3 table warning:', stampErr);
+              }
+            }
+
+            activeUrl = URL.createObjectURL(displayBlob);
+            setRealPdfUrl(activeUrl);
+            setActivePdfBlob(displayBlob);
+          }
+        })
+        .catch(err => {
+          console.warn('[Viewer] Could not resolve file blob:', err);
+        })
+        .finally(() => {
+          if (!isCancelled) setLoadingPdf(false);
+        });
+    }
+
+    return () => {
+      isCancelled = true;
+      setActivePdfBlob(null);
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
+    };
+  }, [doc]);
+
+  const iframeUrl = useMemo(() => {
+    if (!realPdfUrl) return '';
+    const viewParam = zoomMode === 'FitH' ? 'view=FitH' : `view=Fit&zoom=${zoomMode}`;
+    return `${realPdfUrl}#${viewParam}&toolbar=0&navpanes=0`;
+  }, [realPdfUrl, zoomMode]);
+
   const title = doc ? doc.title : docId;
-  const canDownload = doc && !isArchive ? canDownloadDocument(doc, currentUser) : false;
+  const docStatus = doc?.status || (isArchive ? 'OBSOLETE' : '');
+  const watermarkConfig = getWatermarkConfig(docStatus);
+  const canDownload = doc && !isArchive && docStatus === 'EFFECTIVE' ? canDownloadDocument(doc, currentUser) : false;
 
   // Access Control Guard
   if (doc && !hasDocumentAccess(doc, currentUser)) {
@@ -45,15 +156,20 @@ const Viewer = () => {
   const handleDownload = async (openInTab = false) => {
     if (!doc) return;
     try {
-      const watermarkType = currentUser.isDcc ? WATERMARK_TYPES.OFFICIAL_MASTER_COPY : WATERMARK_TYPES.UNCONTROLLED_COPY;
+      const watermarkType = currentUser?.isDcc ? WATERMARK_TYPES.OFFICIAL_MASTER_COPY : WATERMARK_TYPES.UNCONTROLLED_COPY;
       
-      await UniversalWatermarkService.downloadWatermarkedPdf(doc, watermarkType, {
-        userName: currentUser.name,
-        userDept: currentUser.department || currentUser.dept || 'PD',
+      const docToDownload = {
+        ...doc,
+        ...(activePdfBlob ? { fileBlob: activePdfBlob, fileData: activePdfBlob } : {})
+      };
+
+      await UniversalWatermarkService.downloadWatermarkedPdf(docToDownload, watermarkType, {
+        userName: currentUser?.name,
+        userDept: currentUser?.department || currentUser?.dept || 'PD',
         effectiveDate: doc.effectiveDate
       }, openInTab);
 
-      toast.success(openInTab ? 'เปิดเอกสาร PDF ในแท็บใหม่สำเร็จ' : `ดาวน์โหลดเอกสาร (${currentUser.isDcc ? 'Master' : 'Uncontrolled Copy'}) สำเร็จ`);
+      toast.success(openInTab ? 'เปิดเอกสาร PDF ในแท็บใหม่สำเร็จ' : `ดาวน์โหลดเอกสาร (${currentUser?.isDcc ? 'Master' : 'Uncontrolled Copy'}) สำเร็จ`);
     } catch (err) {
       console.error(err);
       toast.error('เกิดข้อผิดพลาดในการสร้าง PDF');
@@ -61,11 +177,11 @@ const Viewer = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-none border border-slate-800 relative">
+    <div className="h-full w-full flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-none border border-slate-800 relative min-h-0">
       {/* Viewer Toolbar */}
-      <div className="bg-slate-800 text-slate-200 px-4 py-3 flex items-center justify-between border-b border-slate-700/80 z-10">
+      <div className="bg-slate-800 text-slate-200 px-4 py-2.5 flex items-center justify-between border-b border-slate-700/80 z-20 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors">
+          <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors" title="ย้อนกลับ">
             <ArrowLeft size={18} />
           </button>
           <div className="font-bold text-sm md:text-base truncate max-w-[200px] md:max-w-md flex items-center gap-2">
@@ -84,10 +200,28 @@ const Viewer = () => {
             <Sparkles size={14} /> <span className="hidden sm:inline">Watermark Studio</span>
           </button>
 
-          <div className="hidden md:flex items-center gap-1.5 bg-slate-700/80 rounded-xl px-2.5 py-1">
-            <button className="p-1 hover:bg-slate-600 rounded text-slate-300"><ZoomOut size={16} /></button>
-            <span className="text-xs w-10 text-center font-mono text-slate-300">100%</span>
-            <button className="p-1 hover:bg-slate-600 rounded text-slate-300"><ZoomIn size={16} /></button>
+          <div className="hidden md:flex items-center gap-1 bg-slate-700/80 rounded-xl px-2.5 py-1">
+            <button 
+              onClick={() => setZoomMode(prev => prev === 'FitH' ? '100' : String(Math.max(50, parseInt(prev, 10) - 25)))} 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              title="ซูมออก"
+            >
+              <ZoomOut size={15} />
+            </button>
+            <button 
+              onClick={() => setZoomMode('FitH')} 
+              className="text-xs w-12 text-center font-mono text-slate-300 hover:text-white transition-colors cursor-pointer" 
+              title="คลิกเพื่อรีเซ็ต Fit-Width (พอดีความกว้าง)"
+            >
+              {zoomMode === 'FitH' ? 'Fit' : `${zoomMode}%`}
+            </button>
+            <button 
+              onClick={() => setZoomMode(prev => prev === 'FitH' ? '125' : String(Math.min(200, parseInt(prev, 10) + 25)))} 
+              className="p-1 hover:bg-slate-600 rounded text-slate-300 transition-colors" 
+              title="ซูมเข้า"
+            >
+              <ZoomIn size={15} />
+            </button>
           </div>
           
           <div className="flex items-center gap-1.5 border-l border-slate-700 pl-3">
@@ -117,39 +251,61 @@ const Viewer = () => {
         </div>
       </div>
 
-      {/* Viewer Canvas (Mock) */}
-      <div className="flex-1 bg-slate-950 overflow-auto flex items-center justify-center p-4 md:p-8 relative">
+      {/* Viewer Canvas - Full Frame Immersive (Edge-to-Edge, Fit-Width Enforced) */}
+      <div className="flex-1 w-full bg-slate-950 overflow-hidden flex flex-col p-0 relative min-h-0">
         
-        {/* Watermark Overlay for Archived Documents */}
-        {isArchive && (
-          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-50 overflow-hidden opacity-20">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="text-rose-500 font-bold text-6xl md:text-8xl whitespace-nowrap -rotate-45 mb-32 select-none tracking-wider drop-shadow-sm">
-                ARCHIVE DOCUMENT
+        {/* Watermark Overlay for Superseded and Obsolete Documents */}
+        {watermarkConfig.visible && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-50 overflow-hidden select-none">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div 
+                key={i} 
+                style={{ color: watermarkConfig.color }}
+                className="font-black text-4xl sm:text-6xl md:text-7xl whitespace-nowrap -rotate-45 mb-24 md:mb-32 select-none tracking-widest drop-shadow-sm font-sans"
+              >
+                {watermarkConfig.text}
               </div>
             ))}
           </div>
         )}
 
-        <div className="bg-white w-full max-w-4xl min-h-[700px] shadow-none rounded-xl flex flex-col items-center justify-center text-center p-10 relative z-0">
-          <div className="border-2 border-dashed border-[#E5E5E5] rounded-xl p-10 w-full h-full flex flex-col items-center justify-center bg-[#F5F5F5]/50">
-            <h1 className="text-xl font-bold text-slate-400 mb-2">PDF Document Viewer</h1>
-            <p className="text-sm text-slate-800 font-bold font-mono">Document: {title}</p>
-            <p className="text-xs text-[#666666] font-mono mt-0.5">Revision: {rev}</p>
-            {isArchive && (
-              <div className="mt-6 px-3.5 py-1.5 bg-rose-50 text-rose-800 rounded-full font-bold text-xs border border-rose-200">
-                🚨 ARCHIVE DOCUMENT (เอกสารยกเลิกแล้ว ห้ามนำไปใช้อ้างอิง)
-              </div>
-            )}
+        {realPdfUrl ? (
+          <div className="w-full flex-1 h-full bg-white overflow-hidden relative z-0 flex flex-col min-h-0">
+            <iframe
+              src={iframeUrl}
+              className="w-full flex-1 h-full border-0 block"
+              style={{ minHeight: '100%' }}
+              title={`Viewer - ${title}`}
+            />
           </div>
-        </div>
+        ) : (
+          <div className="w-full flex-1 h-full bg-white rounded-lg sm:rounded-xl shadow-none flex flex-col items-center justify-center text-center p-6 sm:p-10 relative z-0 min-h-0">
+            <div className="border-2 border-dashed border-[#E5E5E5] rounded-xl p-8 w-full max-w-2xl flex flex-col items-center justify-center bg-[#F5F5F5]/50">
+              <h1 className="text-xl font-bold text-slate-400 mb-2">PDF Document Viewer</h1>
+              <p className="text-sm text-slate-800 font-bold font-mono">Document: {title}</p>
+              <p className="text-xs text-[#666666] font-mono mt-0.5">Revision: {rev}</p>
+              {watermarkConfig.visible && (
+                <div 
+                  className="mt-6 px-4 py-2 rounded-full font-bold text-xs border tracking-wide flex items-center gap-2"
+                  style={{
+                    backgroundColor: docStatus.includes('SUPERSEDED') ? '#FFF7ED' : '#FEF2F2',
+                    borderColor: docStatus.includes('SUPERSEDED') ? '#FDBA74' : '#FECACA',
+                    color: docStatus.includes('SUPERSEDED') ? '#C2410C' : '#DC2626'
+                  }}
+                >
+                  {docStatus.includes('SUPERSEDED') ? '⏳' : '🚨'} {watermarkConfig.text} (ห้ามนำไปใช้อ้างอิง)
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Floating Pagination */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-xs text-white px-4 py-1.5 rounded-full flex items-center gap-3 shadow-none border border-slate-700 text-xs">
-        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300"><ChevronLeft size={16} /></button>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur-md text-white px-4 py-1.5 rounded-full flex items-center gap-3 shadow-lg border border-slate-700/80 text-xs z-20 pointer-events-auto">
+        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"><ChevronLeft size={16} /></button>
         <span className="font-mono font-medium">Page 1 of 5</span>
-        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300"><ChevronRight size={16} /></button>
+        <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"><ChevronRight size={16} /></button>
       </div>
 
       {/* Watermark Studio Modal */}
