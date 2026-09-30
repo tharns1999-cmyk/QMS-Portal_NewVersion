@@ -363,6 +363,21 @@ const TaskReview = () => {
           dar.title
         ].filter(Boolean);
 
+        const hasExplicitAttachment = Boolean(
+          dar.fileId || dar.file_id || dar.fileName ||
+          dar.attachedFile || dar.file ||
+          task?.fileId || task?.attachedFile || task?.fileName
+        );
+
+        if (!hasExplicitAttachment) {
+          if (!isCancelled) {
+            setPdfBlobUrl(null);
+            setLoadingPdf(false);
+            setPdfLoadError('ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)');
+          }
+          return;
+        }
+
         let rawBlob = null;
         const allKeys = Array.from(new Set([primaryKey, ...fallbackKeys])).filter(Boolean);
         
@@ -533,7 +548,7 @@ const TaskReview = () => {
           <button 
             type="button"
             onClick={() => navigate('/tasks')} 
-            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition-all cursor-pointer shadow-xs"
           >
             <ChevronLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
           </button>
@@ -564,7 +579,7 @@ const TaskReview = () => {
           <button 
             type="button"
             onClick={() => navigate('/tasks')} 
-            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 transition-all cursor-pointer shadow-xs"
+            className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition-all cursor-pointer shadow-xs"
           >
             <ChevronLeft size={14} /> กลับสู่หน้ารายการงาน (Task Inbox)
           </button>
@@ -606,296 +621,254 @@ const TaskReview = () => {
   };
 
   return (
-    <div 
-      className="min-h-[calc(100vh-100px)] lg:h-[calc(100vh-100px)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden -mx-4 -mb-8 px-4 pb-4 transition-all duration-200 ease-out"
-    >
-      {/* LEFT COLUMN: Details & Chat */}
-      <div className="w-full lg:w-[42%] xl:w-[40%] flex flex-col card-surface overflow-hidden shrink-0">
-        {/* Header */}
-        <div className="p-3.5 sm:p-4 border-b border-slate-200/80 bg-slate-50/80 flex items-center justify-between gap-3 shadow-xs z-10 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <button 
+    <div className="h-screen w-full flex overflow-hidden bg-slate-100 p-2.5 sm:p-3.5 gap-2.5 sm:gap-3.5 [color-scheme:light]">
+      {/* ================= 1. การ์ดฝั่งซ้าย: FLOATING INSPECTOR CARD ================= */}
+      <div className="w-[370px] xl:w-[410px] shrink-0 h-full flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden z-10">
+        
+        {/* 1.1 Top Header */}
+        <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-2">
+            <button
               type="button"
-              onClick={() => navigate('/tasks')} 
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-[#0D99FF] hover:bg-slate-200/50 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0"
+              onClick={() => navigate('/tasks')}
+              className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft className="w-4 h-4" />
               <span>ย้อนกลับ</span>
             </button>
-            <h2 className="font-bold text-slate-900 text-sm hidden sm:flex items-center gap-1.5 truncate">
-              <FileText className="text-[#0D99FF] shrink-0" size={16} />
-              <span className="truncate">ทบทวนเอกสาร</span>
-            </h2>
+            <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200">
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span className="font-bold text-slate-800 text-sm">ทบทวนเอกสาร</span>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            <h2 className="font-bold text-slate-900 text-xs flex sm:hidden items-center gap-1">
-              <FileText className="text-[#0D99FF] shrink-0" size={14} />
-              <span>ทบทวน</span>
-            </h2>
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setIsInspectorOpen(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#007BE5] border border-blue-200/80 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
               title="เปิดหน้าต่างเอกสารฉบับเต็ม"
             >
               <span>เอกสารฉบับเต็ม</span>
             </button>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              {dar.request_type || dar.type || 'NEW'}
+            </span>
           </div>
         </div>
 
-        {/* Scrollable Details & Timeline */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/40 hide-scrollbar">
-          
-          {/* DAR Summary Card */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
-            <div className="flex justify-between items-start gap-2">
-              <div className="min-w-0">
-                <h3 className="text-xs text-slate-400 uppercase tracking-wider font-bold">คำร้องขอเอกสาร (DAR)</h3>
-                <p className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 font-mono mt-0.5 truncate">
-                  {dar.darNumber || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
-                </p>
-              </div>
-              <span className="badge-system shrink-0">{dar.type}</span>
+        {/* 1.2 Scrollable Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 text-xs bg-white">
+          {/* DAR Header Banner */}
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">คำร้องขอเอกสาร (DAR)</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                {dar.request_type || dar.type || 'NEW'}
+              </span>
             </div>
-            
-            {/* Metadata items: Stacked on mobile, grid on sm+ */}
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5 first:pt-0">
-                <span className="text-slate-400 font-medium">ชื่อเอกสาร</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100 sm:col-span-2 break-words">{dar.title}</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">รหัสเอกสาร</span>
-                <span className="font-mono font-bold text-[#007BE5] sm:col-span-2">{docInfo.docCode}</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">ประเภท</span>
-                <span className="font-medium sm:col-span-2">{docInfo.docType}</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">ฉบับที่</span>
-                <span className="font-mono font-bold sm:col-span-2">
-                  {dar.type === 'REVISION' ? `${docInfo.docRev} ➡️ ${String(parseInt(docInfo.docRev || 0, 10) + 1).padStart(2, '0')}` : docInfo.docRev}
+            <h2 className="text-xl font-black text-slate-900 mt-1">
+              {dar.darNumber || dar.dar_no || (dar.isDraft || dar.status === 'DRAFT' || String(dar.id).startsWith('draft_') ? 'ยังไม่ได้ระบุ (Draft)' : dar.id)}
+            </h2>
+            <p className="text-slate-600 font-medium text-xs mt-0.5 truncate" title={dar.title || dar.document_title}>
+              {dar.title || dar.document_title}
+            </p>
+          </div>
+
+          {/* Grid ข้อมูลเอกสารแบบ Clean */}
+          <div className="space-y-2 divide-y divide-slate-100 text-slate-600">
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">รหัสเอกสาร</span>
+              <span className="font-bold font-mono text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">
+                {docInfo.docCode || dar.document_code || dar.docCode || 'No Code'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">ประเภท / Revision</span>
+              <span className="font-semibold text-slate-800">
+                {docInfo.docType || dar.document_type || dar.docType || 'WI'} | Rev.{dar.type === 'REVISION' ? `${docInfo.docRev} ➡️ ${String(parseInt(docInfo.docRev || 0, 10) + 1).padStart(2, '0')}` : (docInfo.docRev ?? dar.revision ?? '00')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">แผนกเจ้าของ</span>
+              <span className="font-medium text-slate-800 text-right">
+                {(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || dar.department || '-'); })()}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">ผู้ร้องขอ</span>
+              <span className="font-semibold text-slate-800">
+                {requesterName || dar.requester_name || '-'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">วันบังคับใช้</span>
+              <span className="font-bold text-emerald-700 font-mono">
+                {dar.effectiveDate || dar.effective_date || '-'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">วันครบกำหนด</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-slate-800 font-semibold">
+                  {task?.dueDate || dar.due_date || '-'}
                 </span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">แผนกเจ้าของ</span>
-                <span className="font-bold font-mono sm:col-span-2">{(() => { const d = normalizeDepartmentId(dar.department); const dObj = masterDepartments.find(md => normalizeDepartmentId(md.id) === d); return dObj ? `${d} - ${dObj.nameTh || dObj.name}` : (d || '-'); })()}</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">ผู้ร้องขอ</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100 sm:col-span-2">{requesterName}</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">วันบังคับใช้</span>
-                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 sm:col-span-2">{dar.effectiveDate || '-'}</span>
-              </div>
-              
-              {task?.dueDate && (
-                <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                  <span className="text-slate-400 font-medium">วันครบกำหนด</span>
-                  <div className="sm:col-span-2 flex items-center gap-1.5 flex-wrap">
-                    <span className={`font-mono font-bold ${task.isUrgent || task.slaType === 'FAST_TRACK' ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                      {task.dueDate}
-                    </span>
-                    {(task.isUrgent || task.slaType === 'FAST_TRACK') && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300">
-                        <Zap size={10} className="fill-amber-500 text-amber-600" />
-                        <span>งานด่วน (Fast-Track)</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {/* Confidentiality Pill */}
-              <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                <span className="text-slate-400 font-medium">ระดับความลับ</span>
-                <div className="sm:col-span-2">
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold border ${scopeMeta.badgeClass}`}>
-                    {accessScope === 'GENERAL' && <><Globe size={13} strokeWidth={1.5} /><span>ทั่วไป</span></>}
-                    {accessScope === 'DEPT_ONLY' && <><Lock size={13} strokeWidth={1.5} /><span>เฉพาะแผนก</span></>}
-                    {accessScope === 'TARGETED' && <><Building2 size={13} strokeWidth={1.5} /><span>เฉพาะบางแผนก</span></>}
-                    {accessScope === 'RESTRICTED' && <><ShieldAlert size={13} strokeWidth={1.5} /><span>ลับเฉพาะ (Lv.{dar.access_control?.min_access_level || 4}+)</span></>}
+                {(task?.isUrgent || task?.slaType === 'FAST_TRACK' || dar?.isUrgent || dar?.slaType === 'FAST_TRACK') && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    ⚡ งานด่วน
                   </span>
-                </div>
-              </div>
-
-              {/* Related Standards */}
-              {(dar.relatedStandards || dar.standards)?.length > 0 && (
-                <div className="flex flex-col sm:grid sm:grid-cols-3 gap-0.5 sm:gap-2 py-1.5">
-                  <span className="text-slate-400 font-medium">มาตรฐาน</span>
-                  <div className="sm:col-span-2 flex flex-wrap gap-1">
-                    {(dar.relatedStandards || dar.standards).map(s => (
-                      <span key={s} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded text-[10px] font-medium">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Clean Content Cards: เหตุผลในการร้องขอ & รายละเอียดเพิ่มเติม (Blueprint A) */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
-              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-3 sm:items-start">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
-                  {getDarReason(dar).title}
-                </span>
-                <div className="sm:col-span-3">
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
-                    {getDarReason(dar).value || dar.reason || '-'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-3 sm:items-start">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
-                  {getDarDetail(dar).title}
-                </span>
-                <div className="sm:col-span-3">
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
-                    {getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || '-'}
-                  </div>
-                </div>
+                )}
               </div>
             </div>
+            <div className="flex justify-between items-center pt-1.5">
+              <span className="text-slate-400">ระดับความลับ</span>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${scopeMeta.badgeClass}`}>
+                {accessScope === 'GENERAL' && <><Globe size={11} strokeWidth={1.5} /><span>ทั่วไป</span></>}
+                {accessScope === 'DEPT_ONLY' && <><Lock size={11} strokeWidth={1.5} /><span>เฉพาะแผนก</span></>}
+                {accessScope === 'TARGETED' && <><Building2 size={11} strokeWidth={1.5} /><span>เฉพาะบางแผนก</span></>}
+                {accessScope === 'RESTRICTED' && <><ShieldAlert size={11} strokeWidth={1.5} /><span>ลับเฉพาะ (Lv.{dar.access_control?.min_access_level || 4}+)</span></>}
+              </span>
+            </div>
+            {(dar.relatedStandards || dar.standards)?.length > 0 && (
+              <div className="flex justify-between items-center pt-1.5">
+                <span className="text-slate-400">มาตรฐาน</span>
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {(dar.relatedStandards || dar.standards).map(s => (
+                    <span key={s} className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 rounded text-[10px] font-medium">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Timeline / Chat */}
-          <div className="flex flex-col gap-3">
-             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-               <MessageSquare size={16} /> ประวัติและข้อคิดเห็น (Workflow History)
-             </h4>
-             {darTimeline.map(tl => (
-               <div key={tl.id} className={`flex flex-col ${tl.userId === currentUser?.id ? 'items-end' : 'items-start'}`}>
-                 <div className="flex items-baseline gap-1.5 mb-1 px-1">
-                   <span className="text-xs font-bold text-slate-700">{tl.user}</span>
-                   <span className="text-xs text-slate-400 font-mono">{tl.date}</span>
-                 </div>
-                 <div className={`p-3.5 rounded-xl max-w-[90%] text-sm shadow-xs leading-relaxed ${tl.userId === currentUser?.id ? 'bg-[#0D99FF] text-white rounded-tr-sm' : 'bg-white border border-[#E5E5E5] text-slate-800 rounded-tl-sm'}`}>
-                    {tl.isChat ? (
-                      <p>{tl.comment}</p>
-                    ) : (
-                      <div>
-                        <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-bold mb-1 ${tl.userId === currentUser?.id ? 'bg-white/20 text-white' : 'bg-[#F5F5F5] text-slate-700'}`}>
-                           {tl.action}
-                        </span>
-                        <p>{tl.comment}</p>
-                      </div>
-                    )}
-                 </div>
-               </div>
-             ))}
+          {/* เหตุผลการร้องขอ & รายละเอียด */}
+          <div className="space-y-2 pt-1">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{getDarReason(dar).title || 'เหตุผลในการร้องขอ'}</span>
+              <p className="mt-1 text-slate-700 text-xs leading-relaxed whitespace-pre-wrap">{getDarReason(dar).value || dar.reason || '-'}</p>
+            </div>
+            {(getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || dar.detail) && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{getDarDetail(dar).title || 'รายละเอียดเพิ่มเติม'}</span>
+                <p className="mt-1 text-slate-700 text-xs leading-relaxed whitespace-pre-wrap">{getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || dar.detail}</p>
+              </div>
+            )}
           </div>
+
+          {/* Workflow History / Timeline */}
+          {darTimeline.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                <MessageSquare size={12} /> ประวัติและข้อคิดเห็น
+              </span>
+              <div className="space-y-2">
+                {darTimeline.map(tl => (
+                  <div key={tl.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs">
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+                      <span className="font-semibold text-slate-700">{tl.user}</span>
+                      <span className="font-mono">{tl.date}</span>
+                    </div>
+                    <p className="text-slate-700">{tl.comment || tl.action}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Action Panel (Fixed Bottom / Sticky Footer - Blueprint B) */}
-        <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200/80 dark:border-slate-800 shadow-xs z-10 shrink-0">
+        {/* 1.3 Pinned Action Dock (Bottom-Padded, 2-Button Stack) */}
+        <div className="shrink-0 p-3.5 border-t border-slate-100 bg-slate-50/90 space-y-2.5">
           <textarea
-            rows="3"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all outline-hidden resize-none min-h-[80px]"
-            placeholder="ระบุเหตุผล ข้อเสนอแนะ หรือสิ่งที่ต้องปรับปรุงเพิ่มเติม..."
+            placeholder="ระบุเหตุผล ข้อเสนอแนะ หรือสิ่งที่ต้องปรับปรุง..."
+            rows={2}
+            className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none shadow-xs"
           />
-          
-          <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col-reverse sm:flex-row sm:justify-end items-stretch sm:items-center gap-2.5">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={!hasReadToBottom}
               onClick={() => handleAction('RETURN')}
-              className="w-full sm:w-auto px-4 py-2.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200/80 dark:border-amber-800 rounded-xl transition-all flex items-center justify-center gap-2 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title="ส่งกลับไปให้ Requester แก้ไข"
+              className="w-full py-2 px-3 rounded-xl border border-rose-200 text-rose-700 bg-white hover:bg-rose-50 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <RotateCcw size={14} />
-              <span>ส่งกลับแก้ไข (Return)</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>ส่งกลับแก้ไข</span>
             </button>
-            
             <button
               type="button"
               disabled={!hasReadToBottom}
               onClick={() => handleAction('APPROVE')}
-              className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 transition-all shadow-xs shadow-emerald-600/20 rounded-xl flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title="ผ่านการทบทวน"
+              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Check size={15} />
-              <span>ผ่านการทบทวน (Approve Review)</span>
+              <Check className="w-3.5 h-3.5" />
+              <span>ผ่านการทบทวน</span>
             </button>
           </div>
-          
           {!hasReadToBottom && (
-            <p className="text-xs text-rose-500 text-center mt-2 font-medium">⚠️ กรุณาเลื่อนอ่านเอกสารทางขวาให้จบเพื่อปลดล็อคปุ่ม</p>
+            <p className="text-[11px] text-rose-500 text-center font-medium">⚠️ กรุณาเลื่อนอ่านเอกสารทางขวาให้จบเพื่อปลดล็อคปุ่ม</p>
           )}
         </div>
       </div>
 
-      {/* RIGHT COLUMN: PDF Viewer & Signatory Matrix */}
-      <div className="w-full lg:w-[58%] xl:w-[60%] min-h-[480px] lg:min-h-0 flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-700">
-        
-        {/* Header - แสดงชื่อเอกสารตามฟอร์ม DAR แทนชื่อไฟล์ดิบ (Blueprint A) */}
-        <div className="bg-slate-800 text-slate-200 px-4 py-3 flex items-center justify-between border-b border-slate-700 shadow-xs z-10 shrink-0">
-          <div className="flex items-center gap-2 truncate pr-4">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shrink-0" />
-            <span className="text-sm font-bold text-slate-200 truncate" title={headerDisplayTitle}>
+      {/* ================= 2. การ์ดฝั่งขวา: FLOATING EXPANDED PREVIEW CARD ================= */}
+      <div className="flex-1 min-w-0 h-full flex flex-col bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        {/* PDF Header Bar */}
+        <div className="shrink-0 h-11 px-4 border-b border-slate-100 flex items-center justify-between text-xs bg-white">
+          <div className="flex items-center gap-2 truncate pr-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+            <span className="font-bold text-slate-800 truncate text-sm" title={headerDisplayTitle}>
               {headerDisplayTitle}
             </span>
           </div>
-          <div className="flex items-center gap-2 border-l border-slate-700 pl-4 shrink-0">
-            <button 
-              onClick={handleDownloadDraft}
-              className="action-icon-btn text-sky-400 hover:text-white hover:bg-slate-700 cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" 
-              title="ดาวน์โหลดเอกสาร PDF"
-            >
-              <Download size={14} />
-              <span className="hidden sm:inline font-bold">ดาวน์โหลด</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleDownloadDraft}
+            className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-xs flex items-center gap-1.5 border border-blue-200 transition-colors cursor-pointer shrink-0"
+            title="ดาวน์โหลดเอกสาร PDF"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>ดาวน์โหลด</span>
+          </button>
         </div>
 
-        {/* PDF Container - ขยาย Edge-to-Edge ห้ามมี Padding ล้อมรอบ (Blueprint A) */}
+        {/* PDF Viewer Container */}
         <div 
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 w-full h-full relative bg-slate-50 overflow-hidden flex items-center justify-center"
+          className="flex-1 min-h-0 w-full bg-slate-50 overflow-hidden relative"
         >
           {loadingPdf ? (
-            <div className="text-slate-400 font-medium animate-pulse flex flex-col items-center gap-3">
-              <div className="w-10 h-10 rounded-full border-3 border-sky-500/20 border-t-sky-500 animate-spin" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+              <div className="w-8 h-8 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
               <span className="text-xs text-slate-500">กำลังเปิดไฟล์เอกสารฉบับจริง...</span>
             </div>
           ) : pdfBlobUrl ? (
             <iframe
-              src={`${pdfBlobUrl}#view=FitH&toolbar=0&navpanes=0`}
-              className="absolute inset-0 w-full h-full border-0 bg-white"
+              src={`${pdfBlobUrl}#view=FitH&zoom=page-width&toolbar=0&navpanes=0`}
               title="PDF Preview"
+              className="w-full h-full border-none"
             />
           ) : pdfLoadError ? (
-            <div className="text-slate-400 font-medium flex flex-col items-center gap-4 p-6 text-center">
-              <ShieldAlert size={40} className="text-amber-500" />
-              <span className="text-sm text-slate-700">{pdfLoadError}</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+              <ShieldAlert size={36} className="text-amber-500" />
+              <span className="text-xs text-slate-700">{pdfLoadError}</span>
               <button
+                type="button"
                 onClick={() => setPdfLoadRetryKey(k => k + 1)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer"
               >
-                <RotateCcw size={14} /> ลองโหลดใหม่
+                <RotateCcw size={12} /> ลองโหลดใหม่
               </button>
             </div>
           ) : (
-            <div className="text-slate-400 font-medium flex flex-col items-center gap-3">
-              <ShieldAlert size={40} className="text-slate-400" />
-              <span>ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+              <ShieldAlert size={36} className="text-slate-400" />
+              <span className="text-xs text-slate-500">ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)</span>
             </div>
           )}
         </div>
-
       </div>
 
       <ActionConfirmModal

@@ -853,6 +853,10 @@ export const generateDraftWatermarkImage = async (metadata = {}) => {
     canvas.width = BASE_WIDTH * SCALE;   // 2560 px
     canvas.height = BASE_HEIGHT * SCALE; // 1600 px
     const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) {
+      resolve(null);
+      return;
+    }
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -933,6 +937,9 @@ export const applyDraftWatermarkToPdf = async (pdfBytes, metadata = {}) => {
   const pages = pdfDoc.getPages();
 
   const watermarkPngUrl = await generateDraftWatermarkImage(metadata);
+  if (!watermarkPngUrl) {
+    return await pdfDoc.save();
+  }
   const watermarkImage = await pdfDoc.embedPng(watermarkPngUrl);
 
   pages.forEach((page) => {
@@ -1311,19 +1318,21 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
     });
   }
 
-  const watermarkImage = await pdfDoc.embedPng(watermarkPngData);
-  for (const page of pages) {
-    const { width, height } = page.getSize();
-    
-    // ปรับจาก 0.95 ลงมาเหลือ 0.52 (ประมาณ 310 pt บนหน้ากระดาษ A4 กว้าง 595 pt)
-    const wmSize = Math.min(width, height) * 0.52;
-    
-    page.drawImage(watermarkImage, {
-      x:      (width  - wmSize) / 2,
-      y:      (height - wmSize) / 2,
-      width:  wmSize,
-      height: wmSize
-    });
+  if (watermarkPngData) {
+    const watermarkImage = await pdfDoc.embedPng(watermarkPngData);
+    for (const page of pages) {
+      const { width, height } = page.getSize();
+      
+      // ปรับจาก 0.95 ลงมาเหลือ 0.52 (ประมาณ 310 pt บนหน้ากระดาษ A4 กว้าง 595 pt)
+      const wmSize = Math.min(width, height) * 0.52;
+      
+      page.drawImage(watermarkImage, {
+        x:      (width  - wmSize) / 2,
+        y:      (height - wmSize) / 2,
+        width:  wmSize,
+        height: wmSize
+      });
+    }
   }
 
   const finalBytes = await pdfDoc.save();
