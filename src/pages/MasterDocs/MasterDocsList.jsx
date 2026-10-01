@@ -12,6 +12,7 @@ import {
   Calendar,
   Layers
 } from 'lucide-react';
+import { getDeptBadgeStyle } from '../../utils/departmentColors';
 
 export { isMyDepartment };
 
@@ -200,14 +201,23 @@ export const MasterDocsList = () => {
                       Rev.{docRev}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {docDept}
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          {doc.departmentName || (docDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : '')}
-                        </span>
-                      </span>
+                      {(() => {
+                        const style = getDeptBadgeStyle(docDept);
+                        const deptName = doc.departmentName || (docDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : '');
+                        return (
+                          <span className="inline-flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${style.badge}`}>
+                              <Building2 className={`w-3 h-3 shrink-0 ${style.icon}`} />
+                              <span>{docDept}</span>
+                            </span>
+                            {deptName && (
+                              <span className="text-xs text-slate-600 font-medium">
+                                {deptName}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-3 text-center font-mono text-slate-600">
                       {doc.effectiveDate || doc.effective_date || '-'}

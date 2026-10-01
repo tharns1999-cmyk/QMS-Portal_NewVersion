@@ -37,6 +37,7 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment, normalizeCanonicalDept } from '../../utils/taskFilter';
 import { getDepartmentBadgeClasses, getDeptNameTh } from '../../config/qmsRegistry';
+import { getDeptBadgeStyle } from '../../utils/departmentColors';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date Formatter (null-safe)
@@ -1500,12 +1501,15 @@ const TaskInbox = () => {
                   {/* ── 3. Contextual Metadata Row (ข้อมูลประกอบการพิจารณา) ── */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                     {/* Badge แผนกเจ้าของเอกสาร */}
-                    {ownerDept && (
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold whitespace-nowrap border ${getDepartmentBadgeClasses(ownerDept)}`}>
-                        <Building2 size={11} strokeWidth={1.5} className="opacity-75" />
-                        <span>{formatDepartmentBadge(ownerDept, masterDepartments)}</span>
-                      </span>
-                    )}
+                    {ownerDept && (() => {
+                      const style = getDeptBadgeStyle(ownerDept);
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap border ${style.badge}`}>
+                          <Building2 className={`w-3.5 h-3.5 shrink-0 ${style.icon}`} />
+                          <span>{formatDepartmentBadge(ownerDept, masterDepartments)}</span>
+                        </span>
+                      );
+                    })()}
 
                     {/* ข้อมูลผู้ยื่นคำร้อง */}
                     {requesterName && (

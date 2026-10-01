@@ -38,6 +38,7 @@ import RequestAdditionalCopiesModal from '../../components/workflow/RequestAddit
 import UniversalWatermarkService, { WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import toast from 'react-hot-toast';
 import { TablePagination } from '../../components/common/TablePagination';
+import { getDeptBadgeStyle } from '../../utils/departmentColors';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 
@@ -1644,9 +1645,16 @@ const ExternalDocsList = () => {
                       {/* 3. แผนกและสิทธิ์การเข้าถึง */}
                       <td className="py-3 px-3.5 align-middle">
                         <div className="flex flex-col items-start gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-blue-50/80 text-blue-700 border border-blue-200/80">
-                            {doc.department || 'ส่วนกลาง'}
-                          </span>
+                          {(() => {
+                            const deptVal = doc.department || 'ส่วนกลาง';
+                            const style = getDeptBadgeStyle(deptVal);
+                            return (
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded border ${style.badge}`}>
+                                <Building2 className={`w-3 h-3 shrink-0 ${style.icon}`} />
+                                <span>{deptVal}</span>
+                              </span>
+                            );
+                          })()}
                           <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded border ${
                             doc.accessScope === 'Restricted' 
                               ? 'bg-amber-50 text-amber-700 border-amber-200' 

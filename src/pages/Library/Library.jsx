@@ -36,6 +36,7 @@ import { UniversalWatermarkService, WATERMARK_TYPES, resolveWatermarkConfig } fr
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import StatusBadge from '../../components/ui/StatusBadge';
+import { getDeptBadgeStyle } from '../../utils/departmentColors';
 
 // Tab Constants
 const TAB_GENERAL = 'GENERAL';
@@ -1322,11 +1323,16 @@ const Library = () => {
 
                     {/* 2. แผนกและสิทธิ์การเข้าถึง (Dept & Access) */}
                     <td className="py-2.5 px-3 align-middle">
-                      {isSupersededTab ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200/80">
-                          {(primaryDoc.department || primaryDoc.dept || primaryDoc.owner_dept || canonicalDept || '-').trim().toUpperCase()}
-                        </span>
-                      ) : (
+                      {isSupersededTab ? (() => {
+                        const deptVal = (primaryDoc.department || primaryDoc.dept || primaryDoc.owner_dept || canonicalDept || '-').trim().toUpperCase();
+                        const style = getDeptBadgeStyle(deptVal);
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-semibold border ${style.badge}`}>
+                            <Building2 className={`w-3 h-3 shrink-0 ${style.icon}`} />
+                            <span>{deptVal}</span>
+                          </span>
+                        );
+                      })() : (
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold text-xs text-slate-800">
                             {canonicalDept}
