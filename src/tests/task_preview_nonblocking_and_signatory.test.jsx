@@ -182,7 +182,11 @@ describe('Instant Non-Blocking Preview Architecture & Signatory Matrix Tests', (
       const iframe = screen.queryByTitle('PDF Preview');
       expect(iframe).toBeDefined();
       if (iframe) {
-        expect(iframe.src).toContain('#view=FitH');
+        expect(iframe.src).toContain('#toolbar=0');
+        expect(iframe.src).toContain('navpanes=0');
+        expect(iframe.src).toContain('view=FitH');
+        expect(iframe.style.marginTop).toBe('-54px');
+        expect(iframe.style.height).toBe('calc(100% + 54px)');
       }
     });
   });
@@ -207,12 +211,16 @@ describe('Instant Non-Blocking Preview Architecture & Signatory Matrix Tests', (
     // Verifies Signatory Matrix banner is removed to maximize viewer real estate
     expect(screen.queryByText(/ตารางการลงนามอิเล็กทรอนิกส์/i)).toBeNull();
 
-    // Verifies PDF iframe mounts with FitH
+    // Verifies PDF iframe mounts with FitH, disabled toolbar, and CSS viewport clipping
     await waitFor(() => {
       const iframe = screen.queryByTitle('PDF Preview');
       expect(iframe).toBeDefined();
       if (iframe) {
-        expect(iframe.src).toContain('#view=FitH');
+        expect(iframe.src).toContain('#toolbar=0');
+        expect(iframe.src).toContain('navpanes=0');
+        expect(iframe.src).toContain('view=FitH');
+        expect(iframe.style.marginTop).toBe('-54px');
+        expect(iframe.style.height).toBe('calc(100% + 54px)');
       }
     });
   });

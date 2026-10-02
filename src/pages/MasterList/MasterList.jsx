@@ -97,8 +97,10 @@ const MasterList = () => {
   
   if (masterListStatus === 'EFFECTIVE') {
     filteredDocs = filteredDocs.filter(d => d.status === 'EFFECTIVE');
+  } else if (masterListStatus === 'SUPERSEDED') {
+    filteredDocs = filteredDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded));
   } else if (masterListStatus === 'OBSOLETE') {
-    filteredDocs = filteredDocs.filter(d => d.status === 'SUPERSEDED_ARCHIVED' || d.status === 'OBSOLETE_ARCHIVED' || d.status === 'OBSOLETE');
+    filteredDocs = filteredDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.status === 'OBSOLETE_ARCHIVED' || d.status === 'OBSOLETE' || Boolean(d.is_superseded) || Boolean(d.is_obsolete));
   }
   
   if (masterListType) {
@@ -112,6 +114,50 @@ const MasterList = () => {
     );
   }
 
+  // Sort historical documents in OBSOLETE tab by code, then revision descending (e.g. Rev.01, Rev.00)
+  if (masterListStatus === 'OBSOLETE' || masterListStatus === 'SUPERSEDED') {
+    filteredDocs = [...filteredDocs].sort((a, b) => {
+      const codeA = (a.document_code || a.doc_code || a.code || a.title || '').trim().toUpperCase();
+      const codeB = (b.document_code || b.doc_code || b.code || b.title || '').trim().toUpperCase();
+      if (codeA !== codeB) return codeA.localeCompare(codeB);
+      const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+      const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
+      return revB - revA;
+    });
+  }
+
+  // Grouped Superseded logic (1 Document Code = 1 Row)
+  const groupedSupersededDocs = useMemo(() => {
+    if (masterListStatus !== 'SUPERSEDED') return [];
+    const groupMap = new Map();
+
+    filteredDocs.forEach(doc => {
+      const docCode = doc.code || doc.document_code || doc.doc_code || doc.title;
+      if (!groupMap.has(docCode)) {
+        groupMap.set(docCode, {
+          ...doc,
+          code: docCode,
+          id: `grouped_${docCode}`,
+          revisions: [],
+        });
+      }
+      groupMap.get(docCode).revisions.push(doc);
+    });
+
+    return Array.from(groupMap.values()).map(group => {
+      group.revisions.sort((a, b) => 
+        String(b.rev || b.revision || '00').localeCompare(String(a.rev || a.revision || '00'), undefined, { numeric: true })
+      );
+      group.latestSupersededRev = group.revisions[0]?.rev || group.revisions[0]?.revision || '00';
+      group.totalRevisions = group.revisions.length;
+      group.pendingRecalls = group.revisions.filter(r => r.recallStatus && r.recallStatus !== 'COMPLETED');
+      group.hasPendingRecall = group.pendingRecalls.length > 0;
+      return group;
+    });
+  }, [filteredDocs, masterListStatus]);
+
+  const displayList = masterListStatus === 'SUPERSEDED' ? groupedSupersededDocs : filteredDocs;
+
   const {
     currentPage,
     setCurrentPage,
@@ -119,7 +165,7 @@ const MasterList = () => {
     setPageSize,
     paginatedData,
     totalItems
-  } = useTablePagination(filteredDocs, 10);
+  } = useTablePagination(displayList, 10);
 
   const availableDepts = [...new Set([
     ...(documents || []).map(d => d.department),
@@ -178,8 +224,8 @@ const MasterList = () => {
 
   const getStatusBadge = (status) => {
     if (status === 'EFFECTIVE') return <span className="badge-active">มีผลบังคับใช้</span>;
+    if (status === 'SUPERSEDED' || status === 'SUPERSEDED_ARCHIVED') return <span className="badge-pending">ฉบับตกรุ่น (Superseded)</span>;
     if (status === 'OBSOLETE_ARCHIVED' || status === 'OBSOLETE') return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
-    if (status === 'SUPERSEDED_ARCHIVED') return <span className="badge-pending">มีฉบับใหม่แทนที่</span>;
     return <span className="badge-draft">{status}</span>;
   };
 
@@ -244,6 +290,12 @@ const MasterList = () => {
                 className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all h-full flex items-center ${masterListStatus === 'EFFECTIVE' ? 'bg-white shadow-xs text-[#007BE5]' : 'text-[#666666] hover:text-slate-800'}`}
               >
                 มีผลบังคับใช้ (EFFECTIVE)
+              </button>
+              <button 
+                onClick={() => setMasterListStatus('SUPERSEDED')}
+                className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all h-full flex items-center ${masterListStatus === 'SUPERSEDED' ? 'bg-white shadow-xs text-amber-700' : 'text-[#666666] hover:text-slate-800'}`}
+              >
+                ฉบับตกรุ่น (SUPERSEDED)
               </button>
               <button 
                 onClick={() => setMasterListStatus('OBSOLETE')}
@@ -329,8 +381,39 @@ const MasterList = () => {
                         {(doc.title || '').split('-')[0]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center font-mono font-bold text-slate-700 text-xs sm:text-sm whitespace-nowrap">{doc.rev || '00'}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600 text-xs sm:text-sm whitespace-nowrap">{doc.effectiveDate}</td>
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      {masterListStatus === 'SUPERSEDED' && doc.revisions ? (
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                          {doc.revisions.slice(0, 2).map((revDoc, rIdx) => (
+                            <span 
+                              key={rIdx}
+                              className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${
+                                rIdx === 0 
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              Rev.{revDoc.rev || revDoc.revision || '00'}
+                              {rIdx === 0 && <span className="text-[10px] font-sans font-normal ml-1 text-amber-600">(ล่าสุด)</span>}
+                            </span>
+                          ))}
+                          {doc.revisions.length > 2 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200">
+                              +{doc.revisions.length - 2} ฉบับเดิม
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="font-mono font-bold text-slate-700 text-xs sm:text-sm">
+                          {doc.rev || '00'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-slate-600 text-xs sm:text-sm whitespace-nowrap">
+                      {masterListStatus === 'SUPERSEDED' && doc.revisions 
+                        ? (doc.revisions[0]?.effectiveDate || '-') 
+                        : (doc.effectiveDate || '-')}
+                    </td>
                     <td className="px-4 py-3 text-slate-600 text-xs sm:text-sm truncate max-w-[150px] whitespace-nowrap" title={dar ? getRequesterName(dar, masterUsers) : '-'}>
                       {dar ? getRequesterName(dar, masterUsers) : '-'}
                     </td>
@@ -344,7 +427,13 @@ const MasterList = () => {
                       {(doc.distributedTo || []).join(', ') || '-'}
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      {getStatusBadge(doc.status)}
+                      {masterListStatus === 'SUPERSEDED' ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                          ฉบับตกรุ่น ({doc.totalRevisions || (doc.revisions || []).length} ฉบับ)
+                        </span>
+                      ) : (
+                        getStatusBadge(doc.status)
+                      )}
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">

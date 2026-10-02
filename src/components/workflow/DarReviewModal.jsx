@@ -90,7 +90,7 @@ const DarReviewModal = ({
   const allocations = calculateCopyAllocations(ownerDept, rawDistributions);
   const allControlledCopies = isFormDoc && rawDistributions.length === 0 ? [] : (allocations?.allAllocations || []);
   const totalControlledCopies = allControlledCopies.length;
-  const isDigitalOnly = isFormDoc || totalControlledCopies === 0;
+  const isDigitalOnly = isFormDoc || rawDistributions.length === 0 || totalControlledCopies === 0;
 
   // Standards Badges
   const relatedStandards = dar.relatedStandards || dar.standards || [];
@@ -272,25 +272,25 @@ const DarReviewModal = ({
               </h4>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
-                  {getDarReason(dar).title}
+            <div className="space-y-3 min-w-0 w-full">
+              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1 min-w-0 w-full">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1 shrink-0">
+                  {getDarReason(dar).title}:
                 </span>
-                <div className="sm:col-span-3">
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
+                <div className="sm:col-span-3 min-w-0 w-full overflow-hidden">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap">
                     {getDarReason(dar).value || dar.reason || 'ไม่มีข้อมูลเหตุผล'}
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1">
-                  {getDarDetail(dar).title}
+              <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-4 sm:gap-4 sm:items-start py-1 border-t border-slate-100 dark:border-slate-800 min-w-0 w-full">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 sm:pt-1 shrink-0">
+                  {getDarDetail(dar).title}:
                 </span>
-                <div className="sm:col-span-3">
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words whitespace-pre-wrap">
-                    {getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || 'ไม่มีข้อมูลรายละเอียดเพิ่มเติม'}
+                <div className="sm:col-span-3 min-w-0 w-full overflow-hidden">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 text-sm text-slate-800 dark:text-slate-200 leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap">
+                    {getDarDetail(dar).value !== '-' ? getDarDetail(dar).value : (dar.changeSummary || dar.change_summary || dar.obsoleteDetail || dar.detail || 'ไม่มีข้อมูลรายละเอียดเพิ่มเติม')}
                   </div>
                 </div>
               </div>
@@ -372,7 +372,7 @@ const DarReviewModal = ({
                     <span className="text-[#666666]">ยอดจัดสรรสำเนา:</span>
                     <span className="font-bold font-mono text-[#1E1E1E]">
                       {isDigitalOnly 
-                        ? '📱 ดิจิทัล 100% (ไม่มีการพิมพ์เล่มควบคุมกระดาษ)' 
+                        ? '📱 รูปแบบดิจิทัล (Digital Distribution)' 
                         : `ต้นฉบับ (Master): จัดเก็บที่ DCC | เล่มควบคุมแจกจ่าย: ${totalControlledCopies} ชุด`}
                     </span>
                   </div>
@@ -396,10 +396,10 @@ const DarReviewModal = ({
                               }`}
                             >
                               <span className="font-bold font-mono text-indigo-900">
-                                Copy {d.copyNo || String(i + 1).padStart(2, '0')} (เล่มควบคุม)
+                                {isOrigin ? 'Master 01 (ต้นฉบับ)' : `Copy ${d.copyNo || String(i + 1).padStart(2, '0')} (เล่มควบคุม)`}
                               </span>
                               <span className="text-slate-600 truncate max-w-[220px]">
-                                {cleanLoc} {isOrigin ? `(${ownerDept} — ล็อกถาวร)` : `(${deptTag})`}
+                                {isOrigin ? `${ownerDept} Head Office (ล็อกถาวร)` : `${cleanLoc}`}
                               </span>
                             </div>
                           );

@@ -743,33 +743,43 @@ const TaskReview = () => {
           </div>
 
           {/* เหตุผลการร้องขอ & รายละเอียด */}
-          <div className="space-y-2 pt-1">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{getDarReason(dar).title || 'เหตุผลในการร้องขอ'}</span>
-              <p className="mt-1 text-slate-700 text-xs leading-relaxed whitespace-pre-wrap">{getDarReason(dar).value || dar.reason || '-'}</p>
+          <div className="space-y-2 pt-1 min-w-0 w-full">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 min-w-0 w-full overflow-hidden">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                {getDarReason(dar).title || 'เหตุผลในการร้องขอ'}
+              </span>
+              <p className="mt-1 text-slate-700 text-xs leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap">
+                {getDarReason(dar).value || dar.reason || '-'}
+              </p>
             </div>
-            {(getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || dar.detail) && (
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{getDarDetail(dar).title || 'รายละเอียดเพิ่มเติม'}</span>
-                <p className="mt-1 text-slate-700 text-xs leading-relaxed whitespace-pre-wrap">{getDarDetail(dar).value || dar.changeSummary || dar.obsoleteDetail || dar.detail}</p>
+            {(getDarDetail(dar).value || dar.changeSummary || dar.change_summary || dar.obsoleteDetail || dar.detail) && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 min-w-0 w-full overflow-hidden">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  {getDarDetail(dar).title || 'รายละเอียดเพิ่มเติม'}
+                </span>
+                <p className="mt-1 text-slate-700 text-xs leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap">
+                  {getDarDetail(dar).value || dar.changeSummary || dar.change_summary || dar.obsoleteDetail || dar.detail}
+                </p>
               </div>
             )}
           </div>
 
           {/* Workflow History / Timeline */}
           {darTimeline.length > 0 && (
-            <div className="space-y-2 pt-1">
+            <div className="space-y-2 pt-1 min-w-0 w-full">
               <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
                 <MessageSquare size={12} /> ประวัติและข้อคิดเห็น
               </span>
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0 w-full">
                 {darTimeline.map(tl => (
-                  <div key={tl.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs">
-                    <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
-                      <span className="font-semibold text-slate-700">{tl.user}</span>
-                      <span className="font-mono">{tl.date}</span>
+                  <div key={tl.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/70 text-xs min-w-0 w-full overflow-hidden">
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1 gap-2">
+                      <span className="font-semibold text-slate-700 truncate">{tl.user}</span>
+                      <span className="font-mono shrink-0">{tl.date}</span>
                     </div>
-                    <p className="text-slate-700">{tl.comment || tl.action}</p>
+                    <p className="text-slate-700 leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap">
+                      {tl.comment || tl.action}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -846,9 +856,13 @@ const TaskReview = () => {
             </div>
           ) : pdfBlobUrl ? (
             <iframe
-              src={`${pdfBlobUrl}#view=FitH&zoom=page-width&toolbar=0&navpanes=0`}
+              src={`${pdfBlobUrl}#toolbar=0&navpanes=0&view=FitH`}
               title="PDF Preview"
-              className="w-full h-full border-none"
+              className="w-full border-none block"
+              style={{
+                height: 'calc(100% + 54px)',
+                marginTop: '-54px'
+              }}
             />
           ) : pdfLoadError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">

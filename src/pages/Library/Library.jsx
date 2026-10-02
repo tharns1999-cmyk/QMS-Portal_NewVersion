@@ -22,7 +22,8 @@ import {
   Layers,
   ShieldCheck,
   Clock,
-  XCircle
+  XCircle,
+  Eye
 } from 'lucide-react';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode } from '../../utils/darHelper';
 import { hasDocumentAccess } from '../../utils/accessControl';
@@ -491,10 +492,24 @@ const Library = () => {
       return Array.from(activeByCode.values());
     }
 
+    // ในแท็บ "ฉบับตกรุ่น (SUPERSEDED)" แสดงเอกสารยกเลิกทุกฉบับ ไม่ Group และเรียงตาม Revision จากมากไปน้อย (เช่น Rev.01, Rev.00)
+    if (currentStatusScope === 'SUPERSEDED') {
+      return [...rawList].sort((a, b) => {
+        const codeA = resolveDocCodeKey(a);
+        const codeB = resolveDocCodeKey(b);
+        if (codeA !== codeB) {
+          return codeA.localeCompare(codeB);
+        }
+        const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+        const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
+        return revB - revA;
+      });
+    }
+
     return rawList;
   }, [baseDocs, filterStatus, filterType, filterDept, activeTab, userDistinctDepts, searchTerm, filterAccessScope, filterStandard, filterDate, resolveDocCodeKey]);
 
-  // Grouped Stacking for Superseded & Obsolete tabs
+  // Grouped Stacking for Superseded and Obsolete tabs (1 Document Code = 1 Row)
   const isGroupedView = filterStatus === 'SUPERSEDED' || filterStatus === 'OBSOLETE';
 
   const groupedDocs = useMemo(() => {
@@ -512,37 +527,85 @@ const Library = () => {
       map.get(code).docs.push(doc);
     });
 
+    const allCopiesList = controlledCopyInstances || documentControlledCopies || [];
+
     const groups = [];
     map.forEach(({ code, docs }) => {
       // Sort docs by revision descending (e.g. Rev.02, Rev.01, Rev.00)
       docs.sort((a, b) => {
-        const revA = parseInt(a.rev || a.revision || '0', 10) || 0;
-        const revB = parseInt(b.rev || b.revision || '0', 10) || 0;
+        const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+        const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
         return revB - revA;
       });
 
       const latestDoc = docs[0];
-      const revNums = docs.map(d => parseInt(d.rev || d.revision || '0', 10) || 0).sort((a, b) => a - b);
-      const minRevStr = String(revNums[0]).padStart(2, '0');
-      const maxRevStr = String(revNums[revNums.length - 1]).padStart(2, '0');
+      const revNums = docs.map(d => parseInt(String(d.rev || d.revision || '0').replace(/\D/g, ''), 10) || 0).sort((a, b) => a - b);
+      const minRevStr = String(revNums[0] ?? 0).padStart(2, '0');
+      const maxRevStr = String(revNums[revNums.length - 1] ?? 0).padStart(2, '0');
       const revRange = docs.length > 1 ? `R${minRevStr} - R${maxRevStr}` : `R${minRevStr}`;
+
+      // Build revisions with individual recall metrics
+      const revisions = docs.map(d => {
+        const revStr = String(d.rev || d.revision || '00').padStart(2, '0');
+        const revNum = parseInt(revStr, 10);
+        const relCopies = allCopiesList.filter(copy => {
+          const matchDoc = String(copy.docId || copy.doc_id) === String(d.id) ||
+                           copy.doc_code === code ||
+                           copy.docTitle === d.title;
+          const cRev = parseInt(String(copy.rev || copy.doc_version || copy.revision || '0').replace(/\D/g, ''), 10);
+          return matchDoc && cRev === revNum;
+        });
+
+        const pendingCopies = relCopies.filter(c => 
+          ['SUPERSEDED_PENDING_RECALL', 'PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'OBSOLETE_PENDING_RECALL', 'RECALLED'].includes(c.status)
+        );
+        const completedCopies = relCopies.filter(c => 
+          ['DESTROYED', 'RECALLED_DESTROYED', 'ARCHIVED_OBSOLETE', 'RECALLED_OBSOLETE', 'DISPOSED'].includes(c.status)
+        );
+
+        const totalCount = relCopies.length;
+        const pendingCount = pendingCopies.length;
+        const recalledCount = completedCopies.length;
+        const recallStatus = totalCount === 0 ? 'COMPLETED' : (pendingCount > 0 ? 'PENDING' : 'COMPLETED');
+
+        return {
+          ...d,
+          revision: revStr,
+          effectiveDate: d.effectiveDate || d.effective_date || '-',
+          recallStatus,
+          recalledCount,
+          pendingCopiesCount: pendingCount,
+          totalCount
+        };
+      });
+
+      const pendingRecalls = revisions.filter(r => r.recallStatus === 'PENDING' || r.pendingCopiesCount > 0);
 
       groups.push({
         id: `grp-${code}`,
         code,
         displayCode: latestDoc.document_code || latestDoc.doc_code || latestDoc.code || latestDoc.title || code,
-        latestDoc,
-        docs,
-        totalRevisions: docs.length,
-        revRange,
+        title: latestDoc.name || latestDoc.docName || latestDoc.title || 'Document',
         department: latestDoc.department || latestDoc.owner_dept || 'PD',
         docType: latestDoc.docType || (code ? code.split('-')[0] : 'SOP'),
-        title: latestDoc.name || latestDoc.docName || latestDoc.title || 'Procedure Document'
+        revisions,
+        latestSupersededRev: revisions[0]?.revision || '00',
+        totalRevisions: revisions.length,
+        hasPendingRecall: pendingRecalls.length > 0,
+        pendingRecalls,
+        latestDoc: {
+          ...latestDoc,
+          revisions,
+          code,
+          document_code: code
+        },
+        docs: revisions,
+        revRange
       });
     });
 
     return groups;
-  }, [filteredDocs, isGroupedView, resolveDocCodeKey]);
+  }, [filteredDocs, isGroupedView, resolveDocCodeKey, controlledCopyInstances, documentControlledCopies]);
 
   const currentStatusTabTotal = useMemo(() => {
     if (filterStatus === 'SUPERSEDED') return tabCounts.superseded;
@@ -1204,19 +1267,17 @@ const Library = () => {
         <table className="w-full text-left text-sm table-auto min-w-full border-collapse">
           <thead className="bg-slate-50 text-slate-700 font-semibold text-xs uppercase tracking-wider border-b border-slate-200 sticky top-0 z-20 whitespace-nowrap backdrop-blur-xs">
             <tr>
-              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[35%]' : filterStatus === 'SUPERSEDED' ? 'w-[32%]' : 'w-[30%]'} min-w-[220px] py-2.5 px-3.5 select-none bg-slate-50`}>รหัสและชื่อเอกสาร</th>
+              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[35%]' : filterStatus === 'SUPERSEDED' ? 'w-[28%]' : 'w-[30%]'} min-w-[220px] py-2.5 px-3.5 select-none bg-slate-50`}>รหัสและชื่อเอกสาร</th>
               <th className={`${filterStatus === 'SUPERSEDED' ? 'w-[14%]' : 'w-[15%]'} min-w-[120px] py-2.5 px-3 select-none bg-slate-50`}>
                 {filterStatus === 'SUPERSEDED' ? 'แผนกเจ้าของ' : 'แผนกและสิทธิ์'}
               </th>
-              <th className={`${filterStatus === 'SUPERSEDED' ? 'w-[18%]' : 'w-[15%]'} min-w-[130px] py-2.5 px-3 select-none bg-slate-50`}>
-                {filterStatus === 'SUPERSEDED' ? 'จำนวนฉบับตกรุ่น' : 'ฉบับและวันบังคับใช้'}
+              <th className={`${filterStatus === 'SUPERSEDED' ? 'w-[16%]' : 'w-[15%]'} min-w-[130px] py-2.5 px-3 select-none bg-slate-50`}>
+                {filterStatus === 'SUPERSEDED' ? 'ฉบับและวันบังคับใช้เดิม' : 'ฉบับและวันบังคับใช้'}
               </th>
-              <th className={`${filterStatus === 'SUPERSEDED' ? 'w-[26%]' : 'w-[20%]'} min-w-[160px] py-2.5 px-3 select-none bg-slate-50`}>
+              <th className={`${filterStatus === 'SUPERSEDED' ? 'w-[20%]' : 'w-[20%]'} min-w-[160px] py-2.5 px-3 select-none bg-slate-50`}>
                 {filterStatus === 'SUPERSEDED' ? 'การเรียกคืนสำเนา' : 'สายอนุมัติและสำเนา'}
               </th>
-              {filterStatus !== 'SUPERSEDED' && (
-                <th className={`${filterStatus === 'OBSOLETE' ? 'w-[15%]' : 'w-[13%]'} min-w-[130px] py-2.5 px-3 select-none bg-slate-50`}>สถานะเอกสาร</th>
-              )}
+              <th className={`${filterStatus === 'OBSOLETE' ? 'w-[15%]' : 'w-[13%]'} min-w-[130px] py-2.5 px-3 select-none bg-slate-50`}>สถานะเอกสาร</th>
               {filterStatus !== 'OBSOLETE' && (
                 <th className="w-[84px] min-w-[84px] py-2.5 px-3 text-right select-none bg-slate-50">การจัดการ</th>
               )}
@@ -1346,12 +1407,44 @@ const Library = () => {
 
                     {/* 3. ฉบับและวันบังคับใช้ หรือ จำนวนฉบับตกรุ่น */}
                     <td className="py-2.5 px-3 align-middle">
-                      {isSupersededTab ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
-                          <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <span>{supersededCount} ฉบับ</span>
-                        </span>
-                      ) : (
+                      {isSupersededTab ? (() => {
+                        const revs = item.revisions || (item.docs ? item.docs : [primaryDoc]);
+                        const displayRevs = revs.slice(0, 2);
+                        const extraCount = revs.length - 2;
+                        const latestEffectiveDate = revs[0]?.effectiveDate || primaryDoc.effectiveDate || '-';
+
+                        return (
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {displayRevs.map((revDoc, rIdx) => {
+                                const revStr = String(revDoc.rev || revDoc.revision || '00').padStart(2, '0');
+                                const isLatest = rIdx === 0;
+                                return (
+                                  <span 
+                                    key={revDoc.id || rIdx}
+                                    className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${
+                                      isLatest 
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}
+                                  >
+                                    Rev.{revStr}
+                                    {isLatest && <span className="text-[10px] font-sans font-normal ml-1 text-amber-600">(ล่าสุด)</span>}
+                                  </span>
+                                );
+                              })}
+                              {extraCount > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                                  +{extraCount} ฉบับเดิม
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">
+                              วันยกเลิกล่าสุด: {latestEffectiveDate}
+                            </div>
+                          </div>
+                        );
+                      })() : (
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="font-mono font-bold text-xs sm:text-sm text-slate-800">
                             Rev.{revFormatted}
@@ -1370,12 +1463,12 @@ const Library = () => {
                             const st = getReviewStatus(reviewDue);
                             if (st === 'ON_SCHEDULE') return null; // silent when not due soon
                             const cfg = st === 'OVERDUE'
-                              ? { label: '\ud83d\udea8 \u0e40\u0e01\u0e34\u0e19\u0e01\u0e33\u0e2b\u0e19\u0e14\u0e17\u0e1a\u0e17\u0e27\u0e19', cls: 'bg-red-50 text-red-600 border-red-200' }
-                              : { label: '\u26a0\ufe0f \u0e43\u0e01\u0e25\u0e49\u0e17\u0e1a\u0e17\u0e27\u0e19', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+                              ? { label: '🚨 เกินกำหนดทบทวน', cls: 'bg-red-50 text-red-600 border-red-200' }
+                              : { label: '⚠️ ใกล้ทบทวน', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
                             return (
                               <span
                                 className={`mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cfg.cls}`}
-                                title={`\u0e01\u0e33\u0e2b\u0e19\u0e14\u0e17\u0e1a\u0e17\u0e27\u0e19: ${reviewDue}`}
+                                title={`กำหนดทบทวน: ${reviewDue}`}
                               >
                                 {cfg.label}
                               </span>
@@ -1387,61 +1480,40 @@ const Library = () => {
 
                     {/* 4. สายอนุมัติและสำเนา หรือ สรุปสถานะการเรียกคืน */}
                     <td className="py-2.5 px-3 align-middle">
-                      {isSupersededTab ? (
-                        (() => {
-                          const allSupersededRevNums = new Set(
-                            effectiveSupersededDocs.map(d => parseInt(String(d.rev || d.revision || '0').replace(/\D/g, ''), 10))
-                          );
-                          const relatedCopies = (controlledCopyInstances || documentControlledCopies || []).filter(copy => {
-                            const matchDoc = String(copy.docId || copy.doc_id) === String(primaryDoc.id) ||
-                                             copy.doc_code === docCode ||
-                                             copy.docTitle === primaryDoc.title;
-                            const cRev = parseInt(String(copy.rev || copy.doc_version || copy.revision || '0').replace(/\D/g, ''), 10);
-                            return matchDoc && allSupersededRevNums.has(cRev);
-                          });
+                      {isSupersededTab ? (() => {
+                        const pendingList = item.pendingRecalls || [];
+                        const revs = item.revisions || [primaryDoc];
+                        const totalPhysicalCopies = revs.reduce((acc, r) => acc + (r.totalCount || 0), 0);
 
-                          const pendingRecall = relatedCopies.filter(c => 
-                            ['SUPERSEDED_PENDING_RECALL', 'PENDING_RECALL', 'DAMAGED_PENDING_RECALL', 'OBSOLETE_PENDING_RECALL', 'RECALLED'].includes(c.status)
-                          );
-                          const completedRecall = relatedCopies.filter(c => 
-                            ['DESTROYED', 'RECALLED_DESTROYED', 'ARCHIVED_OBSOLETE', 'RECALLED_OBSOLETE', 'DISPOSED'].includes(c.status)
-                          );
-
-                          if (relatedCopies.length === 0) {
-                            return (
-                              <span 
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200"
-                                title="เอกสารฉบับนี้ไม่มีสำเนาควบคุมทางกายภาพค้างเรียกคืน"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>ไม่มีสำเนาค้างเรียกคืน</span>
-                              </span>
-                            );
-                          }
-
-                          if (pendingRecall.length > 0) {
-                            return (
-                              <span 
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 shadow-2xs"
-                                title={`มีสำเนาควบคุมรอเรียกคืน/ทำลาย ${pendingRecall.length} จาก ${relatedCopies.length} เล่ม`}
-                              >
-                                <RotateCcw className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span>รอเรียกคืน {pendingRecall.length}/{relatedCopies.length} เล่ม</span>
-                              </span>
-                            );
-                          }
+                        if (pendingList.length > 0) {
+                          const summaryText = pendingList.map(p => {
+                            const pRev = String(p.rev || p.revision || '00').padStart(2, '0');
+                            const pCnt = p.pendingCopiesCount ?? (p.totalCount - p.recalledCount);
+                            const pTot = p.totalCount || 1;
+                            return `Rev.${pRev}: ${pCnt}/${pTot} เล่ม`;
+                          }).join(', ');
 
                           return (
                             <span 
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
-                              title={`เรียกคืนและทำลายสำเนาครบถ้วนแล้ว (${completedRecall.length} เล่ม)`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs"
+                              title={`มีสำเนาควบคุมรอเรียกคืน: ${summaryText}`}
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <span>เรียกคืนครบแล้ว</span>
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>รอเรียกคืน ({summaryText})</span>
                             </span>
                           );
-                        })()
-                      ) : (
+                        }
+
+                        return (
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs"
+                            title={totalPhysicalCopies === 0 ? "ไม่มีสำเนาควบคุมทางกายภาพค้างเรียกคืน" : "เรียกคืนและทำลายสำเนาครบถ้วนทุกฉบับแล้ว"}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>เรียกคืนครบแล้ว</span>
+                          </span>
+                        );
+                      })() : (
                         <div className="flex flex-col items-start gap-1">
                           <span 
                             className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium"
@@ -1462,18 +1534,35 @@ const Library = () => {
                     </td>
 
                     {/* 5. สถานะเอกสาร (Master Lifecycle Status) */}
-                    {!isSupersededTab && (
-                      <td className="py-2.5 px-3 align-middle">
-                        <div className="flex flex-col items-start gap-1">
-                          {renderLifecycleBadge(primaryDoc, activeRevisionsList, isObsoleteTab, isSupersededTab)}
-                        </div>
-                      </td>
-                    )}
+                    <td className="py-2.5 px-3 align-middle">
+                      <div className="flex flex-col items-start gap-1">
+                        {isSupersededTab ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            ฉบับตกรุ่น ({(item.revisions || item.docs || []).length || 1} ฉบับ)
+                          </span>
+                        ) : (
+                          renderLifecycleBadge(primaryDoc, activeRevisionsList, isObsoleteTab, isSupersededTab)
+                        )}
+                      </div>
+                    </td>
 
                     {/* 6. เครื่องมือและการจัดการ (Actions - Far Right Column) */}
                     {filterStatus !== 'OBSOLETE' && (
                       <td className={`px-3 py-2.5 whitespace-nowrap text-xs text-right ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1 dropdown-action-dock">
+                          {/* ปุ่มเปิดดูรายละเอียด (Eye Preview Button) */}
+                          <button
+                            type="button"
+                            title="ดูรายละเอียดเอกสาร"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewDoc(primaryDoc);
+                            }}
+                            className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          >
+                            <Eye size={14} />
+                          </button>
+
                           {/* ปุ่มดาวน์โหลดด่วน (Minimal Ghost Download Button) */}
                           {canDownloadDocument(primaryDoc, currentUser) && (
                             <button
@@ -2055,7 +2144,7 @@ const Library = () => {
                   </button>
                 ) : null}
                 <span className="font-mono">
-                  แสดงผล <strong className="text-slate-900 font-bold">{isGroupedView ? `${groupedDocs.length} รหัส (${filteredDocs.length} ฉบับ)` : `${filteredDocs.length} รายการ`}</strong> / {currentStatusTabTotal} {isGroupedView ? 'รหัส' : 'รายการ'}
+                  แสดงผล <strong className="text-slate-900 font-bold">{isGroupedView ? `${groupedDocs.length} รายการ` : `${filteredDocs.length} รายการ`}</strong> / {currentStatusTabTotal} รายการ
                 </span>
               </div>
             </div>

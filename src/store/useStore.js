@@ -118,8 +118,10 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
       const isOldRev = String(doc.revision || doc.rev || doc.doc_version || doc.version).replace(/^rev\.?/i, '').trim() !== String(nextRevision).replace(/^rev\.?/i, '').trim();
 
       if (isMatchCode && isActive && isOldRev) {
+        const prevRev = String(doc.revision || doc.rev || doc.doc_version || doc.version || '00').replace(/^rev\.?/i, '').trim();
         return {
           ...doc,
+          id: `${targetDocCode}_REV_${prevRev}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
@@ -127,7 +129,9 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
           hasPendingDar: false,
           supersededAt: now,
           superseded_at: now,
-          supersededByDar: dar.darNo || dar.darNumber || dar.id
+          supersededByRev: nextRevision,
+          supersededByDar: dar.darNo || dar.darNumber || dar.id,
+          darRef: doc.darRef || doc.darId || dar.darNo || dar.darNumber || dar.id
         };
       }
       if (isMatchCode) {
@@ -526,6 +530,115 @@ export const MOCK_DARS = [
     targetRevision: '03',
     rev: '03',
     docRev: '03'
+  },
+  {
+    id: 'DAR-2026-001',
+    darNo: 'DAR-2026-001',
+    dar_no: 'DAR-2026-001',
+    darNumber: 'DAR-2026-001',
+    docId: 'WI-QC-01_REV_00',
+    doc_id: 'WI-QC-01_REV_00',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    type: 'NEW_DOCUMENT',
+    docType: 'WI',
+    doc_type: 'WI',
+    revision: '00',
+    target_revision: '00',
+    targetRevision: '00',
+    rev: '00',
+    department: 'QC',
+    dept: 'QC',
+    status: 'COMPLETED',
+    reason: 'จัดทำคู่มือปฏิบัติงานการตรวจสอบคุณภาพวัตถุดิบรับเข้าฉบับแรก (Genesis Rev.00)',
+    effectiveDate: '2025-01-15',
+    effective_date: '2025-01-15',
+    requesterId: 'U005',
+    requesterName: 'บีม',
+    reviewerId: 'U003',
+    reviewerName: 'กัลยาณี',
+    approverId: 'U004',
+    approverName: 'คุณเรย์'
+  },
+  {
+    id: 'DAR-2026-002',
+    darNo: 'DAR-2026-002',
+    dar_no: 'DAR-2026-002',
+    darNumber: 'DAR-2026-002',
+    docId: 'WI-QC-01_REV_01',
+    doc_id: 'WI-QC-01_REV_01',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    type: 'REVISION',
+    docType: 'WI',
+    doc_type: 'WI',
+    revision: '01',
+    target_revision: '01',
+    targetRevision: '01',
+    currentRevision: '00',
+    previous_revision: '00',
+    rev: '01',
+    department: 'QC',
+    dept: 'QC',
+    status: 'COMPLETED',
+    reason: 'ปรับปรุงเกณฑ์การชักตัวอย่างและการตรวจปล่อยวัตถุดิบ Rev.01',
+    effectiveDate: '2025-06-20',
+    effective_date: '2025-06-20',
+    requesterId: 'U005',
+    requesterName: 'บีม',
+    reviewerId: 'U003',
+    reviewerName: 'กัลยาณี',
+    approverId: 'U004',
+    approverName: 'คุณเรย์'
+  },
+  {
+    id: 'DAR-2026-003',
+    darNo: 'DAR-2026-003',
+    dar_no: 'DAR-2026-003',
+    darNumber: 'DAR-2026-003',
+    docId: 'WI-QC-01_REV_02',
+    doc_id: 'WI-QC-01_REV_02',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    type: 'REVISION',
+    docType: 'WI',
+    doc_type: 'WI',
+    revision: '02',
+    target_revision: '02',
+    targetRevision: '02',
+    currentRevision: '01',
+    previous_revision: '01',
+    rev: '02',
+    department: 'QC',
+    dept: 'QC',
+    status: 'COMPLETED',
+    reason: 'ปรับปรุงขั้นตอนการทดสอบทางจุลชีววิทยาและสารตกค้าง Rev.02 ฉบับปัจจุบัน',
+    effectiveDate: '2026-03-01',
+    effective_date: '2026-03-01',
+    requesterId: 'U005',
+    requesterName: 'บีม',
+    reviewerId: 'U003',
+    reviewerName: 'กัลยาณี',
+    approverId: 'U004',
+    approverName: 'คุณเรย์'
   }
 ];
 
@@ -689,6 +802,114 @@ export const MOCK_DOCUMENTS = [
       authorized_depts: ['PD'],
       authorized_users: ['U001', 'U003'],
       min_access_level: 4
+    }
+  },
+  {
+    id: 'WI-QC-01_REV_00',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docCode: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    status: 'SUPERSEDED',
+    is_superseded: true,
+    is_active: false,
+    department: 'QC',
+    dept: 'QC',
+    ownerId: 'U005',
+    effectiveDate: '2025-01-15',
+    effective_date: '2025-01-15',
+    superseded_at: '2025-06-20T09:00:00.000Z',
+    supersededAt: '2025-06-20T09:00:00.000Z',
+    supersededByRev: '01',
+    rev: '00',
+    revision: '00',
+    doc_version: '00',
+    darId: 'DAR-2026-001',
+    darNo: 'DAR-2026-001',
+    darNumber: 'DAR-2026-001',
+    darRef: 'DAR-2026-001',
+    latestDarNo: 'DAR-2026-001',
+    access_control: {
+      scope: 'GENERAL',
+      authorized_depts: [],
+      authorized_users: [],
+      min_access_level: 1
+    }
+  },
+  {
+    id: 'WI-QC-01_REV_01',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docCode: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    status: 'SUPERSEDED',
+    is_superseded: true,
+    is_active: false,
+    department: 'QC',
+    dept: 'QC',
+    ownerId: 'U005',
+    effectiveDate: '2025-06-20',
+    effective_date: '2025-06-20',
+    superseded_at: '2026-03-01T08:30:00.000Z',
+    supersededAt: '2026-03-01T08:30:00.000Z',
+    supersededByRev: '02',
+    rev: '01',
+    revision: '01',
+    doc_version: '01',
+    darId: 'DAR-2026-002',
+    darNo: 'DAR-2026-002',
+    darNumber: 'DAR-2026-002',
+    darRef: 'DAR-2026-002',
+    latestDarNo: 'DAR-2026-002',
+    access_control: {
+      scope: 'GENERAL',
+      authorized_depts: [],
+      authorized_users: [],
+      min_access_level: 1
+    }
+  },
+  {
+    id: 'WI-QC-01_REV_02',
+    title: 'WI-QC-01',
+    document_code: 'WI-QC-01',
+    doc_code: 'WI-QC-01',
+    code: 'WI-QC-01',
+    docNo: 'WI-QC-01',
+    docCode: 'WI-QC-01',
+    docTitle: 'WI-QC-01',
+    name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+    status: 'EFFECTIVE',
+    is_superseded: false,
+    is_active: true,
+    department: 'QC',
+    dept: 'QC',
+    ownerId: 'U005',
+    effectiveDate: '2026-03-01',
+    effective_date: '2026-03-01',
+    rev: '02',
+    revision: '02',
+    doc_version: '02',
+    darId: 'DAR-2026-003',
+    darNo: 'DAR-2026-003',
+    darNumber: 'DAR-2026-003',
+    darRef: 'DAR-2026-003',
+    latestDarNo: 'DAR-2026-003',
+    access_control: {
+      scope: 'GENERAL',
+      authorized_depts: [],
+      authorized_users: [],
+      min_access_level: 1
     }
   }
 ];
@@ -1490,6 +1711,7 @@ export const getInitialStoreState = () => ({
   timeline: [],
   documents: [],
   masterDocuments: [],
+  supersededDocuments: [],
   externalDocuments: [],
   externalRequests: [],
   externalAuditTrail: [],
@@ -1620,6 +1842,7 @@ const useStore = create(persist((set, get) => ({
       timeline: [],
       documents: [],
       masterDocuments: [],
+      supersededDocuments: [],
       externalDocuments: [],
       externalRequests: [],
       externalAuditTrail: [],
@@ -1649,6 +1872,8 @@ const useStore = create(persist((set, get) => ({
           persisted.state.tasks = [];
           persisted.state.timeline = [];
           persisted.state.documents = [];
+          persisted.state.masterDocuments = [];
+          persisted.state.supersededDocuments = [];
           persisted.state.externalDocuments = [];
           persisted.state.externalRequests = [];
           persisted.state.externalAuditTrail = [];
@@ -1692,6 +1917,64 @@ const useStore = create(persist((set, get) => ({
         }
       } catch (err) {
         console.error('Failed to persist seeded mock data:', err);
+      }
+    }
+  },
+
+  // Seed historical superseded snapshots (WI-QC-01 Rev.00 & Rev.01) if overwritten or absent
+  seedSupersededMockHistory: () => {
+    const qcBaselineDocs = MOCK_DOCUMENTS.filter(d => 
+      ['WI-QC-01_REV_00', 'WI-QC-01_REV_01', 'WI-QC-01_REV_02'].includes(d.id)
+    );
+    const qcBaselineDars = MOCK_DARS.filter(d => 
+      ['DAR-2026-001', 'DAR-2026-002', 'DAR-2026-003'].includes(d.id)
+    );
+
+    set(state => {
+      let currentDocs = [...(state.documents || [])];
+      qcBaselineDocs.forEach(seedDoc => {
+        const cleanRev = String(seedDoc.revision || seedDoc.rev || '00').replace(/\D/g, '');
+        const exists = currentDocs.some(d => {
+          const c = d.document_code || d.code || d.doc_code || d.docNo || d.title;
+          const r = String(d.revision || d.rev || '00').replace(/\D/g, '');
+          return c && c.trim().toUpperCase() === 'WI-QC-01' && r === cleanRev;
+        });
+        if (!exists) {
+          currentDocs.push({ ...seedDoc });
+        }
+      });
+
+      let currentDars = [...(state.dars || [])];
+      qcBaselineDars.forEach(seedDar => {
+        const exists = currentDars.some(d => d.id === seedDar.id || d.dar_no === seedDar.dar_no);
+        if (!exists) {
+          currentDars.push({ ...seedDar });
+        }
+      });
+
+      const supersededSnapshots = currentDocs.filter(d => 
+        (d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded)
+      );
+
+      return {
+        documents: currentDocs,
+        supersededDocuments: supersededSnapshots,
+        dars: currentDars
+      };
+    });
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const storageKey = 'qms-storage-uat-v7';
+      try {
+        const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        if (persisted && persisted.state) {
+          persisted.state.documents = get().documents;
+          persisted.state.supersededDocuments = get().supersededDocuments;
+          persisted.state.dars = get().dars;
+          localStorage.setItem(storageKey, JSON.stringify(persisted));
+        }
+      } catch (err) {
+        console.error('Failed to persist superseded mock history:', err);
       }
     }
   },
@@ -8363,6 +8646,137 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
+  // ฟังก์ชันเมื่อ DAR ได้รับการอนุมัติและเลื่อนฉบับ (Promote New Revision)
+  promoteDarToEffective: (darId) => set((state) => {
+    const safeDars = state.dars || [];
+    const safeDarRequests = state.darRequests || [];
+    const dar = safeDars.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId)
+      || safeDarRequests.find(d => d.id === darId || d.dar_no === darId || d.darNumber === darId || d.darNo === darId);
+    if (!dar) return state;
+
+    const docCode = dar.document_code || dar.doc_code || dar.docCode || dar.docNo || dar.code || dar.title;
+    const cleanDocCode = (docCode && docCode.startsWith('[')) ? docCode.replace(/^\[.*?\]\s*/, '') : (docCode || 'DOC');
+
+    const currentActiveDoc = (state.documents || []).find(d => {
+      const c = d.document_code || d.doc_code || d.code || d.docCode || d.docNo || d.title;
+      return c && cleanDocCode && c.trim().toLowerCase() === cleanDocCode.trim().toLowerCase() && 
+        (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active);
+    });
+
+    const previousRev = dar.currentRevision || dar.previous_revision || dar.previousRev || (currentActiveDoc ? (currentActiveDoc.revision || currentActiveDoc.rev) : '00');
+    const targetRev = dar.target_revision || dar.targetRevision || dar.newRevision || dar.revision || dar.rev || '01';
+    const now = new Date().toISOString();
+
+    let updatedDocs = [...(state.documents || [])];
+
+    // 1. ถอดฉบับเดิมออกเป็น SUPERSEDED โดยสร้าง ID เฉพาะตัวและเก็บรักษาไว้ถาวร (ป้องกัน overwrite)
+    if (currentActiveDoc) {
+      const prevRevClean = String(currentActiveDoc.revision || currentActiveDoc.rev || previousRev || '00').replace(/^rev\.?/i, '').trim();
+      const supersededSnapshot = {
+        ...currentActiveDoc,
+        id: `${cleanDocCode}_REV_${prevRevClean}_${Date.now()}`,
+        status: 'SUPERSEDED',
+        is_active: false,
+        is_superseded: true,
+        supersededAt: now,
+        superseded_at: now,
+        supersededByRev: targetRev,
+        darRef: currentActiveDoc.darRef || currentActiveDoc.darId || dar.dar_no || dar.darNo || dar.darNumber || dar.id
+      };
+
+      // อัปเดตรายการเดิมเป็น SUPERSEDED (เก็บไว้ใน Array ไม่ลบ และไม่ทับตัวเก่า)
+      updatedDocs = updatedDocs.map(d => 
+        d.id === currentActiveDoc.id ? supersededSnapshot : d
+      );
+    }
+
+    // 2. เพิ่มหรืออัปเดตฉบับใหม่ให้เป็น EFFECTIVE
+    const newEffectiveDocId = `${cleanDocCode}_REV_${targetRev}`;
+    const newEffectiveDoc = {
+      ...(currentActiveDoc || {}),
+      id: newEffectiveDocId,
+      code: cleanDocCode,
+      document_code: cleanDocCode,
+      doc_code: cleanDocCode,
+      docCode: cleanDocCode,
+      docNo: cleanDocCode,
+      title: dar.document_title || dar.docTitle || dar.title || (currentActiveDoc?.title || cleanDocCode),
+      name: dar.document_title || dar.docTitle || dar.title || (currentActiveDoc?.name || cleanDocCode),
+      docTitle: dar.document_title || dar.docTitle || dar.title || (currentActiveDoc?.docTitle || cleanDocCode),
+      docName: dar.document_title || dar.docTitle || dar.title || (currentActiveDoc?.docName || cleanDocCode),
+      revision: targetRev,
+      rev: targetRev,
+      doc_version: targetRev,
+      status: 'EFFECTIVE',
+      is_active: true,
+      is_superseded: false,
+      is_obsolete: false,
+      effectiveDate: dar.effective_date || dar.effectiveDate || now.split('T')[0],
+      effective_date: dar.effective_date || dar.effectiveDate || now.split('T')[0],
+      department: dar.department || currentActiveDoc?.department || 'QC',
+      dept: dar.department || currentActiveDoc?.dept || 'QC',
+      darRef: dar.dar_no || dar.darNo || dar.darNumber || dar.id,
+      darId: dar.id,
+      latestDarNo: dar.dar_no || dar.darNo || dar.darNumber || dar.id,
+      published_at: now,
+      updatedAt: now
+    };
+
+    const existingNewIndex = updatedDocs.findIndex(d => {
+      const c = d.document_code || d.doc_code || d.code || d.docCode || d.docNo || d.title;
+      const r = d.revision || d.rev;
+      return c && cleanDocCode && c.trim().toLowerCase() === cleanDocCode.trim().toLowerCase() && String(r).replace(/^rev\.?/i, '').trim() === String(targetRev).replace(/^rev\.?/i, '').trim();
+    });
+
+    if (existingNewIndex >= 0) {
+      updatedDocs[existingNewIndex] = { ...updatedDocs[existingNewIndex], ...newEffectiveDoc };
+    } else {
+      updatedDocs = [newEffectiveDoc, ...updatedDocs];
+    }
+
+    const updatedDars = (state.dars || []).map(d => (d.id === darId || d.dar_no === darId || d.darNumber === darId) ? { ...d, status: 'COMPLETED' } : d);
+    const updatedDarRequests = (state.darRequests || []).map(d => (d.id === darId || d.dar_no === darId || d.darNumber === darId) ? { ...d, status: 'COMPLETED' } : d);
+
+    return {
+      documents: updatedDocs,
+      masterDocuments: updatedDocs,
+      supersededDocuments: updatedDocs.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
+      dars: updatedDars,
+      darRequests: updatedDarRequests
+    };
+  }),
+
+  archivePreviousRevision: (docCode, previousRev, targetRev, darRef) => set((state) => {
+    const cleanDocCode = (docCode && docCode.startsWith('[')) ? docCode.replace(/^\[.*?\]\s*/, '') : docCode;
+    const now = new Date().toISOString();
+    let updatedDocs = (state.documents || []).map(d => {
+      const c = d.document_code || d.doc_code || d.code || d.docCode || d.docNo || d.title;
+      const r = d.revision || d.rev;
+      const isMatch = c && cleanDocCode && c.trim().toLowerCase() === cleanDocCode.trim().toLowerCase();
+      const isTargetRev = String(r).replace(/^rev\.?/i, '').trim() === String(previousRev).replace(/^rev\.?/i, '').trim();
+      if (isMatch && isTargetRev && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active)) {
+        return {
+          ...d,
+          id: `${cleanDocCode}_REV_${previousRev}_${Date.now()}`,
+          status: 'SUPERSEDED',
+          is_active: false,
+          is_superseded: true,
+          supersededAt: now,
+          superseded_at: now,
+          supersededByRev: targetRev,
+          darRef: d.darRef || darRef
+        };
+      }
+      return d;
+    });
+
+    return {
+      documents: updatedDocs,
+      masterDocuments: updatedDocs,
+      supersededDocuments: updatedDocs.filter(d => d.status === 'SUPERSEDED' || d.is_superseded)
+    };
+  }),
+
   publishApprovedDar: (darId) => {
     const state = get();
     const safeDars = state.dars || [];
@@ -8564,8 +8978,10 @@ const useStore = create(persist((set, get) => ({
       const isTargetActive = doc.status === 'EFFECTIVE' || doc.status === 'ACTIVE' || doc.is_active;
 
       if (isEffectiveTodayOrPast && isTargetMatch && isOldRevision && isTargetActive) {
+        const prevRevClean = docRev || '00';
         return {
           ...doc,
+          id: `${targetCode || doc.document_code || doc.code || 'DOC'}_REV_${prevRevClean}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
@@ -8573,7 +8989,9 @@ const useStore = create(persist((set, get) => ({
           hasPendingDar: false,
           superseded_at: doc.superseded_at || nowIso,
           supersededAt: doc.supersededAt || nowIso,
-          supersededByDar: dar.darNo || dar.darNumber || dar.id
+          supersededByRev: newRevStr,
+          supersededByDar: dar.darNo || dar.darNumber || dar.id,
+          darRef: doc.darRef || doc.darId || dar.darNo || dar.darNumber || dar.id
         };
       }
       if (isTargetMatch) {
@@ -8997,6 +9415,7 @@ const useStore = create(persist((set, get) => ({
     return {
       documents: updatedDocs,
       masterDocuments: updatedDocs,
+      supersededDocuments: updatedDocs.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
       dars: updatedDars,
       darRequests: updatedDarRequests,
       controlledCopyInstances: finalCopies,
@@ -12932,6 +13351,289 @@ if (typeof window !== 'undefined' && window.localStorage) {
       }
 
       if (extDocsMigrated) {
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration for ISO 9001 Clause 7.5.3: Ensure internal document historical snapshots (WI-QC-01 Rev.00 & Rev.01) are immutable and persist
+    if (persisted && persisted.state && Array.isArray(persisted.state.documents)) {
+      let qcDocsMigrated = false;
+      const qcBaselineDocs = [
+        {
+          id: 'WI-QC-01_REV_00',
+          title: 'WI-QC-01',
+          document_code: 'WI-QC-01',
+          doc_code: 'WI-QC-01',
+          code: 'WI-QC-01',
+          docNo: 'WI-QC-01',
+          docCode: 'WI-QC-01',
+          docTitle: 'WI-QC-01',
+          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          status: 'SUPERSEDED',
+          is_superseded: true,
+          is_active: false,
+          department: 'QC',
+          dept: 'QC',
+          ownerId: 'U005',
+          effectiveDate: '2025-01-15',
+          effective_date: '2025-01-15',
+          superseded_at: '2025-06-20T09:00:00.000Z',
+          supersededAt: '2025-06-20T09:00:00.000Z',
+          supersededByRev: '01',
+          rev: '00',
+          revision: '00',
+          doc_version: '00',
+          darId: 'DAR-2026-001',
+          darNo: 'DAR-2026-001',
+          darNumber: 'DAR-2026-001',
+          darRef: 'DAR-2026-001',
+          latestDarNo: 'DAR-2026-001',
+          access_control: {
+            scope: 'GENERAL',
+            authorized_depts: [],
+            authorized_users: [],
+            min_access_level: 1
+          }
+        },
+        {
+          id: 'WI-QC-01_REV_01',
+          title: 'WI-QC-01',
+          document_code: 'WI-QC-01',
+          doc_code: 'WI-QC-01',
+          code: 'WI-QC-01',
+          docNo: 'WI-QC-01',
+          docCode: 'WI-QC-01',
+          docTitle: 'WI-QC-01',
+          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          status: 'SUPERSEDED',
+          is_superseded: true,
+          is_active: false,
+          department: 'QC',
+          dept: 'QC',
+          ownerId: 'U005',
+          effectiveDate: '2025-06-20',
+          effective_date: '2025-06-20',
+          superseded_at: '2026-03-01T08:30:00.000Z',
+          supersededAt: '2026-03-01T08:30:00.000Z',
+          supersededByRev: '02',
+          rev: '01',
+          revision: '01',
+          doc_version: '01',
+          darId: 'DAR-2026-002',
+          darNo: 'DAR-2026-002',
+          darNumber: 'DAR-2026-002',
+          darRef: 'DAR-2026-002',
+          latestDarNo: 'DAR-2026-002',
+          access_control: {
+            scope: 'GENERAL',
+            authorized_depts: [],
+            authorized_users: [],
+            min_access_level: 1
+          }
+        },
+        {
+          id: 'WI-QC-01_REV_02',
+          title: 'WI-QC-01',
+          document_code: 'WI-QC-01',
+          doc_code: 'WI-QC-01',
+          code: 'WI-QC-01',
+          docNo: 'WI-QC-01',
+          docCode: 'WI-QC-01',
+          docTitle: 'WI-QC-01',
+          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+          status: 'EFFECTIVE',
+          is_superseded: false,
+          is_active: true,
+          department: 'QC',
+          dept: 'QC',
+          ownerId: 'U005',
+          effectiveDate: '2026-03-01',
+          effective_date: '2026-03-01',
+          rev: '02',
+          revision: '02',
+          doc_version: '02',
+          darId: 'DAR-2026-003',
+          darNo: 'DAR-2026-003',
+          darNumber: 'DAR-2026-003',
+          darRef: 'DAR-2026-003',
+          latestDarNo: 'DAR-2026-003',
+          access_control: {
+            scope: 'GENERAL',
+            authorized_depts: [],
+            authorized_users: [],
+            min_access_level: 1
+          }
+        }
+      ];
+
+      qcBaselineDocs.forEach(seedDoc => {
+        const cleanRev = String(seedDoc.revision || seedDoc.rev || '00').replace(/^rev\.?/i, '').trim();
+        const existingIndex = persisted.state.documents.findIndex(d => {
+          const c = d.document_code || d.code || d.doc_code || d.docNo || d.title;
+          const r = String(d.revision || d.rev || '00').replace(/^rev\.?/i, '').trim();
+          return c && c.trim().toUpperCase() === 'WI-QC-01' && r === cleanRev;
+        });
+
+        if (existingIndex === -1) {
+          persisted.state.documents.push({ ...seedDoc });
+          qcDocsMigrated = true;
+        } else {
+          const existing = persisted.state.documents[existingIndex];
+          if (cleanRev === '00' && (existing.status !== 'SUPERSEDED' || !existing.darId || existing.id === 'WI-QC-01')) {
+            persisted.state.documents[existingIndex] = {
+              ...existing,
+              ...seedDoc,
+              id: existing.id && existing.id !== 'WI-QC-01' ? existing.id : seedDoc.id,
+              status: 'SUPERSEDED',
+              is_superseded: true,
+              is_active: false
+            };
+            qcDocsMigrated = true;
+          } else if (cleanRev === '01' && (existing.status !== 'SUPERSEDED' || !existing.darId)) {
+            persisted.state.documents[existingIndex] = {
+              ...existing,
+              ...seedDoc,
+              status: 'SUPERSEDED',
+              is_superseded: true,
+              is_active: false
+            };
+            qcDocsMigrated = true;
+          }
+        }
+      });
+
+      // Ensure DARs for WI-QC-01 exist in persisted.state.dars
+      if (Array.isArray(persisted.state.dars)) {
+        const qcBaselineDars = [
+          {
+            id: 'DAR-2026-001',
+            darNo: 'DAR-2026-001',
+            dar_no: 'DAR-2026-001',
+            darNumber: 'DAR-2026-001',
+            docId: 'WI-QC-01_REV_00',
+            doc_id: 'WI-QC-01_REV_00',
+            title: 'WI-QC-01',
+            document_code: 'WI-QC-01',
+            doc_code: 'WI-QC-01',
+            docNo: 'WI-QC-01',
+            docTitle: 'WI-QC-01',
+            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            type: 'NEW_DOCUMENT',
+            docType: 'WI',
+            doc_type: 'WI',
+            revision: '00',
+            target_revision: '00',
+            targetRevision: '00',
+            rev: '00',
+            department: 'QC',
+            dept: 'QC',
+            status: 'COMPLETED',
+            reason: 'จัดทำคู่มือปฏิบัติงานการตรวจสอบคุณภาพวัตถุดิบรับเข้าฉบับแรก (Genesis Rev.00)',
+            effectiveDate: '2025-01-15',
+            effective_date: '2025-01-15',
+            requesterId: 'U005',
+            requesterName: 'บีม',
+            reviewerId: 'U003',
+            reviewerName: 'กัลยาณี',
+            approverId: 'U004',
+            approverName: 'คุณเรย์'
+          },
+          {
+            id: 'DAR-2026-002',
+            darNo: 'DAR-2026-002',
+            dar_no: 'DAR-2026-002',
+            darNumber: 'DAR-2026-002',
+            docId: 'WI-QC-01_REV_01',
+            doc_id: 'WI-QC-01_REV_01',
+            title: 'WI-QC-01',
+            document_code: 'WI-QC-01',
+            doc_code: 'WI-QC-01',
+            docNo: 'WI-QC-01',
+            docTitle: 'WI-QC-01',
+            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            type: 'REVISION',
+            docType: 'WI',
+            doc_type: 'WI',
+            revision: '01',
+            target_revision: '01',
+            targetRevision: '01',
+            currentRevision: '00',
+            previous_revision: '00',
+            rev: '01',
+            department: 'QC',
+            dept: 'QC',
+            status: 'COMPLETED',
+            reason: 'ปรับปรุงเกณฑ์การชักตัวอย่างและการตรวจปล่อยวัตถุดิบ Rev.01',
+            effectiveDate: '2025-06-20',
+            effective_date: '2025-06-20',
+            requesterId: 'U005',
+            requesterName: 'บีม',
+            reviewerId: 'U003',
+            reviewerName: 'กัลยาณี',
+            approverId: 'U004',
+            approverName: 'คุณเรย์'
+          },
+          {
+            id: 'DAR-2026-003',
+            darNo: 'DAR-2026-003',
+            dar_no: 'DAR-2026-003',
+            darNumber: 'DAR-2026-003',
+            docId: 'WI-QC-01_REV_02',
+            doc_id: 'WI-QC-01_REV_02',
+            title: 'WI-QC-01',
+            document_code: 'WI-QC-01',
+            doc_code: 'WI-QC-01',
+            docNo: 'WI-QC-01',
+            docTitle: 'WI-QC-01',
+            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
+            type: 'REVISION',
+            docType: 'WI',
+            doc_type: 'WI',
+            revision: '02',
+            target_revision: '02',
+            targetRevision: '02',
+            currentRevision: '01',
+            previous_revision: '01',
+            rev: '02',
+            department: 'QC',
+            dept: 'QC',
+            status: 'COMPLETED',
+            reason: 'ปรับปรุงขั้นตอนการทดสอบทางจุลชีววิทยาและสารตกค้าง Rev.02 ฉบับปัจจุบัน',
+            effectiveDate: '2026-03-01',
+            effective_date: '2026-03-01',
+            requesterId: 'U005',
+            requesterName: 'บีม',
+            reviewerId: 'U003',
+            reviewerName: 'กัลยาณี',
+            approverId: 'U004',
+            approverName: 'คุณเรย์'
+          }
+        ];
+
+        qcBaselineDars.forEach(seedDar => {
+          const hasDar = persisted.state.dars.some(d => d.id === seedDar.id || d.dar_no === seedDar.dar_no);
+          if (!hasDar) {
+            persisted.state.dars.push({ ...seedDar });
+            if (Array.isArray(persisted.state.darRequests)) {
+              persisted.state.darRequests.push({ ...seedDar });
+            }
+            qcDocsMigrated = true;
+          }
+        });
+      }
+
+      if (qcDocsMigrated) {
+        persisted.state.masterDocuments = persisted.state.documents;
+        persisted.state.supersededDocuments = persisted.state.documents.filter(d => d.status === 'SUPERSEDED' || d.is_superseded);
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       }
     }

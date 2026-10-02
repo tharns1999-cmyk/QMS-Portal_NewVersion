@@ -416,28 +416,28 @@ const DarDetail = () => {
               <Sparkles size={14} strokeWidth={1.5} className="text-amber-500" /> เนื้อหาการเปลี่ยนแปลง (Change Description & Rationale)
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0 w-full">
               {/* Box 1: เหตุผลในการร้องขอ/แก้ไข */}
-              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all shadow-2xs flex flex-col justify-between">
-                <div>
+              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all shadow-2xs flex flex-col justify-between min-w-0 w-full overflow-hidden">
+                <div className="min-w-0 w-full">
                   <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <FileText size={13} strokeWidth={1.5} className="text-amber-600" />
-                    {getDarReason(dar).title}
+                    <FileText size={13} strokeWidth={1.5} className="text-amber-600 shrink-0" />
+                    <span className="truncate">{getDarReason(dar).title}</span>
                   </h4>
-                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words pl-0.5">
+                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap pl-0.5">
                     {getDarReason(dar).value}
                   </p>
                 </div>
               </div>
 
               {/* Box 2: รายละเอียดการเปลี่ยนแปลง */}
-              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all shadow-2xs flex flex-col justify-between">
-                <div>
+              <div className="bg-slate-50/80 hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4 transition-all shadow-2xs flex flex-col justify-between min-w-0 w-full overflow-hidden">
+                <div className="min-w-0 w-full">
                   <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Sparkles size={13} strokeWidth={1.5} className="text-amber-500" />
-                    {getDarDetail(dar).title}
+                    <Sparkles size={13} strokeWidth={1.5} className="text-amber-500 shrink-0" />
+                    <span className="truncate">{getDarDetail(dar).title}</span>
                   </h4>
-                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words pl-0.5">
+                  <p className="text-xs sm:text-sm text-slate-800 font-normal leading-relaxed break-words [overflow-wrap:anywhere] break-all whitespace-pre-wrap pl-0.5">
                     {getDarDetail(dar).value}
                   </p>
                 </div>

@@ -377,7 +377,7 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
             ) : pdfBlobUrl ? (
               <>
                 <iframe
-                  src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                  src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
                   className="w-full h-full border-0 absolute inset-0 bg-slate-900"
                   title="PDF Preview"
                 />

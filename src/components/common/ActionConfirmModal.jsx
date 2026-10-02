@@ -174,7 +174,7 @@ const ActionConfirmModal = ({
         return {
           icon: <AlertTriangle className="w-5 h-5 text-rose-600" />,
           btn: approvalNextStep.buttonClass,
-          confirmDefault: 'ยืนยันการยกเลิกเอกสาร',
+          confirmDefault: (currentStep === 'APPROVER' || currentStep === 'approver' || (typeof title === 'string' && title.includes('อนุมัติ'))) ? 'ยืนยันการอนุมัติยกเลิกเอกสาร' : 'ยืนยันการยกเลิกเอกสาร',
           badgeBg: 'bg-rose-50 text-rose-700 border-rose-200/80',
           accentBorder: 'border-rose-200/60'
         };

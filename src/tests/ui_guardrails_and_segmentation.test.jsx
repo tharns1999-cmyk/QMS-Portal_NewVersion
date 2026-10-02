@@ -232,11 +232,10 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       expect(historyTabBtn).toBeInTheDocument();
       fireEvent.click(historyTabBtn);
 
-      // Verify DAR items are rendered (cumulative history up to Rev.02)
+      // Verify DAR items are rendered (strictly scoped to current Rev.02)
       expect(screen.getByText('DAR-2026-001')).toBeInTheDocument();
-      expect(screen.getByText('DAR-2026-000')).toBeInTheDocument();
+      expect(screen.queryByText('DAR-2026-000')).not.toBeInTheDocument();
       expect(screen.getByText(/ปรับปรุงขั้นตอนการอบขนมและเพิ่มการบันทึกอุณหภูมิ/i)).toBeInTheDocument();
-      expect(screen.getByText(/จัดทำคู่มือการทำงานใหม่ตามมาตรฐาน FSSC 22000/i)).toBeInTheDocument();
 
       // Verify Requesters / Reviewers / Approvers
       expect(screen.getAllByText('สมชาย สายผลิต').length).toBeGreaterThan(0);
@@ -299,13 +298,13 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       // Verify Superseded Table Headers
       expect(screen.getByText('รหัสและชื่อเอกสาร')).toBeInTheDocument();
       expect(screen.getByText('แผนกเจ้าของ')).toBeInTheDocument();
-      expect(screen.getByText('จำนวนฉบับตกรุ่น')).toBeInTheDocument();
+      expect(screen.getByText('ฉบับและวันบังคับใช้เดิม')).toBeInTheDocument();
       expect(screen.getByText('การเรียกคืนสำเนา')).toBeInTheDocument();
+      expect(screen.getByText('สถานะเอกสาร')).toBeInTheDocument();
       expect(screen.getByText('การจัดการ')).toBeInTheDocument();
 
-      // Invariant: Header "สถานะเอกสาร" must NOT be rendered in Superseded tab
       const tableHeaders = screen.getAllByRole('columnheader').map(th => th.textContent.trim());
-      expect(tableHeaders).not.toContain('สถานะเอกสาร');
+      expect(tableHeaders).toContain('สถานะเอกสาร');
 
       // Column 1: Monospace Code Badge & Type Badge & Name
       expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
@@ -314,19 +313,17 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       // Column 2: Clean Department Badge (PD) without security subline
       expect(screen.queryByText(/🌐 ทั่วไป/i)).not.toBeInTheDocument();
 
-      // Column 3: Minimal Pill Badge ({count} ฉบับ) - No breakdown string, no "ประวัติตกรุ่นสะสม"
-      const supersededPills = screen.getAllByText(/1 ฉบับ/i);
-      expect(supersededPills.length).toBeGreaterThan(0);
-      expect(screen.queryByText(/ประวัติตกรุ่นสะสม/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/\(R00/i)).not.toBeInTheDocument();
+      // Column 3: Revision Stack Chips & Subline
+      expect(screen.getByText(/Rev\.00/i)).toBeInTheDocument();
+      expect(screen.getByText(/วันยกเลิกล่าสุด:/i)).toBeInTheDocument();
 
       // Column 4: Recall status badge only - No requester or approver string
       expect(screen.queryByText(/ผู้ขอ:/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/อนุมัติ:/i)).not.toBeInTheDocument();
 
-      // Table does not have redundant "ฉบับตกรุ่น" status column in row body
-      // Ensure only 5 columns exist in the table header
-      expect(tableHeaders.length).toBe(5);
+      // Column 5: Status column in row body
+      expect(screen.getByText(/ฉบับตกรุ่น \(1 ฉบับ\)/i)).toBeInTheDocument();
+      expect(tableHeaders.length).toBe(6);
     });
   });
 });

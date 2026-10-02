@@ -97,7 +97,7 @@ const FileViewerModal = ({ isOpen, onClose, attachedFile }) => {
             </div>
           ) : isPdf ? (
             <iframe 
-              src={`${blobUrl}#view=FitH&toolbar=0&navpanes=0`} 
+              src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} 
               className="absolute inset-0 w-full h-full border-0 bg-white" 
               title="PDF Preview" 
             />

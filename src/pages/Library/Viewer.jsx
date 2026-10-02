@@ -122,7 +122,7 @@ const Viewer = () => {
   const iframeUrl = useMemo(() => {
     if (!realPdfUrl) return '';
     const viewParam = zoomMode === 'FitH' ? 'view=FitH' : `view=Fit&zoom=${zoomMode}`;
-    return `${realPdfUrl}#${viewParam}&toolbar=0&navpanes=0`;
+    return `${realPdfUrl}#toolbar=0&navpanes=0&scrollbar=1&${viewParam}`;
   }, [realPdfUrl, zoomMode]);
 
   const title = doc ? doc.title : docId;

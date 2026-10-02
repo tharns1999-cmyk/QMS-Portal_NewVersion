@@ -16,21 +16,21 @@ export const getDarReason = (dar) => {
   if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') {
     return {
       title: 'เหตุผลในการร้องขอ',
-      value: dar.requestReason || '-'
+      value: dar.requestReason || dar.reason || dar.changeReason || '-'
     };
   } else if (dar.type === 'REVISION') {
     return {
       title: 'เหตุผลในการแก้ไข',
-      value: dar.changeReason === 'OTHER' ? dar.otherReason : (mapReason(dar.changeReason) || '-')
+      value: dar.changeReason === 'OTHER' ? dar.otherReason : (mapReason(dar.changeReason) || dar.reason || dar.requestReason || '-')
     };
   } else if (dar.type === 'OBSOLETE') {
     return {
       title: 'เหตุผลในการยกเลิก',
-      value: dar.obsoleteReason === 'OTHER' ? dar.otherReason : (mapReason(dar.obsoleteReason) || '-')
+      value: dar.obsoleteReason === 'OTHER' ? dar.otherReason : (mapReason(dar.obsoleteReason) || dar.reason || dar.obsolete_reason || '-')
     };
   }
   
-  return { title: 'เหตุผลในการร้องขอ', value: '-' };
+  return { title: 'เหตุผลในการร้องขอ', value: dar.reason || dar.requestReason || dar.changeReason || '-' };
 };
 
 export const getDarDetail = (dar) => {
@@ -39,21 +39,21 @@ export const getDarDetail = (dar) => {
   if (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') {
     return {
       title: 'รายละเอียดเพิ่มเติม',
-      value: dar.requestDetail || '-'
+      value: dar.requestDetail || dar.detail || dar.request_detail || '-'
     };
   } else if (dar.type === 'REVISION') {
     return {
       title: 'สรุปการเปลี่ยนแปลง',
-      value: dar.changeSummary || '-'
+      value: dar.changeSummary || dar.change_summary || dar.detail || dar.request_detail || '-'
     };
   } else if (dar.type === 'OBSOLETE') {
     return {
       title: 'รายละเอียดเพิ่มเติม/แผนรองรับ',
-      value: dar.obsoleteDetail || dar.recallPlan || '-'
+      value: dar.obsoleteDetail || dar.obsolete_detail || dar.recallPlan || dar.detail || '-'
     };
   }
   
-  return { title: 'รายละเอียดเพิ่มเติม', value: '-' };
+  return { title: 'รายละเอียดเพิ่มเติม', value: dar.detail || dar.changeSummary || dar.change_summary || '-' };
 };
 
 export const getDarDocInfo = (dar, documents) => {

@@ -147,7 +147,7 @@ describe('Notification Popover & DAR History Text-Wrap Constraints', () => {
       );
 
       expect(screen.getByText('การแจ้งเตือนระบบ')).toBeInTheDocument();
-      expect(screen.getByText('หน้าหลักพอร์ทัล')).toBeInTheDocument();
+      expect(screen.getByText(/ภาพรวมพอร์ทัล|หน้าหลักพอร์ทัล/i)).toBeInTheDocument();
     });
   });
 

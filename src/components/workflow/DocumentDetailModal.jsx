@@ -234,7 +234,7 @@ Menu.Item = ({ children }) => {
 const DocumentDetailModal = ({ 
   isOpen, 
   onClose, 
-  document: doc, 
+  document: inputDoc, 
   onOpenViewer,
   filterStatus = 'ALL',
   activeTab: _libraryActiveTab = 'TAB_MY_DEPT' 
@@ -253,6 +253,55 @@ const DocumentDetailModal = ({
     canDownloadDocument = () => true,
     periodicReviewSchedules
   } = useStore();
+
+  // Find all revisions for the current document code to enable switching
+  const availableRevisions = useMemo(() => {
+    if (!inputDoc) return [];
+    const targetCode = resolveDocCode(inputDoc);
+    let revs = [];
+    if (Array.isArray(inputDoc.revisions) && inputDoc.revisions.length > 0) {
+      revs = [...inputDoc.revisions];
+    } else if (targetCode && Array.isArray(documents)) {
+      revs = documents.filter(d => {
+        const codeMatch = resolveDocCode(d)?.toUpperCase() === targetCode.toUpperCase();
+        if (!codeMatch) return false;
+        if (inputDoc.status === 'SUPERSEDED') {
+          return d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded);
+        }
+        return true;
+      });
+    }
+    if (revs.length === 0 && inputDoc) {
+      revs = [inputDoc];
+    }
+    revs.sort((a, b) => {
+      const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+      const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
+      return revB - revA;
+    });
+    return revs;
+  }, [inputDoc, documents]);
+
+  const [selectedRevId, setSelectedRevId] = useState(null);
+
+  useEffect(() => {
+    if (inputDoc) {
+      setSelectedRevId(inputDoc.id || null);
+    }
+  }, [inputDoc]);
+
+  // Derive active doc dynamically based on selected revision
+  const doc = useMemo(() => {
+    if (!inputDoc) return null;
+    if (!selectedRevId) {
+      return availableRevisions[0] || inputDoc;
+    }
+    const found = availableRevisions.find(r => 
+      String(r.id) === String(selectedRevId) || 
+      String(r.revision || r.rev).replace(/\D/g, '') === String(selectedRevId).replace(/\D/g, '')
+    );
+    return found || availableRevisions[0] || inputDoc;
+  }, [inputDoc, selectedRevId, availableRevisions]);
 
   const allDars = useMemo(() => {
     const raw = [...(dars || []), ...(darRequests || [])];
@@ -915,24 +964,25 @@ const DocumentDetailModal = ({
     }
   };
 
-  // Cumulative Document Lineage Filter (Audit Trail <= Current Revision)
-  // Ensures viewing Rev.01 shows Rev.01 and Rev.00 DARs, viewing Rev.00 shows only Rev.00 DAR.
-  const currentDocRevIndex = getRevisionIndex(doc?.rev ?? doc?.revision ?? doc?.doc_version ?? '00');
+  // Strict Revision Scoped Filter: Filter DAR History by Current Revision of the Opened Document
+  // When viewing WI-QC-01 Rev.02, shows ONLY the DAR matching Rev.02.
+  const currentDocCode = resolveDocCode(doc);
+  const currentRevision = String(doc?.revision ?? doc?.revNo ?? doc?.rev ?? doc?.doc_version ?? '00');
+  const currentRevisionNorm = normalizeRev(currentRevision);
 
   const scopedDarHistory = useMemo(() => {
     if (!doc) return [];
 
-    const currentDocCode = resolveDocCode(doc);
     const currentDocCodeUpper = currentDocCode.toUpperCase();
-    const currentDocTitle = String(doc.title || '').trim().toUpperCase();
+    const currentDocTitle = String(doc.title || doc.name || '').trim().toUpperCase();
     const docIdStr = String(doc.id || '');
 
     // 1. ดึง DAR ทั้งหมดที่เป็นของเอกสารรหัสเดียวกัน
     const docDars = allDars.filter((dar) => {
       if (!dar) return false;
       const darDocCode = resolveDocCode(dar).toUpperCase();
-      const darTitle = String(dar.title || '').trim().toUpperCase();
-      const darDocCodeField = String(dar.doc_code || dar.docCode || dar.docNo || '').trim().toUpperCase();
+      const darTitle = String(dar.title || dar.document_title || '').trim().toUpperCase();
+      const darDocCodeField = String(dar.doc_code || dar.docCode || dar.docNo || dar.document_code || '').trim().toUpperCase();
 
       const matchCode = Boolean(
         (currentDocCodeUpper && currentDocCodeUpper !== '-' && (darDocCode === currentDocCodeUpper || darDocCodeField === currentDocCodeUpper)) ||
@@ -948,21 +998,75 @@ const DocumentDetailModal = ({
 
       const matchDirectDarId = Boolean(
         (doc.darId && (String(dar.id) === String(doc.darId) || String(dar.dar_no) === String(doc.darId))) ||
-        (doc.dar_id && (String(dar.id) === String(doc.dar_id) || String(dar.dar_no) === String(doc.dar_id)))
+        (doc.dar_id && (String(dar.id) === String(doc.dar_id) || String(dar.dar_no) === String(doc.dar_id))) ||
+        (doc.darRef && (String(dar.id) === String(doc.darRef) || String(dar.dar_no) === String(doc.darRef))) ||
+        (doc.dar_ref && (String(dar.id) === String(doc.dar_ref) || String(dar.dar_no) === String(doc.dar_ref)))
       );
 
       return matchCode || matchId || matchDirectDarId;
     });
 
-    // 2. กรองเฉพาะ DAR ที่มี Revision <= Current Revision (ห้ามดึงอนาคตเข้ามา)
+    // 2. ถ้าเปิดดูในโหมด Superseded (ฉบับเดิมตกรุ่น):
+    // รวมประวัติ DAR ทุกฉบับตกรุ่นของรหัสเอกสารนี้มาแสดงในหน้านี้หน้าเดียว (Unified Vertical Timeline)
+    if (isSupersededDoc) {
+      // ค้นหา Revision ของฉบับที่กำลัง Effective อยู่ปัจจุบัน เพื่อกรองไม่เอาฉบับ Effective
+      const effectiveDoc = (documents || []).find((d) => {
+        const c = resolveDocCode(d).toUpperCase();
+        return c === currentDocCodeUpper && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE');
+      });
+      const effectiveRevNorm = effectiveDoc 
+        ? normalizeRev(effectiveDoc.rev || effectiveDoc.revision || effectiveDoc.doc_version)
+        : null;
+
+      const supersededDars = docDars.filter((dar) => {
+        const st = String(dar.status || '').toUpperCase();
+        if (st === 'CANCELLED' || st === 'REJECTED') return false;
+
+        const darRev = String(dar.target_revision ?? dar.targetRevision ?? dar.revision ?? dar.docRev ?? dar.rev ?? dar.doc_version ?? '00');
+        const darRevNorm = normalizeRev(darRev);
+
+        // กรองไม่เอาฉบับ Effective ปัจจุบัน และไม่เอา Draft/Future revision ที่มากกว่าหรือเท่ากับฉบับ Effective
+        if (effectiveRevNorm) {
+          const effectiveRevNum = parseInt(effectiveRevNorm, 10);
+          const darRevNum = parseInt(darRevNorm, 10);
+          if (!isNaN(effectiveRevNum) && !isNaN(darRevNum)) {
+            if (darRevNum >= effectiveRevNum) {
+              return false;
+            }
+          } else if (darRevNorm === effectiveRevNorm) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (supersededDars.length > 0) {
+        // เรียงลำดับจาก Revision ล่าสุดลงไปหาเก่าสุด (Descending: Rev.01 -> Rev.00)
+        return supersededDars.sort((a, b) => {
+          const revA = parseInt(String(a.target_revision ?? a.targetRevision ?? a.revision ?? a.docRev ?? a.rev ?? '0').replace(/\D/g, ''), 10) || 0;
+          const revB = parseInt(String(b.target_revision ?? b.targetRevision ?? b.revision ?? b.docRev ?? b.rev ?? '0').replace(/\D/g, ''), 10) || 0;
+          if (revB !== revA) {
+            return revB - revA;
+          }
+          return new Date(b.completedAt || b.createdAt || b.effectiveDate || 0) - new Date(a.completedAt || a.createdAt || a.effectiveDate || 0);
+        });
+      }
+    }
+
+    // 3. กรองเฉพาะ DAR ที่มี Revision ตรงกับ Revision ปัจจุบันของเอกสารที่กำลังเปิดดูเท่านั้น (Strict Current Revision)
+    const isDocObsolete = Boolean(doc.status?.toUpperCase() === 'OBSOLETE' || doc.is_obsolete || isObsoleteDoc);
     const filtered = docDars.filter((dar) => {
-      const darRevRaw = dar.targetRevision ?? dar.docRev ?? dar.rev ?? dar.revision ?? dar.target_revision ?? '00';
-      const darRevIndex = getRevisionIndex(darRevRaw);
-      return darRevIndex <= currentDocRevIndex;
+      const isObsDar = Boolean(dar.type === 'OBSOLETE' || dar.request_type === 'OBSOLETE' || dar.is_obsolete);
+      if (isDocObsolete && isObsDar) {
+        return true;
+      }
+      const darRevision = String(dar.target_revision ?? dar.targetRevision ?? dar.revision ?? dar.docRev ?? dar.rev ?? dar.doc_version ?? '00');
+      const darRevisionNorm = normalizeRev(darRevision);
+      return darRevision === currentRevision || (darRevisionNorm && darRevisionNorm === currentRevisionNorm);
     });
 
     if (filtered.length > 0) {
-      // 3. จัดเรียงตามลำดับเวลาจากล่าสุดลงไปหาอดีต (Descending) (พร้อม Hybrid Sorting แบบ Obsolete-first)
+      // จัดเรียงตามลำดับเวลาจากล่าสุดลงไปหาอดีต (Descending)
       return filtered.sort((a, b) => {
         const aIsObsolete = a.type === 'OBSOLETE' || a.request_type === 'OBSOLETE' || a.is_obsolete;
         const bIsObsolete = b.type === 'OBSOLETE' || b.request_type === 'OBSOLETE' || b.is_obsolete;
@@ -970,52 +1074,43 @@ const DocumentDetailModal = ({
         if (aIsObsolete && !bIsObsolete) return -1;
         if (!aIsObsolete && bIsObsolete) return 1;
 
-        const revA = getRevisionIndex(a.targetRevision ?? a.docRev ?? a.rev ?? a.revision ?? a.target_revision ?? '00');
-        const revB = getRevisionIndex(b.targetRevision ?? b.docRev ?? b.rev ?? b.revision ?? b.target_revision ?? '00');
-        const revDiff = revB - revA;
-        if (revDiff !== 0) return revDiff;
         return new Date(b.createdAt || b.effectiveDate || 0) - new Date(a.createdAt || a.effectiveDate || 0);
       });
     }
 
-    // 4. Fallback: If no explicit DAR found in store, construct cumulative lineage down to 0
-    const docRevNorm = normalizeRev(doc.rev ?? doc.revision ?? doc.doc_version ?? '00');
-    const curRevNum = parseInt(docRevNorm, 10);
-    const maxRev = !isNaN(curRevNum) ? curRevNum : currentDocRevIndex;
+    // 4. Fallback: If no explicit DAR found in store, construct single DAR record for current revision only
+    const isGenesis = currentRevisionNorm === '00' || currentRevision === '00' || currentRevision === '0';
     const isObs = Boolean(doc.status?.toUpperCase() === 'OBSOLETE' || doc.is_obsolete || isObsoleteDoc);
+    const rStr = currentRevisionNorm || '00';
+    const revNum = parseInt(rStr, 10);
+    const resolvedDarId = doc.darId || doc.dar_id || doc.darRef || doc.dar_ref;
+    const resolvedDarNo = doc.darNo || doc.dar_no || doc.darRef || doc.dar_ref;
 
-    const fallbacks = [];
-    for (let r = maxRev; r >= 0; r--) {
-      const rStr = String(r).padStart(2, '0');
-      const isGenesis = r === 0;
-      const isCurrent = r === maxRev;
-      const isItemObs = isCurrent && isObs;
+    return [{
+      id: resolvedDarId ? resolvedDarId : `DAR-${currentDocCode}-R${rStr}`,
+      dar_no: resolvedDarNo ? resolvedDarNo : `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String((!isNaN(revNum) ? revNum : 0) + 1).padStart(3, '0')}`,
+      doc_code: currentDocCode,
+      title: doc.name || doc.title || currentDocCode,
+      revision: rStr,
+      rev: rStr,
+      docRev: rStr,
+      type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+      request_type: isObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
+      status: isObs ? 'OBSOLETE' : (isSupersededDoc ? 'SUPERSEDED' : 'EFFECTIVE'),
+      effectiveDate: doc.effectiveDate || doc.effective_date || '2025-01-01',
+      effective_date_requested: doc.effectiveDate || doc.effective_date || '2025-01-01',
+      createdAt: doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`,
+      reason: isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : (doc.reason || doc.revisionNote || doc.changeReason || 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง'),
+      description: doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ',
+      requester_name: doc.ownerName || '',
+      reviewer_name: '',
+      approver_name: '',
+      require_ack: true
+    }];
+  }, [allDars, doc, currentDocCode, currentRevision, currentRevisionNorm, isObsoleteDoc, isSupersededDoc, documents]);
 
-      fallbacks.push({
-        id: (isCurrent && (doc.darId || doc.dar_id)) ? (doc.darId || doc.dar_id) : `DAR-${currentDocCode}-R${rStr}`,
-        dar_no: (isCurrent && (doc.darNo || doc.dar_no)) ? (doc.darNo || doc.dar_no) : `DAR-${new Date(doc.effectiveDate || '2025-01-01').getFullYear() || 2025}-${String(r + 1).padStart(3, '0')}`,
-        doc_code: currentDocCode,
-        title: doc.name || doc.title || currentDocCode,
-        revision: rStr,
-        rev: rStr,
-        docRev: rStr,
-        type: isItemObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
-        request_type: isItemObs ? 'OBSOLETE' : (isGenesis ? 'NEW' : 'REVISION'),
-        status: isItemObs ? 'OBSOLETE' : (isCurrent && isSupersededDoc ? 'SUPERSEDED' : 'EFFECTIVE'),
-        effectiveDate: isCurrent ? (doc.effectiveDate || doc.effective_date || '2025-01-01') : '2025-01-01',
-        effective_date_requested: isCurrent ? (doc.effectiveDate || doc.effective_date || '2025-01-01') : '2025-01-01',
-        createdAt: isCurrent ? (doc.createdAt || `${doc.effectiveDate || '2025-01-01'}T08:30:00.000Z`) : '2025-01-01T08:30:00.000Z',
-        reason: isGenesis ? 'จัดทำระเบียบปฏิบัติการและเอกสารคุณภาพฉบับเริ่มต้น (Genesis Document Creation)' : (isCurrent ? (doc.reason || doc.revisionNote || doc.changeReason || 'ทบทวนและปรับปรุงขั้นตอนการทำงานให้สอดคล้องกับหน้างานจริง') : 'ปรับปรุงขั้นตอนการทำงาน'),
-        description: isCurrent ? (doc.description || doc.change_details || doc.changeSummary || 'กำหนดขั้นตอนการทำงาน มาตรฐานการควบคุมคุณภาพ') : 'กำหนดขั้นตอนการทำงานเริ่มต้น',
-        requester_name: doc.ownerName || '',
-        reviewer_name: '',
-        approver_name: '',
-        require_ack: true
-      });
-    }
-
-    return fallbacks;
-  }, [allDars, doc, currentDocRevIndex, isObsoleteDoc, isSupersededDoc]);
+  // Alias for semantic clarity
+  const currentRevisionDars = scopedDarHistory;
 
   // State ควบคุมการกาง/พับ (Collapsible Timeline - ใบแรกกางออกเป็นค่าเริ่มต้น)
   const [expandedDarItems, setExpandedDarItems] = useState([]);
@@ -1033,6 +1128,23 @@ const DocumentDetailModal = ({
     setExpandedDarItems(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
+  };
+
+  const allDarIds = useMemo(() => {
+    return scopedDarHistory.map((d, idx) => d.id || d.dar_no || d.darNo || `dar-${idx}`);
+  }, [scopedDarHistory]);
+
+  const isAllExpanded = useMemo(() => {
+    if (allDarIds.length === 0) return false;
+    return allDarIds.every(id => expandedDarItems.includes(id));
+  }, [allDarIds, expandedDarItems]);
+
+  const toggleAllAccordions = () => {
+    if (isAllExpanded) {
+      setExpandedDarItems([]);
+    } else {
+      setExpandedDarItems([...allDarIds]);
+    }
   };
 
   // Resolve user display name and position for workflow stage cards
@@ -1260,25 +1372,27 @@ const DocumentDetailModal = ({
                     <span className="px-2.5 py-0.5 rounded-md bg-[#E5F4FF] text-[#0D99FF] border border-[#B8E1FF] text-xs font-bold font-mono">
                       {resolveDocCode(doc)}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-md bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9] text-xs font-bold font-mono">
-                      Rev.{doc.rev || '00'}
-                    </span>
                     {isObsoleteDoc ? (
-                      <span className="px-2 py-0.5 rounded-md bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] text-xs font-semibold">
+                      <span className="px-2.5 py-0.5 rounded-md bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] text-xs font-semibold">
                         🚫 ยกเลิกถาวร (Obsolete)
                       </span>
                     ) : isSupersededDoc ? (
-                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+                      <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
                         ⏳ ฉบับเดิม (Superseded)
                       </span>
                     ) : (
-                      <span className="text-xs text-[#777777] font-medium ml-1">
-                        Master Document Record
-                      </span>
+                      <>
+                        <span className="px-2.5 py-0.5 rounded-md bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9] text-xs font-bold font-mono">
+                          Rev.{doc.rev || '00'}
+                        </span>
+                        <span className="text-xs text-[#777777] font-medium ml-1">
+                          Master Document Record
+                        </span>
+                      </>
                     )}
                   </div>
                   <h2 className="text-base sm:text-lg font-bold text-[#1E1E1E] tracking-tight break-all break-words min-w-0 [overflow-wrap:anywhere]">
-                    {doc.name}
+                    {doc.name || doc.title}
                   </h2>
                 </div>
               </div>
@@ -1999,16 +2113,27 @@ const DocumentDetailModal = ({
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleExportDarHistoryCsv}
-                      disabled={scopedDarHistory.length === 0}
-                      className="h-9 px-3.5 text-xs font-semibold text-[#1E1E1E] bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] hover:border-[#CCCCCC] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-2xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="ส่งออกประวัติ DAR เป็นไฟล์ CSV สำหรับเปิดใน Excel"
-                    >
-                      <Download className="text-[#0D99FF]" size={15} strokeWidth={1.75} />
-                      <span>ส่งออกประวัติ (CSV)</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {scopedDarHistory.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={toggleAllAccordions}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer border border-transparent hover:border-blue-100"
+                        >
+                          {isAllExpanded ? 'พับเก็บทั้งหมด' : 'ขยายทั้งหมด'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleExportDarHistoryCsv}
+                        disabled={scopedDarHistory.length === 0}
+                        className="h-9 px-3.5 text-xs font-semibold text-[#1E1E1E] bg-white border border-[#E5E5E5] hover:bg-[#F5F5F5] hover:border-[#CCCCCC] disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-2xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="ส่งออกประวัติ DAR เป็นไฟล์ CSV สำหรับเปิดใน Excel"
+                      >
+                        <Download className="text-[#0D99FF]" size={15} strokeWidth={1.75} />
+                        <span>ส่งออกประวัติ (CSV)</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Collapsible Accordion Timeline (Gen-Z SaaS Style) */}
@@ -2161,20 +2286,25 @@ const DocumentDetailModal = ({
 
                                     {/* Toggle Chevron */}
                                     <div className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                      {isExpanded ? (
+                                        <ChevronUp className="w-4 h-4 text-slate-600" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4 text-slate-500" />
+                                      )}
                                     </div>
                                   </div>
                                 </button>
 
                                 {/* Collapsible Body */}
-                                <div className={`border-t border-slate-100 p-4 transition-all duration-200 ${isExpanded ? 'block animate-in slide-in-from-top-2 fade-in' : 'hidden'}`}>
+                                {isExpanded && (
+                                  <div className="border-t border-slate-100 p-4 transition-all duration-200 animate-in slide-in-from-top-2 fade-in">
                                   {/* Reason & Change Details */}
                                   <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 space-y-2 text-xs sm:text-sm min-w-0 max-w-full overflow-hidden">
                                     <div className="min-w-0 w-full space-y-0.5">
                                       <span className="font-bold text-[#374151] block text-xs">
                                         {String(reasonInfo?.title || 'เหตุผลในการร้องขอ').replace(/[:\s]+$/, '')}:
                                       </span>
-                                      <p className="text-[#1E293B] font-normal leading-relaxed break-words text-xs sm:text-sm">
+                                      <p className="text-[#1E293B] font-normal leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-xs sm:text-sm">
                                         {reasonText}
                                       </p>
                                     </div>
@@ -2182,7 +2312,7 @@ const DocumentDetailModal = ({
                                       <span className="font-bold text-[#374151] block text-xs">
                                         {String(detailInfo?.title || 'รายละเอียดการเปลี่ยนแปลง / แผนรองรับ').replace(/[:\s]+$/, '')}:
                                       </span>
-                                      <p className="text-[#475569] leading-relaxed break-words text-xs sm:text-sm">
+                                      <p className="text-[#475569] leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap text-xs sm:text-sm">
                                         {detailText}
                                       </p>
                                     </div>
@@ -2242,7 +2372,8 @@ const DocumentDetailModal = ({
                                       })()}
                                     </div>
                                   </div>
-                                </div>
+                                   </div>
+                                 )}
                               </div>
                             </div>
                           );
@@ -2358,14 +2489,14 @@ const DocumentDetailModal = ({
                                   <RotateCw size={14} className="text-[#0D99FF]" />
                                 </div>
                                 {/* Content card */}
-                                <div className="flex-1 bg-white border border-[#E5E5E5] rounded-xl p-4 shadow-xs">
+                                <div className="flex-1 bg-white border border-[#E5E5E5] rounded-xl p-4 shadow-xs min-w-0 overflow-hidden">
                                   <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${ol.color}`}>
                                       {ol.label}
                                     </span>
                                     <span className="text-xs text-[#666666] font-mono">{formatDate(log.reviewDate)}</span>
                                   </div>
-                                  <p className="text-xs text-slate-700 leading-relaxed">
+                                  <p className="text-xs text-slate-700 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap">
                                     {log.comment || <span className="italic text-slate-400">ไม่มีบันทึกความเห็น</span>}
                                   </p>
                                   <div className="mt-2 flex flex-wrap gap-3 text-xs text-[#666666]">
