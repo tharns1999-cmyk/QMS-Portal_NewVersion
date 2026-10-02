@@ -11,13 +11,15 @@ import {
   ChevronLeft, 
   UploadCloud, 
   Settings,
-  CheckCircle2
+  CheckCircle2,
+  MapPin
 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
+import ConfirmRegistrationModal from '../../components/modals/ConfirmRegistrationModal';
 import Button from '../../components/ui/Button';
 import { generateDynamicWorkflow } from '../../utils/workflowEngine';
 import { 
@@ -422,7 +424,7 @@ const DarNewForm = () => {
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4 h-auto">
+      <form onSubmit={handleFormSubmit} noValidate className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -600,7 +602,7 @@ const DarNewForm = () => {
                       reasonDetails: e.target.value
                     }))}
                     className={`w-full flex-1 min-h-[100px] lg:min-h-[125px] p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.requestReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
-                    placeholder="ระบุวัตถุประสงค์และเหตุผลในการขอดำเนินการ..."
+                    placeholder="ระบุเหตุผลความจำเป็นในการจัดทำ หรือการอ้างอิงข้อกำหนด ISO..."
                   />
                   {errors.requestReason && <p className="text-rose-500 text-xs mt-1">{errors.requestReason}</p>}
                 </div>
@@ -774,7 +776,7 @@ const DarNewForm = () => {
         const resolvedReviewerObj = (masterUsers || []).find(u => u && (u.id === step2?.userId || u.userId === step2?.userId));
 
         return (
-          <ActionConfirmModal
+          <ConfirmRegistrationModal
             isOpen={showConfirm}
             onClose={() => setShowConfirm(false)}
             onConfirm={executeSubmit}
@@ -863,10 +865,10 @@ const DarNewForm = () => {
               {
                 label: 'ไฟล์เอกสารแนบ',
                 value: (selectedFile || formData.file) ? (
-                  <div className="inline-flex items-center justify-between p-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors w-full sm:w-auto min-w-[240px]">
+                  <div className="flex items-center justify-between p-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors w-full min-w-0">
                     <div className="flex items-center gap-2 min-w-0 mr-2">
                       <FileText size={16} className="text-rose-500 shrink-0" />
-                      <span className="max-w-[180px] truncate text-xs font-medium text-slate-800" title={(selectedFile || formData.file).name}>
+                      <span className="truncate text-xs font-medium text-slate-800" title={(selectedFile || formData.file).name}>
                         {(selectedFile || formData.file).name}
                       </span>
                     </div>
@@ -875,37 +877,71 @@ const DarNewForm = () => {
                     </span>
                   </div>
                 ) : (
-                  <span className="text-slate-400 text-xs">ไม่มีไฟล์แนบ</span>
+                  <div className="p-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs">
+                    ไม่มีไฟล์แนบ
+                  </div>
                 )
               },
               {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
                 value: isFormDocument ? (
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
-                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
+                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
                     <span>แบบฟอร์มเปล่า (FM) ดิจิทัล - Bypass การออกเล่มสำเนาควบคุม</span>
                   </div>
                 ) : (() => {
                   const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
                   const allList = allocs?.allAllocations || [];
+                  const defaultCopyData = {
+                    copyNo: 'Copy 01',
+                    locationName: 'QC Office',
+                    location: 'QC Office',
+                    department: currentUser?.department || formData?.department || 'QC',
+                    dept: currentUser?.department || formData?.department || 'QC',
+                    locationDetail: '(สำนักงานประกันและควบคุมคุณภาพ)'
+                  };
+                  const distributionList = allList.length > 0 ? allList : [defaultCopyData];
+
                   return (
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {allList.map((d, idx) => {
-                        const isOrigin = d.copyNo === '01' || d.isOwner || idx === 0;
-                        const copyNum = d.copyNo || String(idx + 1).padStart(2, '0');
-                        const locName = cleanLocationName(d.station_name || d.locationName || d.name || d.location || 'จุดหน้างาน');
+                    <div className="space-y-2">
+                      {distributionList.map((item, idx) => {
+                        const copyNum = item.copyNo 
+                          ? (String(item.copyNo).startsWith('Copy') ? item.copyNo : `Copy ${item.copyNo}`)
+                          : `Copy ${String(idx + 1).padStart(2, '0')}`;
+                        const locName = cleanLocationName(item.locationName || item.station_name || item.name || item.location || 'QC Office');
+                        const deptTag = item.department || item.dept || item.departmentId || currentUser?.department || 'QC';
+                        const locDetail = item.locationDetail || item.fullLocationName || (item.dept_name ? `(${item.dept_name})` : '(สำนักงานประกันและควบคุมคุณภาพ)');
+
                         return (
-                          <span 
+                          <div 
                             key={idx} 
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap border ${
-                              isOrigin
-                                ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200/80 font-semibold shadow-2xs'
-                                : 'bg-slate-100/80 text-slate-700 border border-slate-200'
-                            }`}
+                            className="flex items-start gap-2.5 p-2.5 bg-slate-50 border border-slate-200/90 rounded-xl hover:bg-slate-100/60 transition-colors min-w-0"
                           >
-                            <span>📄</span>
-                            <span>Copy {copyNum}: {locName}</span>
-                          </span>
+                            {/* Copy Badge */}
+                            <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                              {copyNum}
+                            </span>
+
+                            {/* Location & Dept Content */}
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-slate-800 break-words line-clamp-2">
+                                  {locName}
+                                </span>
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70 shrink-0">
+                                  {deptTag}
+                                </span>
+                              </div>
+                              
+                              {/* Subtitle / รายละเอียดจุดติดตั้ง */}
+                              <div className="flex items-center gap-1 text-[11px] text-slate-500 min-w-0">
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0"/>
+                                <span className="truncate">
+                                  {locDetail}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>

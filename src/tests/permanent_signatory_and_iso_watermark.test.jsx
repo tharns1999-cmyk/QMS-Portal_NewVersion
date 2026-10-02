@@ -10,13 +10,25 @@ import {
   WATERMARK_TYPES, 
   drawStandardIsoWatermark,
   generateWatermarkCanvas,
-  applyCanvasWatermarkToPdf
+  applyCanvasWatermarkToPdf,
+  getSignatoryTableDimensions,
+  SIGNATORY_FONT_FAMILY,
+  PURE_BLACK,
+  renderSignatoryText,
+  WATERMARK_FONT_FAMILY
 } from '../services/UniversalWatermarkService';
+import { 
+  getSignatoryTableDimensions as getSignatoryTableDimensionsFromStampEngine,
+  SIGNATORY_FONT_FAMILY as SIGNATORY_FONT_FAMILY_FROM_ENGINE,
+  PURE_BLACK as PURE_BLACK_FROM_ENGINE,
+  renderSignatoryText as renderSignatoryTextFromEngine
+} from '../services/signatoryStampEngine';
 import { 
   drawStandardIsoWatermark as drawStandardIsoWatermarkFromEngine, 
   generateWatermarkCanvas as generateWatermarkCanvasFromEngine,
   applyCanvasWatermarkToPdf as applyCanvasWatermarkToPdfFromEngine,
-  WATERMARK_CONFIG 
+  WATERMARK_CONFIG,
+  WATERMARK_FONT_FAMILY as WATERMARK_FONT_FAMILY_FROM_ENGINE
 } from '../services/watermarkEngine';
 import useStore from '../store/useStore';
 
@@ -107,6 +119,88 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
 
       const reloadedDoc = await PDFDocument.load(stampedBytes);
       expect(reloadedDoc.getPageCount()).toBe(1);
+    });
+
+    it('should calculate correct 3x3 signatory table dimensions with expanded 62pt signature row and 48pt max signature height', () => {
+      const portraitDims = getSignatoryTableDimensions(595.28, 841.89);
+      expect(portraitDims.headerRowHeight).toBe(26);
+      expect(portraitDims.signatureRowHeight).toBe(62);
+      expect(portraitDims.metaRowHeight).toBe(48);
+      expect(portraitDims.totalTableHeight).toBe(136); // 26 + 62 + 48
+      expect(portraitDims.maxSigHeight).toBe(48);
+      expect(portraitDims.maxSigWidth).toBeLessThanOrEqual(125);
+
+      // Verify center-center signature positioning formula
+      const sigImgHeight = 48;
+      const verticalPadding = (portraitDims.signatureRowHeight - sigImgHeight) / 2;
+      expect(verticalPadding).toBe(7); // 7pt clearance top and bottom to avoid border collision
+
+      // Check landscape layout dimensions
+      const landscapeDims = getSignatoryTableDimensions(841.89, 595.28);
+      expect(landscapeDims.headerRowHeight).toBe(26);
+      expect(landscapeDims.signatureRowHeight).toBe(62);
+      expect(landscapeDims.metaRowHeight).toBe(48);
+      expect(landscapeDims.totalTableHeight).toBe(136);
+      expect(landscapeDims.maxSigHeight).toBe(48);
+
+      // Check export across engines
+      expect(typeof UniversalWatermarkService.getSignatoryTableDimensions).toBe('function');
+      expect(typeof getSignatoryTableDimensionsFromStampEngine).toBe('function');
+      expect(UniversalWatermarkService.getSignatoryTableDimensions()).toEqual(portraitDims);
+      expect(getSignatoryTableDimensionsFromStampEngine()).toEqual(portraitDims);
+    });
+
+    it('should enforce TH Sarabun New, regular weight (non-bold), pure black (#000000), and correct font sizes via renderSignatoryText', () => {
+      // 1. Constants verification
+      expect(SIGNATORY_FONT_FAMILY).toBe("'TH Sarabun New', 'THSarabunNew', 'Sarabun', sans-serif");
+      expect(PURE_BLACK).toBe('#000000');
+      expect(SIGNATORY_FONT_FAMILY_FROM_ENGINE).toBe(SIGNATORY_FONT_FAMILY);
+      expect(PURE_BLACK_FROM_ENGINE).toBe(PURE_BLACK);
+      expect(typeof UniversalWatermarkService.renderSignatoryText).toBe('function');
+      expect(typeof renderSignatoryTextFromEngine).toBe('function');
+
+      // 2. Mock canvas context to verify typography execution
+      const mockCtx = {
+        font: '',
+        fillStyle: '',
+        textAlign: '',
+        textBaseline: '',
+        save: vi.fn(),
+        restore: vi.fn(),
+        fillText: vi.fn()
+      };
+
+      const scale = 4; // Ultra-HD 4x
+
+      // Row 1 Header: 12pt, normal, black
+      renderSignatoryText(mockCtx, 'ผู้จัดทำ', 250, 52, 12, scale);
+      expect(mockCtx.font).toBe(`normal ${12 * scale}px ${SIGNATORY_FONT_FAMILY}`);
+      expect(mockCtx.font).not.toContain('bold');
+      expect(mockCtx.fillStyle).toBe('#000000');
+      expect(mockCtx.textAlign).toBe('center');
+      expect(mockCtx.textBaseline).toBe('middle');
+      expect(mockCtx.fillText).toHaveBeenCalledWith('ผู้จัดทำ', 250, 52);
+
+      // Row 3 Signer Name: 11pt, normal, black
+      renderSignatoryText(mockCtx, 'กัลยาณี ประเสริฐ', 250, 408, 11, scale);
+      expect(mockCtx.font).toBe(`normal ${11 * scale}px ${SIGNATORY_FONT_FAMILY}`);
+      expect(mockCtx.font).not.toContain('bold');
+      expect(mockCtx.fillStyle).toBe('#000000');
+      expect(mockCtx.fillText).toHaveBeenCalledWith('กัลยาณี ประเสริฐ', 250, 408);
+
+      // Row 3 Role/Position: 9.5pt, normal, black
+      renderSignatoryText(mockCtx, 'QA Lead Specialist', 250, 460, 9.5, scale);
+      expect(mockCtx.font).toBe(`normal ${9.5 * scale}px ${SIGNATORY_FONT_FAMILY}`);
+      expect(mockCtx.font).not.toContain('bold');
+      expect(mockCtx.fillStyle).toBe('#000000');
+      expect(mockCtx.fillText).toHaveBeenCalledWith('QA Lead Specialist', 250, 460);
+
+      // Row 3 Sign Date: 9.5pt, normal, black
+      renderSignatoryText(mockCtx, '02/10/2569 11:30', 250, 508, 9.5, scale);
+      expect(mockCtx.font).toBe(`normal ${9.5 * scale}px ${SIGNATORY_FONT_FAMILY}`);
+      expect(mockCtx.font).not.toContain('bold');
+      expect(mockCtx.fillStyle).toBe('#000000');
+      expect(mockCtx.fillText).toHaveBeenCalledWith('02/10/2569 11:30', 250, 508);
     });
   });
 
@@ -477,8 +571,12 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(mockFillText).toHaveBeenCalledWith('CONTROLLED COPY', expect.any(Number), expect.any(Number));
       expect(mockFillText).toHaveBeenCalledWith('(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', expect.any(Number), expect.any(Number));
       expect(mockFillText).toHaveBeenCalledWith('ผู้ถือครอง: กัลยาณี เท่านั้น', expect.any(Number), expect.any(Number));
+      expect(mockContext.font).toContain('TH Sarabun New');
       expect(mockContext.font).toContain('Sarabun');
       expect(mockContext.font).toContain('Noto Sans Thai');
+      expect(mockContext.font.startsWith('normal ')).toBe(true);
+      expect(mockContext.font).not.toContain('italic');
+      expect(mockContext.font).not.toContain('oblique');
 
       createElementSpy.mockRestore();
     });
@@ -525,14 +623,19 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
         location: 'QA Lab'
       });
 
-      // Verify typography weights & letter spacing
+      // Verify typography weights & letter spacing & strict upright fontStyle: normal
       expect(lines[0].weight).toBe('600');
       expect(lines[0].letterSpacing).toBe(3);
+      expect(lines[0].fontStyle).toBe('normal');
       expect(lines[1].weight).toBe('400');
+      expect(lines[1].fontStyle).toBe('normal');
       expect(lines[2].weight).toBe('400');
       expect(lines[3].weight).toBe('400');
       expect(lines[4].weight).toBe('400');
       expect(lines[5].weight).toBe('400');
+      lines.forEach((l) => {
+        expect(l.fontStyle).toBe('normal');
+      });
 
       const res = generateWatermarkCanvas({
         lines,
@@ -546,6 +649,32 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
       expect(mockFillText).toHaveBeenCalled();
 
       createElementSpy.mockRestore();
+    });
+
+    it('should strictly enforce font-style: normal and purge italic/oblique across all watermark tiers', () => {
+      const tiers = ['DRAFT', 'CONTROLLED', 'UNCONTROLLED', 'SUPERSEDED', 'OBSOLETE'];
+      tiers.forEach((tier) => {
+        const config = WATERMARK_CONFIG[tier];
+        expect(config.fontStyle).toBe('normal');
+        expect(config.fontStyle).not.toContain('italic');
+        expect(config.fontStyle).not.toContain('oblique');
+
+        const lines = config.getLines({
+          docCode: 'SOP-QA-001',
+          revNo: '01',
+          copyNo: '01',
+          issueNo: '01',
+          holderDept: 'QA',
+          location: 'QA Lab'
+        });
+        lines.forEach((line) => {
+          expect(line.fontStyle).toBe('normal');
+          expect(line.fontStyle).not.toContain('italic');
+          expect(line.fontStyle).not.toContain('oblique');
+        });
+      });
+      expect(WATERMARK_FONT_FAMILY).toContain('TH Sarabun New');
+      expect(WATERMARK_FONT_FAMILY_FROM_ENGINE).toBe(WATERMARK_FONT_FAMILY);
     });
 
     it('should support polymorphic invocation accepting either PDFDocument or Uint8Array bytes', async () => {

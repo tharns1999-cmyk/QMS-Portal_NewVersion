@@ -117,4 +117,36 @@ export const formatThaiReadableDate = (timestamp, includeTime = false) => {
   return formatQmsDate(timestamp, { includeTime, locale: 'th-TH', style: 'short' });
 };
 
+/**
+ * Format date/time to Thailand local time (Asia/Bangkok - GMT+7) in YYYY-MM-DD HH:mm format
+ * @param {Date|string|number} [dateInput=new Date()]
+ * @returns {string} e.g. "2026-08-24 10:58"
+ */
+export const getBangkokFormattedTimestamp = (dateInput = new Date()) => {
+  if (!dateInput) return '';
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(date.getTime())) return String(dateInput);
+
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+};
+
 export default formatQmsDate;

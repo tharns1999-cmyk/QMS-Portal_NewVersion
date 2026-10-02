@@ -15,18 +15,31 @@
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { cleanLocationName } from './MasterDataService';
-import { applyUncontrolledWatermarkToPdf, stampExternalDocumentTopRight, applyDraftWatermarkToPdf, drawIsoDiagonalWatermark, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
+import { 
+  applyUncontrolledWatermarkToPdf, 
+  stampExternalDocumentTopRight, 
+  applyDraftWatermarkToPdf, 
+  drawIsoDiagonalWatermark, 
+  applyProgressiveSignatoryStamp,
+  SIGNATORY_FONT_FAMILY,
+  PURE_BLACK,
+  renderSignatoryText
+} from '../utils/pdfStamper';
 import { resolveFileBlob } from '../utils/fileStorage';
 import { generateQmsDownloadName } from '../utils/documentNamingHelper';
-import { drawStandardIsoWatermark, generateWatermarkCanvas, applyCanvasWatermarkToPdf } from './watermarkEngine';
+import { drawStandardIsoWatermark, generateWatermarkCanvas, applyCanvasWatermarkToPdf, getSignatoryTableDimensions, WATERMARK_FONT_FAMILY } from './watermarkEngine';
 
 export {
   drawIsoDiagonalWatermark,
   applyProgressiveSignatoryStamp,
   drawStandardIsoWatermark,
   generateWatermarkCanvas,
-  applyCanvasWatermarkToPdf
+  applyCanvasWatermarkToPdf,
+  getSignatoryTableDimensions,
+  SIGNATORY_FONT_FAMILY,
+  PURE_BLACK,
+  renderSignatoryText,
+  WATERMARK_FONT_FAMILY
 };
 
 export const WATERMARK_TYPES = {
@@ -143,6 +156,11 @@ export const WATERMARK_PRESETS = {
     color: rgb(0.85, 0.10, 0.20), // Rose Red
     opacity: 0.70,
     title: 'STRICTLY CONFIDENTIAL - EXTERNAL RELEASE'
+  },
+  CONTROLLED: {
+    color: rgb(0.05, 0.60, 0.30), // Emerald Green
+    opacity: 0.65,
+    title: 'CONTROLLED COPY'
   },
   CONTROLLED_COPY: {
     color: rgb(0.05, 0.60, 0.30), // Emerald Green
@@ -285,6 +303,11 @@ export class UniversalWatermarkService {
   static applyCanvasWatermarkToPdf = applyCanvasWatermarkToPdf;
   static drawIsoDiagonalWatermark = drawIsoDiagonalWatermark;
   static applyProgressiveSignatoryStamp = applyProgressiveSignatoryStamp;
+  static getSignatoryTableDimensions = getSignatoryTableDimensions;
+  static SIGNATORY_FONT_FAMILY = SIGNATORY_FONT_FAMILY;
+  static PURE_BLACK = PURE_BLACK;
+  static renderSignatoryText = renderSignatoryText;
+  static WATERMARK_FONT_FAMILY = WATERMARK_FONT_FAMILY;
   static prepareMasterPdfForDownload = prepareMasterPdfForDownload;
 
   /**

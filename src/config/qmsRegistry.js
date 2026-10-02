@@ -90,13 +90,14 @@ export const WATERMARK_CONFIG = {
     color: { r: 0.12, g: 0.25, b: 0.69 }, // Navy Blue
     colorHex: '#1F40B0',
     opacity: 0.16,
+    fontStyle: 'normal',
     getLines: (meta = {}) => [
-      { text: 'CONTROLLED COPY', size: 48, weight: '600', letterSpacing: 3 },
-      { text: '(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', size: 19, weight: '400' },
-      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400' },
-      { text: `Copy No: ${meta.copyNo || '01'} | Issue No: ${meta.issueNo || '01'} | Holder: ${meta.holderDept || meta.targetDept || 'DCC'}`, size: 12.5, weight: '400' },
-      { text: `Loc: ${meta.location || meta.loc || '-'} | Issued: ${meta.issuedDate || meta.effectiveDate || '-'}`, size: 11.5, weight: '400' },
-      { text: 'OFFICIAL CONTROLLED COPY | REPRODUCTION STRICTLY PROHIBITED', size: 9.5, weight: '400' }
+      { text: 'CONTROLLED COPY', size: 48, weight: '600', fontStyle: 'normal', letterSpacing: 3 },
+      { text: '(สำเนาควบคุม — บังคับใช้ปฏิบัติงานจริง)', size: 19, weight: '400', fontStyle: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400', fontStyle: 'normal' },
+      { text: `Copy No: ${meta.copyNo || '01'} | Issue No: ${meta.issueNo || '01'} | Holder: ${meta.holderDept || meta.targetDept || 'DCC'}`, size: 12.5, weight: '400', fontStyle: 'normal' },
+      { text: `Loc: ${meta.location || meta.loc || '-'} | Issued: ${meta.issuedDate || meta.effectiveDate || '-'}`, size: 11.5, weight: '400', fontStyle: 'normal' },
+      { text: 'OFFICIAL CONTROLLED COPY | REPRODUCTION STRICTLY PROHIBITED', size: 9.5, weight: '400', fontStyle: 'normal' }
     ],
     lines(meta = {}) {
       return this.getLines(meta);
@@ -108,12 +109,13 @@ export const WATERMARK_CONFIG = {
     color: { r: 0.86, g: 0.15, b: 0.15 }, // Coral Red
     colorHex: '#DC2626',
     opacity: 0.16,
+    fontStyle: 'normal',
     getLines: (meta = {}) => [
-      { text: 'UNCONTROLLED COPY', size: 48, weight: '600', letterSpacing: 3 },
-      { text: '(สำเนาไม่ควบคุม — สำหรับอ้างอิงเท่านั้น)', size: 19, weight: '400' },
-      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400' },
-      { text: `Downloaded by: ${meta.userName || 'Authorized User'} (${meta.userDept || 'QMS'}) | ${meta.timestamp || ''}`, size: 12, weight: '400' },
-      { text: 'DO NOT DUPLICATE | VERIFY LATEST REVISION BEFORE USE', size: 9.5, weight: '400' }
+      { text: 'UNCONTROLLED COPY', size: 48, weight: '600', fontStyle: 'normal', letterSpacing: 3 },
+      { text: '(สำเนาไม่ควบคุม — สำหรับอ้างอิงเท่านั้น)', size: 19, weight: '400', fontStyle: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400', fontStyle: 'normal' },
+      { text: `Downloaded by: ${meta.userName || 'Authorized User'} (${meta.userDept || 'QMS'}) | ${meta.timestamp || ''}`, size: 12, weight: '400', fontStyle: 'normal' },
+      { text: 'DO NOT DUPLICATE | VERIFY LATEST REVISION BEFORE USE', size: 9.5, weight: '400', fontStyle: 'normal' }
     ],
     lines(meta = {}) {
       return this.getLines(meta);
@@ -125,12 +127,13 @@ export const WATERMARK_CONFIG = {
     color: { r: 0.60, g: 0.10, b: 0.10 }, // Crimson
     colorHex: '#991A1A',
     opacity: 0.24,
+    fontStyle: 'normal',
     getLines: (meta = {}) => [
-      { text: 'SUPERSEDED DOCUMENT', size: 46, weight: '600', letterSpacing: 2 },
-      { text: '(เอกสารฉบับยกเลิก — มีฉบับใหม่ประกาศใช้แทน)', size: 19, weight: '400' },
-      { text: `Doc No: ${meta.docCode || '-'} | Former Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400' },
-      { text: `Replaced by Rev: ${meta.replacedByRev || 'Latest'} | As of: ${meta.effectiveDate || '-'}`, size: 12, weight: '400' },
-      { text: 'FOR HISTORICAL & AUDIT REFERENCE ONLY | DO NOT USE IN PRODUCTION', size: 9.5, weight: '400' }
+      { text: 'SUPERSEDED DOCUMENT', size: 46, weight: '600', fontStyle: 'normal', letterSpacing: 2 },
+      { text: '(เอกสารฉบับยกเลิก — มีฉบับใหม่ประกาศใช้แทน)', size: 19, weight: '400', fontStyle: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | Former Rev: ${meta.revNo ?? '00'}`, size: 14, weight: '400', fontStyle: 'normal' },
+      { text: `Replaced by Rev: ${meta.replacedByRev || 'Latest'} | As of: ${meta.effectiveDate || '-'}`, size: 12, weight: '400', fontStyle: 'normal' },
+      { text: 'FOR HISTORICAL & AUDIT REFERENCE ONLY | DO NOT USE IN PRODUCTION', size: 9.5, weight: '400', fontStyle: 'normal' }
     ],
     lines(meta = {}) {
       return this.getLines(meta);
@@ -142,12 +145,13 @@ export const WATERMARK_CONFIG = {
     color: { r: 0.30, g: 0.35, b: 0.40 }, // Slate Gray
     colorHex: '#4D5966',
     opacity: 0.22,
+    fontStyle: 'normal',
     getLines: (meta = {}) => [
-      { text: 'OBSOLETE DOCUMENT', size: 46, weight: '600', letterSpacing: 2 },
-      { text: '(เอกสารยกเลิกการใช้งานถาวร)', size: 19, weight: '400' },
-      { text: `Doc No: ${meta.docCode || '-'} | DAR Ref: ${meta.darNo || '-'}`, size: 14, weight: '400' },
-      { text: `Discontinued Date: ${meta.obsoleteDate || '-'} | Reason: Retired`, size: 12, weight: '400' },
-      { text: 'PERMANENTLY RETIRED | NOT VALID FOR OPERATIONAL USE', size: 9.5, weight: '400' }
+      { text: 'OBSOLETE DOCUMENT', size: 46, weight: '600', fontStyle: 'normal', letterSpacing: 2 },
+      { text: '(เอกสารยกเลิกการใช้งานถาวร)', size: 19, weight: '400', fontStyle: 'normal' },
+      { text: `Doc No: ${meta.docCode || '-'} | DAR Ref: ${meta.darNo || '-'}`, size: 14, weight: '400', fontStyle: 'normal' },
+      { text: `Discontinued Date: ${meta.obsoleteDate || '-'} | Reason: Retired`, size: 12, weight: '400', fontStyle: 'normal' },
+      { text: 'PERMANENTLY RETIRED | NOT VALID FOR OPERATIONAL USE', size: 9.5, weight: '400', fontStyle: 'normal' }
     ],
     lines(meta = {}) {
       return this.getLines(meta);
@@ -159,12 +163,13 @@ export const WATERMARK_CONFIG = {
     color: { r: 0.85, g: 0.47, b: 0.03 }, // Amber
     colorHex: '#D97808',
     opacity: 0.20,
+    fontStyle: 'normal',
     getLines: (meta = {}) => [
-      { text: 'DRAFT / UNDER REVIEW', size: 46, weight: '600', letterSpacing: 2 },
-      { text: '(เอกสารร่าง — อยู่ระหว่างจัดทำ/ทบทวน)', size: 19, weight: '400' },
-      { text: `Workflow: ${meta.darNo || 'DRAFT'} | Current Step: In-Review`, size: 14, weight: '400' },
-      { text: `Initiated By: ${meta.userName || 'Requester'} (${meta.userDept || '-'})`, size: 12, weight: '400' },
-      { text: 'NOT YET EFFECTIVE | UNAPPROVED DRAFT COPY', size: 9.5, weight: '400' }
+      { text: 'DRAFT / UNDER REVIEW', size: 46, weight: '600', fontStyle: 'normal', letterSpacing: 2 },
+      { text: '(เอกสารร่าง — อยู่ระหว่างจัดทำ/ทบทวน)', size: 19, weight: '400', fontStyle: 'normal' },
+      { text: `Workflow: ${meta.darNo || 'DRAFT'} | Current Step: In-Review`, size: 14, weight: '400', fontStyle: 'normal' },
+      { text: `Initiated By: ${meta.userName || 'Requester'} (${meta.userDept || '-'})`, size: 12, weight: '400', fontStyle: 'normal' },
+      { text: 'NOT YET EFFECTIVE | UNAPPROVED DRAFT COPY', size: 9.5, weight: '400', fontStyle: 'normal' }
     ],
     lines(meta = {}) {
       return this.getLines(meta);

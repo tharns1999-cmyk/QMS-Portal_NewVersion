@@ -1,6 +1,6 @@
 import { PDFDocument, degrees } from 'pdf-lib';
 import { WATERMARK_CONFIG } from '../config/qmsRegistry';
-import { getBangkokFormattedTimestamp } from './UniversalWatermarkService';
+import { getBangkokFormattedTimestamp } from '../utils/dateFormatter';
 import { drawIsoDiagonalWatermark } from '../utils/pdfStamper';
 
 export { WATERMARK_CONFIG, drawIsoDiagonalWatermark };
@@ -15,14 +15,17 @@ export const THAI_SAFE_FALLBACK_MAP = {
   '(เอกสารร่าง — อยู่ระหว่างจัดทำ/ทบทวน)': '(DRAFT - UNDER REVIEW / NOT EFFECTIVE)'
 };
 
+export const WATERMARK_FONT_FAMILY = "'TH Sarabun New', 'THSarabunNew', 'Noto Sans Thai', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif";
+
 /**
  * สร้างแผ่นภาพลายน้ำแบบคมชัดสูงด้วย HTML5 Canvas (Ultra-HD 4x Resolution)
+ * บังคับใช้ฟอนต์ตัวตรงปกติ (Strict font-style: normal) ห้ามมี Italic หรือ Oblique เด็ดขาด
  * ใช้ Text Rendering Engine ของเบราว์เซอร์เพื่อเรนเดอร์ภาษาไทยวรรณยุกต์ซ้อน (OpenType Shaping) ได้อย่างสมบูรณ์แบบ 100%
  *
  * @param {Object} options
  * @param {Array<{text: string, size?: number, scale?: number, weight?: string, isBold?: boolean, letterSpacing?: number}>} options.lines
  * @param {string} [options.colorHex='#DC2626']
- * @param {number} [options.opacity=0.18]
+ * @param {number} [options.opacity=0.16]
  * @param {number} [options.scale=4]
  * @returns {string} PNG Data URL
  */
@@ -34,10 +37,10 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opac
     return TRANSPARENT_1X1_PNG;
   }
 
-  // แปลงขนาดและสไตล์ของแต่ละบรรทัด
+  // แปลงขนาดและสไตล์ของแต่ละบรรทัด (บังคับ fontStyle: normal ห้ามตัวเอียง)
   const normalizedLines = (lines || []).map(line => {
     if (typeof line === 'string') {
-      return { text: line, size: 24, weight: '400', letterSpacing: 0 };
+      return { text: line, size: 24, weight: '400', fontStyle: 'normal', letterSpacing: 0 };
     }
     const rawSize = line.size || (line.scale ? Math.round(52 * line.scale) : 24);
     const weight = line.weight || (line.isBold ? '600' : '400');
@@ -45,6 +48,7 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opac
       text: line.text || '',
       size: rawSize,
       weight,
+      fontStyle: 'normal', // Strict non-italic
       letterSpacing: typeof line.letterSpacing === 'number' ? line.letterSpacing : 0
     };
   });
@@ -63,7 +67,9 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opac
 
   normalizedLines.forEach((line) => {
     const fontSize = line.size * scale;
-    const fontStr = `${line.weight || '400'} ${fontSize}px 'Sarabun', 'Noto Sans Thai', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
+    const weight = line.weight || '400';
+    // ระบุ 'normal' อย่างชัดเจนหน้า weight เพื่อห้าม italic เด็ดขาด
+    const fontStr = `normal ${weight} ${fontSize}px ${WATERMARK_FONT_FAMILY}`;
     if (dummyCtx) {
       dummyCtx.font = fontStr;
     }
@@ -123,9 +129,12 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opac
   const centerX = canvas.width / 2;
   let currentY = verticalPadding + (normalizedLines[0].size * scale * 0.6);
 
+  // 2. เรนเดอร์ตัวหนังสือตัวตรงปกติ (Upright Font - No Italic Slant)
   normalizedLines.forEach((line) => {
     const fontSize = line.size * scale;
-    ctx.font = `${line.weight || '400'} ${fontSize}px 'Sarabun', 'Noto Sans Thai', 'TH Sarabun New', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
+    const weight = line.weight || '400';
+    // บังคับ font-style เป็น normal เสมอ
+    ctx.font = `normal ${weight} ${fontSize}px ${WATERMARK_FONT_FAMILY}`;
     ctx.fillStyle = colorHex;
 
     // จัด Letter Spacing หากมีกำหนดไว้
@@ -280,10 +289,50 @@ export const drawStandardIsoWatermark = async (pdfDocOrBytes, watermarkType = 'U
   return pdfDoc;
 };
 
+/**
+ * คำนวณและคืนค่ามิติต่างๆ ของตารางลายเซ็น 3x3 ตามข้อกำหนด ISO 9001
+ * ขยายความสูงแถวกลาง (signatureRowHeight) เป็น 62 pt และขนาดภาพลายเซ็นสูงสุดเป็น 48 pt
+ *
+ * @param {number} [pageWidth=595.28]
+ * @param {number} [pageHeight=841.89]
+ * @returns {Object}
+ */
+export const getSignatoryTableDimensions = (pageWidth = 595.28, pageHeight = 841.89) => {
+  const isPortrait = pageHeight >= pageWidth;
+  const tableWidth = isPortrait ? 515 : 550;
+  const colWidth = tableWidth / 3;
+
+  // 1. กำหนดความสูงแต่ละแถว (เน้นขยายแถวกลาง signatureRowHeight)
+  const headerRowHeight = 26;
+  const signatureRowHeight = 62; // ขยายความสูงแนวตั้งของช่องลายเซ็นแถวกลาง
+  const metaRowHeight = 48;
+  const totalTableHeight = headerRowHeight + signatureRowHeight + metaRowHeight;
+
+  const startX = (pageWidth - tableWidth) / 2;
+  const startY = isPortrait ? 40 : 35;
+
+  return {
+    tableWidth,
+    colWidth,
+    headerRowHeight,
+    signatureRowHeight,
+    metaRowHeight,
+    totalTableHeight,
+    startX,
+    startY,
+    // ขยายขนาดภาพลายเซ็นให้เด่นชัดตามความสูงใหม่
+    maxSigWidth: Math.min(125, colWidth * 0.72),
+    maxSigHeight: 48
+  };
+};
+
 export default {
   WATERMARK_CONFIG,
+  WATERMARK_FONT_FAMILY,
   generateWatermarkCanvas,
   applyCanvasWatermarkToPdf,
   drawStandardIsoWatermark,
-  drawIsoDiagonalWatermark
+  drawIsoDiagonalWatermark,
+  getSignatoryTableDimensions
 };
+

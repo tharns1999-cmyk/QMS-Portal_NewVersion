@@ -190,8 +190,34 @@ export const resolveSubmissionDate = (dar, task, darTimeline = []) => {
   return formatSignOffDate(new Date());
 };
 
+// ─── 3x3 Signatory Table Typography Standards ──────────────────────────────
+export const SIGNATORY_FONT_FAMILY = "'TH Sarabun New', 'THSarabunNew', 'Sarabun', sans-serif";
+export const PURE_BLACK = '#000000';
+
 /**
- * Generate a sign-off stamp image (3 columns: Requester, Reviewer, Approver)
+ * Render non-bold pure black text for signatory table slots
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} text
+ * @param {number} x - Pixel X on canvas
+ * @param {number} y - Pixel Y on canvas
+ * @param {number} sizePt - Font size in points (e.g. 12, 11, 9.5)
+ * @param {number} [scale=4]
+ */
+export const renderSignatoryText = (ctx, text, x, y, sizePt, scale = 4) => {
+  if (!ctx || text === undefined || text === null) return;
+  if (typeof ctx.save === 'function') ctx.save();
+  ctx.font = `normal ${sizePt * scale}px ${SIGNATORY_FONT_FAMILY}`;
+  ctx.fillStyle = PURE_BLACK;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (typeof ctx.fillText === 'function') {
+    ctx.fillText(String(text), x, y);
+  }
+  if (typeof ctx.restore === 'function') ctx.restore();
+};
+
+/**
+ * Generate a dynamic sign-off stamp image with 3-column table
  * using HTML5 Canvas with HiDPI Supersampling (4x) and TH Sarabun New font.
  * 
  * @param {Object} signOffData - { requester, reviewer, approver }
@@ -201,10 +227,21 @@ export const resolveSubmissionDate = (dar, task, darTimeline = []) => {
 export const generateSignOffStampImage = async ({ requester = {}, reviewer = {}, approver = {} } = {}) => {
   await ensureThSarabunFontLoaded();
 
+  // 3x3 Signatory Table Dimensions (ISO 9001:2015 Spec)
+  // Row 1: Header (26pt)
+  // Row 2: Signature (62pt - Expanded height for prominent signatures without clipping)
+  // Row 3: Signer Info (48pt)
+  const headerRowHeight = 26;
+  const signatureRowHeight = 62;
+  const metaRowHeight = 48;
+  const totalTableHeight = headerRowHeight + signatureRowHeight + metaRowHeight; // 136 pt
+  const tableWidth = 500;
+  const colWidth = tableWidth / 3;
+
   const canvas = document.createElement('canvas');
-  const scale = 3; // HiDPI Supersampling
-  const width = 500 * scale;
-  const height = 120 * scale;
+  const scale = 4; // Ultra-HD 4x Supersampling for crisp TH Sarabun New thin font lines
+  const width = tableWidth * scale;
+  const height = totalTableHeight * scale;
   canvas.width = width;
   canvas.height = height;
 
@@ -212,25 +249,32 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
   if (!ctx) {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
   }
-  ctx.scale(scale, scale);
+
+  // Ultra-HD High-DPI Sharpness settings
+  if ('imageSmoothingEnabled' in ctx) {
+    ctx.imageSmoothingEnabled = true;
+  }
+  if ('imageSmoothingQuality' in ctx) {
+    ctx.imageSmoothingQuality = 'high';
+  }
 
   // 1. ถมพื้นหลังขาวทึบ 100% ป้องกันเส้นตารางเดิมใน PDF ทะลุ
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, 500, 120);
+  ctx.fillRect(0, 0, width, height);
 
-  // 2. ตีกรอบนอกและเส้นแบ่งคอลัมน์ (3 คอลัมน์เท่ากัน คอลัมน์ละ 166.6px)
-  ctx.strokeStyle = '#1e293b';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0, 0, 500, 120);
+  // 2. ตีกรอบนอกและเส้นแบ่งคอลัมน์ (3 คอลัมน์เท่ากัน สีดำล้วน #000000)
+  ctx.strokeStyle = PURE_BLACK;
+  ctx.lineWidth = Math.max(1, Math.round(1 * scale)); // 1pt border
+  ctx.strokeRect(0, 0, width, height);
 
-  const colWidth = 500 / 3;
   ctx.beginPath();
+  ctx.lineWidth = Math.max(1, Math.round(0.75 * scale)); // 0.75pt divider
   // เส้นแบ่งคอลัมน์
-  ctx.moveTo(colWidth, 0); ctx.lineTo(colWidth, 120);
-  ctx.moveTo(colWidth * 2, 0); ctx.lineTo(colWidth * 2, 120);
-  // เส้นแบ่งแถว: แถว 1 (24px), แถว 2 (48px), แถว 3 (48px)
-  ctx.moveTo(0, 24); ctx.lineTo(500, 24);
-  ctx.moveTo(0, 72); ctx.lineTo(500, 72);
+  ctx.moveTo(colWidth * scale, 0); ctx.lineTo(colWidth * scale, height);
+  ctx.moveTo(colWidth * 2 * scale, 0); ctx.lineTo(colWidth * 2 * scale, height);
+  // เส้นแบ่งแถว: แถว 1 (26pt), แถว 2 (62pt), แถว 3 (48pt)
+  ctx.moveTo(0, headerRowHeight * scale); ctx.lineTo(width, headerRowHeight * scale);
+  ctx.moveTo(0, (headerRowHeight + signatureRowHeight) * scale); ctx.lineTo(width, (headerRowHeight + signatureRowHeight) * scale);
   ctx.stroke();
 
   // Helper โหลดภาพลายเซ็น
@@ -250,15 +294,15 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
     { title: 'ผู้อนุมัติ', data: approver }
   ];
 
+  const headerCenterY = headerRowHeight / 2; // 13 pt (Center of 26pt header)
+  const metaRowStartY = headerRowHeight + signatureRowHeight; // 88 pt
+
   for (let i = 0; i < cols.length; i++) {
     const { title, data } = cols[i];
-    const xOffset = i * colWidth;
+    const cellCenterX = (i * colWidth) + (colWidth / 2);
 
-    // แถวที่ 1: หัวข้อบทบาท (Header)
-    ctx.font = 'bold 11px "TH Sarabun New", sans-serif';
-    ctx.fillStyle = '#1e293b';
-    ctx.textAlign = 'center';
-    ctx.fillText(title, xOffset + colWidth / 2, 16);
+    // แถวที่ 1: หัวข้อบทบาท (Header: 12 pt, Regular / Non-Bold, Pure Black #000000)
+    renderSignatoryText(ctx, title, cellCenterX * scale, headerCenterY * scale, 12, scale);
 
     // หากขั้นตอนยังไม่เสร็จสิ้น (Pending): ปล่อยช่องแถว 2 และ 3 ว่างเปล่า 100%
     const status = (data?.status || '').toUpperCase();
@@ -278,41 +322,46 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
       continue;
     }
 
-    // แถวที่ 2: วาดภาพ E-Signature จริง
+    // แถวที่ 2: วาดภาพ E-Signature จริง (ความสูงแถว 62pt, ขนาดภาพสูงสุด 120x48pt กึ่งกลางแนวนอนและแนวตั้ง)
     const signatureSrc = data.signatureImage || data.signature || (data.name ? generateCursiveSignatureDataUrl(data.name, 'BRUSH_SCRIPT') : null);
     if (signatureSrc) {
       const sigImg = await loadImg(signatureSrc);
       if (sigImg) {
-        const maxImgW = colWidth - 20;
-        const maxImgH = 40;
+        const maxImgW = Math.min(120, colWidth - 20);
+        const maxImgH = 48; // ขยายความสูงภาพลายเซ็นเป็น 48 pt
         const ratio = Math.min(maxImgW / sigImg.width, maxImgH / sigImg.height, 1);
         const drawW = sigImg.width * ratio;
         const drawH = sigImg.height * ratio;
-        ctx.drawImage(
-          sigImg,
-          xOffset + (colWidth - drawW) / 2,
-          24 + (48 - drawH) / 2,
-          drawW,
-          drawH
-        );
+        const drawX = (i * colWidth) + ((colWidth - drawW) / 2);
+        const drawY = headerRowHeight + ((signatureRowHeight - drawH) / 2);
+        if (typeof ctx.drawImage === 'function') {
+          ctx.drawImage(
+            sigImg,
+            drawX * scale,
+            drawY * scale,
+            drawW * scale,
+            drawH * scale
+          );
+        }
       }
     }
 
-    // แถวที่ 3: ข้อมูลผู้ลงนามจริง 3 บรรทัด
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 11px "TH Sarabun New", sans-serif';
-    ctx.fillText(data.name || '', xOffset + colWidth / 2, 85);
+    // แถวที่ 3: ข้อมูลผู้ลงนาม (ชื่อ 11pt, ตำแหน่ง 9.5pt, วันที่ 9.5pt - Regular / Non-Bold, Pure Black #000000)
+    const line1Y = metaRowStartY + 14; // ชื่อ-นามสกุล
+    const line2Y = metaRowStartY + 27; // ตำแหน่ง
+    const line3Y = metaRowStartY + 39; // วันที่
+    const dateText = data.date || data.timestamp || '-';
 
-    ctx.font = '10px "TH Sarabun New", sans-serif';
-    ctx.fillStyle = '#475569';
-    ctx.fillText(data.position || '', xOffset + colWidth / 2, 98);
-
-    const dateText = data.date || data.timestamp || ''; // Support both keys
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(dateText, xOffset + colWidth / 2, 111);
+    renderSignatoryText(ctx, data.name || '-', cellCenterX * scale, line1Y * scale, 11, scale);
+    renderSignatoryText(ctx, data.position || '-', cellCenterX * scale, line2Y * scale, 9.5, scale);
+    renderSignatoryText(ctx, dateText, cellCenterX * scale, line3Y * scale, 9.5, scale);
   }
 
-  return canvas.toDataURL('image/png');
+  try {
+    return canvas.toDataURL('image/png');
+  } catch {
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+  }
 };
 
 /**
@@ -468,9 +517,9 @@ export const stampDocumentLastPage = async (originalPdfBytes, signOffData) => {
   const pngDataUrl = await generateSignOffStampImage(signOffData);
   const pngImage = await pdfDoc.embedPng(pngDataUrl);
 
-  // 2. STRICTLY CLAMPED Footer dimensions — 120pt high, 30pt from bottom edge
-  // This ensures the white mask NEVER touches document content above the Footer zone.
-  const MATRIX_HEIGHT = 120; // Fixed 120pt footer zone
+  // 2. STRICTLY CLAMPED Footer dimensions — 136pt high, 30pt from bottom edge
+  // This ensures the white mask covers the full 136pt signatory matrix (26 + 62 + 48).
+  const MATRIX_HEIGHT = 136; // Fixed 136pt footer zone
   const FOOTER_BOTTOM  = 30; // 30pt from physical bottom edge
   const stampWidth  = Math.min(500, width - 40);
   const stampHeight = MATRIX_HEIGHT;
@@ -1092,7 +1141,7 @@ export const resolveRawFileBlob = async (fileId, fallbackKeys = [], darObject = 
 
 /**
  * Sequential Stamping Pipeline for DAR Document Previews:
- * 1. Stamp dynamic Signatory Matrix on the last page footer (strictly 120pt at y=30)
+ * 1. Stamp dynamic Signatory Matrix on the last page footer (strictly 136pt at y=30)
  * 2. Stamp state-aware DRAFT watermark across center of all pages
  * 3. Return final stamped PDF bytes
  *
@@ -1143,7 +1192,7 @@ export const stampDarPreviewPdf = async (rawPdfBytes, options = {}) => {
     };
   }
 
-  // Step 1: Stamp Signatory Matrix on the last page footer only (strictly 120pt at y=30)
+  // Step 1: Stamp Signatory Matrix on the last page footer only (strictly 136pt at y=30)
   let stampedBytes = await stampDocumentLastPage(rawPdfBytes, signOffData);
 
   // Step 2: Stamp DRAFT watermark on ALL pages — exclusively, no other center watermark
@@ -1218,7 +1267,7 @@ export const drawSignatoryMatrixCanvas = async ({ requester, reviewer, approver 
  * Single pipeline function for BOTH preview and download:
  *
  * 1. Resolves signatory data progressively via resolveProgressiveSignatories
- * 2. Stamps 3-column matrix (500×120 pt) on the FIRST page footer (y=30)
+ * 2. Stamps 3-column matrix (500×136 pt) on the FIRST page footer (y=30)
  *    — cells that are not yet completed render as clean white blank slots
  * 3. Stamps diagonal 45° watermark (TH Sarabun New) on ALL pages
  *
@@ -1276,7 +1325,7 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
   const firstPage = pages[0];
   const { width: pageWidth } = firstPage.getSize();
   const MATRIX_WIDTH  = Math.min(500, pageWidth - 40);
-  const MATRIX_HEIGHT = 120;
+  const MATRIX_HEIGHT = 136;
   const xPos = (pageWidth - MATRIX_WIDTH) / 2;
   const yPos = 30; // 30 pt from bottom edge of Page 1
 
