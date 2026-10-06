@@ -158,7 +158,33 @@ export const generateWatermarkCanvas = ({ lines = [], colorHex = '#1F40B0', opac
     currentY += (fontSize * lineSpacingRatio);
   });
 
-  return canvas.toDataURL ? canvas.toDataURL('image/png') : TRANSPARENT_1X1_PNG;
+  const resultPng = canvas.toDataURL ? canvas.toDataURL('image/png') : TRANSPARENT_1X1_PNG;
+
+  // Cleanup Canvas contexts & dimensions asynchronously to return RAM/VRAM to browser
+  const cleanupCanvas = () => {
+    try {
+      if (typeof ctx.clearRect === 'function') {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      canvas.width = 0;
+      canvas.height = 0;
+      if (dummyCtx && typeof dummyCtx.clearRect === 'function') {
+        dummyCtx.clearRect(0, 0, dummyCanvas.width, dummyCanvas.height);
+      }
+      dummyCanvas.width = 0;
+      dummyCanvas.height = 0;
+    } catch {
+      // Graceful no-op
+    }
+  };
+
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(cleanupCanvas);
+  } else {
+    setTimeout(cleanupCanvas, 0);
+  }
+
+  return resultPng;
 };
 
 /**

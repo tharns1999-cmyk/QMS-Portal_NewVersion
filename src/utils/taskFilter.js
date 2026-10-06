@@ -204,7 +204,9 @@ export const isActionableTask = (task, currentUser) => {
   if (!task || !currentUser) return false;
 
   // 1. Reactive completion filter: immediately drop completed or resolved tasks
-  if (task.status === 'COMPLETED' || task.status === 'RESOLVED' || task.is_completed === true) {
+  // Exception: DCC delivery tracking tasks (where delivery_status === 'DISPATCHED_TRACKING')
+  // remain visible for DCC tracking in TaskInbox until all receipts are confirmed.
+  if ((task.status === 'COMPLETED' || task.status === 'RESOLVED' || task.is_completed === true) && task.delivery_status !== 'DISPATCHED_TRACKING') {
     return false;
   }
 
@@ -235,6 +237,28 @@ export const isActionableTask = (task, currentUser) => {
   const userApprovalLevel = Number(currentUser?.approval_level || currentUser?.level || 1);
   const normType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
 
+  // 🛡️ Periodic Review & Verification Task Routing (ISO 9001 Clause 7.5.3)
+  // External document verification is strictly routed to DCC or QA team members.
+  if (normType === 'EXTERNAL_VERIFICATION' || task.taskType === 'EXTERNAL_VERIFICATION') {
+    const isQa = userMatchesDepartment(currentUser, 'QA') || 
+                 userMatchesDepartment(currentUser, 'QC') || 
+                 userDepts.some(d => ['QA', 'QC', 'QA/QC'].includes(String(d).toUpperCase()));
+    return isDcc || isQa;
+  }
+
+  // Internal document periodic review is routed to owner department (or designated assignee)
+  if (normType === 'PERIODIC_REVIEW' || task.taskType === 'PERIODIC_REVIEW') {
+    const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
+    if (taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || task.assigneeName === currentUser?.name)) {
+      return true;
+    }
+    const taskDept = task.department || task.target_department || task.targetDepartment || task.assignedToDepartmentId || task.ownerDepartmentId || '';
+    if (taskDept && (userMatchesDepartment(currentUser, taskDept) || userDepts.some(uDept => isSameDepartment(uDept, taskDept)))) {
+      return true;
+    }
+    return false;
+  }
+
   // 4. Department-Pooled Receipt Task (Physical controlled copy confirmation at department stations):
   // Strictly scoped to destination department. Never leak to DCC or other departments.
   // 🛡️ ISO 9001 Segregation of Duties:
@@ -245,6 +269,9 @@ export const isActionableTask = (task, currentUser) => {
   if (isReceiptTask(task)) {
     if (isLevel6Plus(currentUser)) {
       return false;
+    }
+    if (dccAdmin) {
+      return true;
     }
 
     const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.recipientDepartment || task.recipient_department || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || task.holderDept || task.targetDept || '';

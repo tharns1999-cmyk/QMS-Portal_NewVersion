@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import useStore from '../../store/useStore';
-import { Database, Download, Search, Eye, X, FilterX, ChevronDown } from 'lucide-react';
+import { Database, Download, Search, Eye, X, FilterX, ChevronDown, CheckCircle2 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames } from '../../utils/darHelper';
 import { TablePagination } from '../../components/common/TablePagination';
@@ -30,10 +30,14 @@ const MasterList = () => {
     currentUser?.department === 'DCC'
   );
   
-  const [masterListDept, setMasterListDept] = useState('');
-  const [masterListType, setMasterListType] = useState('');
-  const [masterListStatus, setMasterListStatus] = useState('EFFECTIVE');
+  const [selectedDept, setSelectedDept] = useState('ALL');
+  const [selectedType, setSelectedType] = useState('ALL');
+  const [selectedStandard, setSelectedStandard] = useState('ALL');
+  const [selectedSecurity, setSelectedSecurity] = useState('ALL');
+  const [masterListStatus, setMasterListStatus] = useState('ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const masterListDept = selectedDept === 'ALL' ? '' : selectedDept;
   const [previewDoc, setPreviewDoc] = useState(null);
   const [isPreviewMenuOpen, setIsPreviewMenuOpen] = useState(false);
   const previewMenuRef = useRef(null);
@@ -84,55 +88,128 @@ const MasterList = () => {
     }
   };
 
-  // Filter Logic
-  let filteredDocs = documents || [];
-  
-  if (!isAdmin) {
-    filteredDocs = filteredDocs.filter(d => d.department === currentUser?.department);
-  }
+  const availableDepts = useMemo(() => [...new Set([
+    ...(documents || []).map(d => d.department),
+    ...(masterDepartments || storeDepts || []).filter(d => typeof d === 'string' || d.status !== 'INACTIVE').map(d => typeof d === 'string' ? d : d.id)
+  ])].filter(Boolean).sort(), [documents, masterDepartments, storeDepts]);
 
-  if (masterListDept) {
-    filteredDocs = filteredDocs.filter(d => d.department === masterListDept);
-  }
-  
-  if (masterListStatus === 'EFFECTIVE') {
-    filteredDocs = filteredDocs.filter(d => d.status === 'EFFECTIVE');
-  } else if (masterListStatus === 'SUPERSEDED') {
-    filteredDocs = filteredDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded));
-  } else if (masterListStatus === 'OBSOLETE') {
-    filteredDocs = filteredDocs.filter(d => d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.status === 'OBSOLETE_ARCHIVED' || d.status === 'OBSOLETE' || Boolean(d.is_superseded) || Boolean(d.is_obsolete));
-  }
-  
-  if (masterListType) {
-    filteredDocs = filteredDocs.filter(d => (d.title || '').startsWith(masterListType));
-  }
-  
-  if (searchTerm) {
-    const term = searchTerm.toLowerCase();
-    filteredDocs = filteredDocs.filter(d => 
-      (d.title || '').toLowerCase().includes(term) || (d.name || '').toLowerCase().includes(term)
-    );
-  }
+  const availableTypes = useMemo(() => [...new Set([
+    ...(documents || []).map(d => (d.title || '').split('-')[0]),
+    ...(documentTypes || []).filter(t => t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false).map(t => t.code || t.id)
+  ])].filter(Boolean).sort(), [documents, documentTypes]);
 
-  // Sort historical documents in OBSOLETE tab by code, then revision descending (e.g. Rev.01, Rev.00)
-  if (masterListStatus === 'OBSOLETE' || masterListStatus === 'SUPERSEDED') {
-    filteredDocs = [...filteredDocs].sort((a, b) => {
-      const codeA = (a.document_code || a.doc_code || a.code || a.title || '').trim().toUpperCase();
-      const codeB = (b.document_code || b.doc_code || b.code || b.title || '').trim().toUpperCase();
-      if (codeA !== codeB) return codeA.localeCompare(codeB);
-      const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
-      const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
-      return revB - revA;
+  const availableStandards = useMemo(() => {
+    const fromDocs = (documents || []).flatMap(d => d.relatedStandards || d.related_standards || []);
+    return [...new Set([...fromDocs, 'ISO 9001', 'GHPs', 'HACCP', 'ISO 22000', 'BRC', 'HALAL'])].filter(Boolean).sort();
+  }, [documents]);
+
+  const departments = availableDepts;
+  const docTypes = availableTypes;
+  const standards = availableStandards;
+
+  // Base Filter Logic (Dept, Type, Standard, Security, Search)
+  const baseFilteredDocs = useMemo(() => {
+    let docs = documents || [];
+    
+    if (!isAdmin) {
+      docs = docs.filter(d => d.department === currentUser?.department);
+    }
+
+    if (selectedDept && selectedDept !== 'ALL') {
+      docs = docs.filter(d => d.department === selectedDept);
+    }
+    
+    if (selectedType && selectedType !== 'ALL') {
+      docs = docs.filter(d => (d.title || '').startsWith(selectedType));
+    }
+
+    if (selectedStandard && selectedStandard !== 'ALL') {
+      docs = docs.filter(d => {
+        const stds = d.relatedStandards || d.related_standards || [];
+        return stds.includes(selectedStandard);
+      });
+    }
+
+    if (selectedSecurity && selectedSecurity !== 'ALL') {
+      docs = docs.filter(d => {
+        const sec = (d.security || d.accessScope || d.access_scope || 'PUBLIC').toUpperCase();
+        if (selectedSecurity === 'PUBLIC') return sec === 'PUBLIC' || sec === 'GENERAL';
+        if (selectedSecurity === 'CONFIDENTIAL') return sec === 'CONFIDENTIAL' || sec === 'RESTRICTED' || sec === 'DEPT_ONLY';
+        return sec === selectedSecurity;
+      });
+    }
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      docs = docs.filter(d => 
+        (d.title || '').toLowerCase().includes(term) || (d.name || '').toLowerCase().includes(term)
+      );
+    }
+
+    return docs;
+  }, [
+    documents,
+    isAdmin,
+    currentUser?.department,
+    selectedDept,
+    selectedType,
+    selectedStandard,
+    selectedSecurity,
+    searchTerm
+  ]);
+
+  // 1. Single-Active ISO 9001: Active Documents (Exactly 1 active revision per document code)
+  const activeDocs = useMemo(() => {
+    const candidates = baseFilteredDocs.filter(d => {
+      const st = (d.status || '').toUpperCase();
+      const isEff = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(d.is_active);
+      const isSup = st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded);
+      const isObs = st === 'OBSOLETE' || st === 'OBSOLETE_ARCHIVED' || Boolean(d.is_obsolete) || st === 'CANCELLED';
+      return isEff && !isSup && !isObs;
     });
-  }
 
-  // Grouped Superseded logic (1 Document Code = 1 Row)
+    // Deduplicate by document code: keep ONLY the single highest active revision
+    const codeMap = new Map();
+    candidates.forEach(doc => {
+      const code = (doc.document_code || doc.doc_code || doc.code || doc.title || '').trim().toUpperCase();
+      const existing = codeMap.get(code);
+      if (!existing) {
+        codeMap.set(code, doc);
+      } else {
+        const revExisting = parseInt(String(existing.rev || existing.revision || '0').replace(/\D/g, ''), 10) || 0;
+        const revDoc = parseInt(String(doc.rev || doc.revision || '0').replace(/\D/g, ''), 10) || 0;
+        if (revDoc > revExisting) {
+          codeMap.set(code, doc);
+        }
+      }
+    });
+
+    return Array.from(codeMap.values());
+  }, [baseFilteredDocs]);
+
+  // 2. Grouped Superseded logic (1 Document Code = 1 Row)
   const groupedSupersededDocs = useMemo(() => {
-    if (masterListStatus !== 'SUPERSEDED') return [];
-    const groupMap = new Map();
+    const activeDocIds = new Set(activeDocs.map(d => d.id));
 
-    filteredDocs.forEach(doc => {
-      const docCode = doc.code || doc.document_code || doc.doc_code || doc.title;
+    const supersededCandidates = baseFilteredDocs.filter(d => {
+      const st = (d.status || '').toUpperCase();
+      const isObs = st === 'OBSOLETE' || st === 'OBSOLETE_ARCHIVED' || Boolean(d.is_obsolete) || st === 'CANCELLED';
+      if (isObs) return false;
+
+      const isSup = st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded);
+      if (isSup) return true;
+
+      // If active candidate but not selected as the single active revision, it is superseded
+      if (!activeDocIds.has(d.id)) {
+        const isEff = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(d.is_active);
+        if (isEff) return true;
+      }
+      return false;
+    });
+
+    const groupMap = new Map();
+    supersededCandidates.forEach(doc => {
+      const docCode = (doc.code || doc.document_code || doc.doc_code || doc.title || '').trim().toUpperCase();
       if (!groupMap.has(docCode)) {
         groupMap.set(docCode, {
           ...doc,
@@ -141,10 +218,15 @@ const MasterList = () => {
           revisions: [],
         });
       }
-      groupMap.get(docCode).revisions.push(doc);
+      groupMap.get(docCode).revisions.push({
+        ...doc,
+        revision: String(doc.rev || doc.revision || '00').padStart(2, '0')
+      });
     });
 
     return Array.from(groupMap.values()).map(group => {
+      // In SUPERSEDED view, ensure no active revision slips into superseded list
+      group.revisions = group.revisions.filter(r => !activeDocIds.has(r.id));
       group.revisions.sort((a, b) => 
         String(b.rev || b.revision || '00').localeCompare(String(a.rev || a.revision || '00'), undefined, { numeric: true })
       );
@@ -154,9 +236,38 @@ const MasterList = () => {
       group.hasPendingRecall = group.pendingRecalls.length > 0;
       return group;
     });
-  }, [filteredDocs, masterListStatus]);
+  }, [baseFilteredDocs, activeDocs]);
 
-  const displayList = masterListStatus === 'SUPERSEDED' ? groupedSupersededDocs : filteredDocs;
+  // 3. Obsolete Documents
+  const obsoleteDocs = useMemo(() => {
+    const list = baseFilteredDocs.filter(d => {
+      const st = (d.status || '').toUpperCase();
+      return st === 'OBSOLETE' || st === 'OBSOLETE_ARCHIVED' || Boolean(d.is_obsolete) || st === 'CANCELLED';
+    });
+
+    return [...list].sort((a, b) => {
+      const codeA = (a.document_code || a.doc_code || a.code || a.title || '').trim().toUpperCase();
+      const codeB = (b.document_code || b.doc_code || b.code || b.title || '').trim().toUpperCase();
+      if (codeA !== codeB) return codeA.localeCompare(codeB);
+      const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
+      const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
+      return revB - revA;
+    });
+  }, [baseFilteredDocs]);
+
+  // Discrete Tab Counts
+  const activeCount = activeDocs.length;
+  const supersededCount = groupedSupersededDocs.length;
+  const obsoleteCount = obsoleteDocs.length;
+
+  // Active display list
+  const displayList = useMemo(() => {
+    if (masterListStatus === 'SUPERSEDED') return groupedSupersededDocs;
+    if (masterListStatus === 'OBSOLETE') return obsoleteDocs;
+    return activeDocs;
+  }, [masterListStatus, activeDocs, groupedSupersededDocs, obsoleteDocs]);
+
+  const filteredDocs = displayList;
 
   const {
     currentPage,
@@ -166,16 +277,6 @@ const MasterList = () => {
     paginatedData,
     totalItems
   } = useTablePagination(displayList, 10);
-
-  const availableDepts = [...new Set([
-    ...(documents || []).map(d => d.department),
-    ...(masterDepartments || storeDepts || []).filter(d => typeof d === 'string' || d.status !== 'INACTIVE').map(d => typeof d === 'string' ? d : d.id)
-  ])].filter(Boolean).sort();
-
-  const availableTypes = [...new Set([
-    ...(documents || []).map(d => (d.title || '').split('-')[0]),
-    ...(documentTypes || []).filter(t => t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false).map(t => t.code || t.id)
-  ])].filter(Boolean).sort();
 
   const handleExportExcel = () => {
     if (filteredDocs.length === 0) {
@@ -223,9 +324,9 @@ const MasterList = () => {
   };
 
   const getStatusBadge = (status) => {
-    if (status === 'EFFECTIVE') return <span className="badge-active">มีผลบังคับใช้</span>;
+    if (status === 'EFFECTIVE' || status === 'ACTIVE') return <span className="badge-active">มีผลบังคับใช้</span>;
     if (status === 'SUPERSEDED' || status === 'SUPERSEDED_ARCHIVED') return <span className="badge-pending">ฉบับตกรุ่น (Superseded)</span>;
-    if (status === 'OBSOLETE_ARCHIVED' || status === 'OBSOLETE') return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
+    if (status === 'OBSOLETE_ARCHIVED' || status === 'OBSOLETE' || status === 'CANCELLED') return <span className="badge-draft">ยกเลิกถาวร (Obsolete)</span>;
     return <span className="badge-draft">{status}</span>;
   };
 
@@ -245,100 +346,179 @@ const MasterList = () => {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="card-surface p-4 shrink-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-sm">
-            <label className="font-bold text-slate-600">แผนก:</label>
-            <select 
-              value={masterListDept}
-              onChange={(e) => setMasterListDept(e.target.value)}
-              disabled={availableDepts.length === 0}
-              className="px-3.5 py-2.5 h-11 text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none disabled:opacity-50 font-medium focus:bg-white focus:border-[#0D99FF]"
+      {/* Filter Bar Container - สะอาด รองรับ Responsive 100% ไม่ตกขอบ */}
+      <div className="card-surface p-4 bg-white border border-slate-200/80 rounded-2xl shadow-xs shrink-0 overflow-hidden space-y-3">
+        <div className="flex flex-wrap items-center gap-2.5 w-full">
+          
+          {/* 1. ช่องค้นหาหลัก (ยืดหยุ่นตามพื้นที่) */}
+          <div className="relative flex-1 min-w-[200px] sm:min-w-[240px] max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"/>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="ค้นหารหัส หรือชื่อเอกสาร..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-xs"
+            />
+          </div>
+
+          {/* 2. Dropdown ตัวกรอง 4 ตัว (ขนาดกะทัดรัด เป็นระเบียบ) */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* แผนก */}
+            <select
+              value={selectedDept}
+              onChange={(e) => setSelectedDept(e.target.value)}
+              className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
             >
-              <option value="">ทั้งหมด (All)</option>
-              {availableDepts.map(d => {
-                const matchedDept = (masterDepartments || []).find(md => md.id === d);
-                const label = matchedDept ? `${d} - ${matchedDept.nameTh || matchedDept.name}` : d;
-                return <option key={d} value={d}>{label}</option>;
+              <option value="ALL">ทุกแผนก (All)</option>
+              {departments.map((dept) => {
+                const matchedDept = (masterDepartments || []).find(md => md.id === dept);
+                const label = matchedDept ? `${dept} - ${matchedDept.nameTh || matchedDept.name}` : dept;
+                return <option key={dept} value={dept}>{label}</option>;
               })}
+            </select>
+
+            {/* ประเภทเอกสาร */}
+            <select
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+              className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+            >
+              <option value="ALL">ทุกประเภท (Types)</option>
+              {docTypes.map((type) => {
+                const matchedType = (documentTypes || []).find(dt => (dt.code || dt.id) === type);
+                const rawName = (matchedType?.nameTh || matchedType?.name || '').replace(/\s*\([^)]*\)/g, '').trim();
+                const label = matchedType ? `${rawName || matchedType.nameTh || matchedType.name} (${type})` : type;
+                return <option key={type} value={type}>{label}</option>;
+              })}
+            </select>
+
+            {/* มาตรฐาน */}
+            <select
+              value={selectedStandard}
+              onChange={(e) => setSelectedStandard(e.target.value)}
+              className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+            >
+              <option value="ALL">ทุกมาตรฐาน</option>
+              {standards.map((std) => (
+                <option key={std} value={std}>{std}</option>
+              ))}
+            </select>
+
+            {/* ระดับความลับ */}
+            <select
+              value={selectedSecurity}
+              onChange={(e) => setSelectedSecurity(e.target.value)}
+              className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+            >
+              <option value="ALL">ทุกระดับความลับ</option>
+              <option value="PUBLIC">ทั่วไป (General)</option>
+              <option value="CONFIDENTIAL">ลับ (Confidential)</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2 text-sm">
-            <label className="font-bold text-slate-600">ประเภท:</label>
-            <select 
-              value={masterListType}
-              onChange={(e) => setMasterListType(e.target.value)}
-              disabled={availableTypes.length === 0}
-              className="px-3.5 py-2.5 h-11 text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl outline-none disabled:opacity-50 font-medium focus:bg-white focus:border-[#0D99FF]"
-            >
-              <option value="">ทั้งหมด (All)</option>
-              {availableTypes.map(t => {
-                const matchedType = (documentTypes || []).find(dt => (dt.code || dt.id) === t);
-                const label = matchedType ? `${matchedType.nameTh || matchedType.name} (${t})` : t;
-                return <option key={t} value={t}>{label}</option>;
-              })}
-            </select>
-          </div>
+          {/* 3. ปุ่ม Toggle เฉพาะฉบับบังคับใช้ (ไม่โดนบีบย่น ไม่หลุดกรอบ) */}
+          <button
+            type="button"
+            onClick={() => setMasterListStatus('ACTIVE')}
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border shadow-xs ml-auto sm:ml-0 ${
+              masterListStatus === 'ACTIVE'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100/70'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <CheckCircle2 className={`w-3.5 h-3.5 ${masterListStatus === 'ACTIVE' ? 'text-emerald-600' : 'text-slate-400'}`} />
+            <span>เฉพาะฉบับบังคับใช้</span>
+          </button>
 
-          <div className="flex items-center gap-2 text-sm">
-            <label className="font-bold text-slate-600">สถานะ:</label>
-            <div className="flex bg-[#F5F5F5] p-0.5 rounded-xl h-11 items-center">
+          {/* Actions: Reset & Export */}
+          <div className="flex items-center gap-2 ml-auto shrink-0">
+            {(selectedDept !== 'ALL' || selectedType !== 'ALL' || selectedStandard !== 'ALL' || selectedSecurity !== 'ALL' || searchTerm || masterListStatus !== 'ACTIVE') && (
               <button 
-                onClick={() => setMasterListStatus('EFFECTIVE')}
-                className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all h-full flex items-center ${masterListStatus === 'EFFECTIVE' ? 'bg-white shadow-xs text-[#007BE5]' : 'text-[#666666] hover:text-slate-800'}`}
-              >
-                มีผลบังคับใช้ (EFFECTIVE)
-              </button>
-              <button 
-                onClick={() => setMasterListStatus('SUPERSEDED')}
-                className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all h-full flex items-center ${masterListStatus === 'SUPERSEDED' ? 'bg-white shadow-xs text-amber-700' : 'text-[#666666] hover:text-slate-800'}`}
-              >
-                ฉบับตกรุ่น (SUPERSEDED)
-              </button>
-              <button 
-                onClick={() => setMasterListStatus('OBSOLETE')}
-                className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all h-full flex items-center ${masterListStatus === 'OBSOLETE' ? 'bg-white shadow-xs text-slate-800' : 'text-[#666666] hover:text-slate-800'}`}
-              >
-                ยกเลิก (OBSOLETE)
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 relative flex-1 min-w-[220px]">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="text"
-                placeholder="ค้นหารหัส หรือชื่อเอกสาร..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 h-11 text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-xl focus:bg-white focus:border-[#0D99FF] outline-none transition-all font-medium placeholder:text-slate-400"
-              />
-            </div>
-            {(masterListDept || masterListType || masterListStatus !== 'EFFECTIVE' || searchTerm) && (
-              <button 
+                type="button"
                 onClick={() => {
-                  setMasterListDept('');
-                  setMasterListType('');
-                  setMasterListStatus('EFFECTIVE');
+                  setSelectedDept('ALL');
+                  setSelectedType('ALL');
+                  setSelectedStandard('ALL');
+                  setSelectedSecurity('ALL');
                   setSearchTerm('');
+                  setMasterListStatus('ACTIVE');
                 }}
                 title="ล้างตัวกรอง"
-                className="action-icon-btn text-rose-600 hover:bg-rose-50 h-11 w-11 rounded-xl"
+                className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition-all cursor-pointer shrink-0"
               >
-                <FilterX size={18} />
+                <FilterX className="w-3.5 h-3.5" />
+                <span>ล้างตัวกรอง</span>
               </button>
             )}
+
+            <button 
+              type="button"
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>ส่งออก Excel</span>
+            </button>
           </div>
 
-          <button 
-            onClick={handleExportExcel}
-            className="btn-secondary text-sm font-medium py-2.5 px-4 h-11 ml-auto"
-          >
-            <Download size={16} /> ส่งออกไฟล์ Excel
-          </button>
+        </div>
+
+        {/* Status Sub-Bar: 3 สถานะหลักที่แยกจากกันเด็ดขาด (No All Records Tab) */}
+        <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl w-fit">
+            <button
+              type="button"
+              aria-label="มีผลบังคับใช้ (Active)"
+              onClick={() => setMasterListStatus('ACTIVE')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                masterListStatus === 'ACTIVE'
+                  ? 'bg-white text-emerald-800 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>มีผลบังคับใช้ (Active)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold">
+                {activeCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-label="ฉบับตกรุ่น (Superseded)"
+              onClick={() => setMasterListStatus('SUPERSEDED')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                masterListStatus === 'SUPERSEDED'
+                  ? 'bg-white text-amber-800 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>ฉบับตกรุ่น (Superseded)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold">
+                {supersededCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-label="ยกเลิกถาวร (Obsolete)"
+              onClick={() => setMasterListStatus('OBSOLETE')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                masterListStatus === 'OBSOLETE'
+                  ? 'bg-white text-rose-800 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>ยกเลิกถาวร (Obsolete)</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold">
+                {obsoleteCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="text-slate-500 font-mono text-xs">
+            แสดงผล <strong className="text-slate-800 font-bold">{paginatedData.length}</strong> จาก {displayList.length} รายการ
+          </div>
         </div>
       </div>
 
@@ -353,8 +533,14 @@ const MasterList = () => {
                   <th className="px-4 py-3.5 w-36 font-mono whitespace-nowrap bg-[#F8FAFC]">รหัสเอกสาร</th>
                   <th className="px-4 py-3.5 min-w-[280px] max-w-[420px] whitespace-nowrap bg-[#F8FAFC]">ชื่อเอกสาร</th>
                   <th className="px-4 py-3.5 w-20 text-center whitespace-nowrap bg-[#F8FAFC]">ประเภท</th>
-                  <th className="px-4 py-3.5 w-16 text-center whitespace-nowrap bg-[#F8FAFC]">ฉบับที่</th>
-                  <th className="px-4 py-3.5 w-28 font-mono whitespace-nowrap bg-[#F8FAFC]">วันบังคับใช้</th>
+                  {masterListStatus === 'SUPERSEDED' ? (
+                    <th className="px-4 py-3.5 w-48 whitespace-nowrap bg-[#F8FAFC]">ฉบับและวันบังคับใช้เดิม</th>
+                  ) : (
+                    <>
+                      <th className="px-4 py-3.5 w-16 text-center whitespace-nowrap bg-[#F8FAFC]">ฉบับที่</th>
+                      <th className="px-4 py-3.5 w-28 font-mono whitespace-nowrap bg-[#F8FAFC]">วันบังคับใช้</th>
+                    </>
+                  )}
                   <th className="px-4 py-3.5 w-36 whitespace-nowrap bg-[#F8FAFC]">ผู้ร้องขอ</th>
                   <th className="px-4 py-3.5 w-36 whitespace-nowrap bg-[#F8FAFC]">ผู้ทบทวน</th>
                   <th className="px-4 py-3.5 w-36 whitespace-nowrap bg-[#F8FAFC]">ผู้อนุมัติ</th>
@@ -381,39 +567,32 @@ const MasterList = () => {
                         {(doc.title || '').split('-')[0]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                      {masterListStatus === 'SUPERSEDED' && doc.revisions ? (
-                        <div className="flex items-center justify-center gap-1 flex-wrap">
-                          {doc.revisions.slice(0, 2).map((revDoc, rIdx) => (
-                            <span 
-                              key={rIdx}
-                              className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${
-                                rIdx === 0 
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
-                              }`}
-                            >
-                              Rev.{revDoc.rev || revDoc.revision || '00'}
-                              {rIdx === 0 && <span className="text-[10px] font-sans font-normal ml-1 text-amber-600">(ล่าสุด)</span>}
-                            </span>
-                          ))}
-                          {doc.revisions.length > 2 && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-500 border border-slate-200">
-                              +{doc.revisions.length - 2} ฉบับเดิม
-                            </span>
-                          )}
+                    {masterListStatus === 'SUPERSEDED' ? (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="text-xs font-semibold text-slate-700">
+                          {doc.revisions && doc.revisions.length > 1
+                            ? `Rev.${doc.revisions[doc.revisions.length - 1].revision || doc.revisions[doc.revisions.length - 1].rev} – Rev.${doc.revisions[0].revision || doc.revisions[0].rev}`
+                            : `Rev.${doc.revisions?.[0]?.revision || doc.revisions?.[0]?.rev || '00'}`}
+                          <span className="text-slate-400 font-normal ml-1.5">
+                            ({doc.revisions?.length || 1} ฉบับเดิม)
+                          </span>
                         </div>
-                      ) : (
-                        <span className="font-mono font-bold text-slate-700 text-xs sm:text-sm">
-                          {doc.rev || '00'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-600 text-xs sm:text-sm whitespace-nowrap">
-                      {masterListStatus === 'SUPERSEDED' && doc.revisions 
-                        ? (doc.revisions[0]?.effectiveDate || '-') 
-                        : (doc.effectiveDate || '-')}
-                    </td>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          ตกรุ่นเมื่อ: {doc.revisions?.[0]?.effectiveDate || doc.revisions?.[0]?.supersededAt || '-'}
+                        </div>
+                      </td>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <span className="font-mono font-bold text-slate-700 text-xs sm:text-sm">
+                            {doc.rev || '00'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-600 text-xs sm:text-sm whitespace-nowrap">
+                          {doc.effectiveDate || '-'}
+                        </td>
+                      </>
+                    )}
                     <td className="px-4 py-3 text-slate-600 text-xs sm:text-sm truncate max-w-[150px] whitespace-nowrap" title={dar ? getRequesterName(dar, masterUsers) : '-'}>
                       {dar ? getRequesterName(dar, masterUsers) : '-'}
                     </td>

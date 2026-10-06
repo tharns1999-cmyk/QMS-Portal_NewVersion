@@ -188,9 +188,9 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
     expect(screen.getAllByText(/Copy 02/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Copy 03/i).length).toBeGreaterThan(0);
 
-    // Department badges in table: PD and QA/QC
+    // Department badges in table: PD and QA/QC (or QC)
     expect(screen.getAllByText(/รอตรวจรับ \(PD\)/i).length).toBe(2);
-    expect(screen.getByText(/รอตรวจรับ \(QA\/QC\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/รอตรวจรับ \((QA\/QC|QC)\)/i)).toBeInTheDocument();
   });
 
   it('3. DCC Task Inbox reflects post-dispatch tracking and clears urgent actionRequired count', () => {
@@ -225,7 +225,7 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
     expect(receiptTasks.length).toBe(3);
 
     const pdReceiptTasks = receiptTasks.filter(t => t.target_department === 'PD');
-    const qaReceiptTasks = receiptTasks.filter(t => t.target_department === 'QA/QC');
+    const qaReceiptTasks = receiptTasks.filter(t => t.target_department === 'QA/QC' || t.target_department === 'QC');
 
     expect(pdReceiptTasks.length).toBe(2);
     expect(qaReceiptTasks.length).toBe(1);

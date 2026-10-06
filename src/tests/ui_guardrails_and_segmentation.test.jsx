@@ -313,9 +313,10 @@ describe('UI Guardrails, Library Segmentation & DAR Audit History Tests', () => 
       // Column 2: Clean Department Badge (PD) without security subline
       expect(screen.queryByText(/🌐 ทั่วไป/i)).not.toBeInTheDocument();
 
-      // Column 3: Revision Stack Chips & Subline
+      // Column 3: Clean Text Summary without cluttered chips
       expect(screen.getByText(/Rev\.00/i)).toBeInTheDocument();
-      expect(screen.getByText(/วันยกเลิกล่าสุด:/i)).toBeInTheDocument();
+      expect(screen.getByText(/ตกรุ่นเมื่อ:/i)).toBeInTheDocument();
+      expect(screen.queryByText(/\(ล่าสุด\)/i)).not.toBeInTheDocument();
 
       // Column 4: Recall status badge only - No requester or approver string
       expect(screen.queryByText(/ผู้ขอ:/i)).not.toBeInTheDocument();

@@ -568,8 +568,6 @@ export class UniversalWatermarkService {
       const docLabel = meta.docTitle ? `Doc: ${meta.docCode} | Title: ${meta.docTitle}` : `Doc: ${meta.docCode}`;
       const extVersion = meta.sourceEdition || meta.externalVersion || meta.edition || meta.docVersion || '-';
       const extDate = meta.externalIssueDate || meta.effectiveDate || meta.timestamp || '-';
-      const restrictedSuffix = meta.isRestricted ? ' [RESTRICTED ACCESS]' : '';
-      const docTitlePart = meta.docTitle ? ` | Title: ${meta.docTitle}` : '';
 
       switch (type) {
         case WATERMARK_TYPES.UNCONTROLLED_COPY:

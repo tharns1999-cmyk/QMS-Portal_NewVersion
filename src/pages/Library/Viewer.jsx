@@ -366,12 +366,16 @@ const Viewer = () => {
         )}
 
         {realPdfUrl ? (
-          <div className="w-full flex-1 h-full bg-white overflow-hidden relative z-0 flex flex-col min-h-0">
+          /* PDF Preview Container - Maximize Vertical Screen Area via Viewport-Clipping */
+          <div className="flex-1 min-h-0 w-full relative overflow-hidden bg-slate-900 z-0">
             <iframe
               src={iframeUrl}
-              className="w-full flex-1 h-full border-0 block"
-              style={{ minHeight: '100%' }}
               title={`Viewer - ${title}`}
+              className="w-full border-none block"
+              style={{
+                height: 'calc(100% + 52px)',
+                marginTop: '-52px'
+              }}
             />
           </div>
         ) : (

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import DocumentDetailModal from '../components/workflow/DocumentDetailModal';
 import Library from '../pages/Library/Library';
+import MasterList from '../pages/MasterList/MasterList';
 
 describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', () => {
   beforeEach(() => {
@@ -289,10 +290,9 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
 
     const rowQueries = within(row);
 
-    // Check stacked chips: Rev.01 (ล่าสุด) and Rev.00
-    expect(rowQueries.getByText(/Rev\.01/i)).toBeInTheDocument();
-    expect(rowQueries.getByText(/\(ล่าสุด\)/i)).toBeInTheDocument();
-    expect(rowQueries.getByText(/Rev\.00/i)).toBeInTheDocument();
+    // Check clean summary: Rev.00 – Rev.01 without (ล่าสุด) chip
+    expect(rowQueries.getByText(/Rev\.00 – Rev\.01/i)).toBeInTheDocument();
+    expect(rowQueries.queryByText(/\(ล่าสุด\)/i)).not.toBeInTheDocument();
 
     // Check recall status & superseded lifecycle count
     expect(rowQueries.getByText(/เรียกคืนครบแล้ว|ไม่มีสำเนาค้างเรียกคืน|รอเรียกคืน/i)).toBeInTheDocument();
@@ -353,5 +353,59 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
     // Click "พับเก็บทั้งหมด" to collapse all
     fireEvent.click(toggleAllBtn);
     expect(toggleAllBtn).toHaveTextContent(/ขยายทั้งหมด/i);
+  });
+
+  it('12. Clean Text Summary: Superseded tab in Library and MasterList displays minimal text summary without cluttered chips and excludes current effective rev', () => {
+    // Set test user as QA Admin
+    useStore.setState({
+      currentUser: {
+        id: 'U001',
+        name: 'QA Admin',
+        department: 'QC',
+        depts: ['QC', 'QA'],
+        isDcc: true,
+        role: 'DCC_ADMIN',
+        level: 5
+      }
+    });
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <Library />
+      </MemoryRouter>
+    );
+
+    // Switch to "ฉบับเดิมตกรุ่น (Superseded)" tab
+    const supersededTabBtn = screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น|ฉบับตกรุ่น/i });
+    fireEvent.click(supersededTabBtn);
+
+    // Verify WI-QC-01 row displays Rev.00 - Rev.01 (2 ฉบับเดิม), strictly omitting Rev.02 (EFFECTIVE)
+    expect(screen.getByText(/Rev\.00 – Rev\.01/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(2 ฉบับเดิม\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/ตกรุ่นเมื่อ:/i)).toBeInTheDocument();
+
+    // Verify no cluttered revision chips or (ล่าสุด) or +X ฉบับเดิม
+    expect(screen.queryByText(/Rev\.02 \(ล่าสุด\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\+1 ฉบับเดิม/i)).not.toBeInTheDocument();
+
+    unmount();
+
+    // Now verify MasterList
+    render(
+      <MemoryRouter>
+        <MasterList />
+      </MemoryRouter>
+    );
+
+    // Switch MasterList to SUPERSEDED tab
+    const supersededBtn = screen.getByRole('button', { name: /ฉบับตกรุ่น \(SUPERSEDED\)/i });
+    fireEvent.click(supersededBtn);
+
+    // Verify WI-QC-01 displays clean text summary
+    expect(screen.getByText(/Rev\.00 – Rev\.01/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(2 ฉบับเดิม\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/ตกรุ่นเมื่อ:/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Rev\.02 \(ล่าสุด\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\+1 ฉบับเดิม/i)).not.toBeInTheDocument();
   });
 });

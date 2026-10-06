@@ -1,22 +1,36 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
-import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Zap, Globe, Lock, Building2, X, RotateCcw, Check, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { 
+  FileText, 
+  XCircle, 
+  ChevronLeft, 
+  Download, 
+  MessageSquare, 
+  ShieldAlert, 
+  Globe, 
+  Lock, 
+  Building2, 
+  RotateCcw,
+  CheckCircle2,
+  ArrowLeft,
+  AlertCircle
+} from 'lucide-react';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
+import TaskActionDock from '../../components/workflow/TaskActionDock';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { 
-  stampDarPreviewPdf,
   stampUnifiedInternalPdf,
-  formatSignOffDate, 
   resolveRawFileBlob, 
   getActiveUserSignatureAsset, 
   resolveSubmissionDate,
   getSystemSampleDocumentBlob
 } from '../../utils/pdfStamper';
+import { formatSignOffDate } from '../../utils/dateFormatter';
 import { resolveFileBlob } from '../../utils/fileStorage';
 import { generateQmsDownloadName, triggerBrowserDownload, formatDarHeaderTitle } from '../../utils/documentNamingHelper';
 
@@ -38,7 +52,7 @@ const TaskApprove = () => {
     users = [] 
   } = useStore();
   
-  const [comment, setComment] = useState('');
+  const [pendingComment, setPendingComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -48,17 +62,9 @@ const TaskApprove = () => {
   const scrollRef = useRef(null);
   const createdUrlsRef = useRef([]);
 
-  // Graceful unmount cleanup to protect against React Strict Mode premature Blob revocation
-  useEffect(() => {
-    return () => {
-      const urlsToClean = [...createdUrlsRef.current];
-      setTimeout(() => {
-        urlsToClean.forEach(u => {
-          try { URL.revokeObjectURL(u); } catch {}
-        });
-      }, 15000);
-    };
-  }, []);
+  const iframeSrc = useMemo(() => {
+    return pdfBlobUrl ? `${pdfBlobUrl}#toolbar=0&navpanes=0&view=FitH` : null;
+  }, [pdfBlobUrl]);
 
   const allTasks = useMemo(() => {
     return [...(tasks || []), ...(completedTasks || [])];
@@ -68,6 +74,19 @@ const TaskApprove = () => {
   const dar = task 
     ? (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) 
     : (dars || []).find(d => String(d.id) === String(id) || d.darNo === id || d.darNumber === id);
+
+  // Systematic cleanup of PDF Blob URLs on document switch & component unmount
+  useEffect(() => {
+    return () => {
+      const urlsToClean = [...createdUrlsRef.current];
+      createdUrlsRef.current = [];
+      setTimeout(() => {
+        urlsToClean.forEach(u => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
+      }, 500);
+    };
+  }, [id, dar?.id]);
     
   const darTimeline = useMemo(() => {
     return dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
@@ -625,15 +644,16 @@ const TaskApprove = () => {
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 
-  const handleAction = (action) => {
+  const handleAction = (action, userComment = '') => {
     if (!hasReadToBottom) {
       toast.error('กรุณาเลื่อนอ่านเอกสารให้ครบทุกหน้าก่อนตัดสินใจ');
       return;
     }
-    if ((action === 'RETURN' || action === 'REJECT') && !comment) {
+    if ((action === 'RETURN' || action === 'REJECT') && !userComment?.trim()) {
       toast.error('กรุณาระบุเหตุผล (Comment) สำหรับการตีกลับหรือไม่อนุมัติ');
       return;
     }
+    setPendingComment(userComment || '');
     setPendingAction(action);
     setShowConfirm(true);
   };
@@ -641,7 +661,7 @@ const TaskApprove = () => {
   const executeAction = async () => {
     setShowConfirm(false);
     try {
-      await processWorkflow(task.id, pendingAction, comment);
+      await processWorkflow(task?.id, pendingAction, pendingComment);
       if (pendingAction === 'APPROVE' && !isObsolete) {
         const darTargetId = dar?.id || task?.darId;
         if (darTargetId && finalizeAndPublishMaster) {
@@ -828,61 +848,13 @@ const TaskApprove = () => {
         </div>
 
         {/* 1.3 Pinned Action Dock (Bottom-Padded, Complete 3-Button Stack) */}
-        <div className="shrink-0 p-3.5 border-t border-slate-100 bg-slate-50/90 space-y-2.5">
-          <textarea
-            rows={2}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 resize-none shadow-xs"
-            placeholder="ระบุข้อเสนอแนะหรือสิ่งที่ต้องปรับปรุง..."
-          />
-          
-          <div className="grid grid-cols-3 gap-2">
-            {/* Reject Button */}
-            <button
-              type="button"
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('REJECT')}
-              className="w-full py-2 px-2 rounded-xl border border-rose-200 text-rose-700 bg-white hover:bg-rose-50 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-              title="ไม่อนุมัติและยกเลิกคำขอนี้ทันที"
-            >
-              <X size={14} className="text-rose-600" />
-              <span>ไม่อนุมัติ</span>
-            </button>
-
-            {/* Return Button */}
-            <button
-              type="button"
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('RETURN')}
-              className="w-full py-2 px-2 rounded-xl border border-amber-200 text-amber-700 bg-white hover:bg-amber-50 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-              title="ส่งกลับไปให้ Requester แก้ไข"
-            >
-              <RotateCcw size={14} className="text-amber-600" />
-              <span>ส่งกลับแก้ไข</span>
-            </button>
-            
-            {/* Approve Button */}
-            <button
-              type="button"
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('APPROVE')}
-              className={`w-full py-2 px-2 rounded-xl text-white font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-sm hover:shadow cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                isObsolete
-                  ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800 shadow-rose-600/20'
-                  : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-emerald-600/20'
-              }`}
-              title={isObsolete ? 'อนุมัติยกเลิกเอกสาร' : 'อนุมัติคำขอ'}
-            >
-              <Check size={14} />
-              <span>{isObsolete ? 'อนุมัติยกเลิกเอกสาร (Approve Obsolete)' : 'อนุมัติ (Approve)'}</span>
-            </button>
-          </div>
-          
-          {!hasReadToBottom && (
-            <p className="text-[11px] text-rose-500 text-center font-medium">⚠️ กรุณาเลื่อนอ่านเอกสารทางขวาให้จบเพื่อปลดล็อคปุ่ม</p>
-          )}
-        </div>
+        <TaskActionDock
+          mode="APPROVE"
+          hasReadToBottom={hasReadToBottom}
+          isObsolete={isObsolete}
+          placeholder="ระบุข้อเสนอแนะหรือสิ่งที่ต้องปรับปรุง..."
+          onAction={handleAction}
+        />
       </div>
 
       {/* ================= 2. การ์ดฝั่งขวา: FLOATING EXPANDED PREVIEW CARD ================= */}
@@ -920,7 +892,7 @@ const TaskApprove = () => {
             </div>
           ) : pdfBlobUrl ? (
             <iframe
-              src={`${pdfBlobUrl}#toolbar=0&navpanes=0&view=FitH`}
+              src={iframeSrc}
               title="PDF Preview"
               className="w-full border-none block"
               style={{
@@ -989,7 +961,7 @@ const TaskApprove = () => {
                 ? 'ไม่อนุมัติคำร้อง (Rejected)' 
                 : 'ส่งกลับแก้ไข (Revision Required)' 
           },
-          { label: 'ความเห็นประกอบ', value: comment || '-' },
+          { label: 'ความเห็นประกอบ', value: pendingComment || '-' },
           { 
             label: 'สายการอนุมัติถัดไป', 
             value: pendingAction === 'APPROVE' 
@@ -1007,19 +979,19 @@ const TaskApprove = () => {
         dar={dar}
         role="APPROVER"
         onApprove={(modalComment) => {
-          setComment(modalComment || comment);
+          setPendingComment(modalComment || pendingComment);
           setIsInspectorOpen(false);
           setPendingAction('APPROVE');
           setShowConfirm(true);
         }}
         onReturn={(modalComment) => {
-          setComment(modalComment || comment);
+          setPendingComment(modalComment || pendingComment);
           setIsInspectorOpen(false);
           setPendingAction('RETURN');
           setShowConfirm(true);
         }}
         onReject={(modalComment) => {
-          setComment(modalComment || comment);
+          setPendingComment(modalComment || pendingComment);
           setIsInspectorOpen(false);
           setPendingAction('REJECT');
           setShowConfirm(true);

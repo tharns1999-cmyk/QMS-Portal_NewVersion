@@ -130,7 +130,7 @@ describe('Library Universal Audit Scope, Status Normalization & Obsolete Form Sy
 
   /* ── 1. Department Owner Audit Access & Status Normalization ── */
   describe('1. Department Owner Audit Access & Status Normalization', () => {
-    it('shows status switcher tabs (Active, Superseded, Obsolete, All) to non-DCC department users', () => {
+    it('shows status switcher tabs (Active, Superseded, Obsolete) to non-DCC department users and excludes All Records', () => {
       render(
         <MemoryRouter>
           <Library />
@@ -141,7 +141,7 @@ describe('Library Universal Audit Scope, Status Normalization & Obsolete Form Sy
       expect(screen.getByRole('button', { name: /มีผลบังคับใช้/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /ยกเลิกการใช้งาน/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /ทั้งหมด/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /ทั้งหมด \(All Records\)/i })).not.toBeInTheDocument();
     });
 
     it('normalizes status = "ACTIVE" to match "EFFECTIVE" tab so no 0-result empty state occurs', () => {
@@ -207,20 +207,17 @@ describe('Library Universal Audit Scope, Status Normalization & Obsolete Form Sy
       useStore.setState({ currentUser: dccUser });
     });
 
-    it('allows DCC to view all statuses across all departments under "ทั้งหมด (All Records)"', () => {
+    it('allows DCC to view records across statuses using dedicated status tabs without All Records tab', () => {
       render(
         <MemoryRouter>
           <Library />
         </MemoryRouter>
       );
 
-      // Switch to ALL records tab
-      fireEvent.click(screen.getByRole('button', { name: /ทั้งหมด \(All Records\)/i }));
+      // Verify "ทั้งหมด (All Records)" tab is NOT rendered
+      expect(screen.queryByRole('button', { name: /ทั้งหมด \(All Records\)/i })).not.toBeInTheDocument();
 
-      // DCC Global View should see all documents in all statuses
-      expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
-      expect(screen.getByText('SOP-PD-001-OLD')).toBeInTheDocument();
-      expect(screen.getByText('WI-PD-999')).toBeInTheDocument();
+      // Active records should be visible by default for QA
       expect(screen.getByText('SOP-QA-001')).toBeInTheDocument();
     });
   });

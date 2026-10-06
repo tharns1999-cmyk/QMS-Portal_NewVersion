@@ -77,14 +77,6 @@ const ActionConfirmModal = ({
     return (summaryData && summaryData.length > 0) ? summaryData : (summaryItems || []);
   }, [summaryData, summaryItems]);
 
-  // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setTypedConfirmation('');
-      setIsSuccess(false);
-      setIsSubmitting(false);
-    }
-  }, [isOpen]);
 
   const handleConfirmClick = async () => {
     if (isSubmitting || isSuccess) return;
@@ -589,19 +581,22 @@ const ActionConfirmModal = ({
 
   const hasHeroSection = !!(categorized.docCodeItem || categorized.docTitleItem || categorized.revItem);
 
+  if (!isOpen) return null;
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 transition-all">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.96, y: 6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 6 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col transition-all animate-in fade-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header Strip */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-hidden">
+      {/* 1. Backdrop มืดเนียนตา ไม่มีจังหวะวูบ */}
+      <div 
+        onClick={isLoading || isSubmitting ? undefined : onClose}
+        className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+      />
+
+      {/* 2. Dialog Box เด้งขึ้นนุ่มนวล เริ่มเล่น Animation ทันที */}
+      <div 
+        className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl border border-slate-200/80 shadow-2xl overflow-hidden flex flex-col z-10 animate-in fade-in zoom-in-95 duration-150 ease-out"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header Strip */}
             <div className="px-6 pt-5 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200/70 flex items-center justify-center shrink-0">
@@ -881,11 +876,9 @@ const ActionConfirmModal = ({
                   )}
                 </AnimatePresence>
               </button>
-            </div>
-          </motion.div>
         </div>
-      )}
-    </AnimatePresence>
+      </div>
+    </div>
   );
 };
 

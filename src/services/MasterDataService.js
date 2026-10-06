@@ -349,20 +349,16 @@ export const calculateCopyAllocations = (ownerDept = 'PD', selectedLocations = [
     const locId = item.locationId || item.station_id || item.id || `${dept}-DEFAULT`;
     
     // Skip if it is the owner's master station itself (already locked at Copy 01)
-    if (
-      item.isOwner ||
-      item.is_owner ||
-      item.isOriginator ||
+    const isOwnerMaster = (dept === normOwner) && (
       item.isMaster ||
       item.is_master ||
-      (dept === normOwner && (
-        locId === ownerMasterStation.id ||
-        locId === `${normOwner}-MASTER` ||
-        locId === `${normOwner}-OFFICE` ||
-        item.copyNo === '01' ||
-        item.copy_no === '01'
-      ))
-    ) {
+      locId === ownerMasterStation.id ||
+      locId === `${normOwner}-MASTER` ||
+      locId === `${normOwner}-OFFICE` ||
+      item.copyNo === '01' ||
+      item.copy_no === '01'
+    );
+    if (isOwnerMaster || item.isOwner || item.is_owner || item.isOriginator) {
       return;
     }
 

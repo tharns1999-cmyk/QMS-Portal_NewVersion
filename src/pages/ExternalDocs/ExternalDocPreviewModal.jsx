@@ -378,7 +378,11 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
               <>
                 <iframe
                   src={`${pdfBlobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                  className="w-full h-full border-0 absolute inset-0 bg-slate-900"
+                  className="w-full border-none block"
+                  style={{
+                    height: 'calc(100% + 52px)',
+                    marginTop: '-52px'
+                  }}
                   title="PDF Preview"
                 />
                 {/* Floating subtle security preview watermark pill */}

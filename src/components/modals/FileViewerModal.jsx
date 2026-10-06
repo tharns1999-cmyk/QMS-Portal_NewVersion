@@ -96,11 +96,17 @@ const FileViewerModal = ({ isOpen, onClose, attachedFile }) => {
               <p className="text-sm font-bold">ไม่สามารถแสดงตัวอย่างไฟล์ได้</p>
             </div>
           ) : isPdf ? (
-            <iframe 
-              src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} 
-              className="absolute inset-0 w-full h-full border-0 bg-white" 
-              title="PDF Preview" 
-            />
+            <div className="absolute inset-0 w-full h-full overflow-hidden bg-slate-900">
+              <iframe 
+                src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} 
+                className="w-full border-none block" 
+                style={{
+                  height: 'calc(100% + 52px)',
+                  marginTop: '-52px'
+                }}
+                title="PDF Preview" 
+              />
+            </div>
           ) : isImage ? (
             <div className="w-full h-full overflow-auto flex items-center justify-center bg-slate-900">
               <img src={blobUrl} alt={attachedFile.name} className="max-w-full max-h-full object-contain" />

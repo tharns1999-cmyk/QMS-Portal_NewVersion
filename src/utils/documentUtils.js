@@ -40,22 +40,22 @@ export const resolveDocCode = (primary, secondary = null) => {
   const s = secondary || {};
 
   const candidates = [
-    p.docNo,
-    p.doc_no,
-    p.documentCode,
+    p.document_code,
     p.doc_code,
     p.docCode,
     p.code,
+    p.docNo,
+    p.doc_no,
+    p.documentCode,
     p.edCode,
-    p.document_code,
-    s.docNo,
-    s.doc_no,
-    s.documentCode,
+    s.document_code,
     s.doc_code,
     s.docCode,
     s.code,
+    s.docNo,
+    s.doc_no,
+    s.documentCode,
     s.edCode,
-    s.document_code,
     p.title,
     s.title,
     p.docTitle,
@@ -68,8 +68,8 @@ export const resolveDocCode = (primary, secondary = null) => {
     }
   }
 
-  return p.docNo || p.doc_code || p.docCode || p.code || p.documentCode ||
-         s.docNo || s.doc_code || s.docCode || s.code || s.documentCode ||
+  return p.document_code || p.doc_code || p.docCode || p.code || p.docNo || p.documentCode ||
+         s.document_code || s.doc_code || s.docCode || s.code || s.docNo || s.documentCode ||
          (p.title && !isThaiText(p.title) ? p.title : null) ||
          (s.title && !isThaiText(s.title) ? s.title : null) ||
          'DOC-UNKNOWN';
@@ -89,14 +89,17 @@ export const resolveDocTitle = (primary, secondary = null) => {
   const s = secondary || {};
 
   const candidates = [
+    p.document_title,
+    p.doc_title,
     p.docName,
     p.documentName,
     p.name,
     p.document_name,
+    s.document_title,
+    s.doc_title,
     s.name,
     s.document_name,
     s.docName,
-    s.document_name,
     isThaiText(p.docTitle) ? p.docTitle : null,
     isThaiText(p.title) ? p.title : null,
     isThaiText(s.docTitle) ? s.docTitle : null,
@@ -196,37 +199,111 @@ export const compareRevisions = (revA, revB) => {
  */
 
 /**
- * Returns a date string exactly 1 year after the supplied base date.
- * Safe for use in both store actions and pure utility calculations.
+ * Adds specified number of years to a date string (YYYY-MM-DD or ISO).
+ * Properly handles leap-year edge cases (e.g. 2024-02-29 + 1 year = 2025-02-28).
  *
  * @param {string} baseDateStr - ISO date string or YYYY-MM-DD
- * @returns {string} YYYY-MM-DD date one year later, or '' if baseDateStr is falsy
+ * @param {number} years - number of years to add (default 1)
+ * @returns {string} YYYY-MM-DD date or '' if falsy/invalid
  */
-export const calculateNextReviewDate = (baseDateStr) => {
+export const addYears = (baseDateStr, years = 1) => {
   if (!baseDateStr) return '';
-  const date = new Date(baseDateStr);
-  if (isNaN(date.getTime())) return '';
-  date.setFullYear(date.getFullYear() + 1);
-  return date.toISOString().split('T')[0];
+  const str = String(baseDateStr).split('T')[0].trim();
+  const parts = str.split('-');
+  if (parts.length < 3) {
+    const dt = new Date(baseDateStr);
+    if (isNaN(dt.getTime())) return '';
+    dt.setFullYear(dt.getFullYear() + years);
+    return dt.toISOString().split('T')[0];
+  }
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return '';
+
+  const targetYear = y + years;
+  // Leap year edge case: 2024-02-29 -> 2025-02-28 (if target year is not leap year)
+  if (m === 2 && d === 29) {
+    const isLeap = (targetYear % 4 === 0 && targetYear % 100 !== 0) || (targetYear % 400 === 0);
+    const targetDay = isLeap ? 29 : 28;
+    return `${targetYear}-02-${String(targetDay).padStart(2, '0')}`;
+  }
+  return `${targetYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 };
 
 /**
- * Returns a normalized review status string based on the distance
- * between today and the nextReviewDueDate.
+ * Returns document review cycle in years based on document type:
+ * - QP, SOP: 1 year
+ * - WI, FM: 2 years
+ * - Other/Default: 1 year
+ *
+ * @param {string} docType - Document type or title prefix (e.g. 'QP', 'SOP', 'WI', 'FM')
+ * @returns {number} cycle in years
+ */
+export const getReviewCycleYears = (docType) => {
+  const type = String(docType || '').toUpperCase().trim();
+  if (
+    type === 'WI' || 
+    type === 'FM' || 
+    type.startsWith('WI-') || 
+    type.startsWith('FM-') || 
+    type.startsWith('WI_') || 
+    type.startsWith('FM_') ||
+    type.includes('/WI/') ||
+    type.includes('/FM/')
+  ) {
+    return 2;
+  }
+  return 1;
+};
+
+/**
+ * Returns a date string after adding cycle years (default 1 year) to the supplied base date.
+ * Safe for use in both store actions and pure utility calculations.
+ *
+ * @param {string} baseDateStr - ISO date string or YYYY-MM-DD
+ * @param {number} [years=1] - number of years
+ * @returns {string} YYYY-MM-DD date, or '' if baseDateStr is falsy
+ */
+export const calculateNextReviewDate = (baseDateStr, years = 1) => {
+  return addYears(baseDateStr, years);
+};
+
+/**
+ * Returns a normalized review status string based on distance between today and nextReviewDueDate.
  *
  * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
+ * @param {Date|string} [today=new Date()] - reference date
  * @returns {'OVERDUE' | 'UPCOMING' | 'ON_SCHEDULE'} review urgency status
  */
-export const getReviewStatus = (nextReviewDueDate) => {
+export const getReviewStatus = (nextReviewDueDate, today = new Date()) => {
   if (!nextReviewDueDate) return 'ON_SCHEDULE';
-  const now = new Date();
+  const now = new Date(today);
   now.setHours(0, 0, 0, 0);
   const due = new Date(nextReviewDueDate);
   due.setHours(0, 0, 0, 0);
+  if (isNaN(due.getTime())) return 'ON_SCHEDULE';
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return 'OVERDUE';     // เกินกำหนด
   if (diffDays <= 30) return 'UPCOMING';  // ใกล้ถึงกำหนดใน 30 วัน
   return 'ON_SCHEDULE';                   // ปกติ
 };
+
+/**
+ * Returns normalized status flag strictly as OVERDUE, UPCOMING, or NORMAL:
+ * - OVERDUE: today > next_review_date
+ * - UPCOMING: next_review_date - today <= 30 days
+ * - NORMAL: > 30 days
+ *
+ * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
+ * @param {Date|string} [today=new Date()] - reference date
+ * @returns {'OVERDUE' | 'UPCOMING' | 'NORMAL'}
+ */
+export const getReviewStatusFlag = (nextReviewDueDate, today = new Date()) => {
+  const status = getReviewStatus(nextReviewDueDate, today);
+  if (status === 'ON_SCHEDULE') return 'NORMAL';
+  return status;
+};
+
 
 

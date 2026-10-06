@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
+import PeriodicReviewActionModal from './PeriodicReviewActionModal';
 import ExternalDocFormModal from '../ExternalDocs/ExternalDocFormModal';
 import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfirmHardcopyReceiptModal';
 import DccCustodyActionModal from '../../components/modals/DccCustodyActionModal';
@@ -575,7 +576,7 @@ export const resolveDarIdentifier = (task, matchedDar) => {
 export const getTaskTypeBadgeConfig = (normType, task) => {
   if (normType === 'REVIEW' || normType === 'EXT_REVIEW' || normType === 'EXTERNAL_REVIEW') {
     return {
-      label: 'ทบทวนคำร้อง (Review)',
+      label: 'ทบทวนคำร้อง',
       actionLabel: 'พิจารณาตรวจทาน',
       icon: <Eye size={13} className="text-indigo-600" />,
       badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
@@ -583,7 +584,7 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
   }
   if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'EXTERNAL_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
     return {
-      label: 'อนุมัติคำร้อง (Approve)',
+      label: 'อนุมัติคำร้อง',
       actionLabel: 'พิจารณาอนุมัติ',
       icon: <ShieldCheck size={13} className="text-emerald-600" />,
       badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200'
@@ -591,8 +592,8 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
   }
   if (normType === 'ACK' || normType === 'ACKNOWLEDGE') {
     return {
-      label: 'รับทราบเอกสาร (Acknowledge)',
-      actionLabel: 'รับทราบเอกสาร',
+      label: 'รับทราบเอกสาร',
+      actionLabel: 'ยืนยันรับทราบ',
       icon: <Bell size={13} className="text-sky-600" />,
       badgeClass: 'bg-sky-50 text-sky-700 border-sky-200'
     };
@@ -630,7 +631,7 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
   if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
     if (task?.delivery_status === 'DISPATCHED_TRACKING' || task?.status === 'COMPLETED') {
       return {
-        label: 'ติดตามการส่งมอบ (Tracking)',
+        label: task?.status_label || 'ติดตามการส่งมอบ (รอปลายทางตรวจรับ)',
         actionLabel: 'ติดตามการส่งมอบ',
         icon: <Clock size={13} className="text-amber-600" />,
         badgeClass: 'bg-amber-50 text-amber-700 border-amber-200'
@@ -662,7 +663,7 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
       };
     }
     return {
-      label: 'เรียกคืนสำเนา (Recall)',
+      label: 'เรียกคืนเอกสาร Controlled Copy (Recall)',
       actionLabel: 'ดำเนินการเรียกคืน',
       icon: <AlertTriangle size={13} className="text-orange-600" />,
       badgeClass: 'bg-orange-50 text-orange-700 border-orange-200'
@@ -888,7 +889,7 @@ const getSLABadge = (task, mockDateOffset) => {
 export function normalizeTaskCategory(task) {
   if (!task) return '';
   const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
-  if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW' || rawType === 'EXTERNAL_REVIEW') return 'REVIEW';
+  if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW' || rawType === 'EXTERNAL_REVIEW' || rawType === 'PERIODIC_REVIEW' || rawType === 'EXTERNAL_VERIFICATION') return 'REVIEW';
   if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'EXTERNAL_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL') return 'APPROVE';
   if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
   if (rawType === 'REVISE' || rawType === 'EXTERNAL_REVISE' || rawType === 'EXT_REVISE') return 'REVISE';
@@ -921,6 +922,7 @@ const TaskInbox = () => {
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
   const [selectedCustodyTask, setSelectedCustodyTask] = useState(null);
+  const [selectedPeriodicReviewTask, setSelectedPeriodicReviewTask] = useState(null);
   const [editingExternalDoc, setEditingExternalDoc] = useState(null);
   const [resubmitTaskId, setResubmitTaskId] = useState(null);
   const [isExternalDocModalOpen, setIsExternalDocModalOpen] = useState(false);
@@ -1001,6 +1003,7 @@ const TaskInbox = () => {
         const isReceipt = isReceiptTask(t) || normalizeTaskCategory(t) === 'RECEIPT';
         if (isReceipt) {
           if (isLevel6Executive || isLevel6Plus(currentUser)) return false;
+          if (dccAdmin) return true;
           const tDept = resolveTaskDept(t);
           return userDepts.some(uDept => isSameDepartment(uDept, tDept)) || 
             isSameDepartment(currentUser?.department, tDept) || 
@@ -1155,6 +1158,18 @@ const TaskInbox = () => {
       return;
     }
 
+    // 🛡️ Periodic Review (Internal) & Verification (External) workflow tasks
+    if (
+      normType === 'PERIODIC_REVIEW' || 
+      normType === 'EXTERNAL_VERIFICATION' || 
+      task.taskType === 'PERIODIC_REVIEW' || 
+      task.taskType === 'EXTERNAL_VERIFICATION' ||
+      Boolean(task.scheduleId)
+    ) {
+      setSelectedPeriodicReviewTask(task);
+      return;
+    }
+
     if (task.referenceType === 'EXTERNAL_DOC' || task.origin === 'EXTERNAL') {
       // 🛡️ Phase 2: If task is EXTERNAL_REVISE, open ExternalDocFormModal in Resubmit mode
       if (normType === 'EXTERNAL_REVISE' || normType === 'REVISE') {
@@ -1240,10 +1255,12 @@ const TaskInbox = () => {
           <div className="flex items-center flex-wrap gap-1 w-full md:w-auto">
             {tabs.map(tab => {
               const isActive = activeTab === tab.id;
+              const enLabel = tab.id === 'REVIEW' ? 'Review' : tab.id === 'APPROVE' ? 'Approve' : tab.id === 'ACK' ? 'Acknowledge' : '';
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
+                  aria-label={`${tab.label} ${enLabel}`.trim()}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border ${
                     isActive
                       ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
@@ -1474,12 +1491,18 @@ const TaskInbox = () => {
                       ) : null}
 
                       {/* 3. ชื่อเอกสาร (Document Title) */}
-                      <span 
-                        className="text-slate-900 font-medium text-[13px] sm:text-sm leading-snug tracking-tight line-clamp-1"
-                        title={task.title || (typeof finalDocTitle === 'string' ? finalDocTitle : undefined)}
-                      >
-                        {finalDocTitle || task.docTitle || task.title || task.documentName}
-                      </span>
+                      {(() => {
+                        const rawTitle = finalDocTitle || task.docTitle || task.title || task.documentName || '';
+                        const cleanTitle = typeof rawTitle === 'string' ? rawTitle.replace(/^\[\]\s*/, '') : rawTitle;
+                        return (
+                          <h3 
+                            className="text-slate-900 font-medium text-[13px] sm:text-sm leading-snug tracking-tight line-clamp-1"
+                            title={task.title || (typeof finalDocTitle === 'string' ? finalDocTitle : undefined)}
+                          >
+                            {cleanTitle}
+                          </h3>
+                        );
+                      })()}
                       {!isReceiptTask(task) && task.title && task.title !== (finalDocTitle || task.docTitle) && (
                         <span className="sr-only"> ({task.title})</span>
                       )}
@@ -1592,6 +1615,14 @@ const TaskInbox = () => {
             isOpen={!!selectedCustodyTask}
             onClose={() => setSelectedCustodyTask(null)}
             task={selectedCustodyTask}
+          />
+        )}
+        {selectedPeriodicReviewTask && (
+          <PeriodicReviewActionModal
+            isOpen={!!selectedPeriodicReviewTask}
+            onClose={() => setSelectedPeriodicReviewTask(null)}
+            task={selectedPeriodicReviewTask}
+            onSuccess={() => setSelectedPeriodicReviewTask(null)}
           />
         )}
         {isExternalDocModalOpen && (

@@ -82,6 +82,13 @@ const Sidebar = () => {
     return (inst.status === 'PENDING_RECEIPT' || inst.status === 'PENDING_ISSUE' || inst.status === 'DISPATCHED_PENDING_RECEIPT' || inst.status === 'REPLACEMENT_REQUESTED' || inst.status === 'PENDING_RECALL' || isRecall);
   }).length;
 
+  const periodicReviewCount = useMemo(() => {
+    return userTasks.filter(t => 
+      (t.type === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'PERIODIC_REVIEW' || t.taskType === 'EXTERNAL_VERIFICATION') &&
+      t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED'
+    ).length;
+  }, [userTasks]);
+
   const myExternalReviseCount = useMemo(() => {
     const reviseDocIds = new Set();
     (tasks || []).forEach(t => {
@@ -293,6 +300,8 @@ const Sidebar = () => {
               to="/dcc/periodic-reviews" 
               icon={CalendarDays} 
               label="การทบทวนตามรอบ" 
+              badgeCount={periodicReviewCount}
+              badgeColor="amber"
             />
 
             {/* GROUP 4: DCC MANAGEMENT (งานกำกับดูแล DCC - แสดงเฉพาะ Role DCC / Admin) */}

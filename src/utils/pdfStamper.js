@@ -103,7 +103,14 @@ export const generateCursiveSignatureDataUrl = (nameOrInitials = '', style = 'BR
     ctx.bezierCurveTo(250, 98, 170, 102, 110, 96);
     ctx.stroke();
 
-    return canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
+
+    return dataUrl;
   } catch (err) {
     console.warn('generateCursiveSignatureDataUrl failed:', err);
     return null;
@@ -358,7 +365,13 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
   }
 
   try {
-    return canvas.toDataURL('image/png');
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
+    return dataUrl;
   } catch {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
   }
@@ -610,9 +623,14 @@ export const generateExternalDocStampImage = async (stampData) => {
     // Line 3: Effective Date - Compact Caption size
     ctx.font = `normal 38px ${FONT_FAMILY}`;
     const effectiveDate = stampData?.timestamp || '-';
-    ctx.fillText(`Effective Date: ${effectiveDate}`, width - paddingRight, 170);
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
 
-    resolve(canvas.toDataURL('image/png'));
+    resolve(dataUrl);
   });
 };
 
@@ -749,7 +767,14 @@ export const generateDiagonalWatermarkCanvas = async ({
     ctx.fillText(line2, 0, 40);
     ctx.fillText(line3, 0, 55);
 
-    resolve(canvas.toDataURL('image/png'));
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
+
+    resolve(dataUrl);
   });
 };
 
@@ -971,7 +996,14 @@ export const generateDraftWatermarkImage = async (metadata = {}) => {
     }
 
     ctx.restore();
-    resolve(canvas.toDataURL('image/png'));
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
+
+    resolve(dataUrl);
   });
 };
 

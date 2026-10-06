@@ -20,9 +20,6 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
-  MoreHorizontal,
-  CornerDownLeft,
   RotateCw,
   Loader2,
   Printer
@@ -31,7 +28,7 @@ import useStore from '../../store/useStore';
 import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterDataService';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { UniversalWatermarkService, resolveWatermarkConfig, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
-import { resolveFileBlob } from '../../utils/fileStorage';
+import * as fileStorage from '../../utils/fileStorage';
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
 import WatermarkStudioModal from './WatermarkStudioModal';
 import ReplacementModal from '../../pages/Library/ReplacementModal';
@@ -46,7 +43,7 @@ import {
   getApproverName, 
   getAckNames 
 } from '../../utils/darHelper';
-import { getRevisionIndex, resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
+import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import { generateQmsDownloadName } from '../../utils/documentNamingHelper';
 import toast from 'react-hot-toast';
 
@@ -269,7 +266,7 @@ const DocumentDetailModal = ({
           return d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || Boolean(d.is_superseded);
         }
         return true;
-      });
+      }).map(d => (String(d.id) === String(inputDoc.id) ? { ...d, ...inputDoc } : d));
     }
     if (revs.length === 0 && inputDoc) {
       revs = [inputDoc];
@@ -368,7 +365,7 @@ const DocumentDetailModal = ({
 
     try {
       // 1. Resolve raw file blob through Universal File Resolver
-      const rawBlob = await resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId);
+      const rawBlob = await fileStorage.resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId);
 
       if (!rawBlob) {
         toast.dismiss(toastId);
@@ -1109,9 +1106,6 @@ const DocumentDetailModal = ({
     }];
   }, [allDars, doc, currentDocCode, currentRevision, currentRevisionNorm, isObsoleteDoc, isSupersededDoc, documents]);
 
-  // Alias for semantic clarity
-  const currentRevisionDars = scopedDarHistory;
-
   // State ควบคุมการกาง/พับ (Collapsible Timeline - ใบแรกกางออกเป็นค่าเริ่มต้น)
   const [expandedDarItems, setExpandedDarItems] = useState([]);
 
@@ -1147,32 +1141,7 @@ const DocumentDetailModal = ({
     }
   };
 
-  // Resolve user display name and position for workflow stage cards
-  const resolveSignatory = (userName, fallbackPosition) => {
-    if (!userName || userName === '-') {
-      return { name: '-', position: fallbackPosition };
-    }
-    let displayName = String(userName).trim();
-    let extractedRole = null;
-    const match = displayName.match(/^(.*?)\s*\((.*?)\)$/);
-    if (match) {
-      displayName = match[1].trim();
-      extractedRole = match[2].trim();
-    }
 
-    const matchedUser = (masterUsers || []).find(u => 
-      u.name === displayName || 
-      u.fullName === displayName || 
-      u.id === userName ||
-      (u.name && displayName.includes(u.name)) ||
-      (u.fullName && displayName.includes(u.fullName))
-    );
-
-    return {
-      name: displayName,
-      position: matchedUser?.position || extractedRole || fallbackPosition
-    };
-  };
 
   // Permission Check for Requesting Additional Copies
   const canRequestAdditionalCopies = useMemo(() => {
@@ -2403,10 +2372,15 @@ const DocumentDetailModal = ({
               {activeTab === 'periodic' && (() => {
                 const docId = doc?.id;
                 const matchingSchedule = (periodicReviewSchedules || []).find(
-                  s => s.documentId === docId || s.externalDocumentId === docId
+                  s => s.documentId === docId || s.externalDocumentId === docId ||
+                       (doc?.title && s.documentNumber === doc.title) ||
+                       (doc?.doc_code && s.documentNumber === doc.doc_code)
                 );
-                const reviewLogs = matchingSchedule?.reviewLogs || [];
-                const nextReviewDate = matchingSchedule?.nextReviewDate || matchingSchedule?.currentScheduledReviewDate;
+                const reviewLogs = (matchingSchedule?.reviewLogs && matchingSchedule.reviewLogs.length > 0)
+                  ? matchingSchedule.reviewLogs
+                  : (doc?.review_history || []);
+                const nextReviewDate = matchingSchedule?.nextReviewDate || matchingSchedule?.currentScheduledReviewDate || doc?.next_review_date;
+                const lastReviewedDate = matchingSchedule?.lastReviewedDate || doc?.last_reviewed_at || doc?.last_verified_at;
 
                 const outcomeLabel = (outcome) => {
                   const map = {
@@ -2463,7 +2437,7 @@ const DocumentDetailModal = ({
                         {[
                           { label: 'รอบทบทวน (เดือน)', value: matchingSchedule.frequencyMonths || 12 },
                           { label: 'ครบกำหนดถัดไป', value: formatDate(nextReviewDate) || '-' },
-                          { label: 'ทบทวนล่าสุด', value: formatDate(matchingSchedule.lastReviewedDate) || '-' },
+                          { label: 'ทบทวนล่าสุด', value: formatDate(lastReviewedDate) || '-' },
                           { label: 'จำนวนครั้งที่ทบทวนแล้ว', value: reviewLogs.length },
                         ].map(({ label, value }) => (
                           <div key={label} className="bg-[#F8FAFC] border border-[#E5E5E5] rounded-xl p-3">

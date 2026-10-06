@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { stampDocumentFirstPage, stampExternalDocumentTopRight, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
+import { stampExternalDocumentTopRight, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
 import { resolveProgressiveSignatories } from '../utils/signatoryResolver';
 import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateDynamicWorkflow } from '../utils/workflowEngine';
-import { generateSchedules, generateTasksForSchedules, calculateNextReviewDate } from '../services/PeriodicReviewService';
+import { generateSchedules, generateTasksForSchedules } from '../services/PeriodicReviewService';
+import { addYears, getReviewCycleYears } from '../utils/documentUtils';
 import { 
   createOrGetLinkedDarDraft, 
   validateLinkedDarSource, 
@@ -930,6 +931,120 @@ export const CONTROLLED_COPY_STATUS = {
   RECALLED: 'RECALLED'
 };
 
+/**
+ * Strict Deterministic Controlled Copy Identifier (ISO 9001 Clause 7.5.3)
+ * Pattern: COPY_${docCode}_REV${revision}_${copyNumber}
+ */
+export const buildControlledCopyId = (docCode, revision, copyNumber) => {
+  const cleanCode = String(docCode || 'DOC').replace(/^\[.*?\]\s*/, '').trim().toUpperCase();
+  const cleanRev = String(revision || '00').replace(/^rev\.?/i, '').trim().padStart(2, '0');
+  const numOnly = parseInt(String(copyNumber || '1').replace(/\D/g, ''), 10) || 1;
+  const cleanNo = String(numOnly).padStart(2, '0');
+  return `COPY_${cleanCode}_REV${cleanRev}_${cleanNo}`;
+};
+
+/**
+ * Deduplication Guard for Controlled Copies
+ * Eliminates duplicate Copy records (e.g. duplicate Copy 01) by natural physical key.
+ */
+export const deduplicateControlledCopies = (copies = []) => {
+  if (!Array.isArray(copies)) return [];
+  const map = new Map();
+
+  for (const c of copies) {
+    if (!c) continue;
+    const docCode = c.doc_code || c.document_code || c.docCode || c.docNo || c.title || '';
+    const cleanCode = String(docCode).replace(/^\[.*?\]\s*/, '').trim().toUpperCase();
+    const cleanRev = String(c.rev || c.revision || c.doc_version || '00').replace(/^rev\.?/i, '').trim().padStart(2, '0');
+    const cleanNo = String(c.copy_no || c.copyNo || c.ccNumber || c.copy_number || '01').replace(/^copy\s*/i, '').replace(/^cc-?/i, '').replace(/\s+/g, '').padStart(2, '0');
+    
+    // Natural key represents physical identity of the copy in ISO 9001
+    const naturalKey = `${cleanCode}_REV${cleanRev}_COPY${cleanNo}`;
+
+    if (!map.has(naturalKey)) {
+      map.set(naturalKey, c);
+    } else {
+      const existing = map.get(naturalKey);
+      const isExistingActive = (existing.status === 'IN_USE' || existing.status === 'ISSUED_ACTIVE' || existing.status === 'ACTIVE') && existing.is_active_in_field === true;
+      const isCurrentActive = (c.status === 'IN_USE' || c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE') && c.is_active_in_field === true;
+
+      if (!isExistingActive && isCurrentActive) {
+        map.set(naturalKey, c);
+      } else if (!isExistingActive && !isCurrentActive) {
+        const statusRank = {
+          'PENDING_ISSUE': 1,
+          'PENDING_PRINT': 2,
+          'DISPATCHED_PENDING_RECEIPT': 3,
+          'DISPATCHED': 3,
+          'SUPERSEDED_PENDING_RECALL': 4,
+          'RECALLED_PENDING_DESTRUCTION': 5,
+          'DESTROYED': 6
+        };
+        const rankExisting = statusRank[existing.status] || 0;
+        const rankCurrent = statusRank[c.status] || 0;
+        if (rankCurrent > rankExisting) {
+          map.set(naturalKey, c);
+        }
+      }
+    }
+  }
+
+  return Array.from(map.values());
+};
+
+/**
+ * Sanitizes state / mock data for controlled copies:
+ * - Purges corrupted phantom records (e.g. duplicate QM-QC-01 Rev.00 Copy 01)
+ * - Ensures newly approved Rev.01 with unverified receipt does NOT claim receipt on 2026-10-06
+ */
+export const sanitizeControlledCopies = (copies = []) => {
+  if (!Array.isArray(copies)) return [];
+  
+  // Detect if a newer revision of QM-QC-01 exists among the copies
+  const hasQmQc01Rev01Plus = copies.some(c => {
+    if (!c) return false;
+    const docCode = String(c.doc_code || c.document_code || c.docCode || c.docNo || c.title || '').trim().toUpperCase();
+    const rev = String(c.rev || c.revision || c.doc_version || '00').replace(/^rev\.?/i, '').trim();
+    return docCode === 'QM-QC-01' && (rev === '01' || parseInt(rev, 10) >= 1);
+  });
+
+  const cleaned = copies.map(c => {
+    if (!c) return c;
+    const docCode = String(c.doc_code || c.document_code || c.docCode || c.docNo || c.title || '').trim().toUpperCase();
+    const rev = String(c.rev || c.revision || c.doc_version || '00').replace(/^rev\.?/i, '').trim();
+
+    // Specific sanitization for QM-QC-01
+    if (docCode === 'QM-QC-01') {
+      if (rev === '00' && hasQmQc01Rev01Plus) {
+        return {
+          ...c,
+          status: 'PENDING_RECALL',
+          is_superseded: true,
+          is_active_in_field: false
+        };
+      }
+      if (rev === '01') {
+        const receiptDate = String(c.receipt_confirmed_at || c.received_at || '');
+        if (receiptDate.includes('2026-10-06') || (!c.received_by && (c.status === 'ISSUED_ACTIVE' || c.status === 'IN_USE'))) {
+          return {
+            ...c,
+            status: 'PENDING_ISSUE',
+            received_by: null,
+            received_at: null,
+            receipt_confirmed_at: null,
+            receipt_confirmed_by: null,
+            receipt_confirmed_by_id: null,
+            is_active_in_field: false
+          };
+        }
+      }
+    }
+    return c;
+  });
+
+  return deduplicateControlledCopies(cleaned);
+};
+
 export const MOCK_CONTROLLED_COPY_INSTANCES = [
   {
     id: 'CC-MOCK-1',
@@ -1070,7 +1185,30 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     return d;
   };
 
-  // 1. Check station or location
+  // 1. Explicit target/recipient department fields (Highest Priority)
+  const explicitTargetDept = 
+    copyOrTask.target_department || 
+    copyOrTask.targetDepartment || 
+    copyOrTask.recipientDepartment || 
+    copyOrTask.recipient_department || 
+    copyOrTask.destinationDept || 
+    copyOrTask.destination_dept ||
+    copyOrTask.holder_dept ||
+    copyOrTask.holderDept ||
+    matchedCopy?.targetDepartment || 
+    matchedCopy?.target_department || 
+    matchedCopy?.recipientDepartment || 
+    matchedCopy?.recipient_department || 
+    matchedCopy?.destinationDept || 
+    matchedCopy?.destination_dept ||
+    matchedCopy?.holder_dept ||
+    matchedCopy?.holderDept;
+
+  if (explicitTargetDept && explicitTargetDept !== 'DCC' && explicitTargetDept !== 'DC') {
+    return normalizeDeptResult(explicitTargetDept);
+  }
+
+  // 2. Check station or location
   const loc = 
     matchedCopy?.station_id || 
     matchedCopy?.locationId || 
@@ -1093,34 +1231,11 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     return normalizeDeptResult(foundStation.departmentId);
   }
 
-  const textToCheck = `${typeof loc === 'string' ? loc : ''} ${copyOrTask.title || ''} ${copyOrTask.description || ''}`;
-  if (textToCheck.includes('EN Office') || textToCheck.includes('EN-') || textToCheck.includes('(EN)')) {
-    return 'EN';
-  }
-  if (textToCheck.includes('WH Office') || textToCheck.includes('WH-') || textToCheck.includes('(WH)') || textToCheck.includes('คลังสินค้า')) {
-    return 'WH';
-  }
-  if (textToCheck.includes('QC Lab') || textToCheck.includes('QA/QC') || textToCheck.includes('QA Office') || textToCheck.includes('ห้องแล็บ') || textToCheck.includes('QC') || textToCheck.includes('ประกันและควบคุมคุณภาพ')) {
-    return 'QC';
-  }
-
-  // 2. Explicit target/recipient department fields
-  const explicitTargetDept = 
-    copyOrTask.target_department || 
-    copyOrTask.targetDepartment || 
-    copyOrTask.recipientDepartment || 
-    copyOrTask.recipient_department || 
-    copyOrTask.destinationDept || 
-    copyOrTask.destination_dept ||
-    matchedCopy?.targetDepartment || 
-    matchedCopy?.target_department || 
-    matchedCopy?.recipientDepartment || 
-    matchedCopy?.recipient_department || 
-    matchedCopy?.destinationDept || 
-    matchedCopy?.destination_dept;
-
-  if (explicitTargetDept && explicitTargetDept !== 'DCC') {
-    return normalizeDeptResult(explicitTargetDept);
+  if (typeof loc === 'string') {
+    if (loc.includes('EN Office') || loc.includes('EN-') || loc.includes('(EN)')) return 'EN';
+    if (loc.includes('WH Office') || loc.includes('WH-') || loc.includes('(WH)') || loc.includes('คลังสินค้า')) return 'WH';
+    if (loc.includes('QC Lab') || loc.includes('QA/QC') || loc.includes('QA Office') || loc.includes('ห้องแล็บ') || loc.includes('ประกันและควบคุมคุณภาพ')) return 'QC';
+    if (loc.includes('PD') || loc.includes('Production') || loc.includes('ผลิต')) return 'PD';
   }
 
   // 3. Fallback to copy department or task department if valid and non-DCC
@@ -1129,14 +1244,13 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     copyOrTask.departmentId || 
     copyOrTask.dept_code || 
     copyOrTask.deptCode || 
-    copyOrTask.holder_dept || 
     copyOrTask.dept || 
     matchedCopy?.department || 
     matchedCopy?.departmentId || 
     matchedCopy?.dept_code || 
     matchedCopy?.deptCode;
 
-  if (fallbackDept && fallbackDept !== 'DCC') {
+  if (fallbackDept && fallbackDept !== 'DCC' && fallbackDept !== 'DC') {
     return normalizeDeptResult(fallbackDept);
   }
 
@@ -1934,13 +2048,20 @@ const useStore = create(persist((set, get) => ({
       let currentDocs = [...(state.documents || [])];
       qcBaselineDocs.forEach(seedDoc => {
         const cleanRev = String(seedDoc.revision || seedDoc.rev || '00').replace(/\D/g, '');
-        const exists = currentDocs.some(d => {
+        const existingIdx = currentDocs.findIndex(d => {
           const c = d.document_code || d.code || d.doc_code || d.docNo || d.title;
           const r = String(d.revision || d.rev || '00').replace(/\D/g, '');
           return c && c.trim().toUpperCase() === 'WI-QC-01' && r === cleanRev;
         });
-        if (!exists) {
+        if (existingIdx === -1) {
           currentDocs.push({ ...seedDoc });
+        } else if (cleanRev === '00' || cleanRev === '01') {
+          currentDocs[existingIdx] = {
+            ...currentDocs[existingIdx],
+            status: 'SUPERSEDED',
+            is_superseded: true,
+            is_active: false
+          };
         }
       });
 
@@ -1982,10 +2103,27 @@ const useStore = create(persist((set, get) => ({
   setMockDateOffset: (days) => set({ mockDateOffset: days }),
 
   initializePeriodicReviews: () => set(state => {
-    if (state.periodicReviewSchedules && state.periodicReviewSchedules.length > 0) return state;
+    if (state.periodicReviewSchedules && state.periodicReviewSchedules.length > 0) {
+      // Ensure tasks in state.tasks are synchronized
+      const existingTaskIds = new Set((state.tasks || []).map(t => t.id || t.scheduleId));
+      const missingTasks = (state.periodicReviewTasks || []).filter(t => !existingTaskIds.has(t.id));
+      if (missingTasks.length > 0) {
+        return { tasks: [...missingTasks, ...(state.tasks || [])] };
+      }
+      return state;
+    }
     const schedules = generateSchedules(state.documents || [], state.externalDocuments || [], []);
     const tasks = generateTasksForSchedules(schedules, []);
-    return { periodicReviewSchedules: schedules, periodicReviewTasks: tasks };
+    
+    // Deduplicate against state.tasks
+    const existingTaskIds = new Set((state.tasks || []).map(t => t.id || t.scheduleId));
+    const newTasksToAdd = tasks.filter(t => !existingTaskIds.has(t.id));
+
+    return { 
+      periodicReviewSchedules: schedules, 
+      periodicReviewTasks: tasks,
+      tasks: [...newTasksToAdd, ...(state.tasks || [])]
+    };
   }),
 
   submitPeriodicReview: (scheduleId, outcome, comment, linkedActionId = null, linkageStatus = null, idempotencyKey = null) => set(state => {
@@ -1997,12 +2135,20 @@ const useStore = create(persist((set, get) => ({
     if (scheduleIndex === -1) return state;
     
     const schedule = { ...schedules[scheduleIndex] };
+    const now = new Date().toISOString().split('T')[0];
     
     // Find active task
     const taskIndex = tasks.findIndex(t => t.scheduleId === scheduleId && t.status === 'ACTION_REQUIRED');
     if (taskIndex !== -1) {
-      tasks[taskIndex] = { ...tasks[taskIndex], status: 'COMPLETED', updatedAt: new Date().toISOString() };
+      tasks[taskIndex] = { ...tasks[taskIndex], status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
     }
+
+    const updatedTasks = (state.tasks || []).map(t => {
+      if (t.scheduleId === scheduleId || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
+        return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+      }
+      return t;
+    });
 
     let newStatus = 'COMPLETED';
     let requiresLinkedAction = false;
@@ -2010,7 +2156,7 @@ const useStore = create(persist((set, get) => ({
     if (outcome === 'REVISION_REQUIRED' || outcome === 'OBSOLETE_REQUIRED') {
       newStatus = 'IN_PROGRESS';
       requiresLinkedAction = true;
-    } else if (outcome === 'NO_CHANGE') {
+    } else if (outcome === 'NO_CHANGE' || outcome === 'CONFIRM_CONTINUE') {
       newStatus = 'COMPLETED';
     }
 
@@ -2024,11 +2170,58 @@ const useStore = create(persist((set, get) => ({
     schedule.dueState = 'NOT_YET_DUE';
     schedule.updatedAt = new Date().toISOString();
     
+    let updatedDocs = state.documents;
+    let updatedExtDocs = state.externalDocuments;
+
     if (!requiresLinkedAction) {
-      schedule.currentScheduledReviewDate = calculateNextReviewDate(schedule.originalReviewAnchorDate, schedule.frequencyMonths, new Date());
-      schedule.nextReviewDate = schedule.currentScheduledReviewDate;
-      // Also reset status back to upcoming for next cycle if it's completed entirely
+      const cycleYears = schedule.cycleYears || (schedule.documentCategory === 'INTERNAL' 
+        ? getReviewCycleYears(schedule.documentNumber) 
+        : (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1));
+      const nextDate = addYears(now, cycleYears);
+      
+      schedule.currentScheduledReviewDate = nextDate;
+      schedule.nextReviewDate = nextDate;
+      schedule.lastReviewedDate = now;
       schedule.status = 'UPCOMING';
+
+      const historyEntry = {
+        id: `PRR-${Date.now()}`,
+        reviewer: state.currentUser?.name || '-',
+        reviewerId: state.currentUser?.id || null,
+        reviewDate: now,
+        comment: comment || '',
+        outcome: outcome || 'NO_CHANGE',
+        nextReviewDate: nextDate
+      };
+
+      if (schedule.documentCategory !== 'EXTERNAL' && state.documents) {
+        const docIdx = state.documents.findIndex(d => 
+          (schedule.documentId && d.id === schedule.documentId) || 
+          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber))
+        );
+        if (docIdx !== -1) {
+          const doc = { ...state.documents[docIdx] };
+          doc.last_reviewed_at = now;
+          doc.next_review_date = nextDate;
+          doc.review_history = [...(doc.review_history || []), historyEntry];
+          updatedDocs = [...state.documents];
+          updatedDocs[docIdx] = doc;
+        }
+      } else if (schedule.documentCategory === 'EXTERNAL' && state.externalDocuments) {
+        const docIdx = state.externalDocuments.findIndex(d => 
+          (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber))
+        );
+        if (docIdx !== -1) {
+          const doc = { ...state.externalDocuments[docIdx] };
+          doc.last_reviewed_at = now;
+          doc.last_verified_at = now;
+          doc.next_review_date = nextDate;
+          doc.review_history = [...(doc.review_history || []), historyEntry];
+          updatedExtDocs = [...state.externalDocuments];
+          updatedExtDocs[docIdx] = doc;
+        }
+      }
     }
 
     schedules[scheduleIndex] = schedule;
@@ -2044,8 +2237,11 @@ const useStore = create(persist((set, get) => ({
     });
 
     return {
+      documents: updatedDocs,
+      externalDocuments: updatedExtDocs,
       periodicReviewSchedules: schedules,
       periodicReviewTasks: tasks,
+      tasks: updatedTasks,
       periodicReviewRecords: records,
       actionLog: [{
         id: `LOG-${Date.now()}`,
@@ -2129,7 +2325,7 @@ const useStore = create(persist((set, get) => ({
    *
    * @param {{ scheduleId, isExternal, outcome, comment, reviewer, reviewDate }} payload
    */
-  recordPeriodicReview: ({ scheduleId, outcome, comment, reviewer, reviewDate }) => set(state => {
+  recordPeriodicReview: ({ scheduleId, outcome, comment, reviewer, reviewDate, verificationChannel }) => set(state => {
     const schedules = [...(state.periodicReviewSchedules || [])];
     const idx = schedules.findIndex(s => s.id === scheduleId);
     if (idx === -1) return state;
@@ -2145,17 +2341,20 @@ const useStore = create(persist((set, get) => ({
       reviewerId: state.currentUser?.id || null,
       outcome,
       comment: comment || '',
+      channel: verificationChannel || null,
       previousNextReviewDate: schedule.nextReviewDate || null,
     };
 
-    if (outcome === 'CONFIRM_CONTINUE') {
-      // Roll review date +1 year from the review date itself
-      const newBase = now;
-      const nextDate = (() => {
-        const d = new Date(newBase);
-        d.setFullYear(d.getFullYear() + 1);
-        return d.toISOString().split('T')[0];
-      })();
+    if (outcome === 'CONFIRM_CONTINUE' || outcome === 'NO_CHANGE') {
+      // Determine cycle years:
+      // QP/SOP = 1 yr, WI/FM = 2 yr, External = verification_frequency
+      const isExternal = schedule.documentCategory === 'EXTERNAL';
+      const cycleYears = schedule.cycleYears || 
+        (!isExternal 
+          ? getReviewCycleYears(schedule.documentNumber || '') 
+          : (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1));
+      
+      const nextDate = addYears(now, cycleYears);
       logEntry.newNextReviewDate = nextDate;
 
       schedule.lastReviewedDate = now;
@@ -2167,17 +2366,82 @@ const useStore = create(persist((set, get) => ({
       schedule.updatedAt = new Date().toISOString();
       schedules[idx] = schedule;
 
+      let updatedDocs = state.documents;
+      let updatedExtDocs = state.externalDocuments;
+
+      const reviewHistoryEntry = {
+        id: logEntry.id,
+        reviewer: reviewer || state.currentUser?.name || '-',
+        reviewerId: state.currentUser?.id || null,
+        reviewDate: now,
+        comment: comment || '',
+        outcome: 'NO_CHANGE',
+        channel: verificationChannel || null,
+        nextReviewDate: nextDate
+      };
+
+      if (!isExternal && state.documents && state.documents.length > 0) {
+        const docIdx = state.documents.findIndex(d => 
+          (schedule.documentId && d.id === schedule.documentId) || 
+          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber))
+        );
+        if (docIdx !== -1) {
+          const doc = { ...state.documents[docIdx] };
+          // 🛡️ Criteria 2: Revision remains strictly unchanged!
+          doc.last_reviewed_at = now;
+          doc.next_review_date = nextDate;
+          doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
+          updatedDocs = [...state.documents];
+          updatedDocs[docIdx] = doc;
+        }
+      } else if (isExternal && state.externalDocuments && state.externalDocuments.length > 0) {
+        const docIdx = state.externalDocuments.findIndex(d => 
+          (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber))
+        );
+        if (docIdx !== -1) {
+          const doc = { ...state.externalDocuments[docIdx] };
+          doc.last_reviewed_at = now;
+          doc.last_verified_at = now;
+          doc.next_review_date = nextDate;
+          if (verificationChannel) doc.verification_channel = verificationChannel;
+          doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
+          updatedExtDocs = [...state.externalDocuments];
+          updatedExtDocs[docIdx] = doc;
+        }
+      }
+
+      // Close tasks in state.tasks and state.periodicReviewTasks
+      const updatedTasks = (state.tasks || []).map(t => {
+        if (t.scheduleId === scheduleId || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
+          return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+
+      const updatedPeriodicReviewTasks = (state.periodicReviewTasks || []).map(t => {
+        if (t.scheduleId === scheduleId || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
+          return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+
       const records = [...(state.periodicReviewRecords || []), {
         id: logEntry.id,
         scheduleId,
         outcome,
         comment,
+        channel: verificationChannel || null,
         reviewedByUserId: state.currentUser?.id,
         reviewedAt: new Date().toISOString()
       }];
 
       return {
+        documents: updatedDocs,
+        externalDocuments: updatedExtDocs,
         periodicReviewSchedules: schedules,
+        periodicReviewTasks: updatedPeriodicReviewTasks,
+        tasks: updatedTasks,
         periodicReviewRecords: records,
         actionLog: [{
           id: `LOG-${Date.now()}`,
@@ -2195,6 +2459,105 @@ const useStore = create(persist((set, get) => ({
     schedules[idx] = schedule;
     return { periodicReviewSchedules: schedules };
   }),
+
+  confirmPeriodicReviewNoChange: (payload) => {
+    return get().recordPeriodicReview({
+      ...payload,
+      outcome: 'CONFIRM_CONTINUE'
+    });
+  },
+
+  verifyExternalDocument: ({ scheduleId, docId, verificationChannel, verificationResult, comment, reviewer, verificationDate }) => {
+    const state = get();
+    const now = verificationDate || new Date().toISOString().split('T')[0];
+    
+    // Mandatory validation (Criterion 3)
+    if (!verificationChannel || !verificationResult) {
+      throw new Error('กรุณาระบุช่องทางการตรวจสอบและผลการตรวจสอบ');
+    }
+
+    if (verificationResult === 'CURRENT_VALID' || verificationResult === 'NO_CHANGE' || verificationResult === 'CONFIRM_CONTINUE') {
+      return state.recordPeriodicReview({
+        scheduleId,
+        outcome: 'CONFIRM_CONTINUE',
+        comment,
+        reviewer,
+        reviewDate: now,
+        verificationChannel
+      });
+    }
+
+    if (verificationResult === 'NEW_VERSION_FOUND' || verificationResult === 'SUPERSEDED') {
+      const schedules = [...(state.periodicReviewSchedules || [])];
+      const schIdx = schedules.findIndex(s => s.id === scheduleId || s.externalDocumentId === docId);
+      let targetSchedule = schIdx !== -1 ? { ...schedules[schIdx] } : null;
+
+      let updatedExtDocs = [...(state.externalDocuments || [])];
+      const docIdx = updatedExtDocs.findIndex(d => d.id === docId || (targetSchedule && d.id === targetSchedule.externalDocumentId));
+      let supersededDoc = null;
+
+      if (docIdx !== -1) {
+        supersededDoc = {
+          ...updatedExtDocs[docIdx],
+          status: 'SUPERSEDED',
+          is_superseded: true,
+          superseded_date: now,
+          superseded_reason: `ตรวจพบฉบับใหม่จากแหล่งอ้างอิง (${verificationChannel}): ${comment || ''}`,
+          review_history: [
+            ...(updatedExtDocs[docIdx].review_history || []),
+            {
+              id: `EXT-VER-${Date.now()}`,
+              reviewer: reviewer || state.currentUser?.name || '-',
+              date: now,
+              channel: verificationChannel,
+              result: 'NEW_VERSION_FOUND',
+              comment: comment || ''
+            }
+          ],
+          updated_at: new Date().toISOString()
+        };
+        updatedExtDocs[docIdx] = supersededDoc;
+      }
+
+      if (targetSchedule) {
+        targetSchedule.status = 'CANCELLED_BY_DOCUMENT_STATUS';
+        targetSchedule.isActive = false;
+        targetSchedule.updatedAt = new Date().toISOString();
+        schedules[schIdx] = targetSchedule;
+      }
+
+      const updatedTasks = (state.tasks || []).map(t => {
+        if (t.scheduleId === scheduleId || (t.docId && (t.docId === docId || t.docId === targetSchedule?.externalDocumentId))) {
+          return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+
+      const updatedPeriodicReviewTasks = (state.periodicReviewTasks || []).map(t => {
+        if (t.scheduleId === scheduleId || (t.docId && (t.docId === docId || t.docId === targetSchedule?.externalDocumentId))) {
+          return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+
+      set({
+        externalDocuments: updatedExtDocs,
+        periodicReviewSchedules: schedules,
+        periodicReviewTasks: updatedPeriodicReviewTasks,
+        tasks: updatedTasks,
+        actionLog: [{
+          id: `LOG-${Date.now()}`,
+          actionType: 'EXTERNAL_DOC_SUPERSEDED_BY_VERIFICATION',
+          details: `เอกสารภายนอก ${supersededDoc?.edCode || docId} ตกรุ่น (ตรวจพบฉบับใหม่: ${verificationChannel})`,
+          actor: state.currentUser?.name,
+          actorId: state.currentUser?.id,
+          date: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      });
+
+      return { success: true, supersededDoc, shouldOpenRegister: true };
+    }
+  },
 
   syncRevisionEffective: (dar) => {
     syncRevisionEffective(dar, get, set);
@@ -2669,8 +3032,10 @@ const useStore = create(persist((set, get) => ({
           docId: newId,
           external_doc_id: newId,
           externalDocId: newId,
+          document_code: edCode,
           doc_code: edCode,
           docCode: edCode,
+          document_title: doc.title,
           doc_title: doc.title,
           docTitle: doc.title,
           doc_type: 'ED',
@@ -4016,8 +4381,10 @@ const useStore = create(persist((set, get) => ({
               docId: doc.id,
               external_doc_id: doc.id,
               externalDocId: doc.id,
+              document_code: docCode,
               doc_code: docCode,
               docCode: docCode,
+              document_title: doc.title,
               doc_title: doc.title,
               docTitle: doc.title,
               doc_type: 'ED',
@@ -6677,13 +7044,20 @@ const useStore = create(persist((set, get) => ({
                 const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
                 const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
                 const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
+                const copyDocCode = newDoc.document_code || newDoc.code || newDoc.doc_code || newDoc.title;
+                const copyDocTitle = newDoc.document_title || newDoc.docName || newDoc.name || dar.title || copyDocCode;
+                const copyId = buildControlledCopyId(copyDocCode, newDoc.rev, copyNo);
                 const newInst = {
-                  id: `inst-${Date.now()}-${idx}`,
+                  id: copyId,
                   doc_id: newDoc.id,
                   docId: newDoc.id,
-                  doc_code: newDoc.title,
-                  docTitle: newDoc.title,
-                  docName: newDoc.name,
+                  document_code: copyDocCode,
+                  doc_code: copyDocCode,
+                  docCode: copyDocCode,
+                  document_title: copyDocTitle,
+                  doc_title: copyDocTitle,
+                  docName: copyDocTitle,
+                  docTitle: copyDocCode,
                   doc_version: newDoc.rev,
                   rev: newDoc.rev,
                   copy_no: copyNo,
@@ -6713,6 +7087,9 @@ const useStore = create(persist((set, get) => ({
                   copy_type: 'CONTROLLED',
                   copyType: 'CONTROLLED',
                   status: 'PENDING_ISSUE',
+                  is_active_in_field: false,
+                  received_by: null,
+                  received_at: null,
                   is_replacement: false,
                   dispatched_at: null,
                   dispatched_by: null,
@@ -6723,8 +7100,9 @@ const useStore = create(persist((set, get) => ({
                   recall_task_id: null
                 };
                 const alreadyExists = newControlledCopyInstances.some(inst => {
+                  if (inst.id === copyId) return true;
                   const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
-                                     (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+                                     (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title || inst.doc_code === copyDocCode);
                   const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
                   const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
                   return isMatchDoc && isMatchRev && isMatchCopyNo;
@@ -6845,7 +7223,7 @@ const useStore = create(persist((set, get) => ({
 
                     return {
                       ...inst,
-                      status: 'SUPERSEDED_PENDING_RECALL',
+                      status: 'PENDING_RECALL',
                       is_superseded: true,
                       superseded_at: new Date().toISOString(),
                       superseded_by_dar: dar.dar_no || dar.id,
@@ -6891,7 +7269,7 @@ const useStore = create(persist((set, get) => ({
                     targetRevision: oldRev,
                     revision: oldRev,
                     doc_version: oldRev,
-                    title: `[เรียกคืนสำเนาตกรุ่น] ${recallDocOfficialTitle} (${targetCode} Rev.${oldRev})`,
+                    title: `[เรียกคืนสำเนาตกรุ่น] เรียกคืนเอกสาร Controlled Copy: ${recallDocOfficialTitle} (${targetCode} Rev.${oldRev})`,
                     description: `เอกสาร ${targetCode} (${recallDocOfficialTitle}) มีการอัปเดตเป็น Rev.${newDoc.rev} แล้ว กรุณาเรียกคืนเอกสารฉบับเดิม (Rev.${oldRev}) จากทุกสถานีใช้งาน (${oldCopiesToRecall.length} จุด)`,
                     copies_to_recall: oldCopiesToRecall.map(c => ({
                       id: c.id,
@@ -6960,13 +7338,20 @@ const useStore = create(persist((set, get) => ({
                     const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
                     const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
+                    const copyDocCode = newDoc.document_code || newDoc.code || newDoc.doc_code || newDoc.title;
+                    const copyDocTitle = newDoc.document_title || newDoc.docName || newDoc.name || copyDocCode;
+                    const copyId = buildControlledCopyId(copyDocCode, newDoc.rev, copyNo);
                     const newInst = {
-                      id: `inst-${Date.now()}-${idx}`,
+                      id: copyId,
                       doc_id: newDoc.id,
                       docId: newDoc.id,
-                      doc_code: newDoc.title,
-                      docTitle: newDoc.title,
-                      docName: newDoc.name,
+                      document_code: copyDocCode,
+                      doc_code: copyDocCode,
+                      docCode: copyDocCode,
+                      document_title: copyDocTitle,
+                      doc_title: copyDocTitle,
+                      docName: copyDocTitle,
+                      docTitle: copyDocCode,
                       doc_version: newDoc.rev,
                       rev: newDoc.rev,
                       revision: newDoc.rev,
@@ -6997,6 +7382,9 @@ const useStore = create(persist((set, get) => ({
                       copy_type: 'CONTROLLED',
                       copyType: 'CONTROLLED',
                       status: 'PENDING_ISSUE',
+                      is_active_in_field: false,
+                      received_by: null,
+                      received_at: null,
                       is_replacement: false,
                       dispatched_at: null,
                       dispatched_by: null,
@@ -7007,8 +7395,9 @@ const useStore = create(persist((set, get) => ({
                       recall_task_id: null
                     };
                     const alreadyExists = newControlledCopyInstances.some(inst => {
+                      if (inst.id === copyId) return true;
                       const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
-                                         (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+                                         (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title || inst.doc_code === copyDocCode);
                       const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
                       const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
                       return isMatchDoc && isMatchRev && isMatchCopyNo;
@@ -7165,8 +7554,9 @@ const useStore = create(persist((set, get) => ({
       externalDocuments: newExtDocs,
       documents: newDocuments,
       timeline: newTimeline,
-      documentControlledCopies: newControlledCopyInstances,
-      controlledCopyInstances: newControlledCopyInstances,
+      documentControlledCopies: sanitizeControlledCopies(newControlledCopyInstances),
+      controlledCopyInstances: sanitizeControlledCopies(newControlledCopyInstances),
+      controlledCopies: sanitizeControlledCopies(newControlledCopyInstances),
       controlledCopyAuditTrail: newAuditTrail,
       notifications: newNotifications,
       actionLog: newActionLog,
@@ -7662,6 +8052,7 @@ const useStore = create(persist((set, get) => ({
       display_status: 'ACTIVE',
       receipt_status: 'ACTIVE',
       isActive: true,
+      is_active_in_field: true,
       received_by: confirmedBy,
       received_by_id: actorUserId,
       received_by_name: confirmedBy,
@@ -7993,7 +8384,7 @@ const useStore = create(persist((set, get) => ({
         targetRevision: 'ALL',
         revision: 'ALL',
         doc_version: 'ALL',
-        title: `[เรียกคืนสำเนาขอยกเลิก] ${docOfficialTitle} (${targetDocCode})`,
+        title: `[เรียกคืนสำเนาขอยกเลิก] เรียกคืนเอกสาร Controlled Copy: ${docOfficialTitle} (${targetDocCode})`,
         description: `เอกสาร ${targetDocCode} ทุก Revision ถูกยกเลิกถาวรตาม ${darNo} กรุณาเรียกคืนสำเนาจากทุกจุด (${obsoleteCopiesToRecall.length} ชุด) และดำเนินการทำลาย/ประทับตรา OBSOLETE`,
         copies_to_recall: obsoleteCopiesToRecall.map(c => ({
           id: c.id,
@@ -8447,6 +8838,9 @@ const useStore = create(persist((set, get) => ({
     let newCreatedCopies = [];
     let newAuditLogs = [...(state.controlledCopyAuditTrail || [])];
     let newTasks = [...state.tasks];
+    const currentCopies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
 
     if (!isFormDoc) {
       const allocations = calculateCopyAllocations(createdDoc.department, createdDoc.distributions || []);
@@ -8461,13 +8855,20 @@ const useStore = create(persist((set, get) => ({
           const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
           const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
+          const copyDocCode = targetCode || createdDoc.document_code || createdDoc.code || createdDoc.doc_code || createdDoc.title;
+          const copyDocTitle = createdDoc.document_title || createdDoc.docName || createdDoc.name || dar.title || copyDocCode;
+          const copyId = buildControlledCopyId(copyDocCode, createdDoc.rev, copyNo);
           const newInst = {
-            id: `inst-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+            id: copyId,
             doc_id: createdDoc.id,
             docId: createdDoc.id,
-            doc_code: createdDoc.title,
-            docTitle: createdDoc.title,
-            docName: createdDoc.name,
+            document_code: copyDocCode,
+            doc_code: copyDocCode,
+            docCode: copyDocCode,
+            document_title: copyDocTitle,
+            doc_title: copyDocTitle,
+            docName: copyDocTitle,
+            docTitle: copyDocCode,
             doc_version: createdDoc.rev,
             rev: createdDoc.rev,
             copy_no: copyNo,
@@ -8497,6 +8898,9 @@ const useStore = create(persist((set, get) => ({
             copy_type: 'CONTROLLED',
             copyType: 'CONTROLLED',
             status: 'PENDING_ISSUE',
+            is_active_in_field: false,
+            received_by: null,
+            received_at: null,
             is_replacement: false,
             dispatched_at: null,
             dispatched_by: null,
@@ -8506,7 +8910,16 @@ const useStore = create(persist((set, get) => ({
             receipt_remarks: null,
             recall_task_id: null
           };
-          newCreatedCopies.push(newInst);
+
+          const alreadyExists = currentCopies.some(c => c.id === copyId || (
+            (c.doc_code === copyDocCode || c.docTitle === copyDocCode || c.docId === createdDoc.id) &&
+            String(c.rev || c.doc_version || c.revision) === String(createdDoc.rev) &&
+            String(c.copy_no || c.copyNo || c.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '')
+          )) || newCreatedCopies.some(c => c.id === copyId);
+
+          if (!alreadyExists) {
+            newCreatedCopies.push(newInst);
+          }
 
           newAuditLogs.unshift({
             id: `audit-${Date.now()}-${idx}`,
@@ -8582,10 +8995,7 @@ const useStore = create(persist((set, get) => ({
       return d;
     });
 
-    const currentCopies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
-      ? state.controlledCopyInstances
-      : (state.documentControlledCopies || []);
-    const finalCopies = [...currentCopies, ...newCreatedCopies];
+    const finalCopies = sanitizeControlledCopies([...currentCopies, ...newCreatedCopies]);
 
     const actionLogEntry = {
       id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -8639,6 +9049,7 @@ const useStore = create(persist((set, get) => ({
       darRequests: updatedDarRequests,
       controlledCopyInstances: finalCopies,
       documentControlledCopies: finalCopies,
+      controlledCopies: finalCopies,
       tasks: cleanupDccTasks(newTasks, finalCopies, updatedDocs),
       controlledCopyAuditTrail: newAuditLogs,
       notifications: newNotifications,
@@ -8669,26 +9080,29 @@ const useStore = create(persist((set, get) => ({
 
     let updatedDocs = [...(state.documents || [])];
 
-    // 1. ถอดฉบับเดิมออกเป็น SUPERSEDED โดยสร้าง ID เฉพาะตัวและเก็บรักษาไว้ถาวร (ป้องกัน overwrite)
-    if (currentActiveDoc) {
-      const prevRevClean = String(currentActiveDoc.revision || currentActiveDoc.rev || previousRev || '00').replace(/^rev\.?/i, '').trim();
-      const supersededSnapshot = {
-        ...currentActiveDoc,
-        id: `${cleanDocCode}_REV_${prevRevClean}_${Date.now()}`,
-        status: 'SUPERSEDED',
-        is_active: false,
-        is_superseded: true,
-        supersededAt: now,
-        superseded_at: now,
-        supersededByRev: targetRev,
-        darRef: currentActiveDoc.darRef || currentActiveDoc.darId || dar.dar_no || dar.darNo || dar.darNumber || dar.id
-      };
+    // 1. ถอดฉบับเดิมทุกฉบับที่มีรหัสเดียวกันออกเป็น SUPERSEDED ทันทีแบบ Atomic (Single-Active ISO 9001 Invariant)
+    updatedDocs = updatedDocs.map(d => {
+      const c = d.document_code || d.doc_code || d.code || d.docCode || d.docNo || d.title;
+      const isSameCode = c && cleanDocCode && c.trim().toLowerCase() === cleanDocCode.trim().toLowerCase();
+      const isCurrentlyActive = (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || Boolean(d.is_active));
 
-      // อัปเดตรายการเดิมเป็น SUPERSEDED (เก็บไว้ใน Array ไม่ลบ และไม่ทับตัวเก่า)
-      updatedDocs = updatedDocs.map(d => 
-        d.id === currentActiveDoc.id ? supersededSnapshot : d
-      );
-    }
+      if (isSameCode && isCurrentlyActive) {
+        const docRev = String(d.revision || d.rev || previousRev || '00').replace(/^rev\.?/i, '').trim();
+        const hasRevInId = d.id && d.id.includes(`_REV_${docRev}`);
+        return {
+          ...d,
+          id: hasRevInId ? d.id : `${cleanDocCode}_REV_${docRev}_${Date.now()}`,
+          status: 'SUPERSEDED',
+          is_active: false,
+          is_superseded: true,
+          supersededAt: now,
+          superseded_at: now,
+          supersededByRev: targetRev,
+          darRef: d.darRef || d.darId || dar.dar_no || dar.darNo || dar.darNumber || dar.id
+        };
+      }
+      return d;
+    });
 
     // 2. เพิ่มหรืออัปเดตฉบับใหม่ให้เป็น EFFECTIVE
     const newEffectiveDocId = `${cleanDocCode}_REV_${targetRev}`;
@@ -8737,12 +9151,122 @@ const useStore = create(persist((set, get) => ({
     const updatedDars = (state.dars || []).map(d => (d.id === darId || d.dar_no === darId || d.darNumber === darId) ? { ...d, status: 'COMPLETED' } : d);
     const updatedDarRequests = (state.darRequests || []).map(d => (d.id === darId || d.dar_no === darId || d.darNumber === darId) ? { ...d, status: 'COMPLETED' } : d);
 
+    // 3. Synchronize controlled copies lifecycle for the promoted DAR (ISO 9001 Clause 7.5.3)
+    const currentCopies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
+      ? state.controlledCopyInstances
+      : (state.documentControlledCopies || []);
+
+    let updatedCopies = currentCopies.map(c => {
+      const matchDoc = (c.doc_code && c.doc_code.trim().toLowerCase() === cleanDocCode.trim().toLowerCase()) ||
+                       (c.docTitle && c.docTitle.trim().toLowerCase() === cleanDocCode.trim().toLowerCase()) ||
+                       (c.document_code && c.document_code.trim().toLowerCase() === cleanDocCode.trim().toLowerCase()) ||
+                       (currentActiveDoc && (String(c.docId || c.doc_id) === String(currentActiveDoc.id)));
+      const isOldRev = String(c.rev || c.revision || c.doc_version || '00').replace(/^rev\.?/i, '').trim() !== String(targetRev).replace(/^rev\.?/i, '').trim();
+
+      if (matchDoc && isOldRev) {
+        return {
+          ...c,
+          status: 'PENDING_RECALL',
+          is_superseded: true,
+          is_active_in_field: false,
+          superseded_at: now,
+          superseded_by_rev: targetRev
+        };
+      }
+      return c;
+    });
+
+    const distributions = dar.distributions || newEffectiveDoc.distributions || [];
+    let newCreatedCopies = [];
+    if (distributions.length > 0) {
+      const allocations = calculateCopyAllocations(newEffectiveDoc.department, distributions);
+      const allTargets = allocations.allAllocations || [];
+      allTargets.forEach((dist, idx) => {
+        const deptName = dist.departmentId || dist.dept || dist.dept_code || newEffectiveDoc.department;
+        const locName = cleanLocationName(dist.station_name || dist.locationName || dist.name || dist.location || `${deptName} Head Office`);
+        const locId = dist.station_id || dist.locationId || dist.id || `${deptName}-LOC-${idx + 1}`;
+        const copyNo = dist.copy_no || dist.copyNo || String(idx + 1).padStart(2, '0');
+        const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
+        const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
+        const copyId = buildControlledCopyId(cleanDocCode, targetRev, copyNo);
+
+        const newInst = {
+          id: copyId,
+          doc_id: newEffectiveDocId,
+          docId: newEffectiveDocId,
+          document_code: cleanDocCode,
+          doc_code: cleanDocCode,
+          docCode: cleanDocCode,
+          document_title: newEffectiveDoc.title,
+          doc_title: newEffectiveDoc.title,
+          docName: newEffectiveDoc.title,
+          docTitle: cleanDocCode,
+          doc_version: targetRev,
+          rev: targetRev,
+          revision: targetRev,
+          copy_no: copyNo,
+          copyNo: copyNo,
+          ccNumber: nextCcNum,
+          issue_no: '01',
+          issueNumber: 'I01',
+          holder_dept: deptName,
+          department: deptName,
+          departmentId: deptName,
+          dept_code: deptName,
+          target_department: deptName,
+          targetDepartment: deptName,
+          recipientDepartment: deptName,
+          recipient_department: deptName,
+          owner_dept: newEffectiveDoc.department,
+          holder_name: `${deptName} (${locName})`,
+          location: locName,
+          locationName: locName,
+          locationId: locId,
+          station_id: locId,
+          station_name: locName,
+          is_master: isOrigin,
+          isMaster: isOrigin,
+          is_owner: isOrigin,
+          isOwner: isOrigin,
+          copy_type: 'CONTROLLED',
+          copyType: 'CONTROLLED',
+          status: 'PENDING_ISSUE',
+          is_active_in_field: false,
+          received_by: null,
+          received_at: null,
+          receipt_confirmed_at: null,
+          receipt_confirmed_by: null,
+          receipt_remarks: null,
+          is_replacement: false,
+          dispatched_at: null,
+          dispatched_by: null,
+          dateIssued: now.split('T')[0],
+          recall_task_id: null
+        };
+
+        const alreadyExists = updatedCopies.some(c => c.id === copyId || (
+          (c.doc_code === cleanDocCode || c.docTitle === cleanDocCode) &&
+          String(c.rev || c.doc_version || c.revision) === String(targetRev) &&
+          String(c.copy_no || c.copyNo || c.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '')
+        )) || newCreatedCopies.some(c => c.id === copyId);
+
+        if (!alreadyExists) {
+          newCreatedCopies.push(newInst);
+        }
+      });
+    }
+
+    const finalCopies = sanitizeControlledCopies([...updatedCopies, ...newCreatedCopies]);
+
     return {
       documents: updatedDocs,
       masterDocuments: updatedDocs,
       supersededDocuments: updatedDocs.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
       dars: updatedDars,
-      darRequests: updatedDarRequests
+      darRequests: updatedDarRequests,
+      controlledCopyInstances: finalCopies,
+      documentControlledCopies: finalCopies,
+      controlledCopies: finalCopies
     };
   }),
 
@@ -8981,7 +9505,7 @@ const useStore = create(persist((set, get) => ({
         const prevRevClean = docRev || '00';
         return {
           ...doc,
-          id: `${targetCode || doc.document_code || doc.code || 'DOC'}_REV_${prevRevClean}_${Date.now()}`,
+          id: doc.id || `${targetCode || doc.document_code || doc.code || 'DOC'}_REV_${prevRevClean}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
@@ -9025,7 +9549,7 @@ const useStore = create(persist((set, get) => ({
       doc_code: targetCode || dar.docNo || oldDoc?.doc_code || oldDoc?.document_code || oldDoc?.code || oldDoc?.title,
       code: targetCode || dar.docNo || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
       docCode: targetCode || dar.docNo || oldDoc?.code || oldDoc?.document_code || oldDoc?.title,
-      title: dar.docTitle || dar.title || (oldDoc ? oldDoc.title : targetCode),
+      title: (oldDoc ? oldDoc.title : null) || targetCode || dar.docNo || dar.docCode || dar.docTitle || dar.title,
       name: dar.docTitle || dar.title || (oldDoc ? (oldDoc.name || oldDoc.title) : 'Procedure Document'),
       docName: dar.docTitle || dar.title || (oldDoc ? (oldDoc.docName || oldDoc.title) : 'Procedure Document'),
       docTitle: dar.docTitle || dar.title || (oldDoc ? oldDoc.docTitle : targetCode),
@@ -9132,8 +9656,9 @@ const useStore = create(persist((set, get) => ({
 
         return {
           ...copy,
-          status: 'SUPERSEDED_PENDING_RECALL',
+          status: 'PENDING_RECALL',
           is_superseded: true,
+          is_active_in_field: false,
           superseded_at: new Date().toISOString(),
           superseded_by_dar: dar.dar_no || dar.id,
           superseded_by_rev: newRevStr,
@@ -9155,15 +9680,23 @@ const useStore = create(persist((set, get) => ({
       const nextCcNum = `CC-${String(idx + 1).padStart(3, '0')}`;
       const isOrigin = dist.isOwner || dist.copyNo === '01' || copyNo === '01';
 
+      const copyDocCode = newDoc.document_code || newDoc.code || newDoc.doc_code || newDoc.title;
+      const copyDocTitle = newDoc.document_title || newDoc.docName || newDoc.name || dar.title || copyDocCode;
+      const copyId = buildControlledCopyId(copyDocCode, newDoc.rev, copyNo);
       const newInst = {
-        id: `inst-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+        id: copyId,
         doc_id: newDoc.id,
         docId: newDoc.id,
-        doc_code: newDoc.title,
-        docTitle: newDoc.title,
-        docName: newDoc.name,
+        document_code: copyDocCode,
+        doc_code: copyDocCode,
+        docCode: copyDocCode,
+        document_title: copyDocTitle,
+        doc_title: copyDocTitle,
+        docName: copyDocTitle,
+        docTitle: copyDocCode,
         doc_version: newDoc.rev,
         rev: newDoc.rev,
+        revision: newDoc.rev,
         copy_no: copyNo,
         copyNo: copyNo,
         ccNumber: nextCcNum,
@@ -9191,6 +9724,9 @@ const useStore = create(persist((set, get) => ({
         copy_type: 'CONTROLLED',
         copyType: 'CONTROLLED',
         status: 'PENDING_ISSUE',
+        is_active_in_field: false,
+        received_by: null,
+        received_at: null,
         is_replacement: false,
         dispatched_at: null,
         dispatched_by: null,
@@ -9201,12 +9737,13 @@ const useStore = create(persist((set, get) => ({
         recall_task_id: null
       };
       const alreadyExists = currentCopies.some(inst => {
+        if (inst.id === copyId) return true;
         const isMatchDoc = (String(inst.docId || inst.doc_id) === String(newDoc.id)) ||
-                           (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title);
+                           (inst.doc_code === newDoc.title || inst.docTitle === newDoc.title || inst.doc_code === copyDocCode);
         const isMatchRev = String(inst.rev || inst.doc_version || inst.revision) === String(newDoc.rev);
         const isMatchCopyNo = String(inst.copy_no || inst.copyNo || inst.ccNumber).replace(/\D/g, '') === String(copyNo).replace(/\D/g, '');
         return isMatchDoc && isMatchRev && isMatchCopyNo;
-      });
+      }) || newCreatedCopies.some(c => c.id === copyId);
       if (!alreadyExists) {
         newCreatedCopies.push(newInst);
       }
@@ -9332,7 +9869,7 @@ const useStore = create(persist((set, get) => ({
       timestamp: new Date().toISOString()
     };
 
-    const finalCopies = [...updatedCopies, ...newCreatedCopies];
+    const finalCopies = sanitizeControlledCopies([...updatedCopies, ...newCreatedCopies]);
 
     const newNotifications = [...(state.notifications || [])];
     if (dar.requesterId) {
@@ -9420,6 +9957,7 @@ const useStore = create(persist((set, get) => ({
       darRequests: updatedDarRequests,
       controlledCopyInstances: finalCopies,
       documentControlledCopies: finalCopies,
+      controlledCopies: finalCopies,
       tasks: cleanupDccTasks(newTasks, finalCopies, updatedDocs),
       controlledCopyAuditTrail: newAuditLogs,
       notifications: newNotifications,
@@ -9438,13 +9976,20 @@ const useStore = create(persist((set, get) => ({
     const locName = location || `${dept} Head Office`;
     const locId = locationId || `${dept}-LOC-${existingCopies.length + 1}`;
 
+    const docCode = doc.document_code || doc.code || doc.doc_code || doc.docNo || doc.title;
+    const docOfficialTitle = doc.document_title || doc.doc_title || doc.docName || doc.name || docCode;
+
     const newInst = {
       id: `inst-${Date.now()}`,
       doc_id: doc.id,
       docId: doc.id,
-      doc_code: doc.title,
-      docTitle: doc.title,
-      docName: doc.name,
+      document_code: docCode,
+      doc_code: docCode,
+      docCode: docCode,
+      document_title: docOfficialTitle,
+      doc_title: docOfficialTitle,
+      docName: docOfficialTitle,
+      docTitle: docCode,
       doc_version: doc.rev,
       rev: doc.rev,
       copy_no: copyNo,
@@ -9557,9 +10102,11 @@ const useStore = create(persist((set, get) => ({
         docId: doc.id,
         external_doc_id: isExternal ? doc.id : null,
         externalDocId: isExternal ? doc.id : null,
+        document_code: docCode,
         doc_code: docCode,
         docCode: docCode,
-        doc_title: docTitle,
+        document_title: docName,
+        doc_title: docName,
         docTitle: docTitle,
         doc_type: isExternal ? 'ED' : (doc.type || 'SOP'),
         docType: isExternal ? 'ED' : (doc.type || 'SOP'),
@@ -9812,8 +10359,10 @@ const useStore = create(persist((set, get) => ({
       docId: inst.doc_id || inst.docId,
       external_doc_id: inst.external_doc_id || inst.externalDocId,
       externalDocId: inst.external_doc_id || inst.externalDocId,
+      document_code: docCode,
       doc_code: docCode,
       docCode: docCode,
+      document_title: docOfficialTitle,
       doc_title: docOfficialTitle,
       docTitle: docOfficialTitle,
       docName: docOfficialTitle,
@@ -11038,6 +11587,12 @@ const useStore = create(persist((set, get) => ({
     const newInst = {
       ...oldInst,
       id: `inst-${Date.now()}`,
+      document_code: oldInst.document_code || oldInst.doc_code || oldInst.code || oldInst.docNo,
+      doc_code: oldInst.document_code || oldInst.doc_code || oldInst.code || oldInst.docNo,
+      docCode: oldInst.document_code || oldInst.doc_code || oldInst.code || oldInst.docNo,
+      document_title: oldInst.document_title || oldInst.doc_title || oldInst.docName || oldInst.name,
+      doc_title: oldInst.document_title || oldInst.doc_title || oldInst.docName || oldInst.name,
+      docName: oldInst.document_title || oldInst.doc_title || oldInst.docName || oldInst.name,
       copy_no: oldInst.copy_no || oldInst.ccNumber,
       ccNumber: oldInst.copy_no || oldInst.ccNumber,
       issue_no: nextIssueNo,
@@ -12759,8 +13314,19 @@ const useStore = create(persist((set, get) => ({
   setTimeline: (timeline) => set({ timeline })
 }), {
   name: 'qms-storage-uat-v7',
-  version: 4,
+  version: 5,
   migrate: (persistedState, version) => {
+    if (!version || version < 5) {
+      if (Array.isArray(persistedState.controlledCopyInstances) || Array.isArray(persistedState.documentControlledCopies)) {
+        const rawCopies = persistedState.controlledCopyInstances || persistedState.documentControlledCopies || [];
+        const cleanedCopies = sanitizeControlledCopies(rawCopies);
+        persistedState.controlledCopyInstances = cleanedCopies;
+        persistedState.documentControlledCopies = cleanedCopies;
+        if (Array.isArray(persistedState.controlledCopies)) {
+          persistedState.controlledCopies = cleanedCopies;
+        }
+      }
+    }
     if (!version || version < 4) {
       if (persistedState.masterUsers && Array.isArray(persistedState.masterUsers)) {
         persistedState.masterUsers = persistedState.masterUsers.map(u => {
@@ -13154,33 +13720,52 @@ const useStore = create(persist((set, get) => ({
     periodicReviewTasks: state.periodicReviewTasks,
     periodicReviewRecords: state.periodicReviewRecords
   }),
-  storage: createJSONStorage(() => ({
-    getItem: (name) => {
-      return localStorage.getItem(name);
-    },
-    setItem: (name, value) => {
-      try {
-        localStorage.setItem(name, value);
-      } catch (error) {
-        if (error.name === 'QuotaExceededError' || error.code === 22) {
-          console.warn(`[Storage] LocalStorage quota exceeded on key "${name}". Running emergency purge.`);
-          
-          const keysToPurge = ['recent_preview_cache', 'temp_pdf_data', 'draft_backups'];
-          keysToPurge.forEach(k => localStorage.removeItem(k));
-
+  storage: createJSONStorage(() => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return {
+        getItem: (name) => {
           try {
-            const compactValue = typeof value === 'object' ? JSON.stringify({ id: value?.id }) : '';
-            localStorage.setItem(name, compactValue);
-          } catch (innerErr) {
-            console.error('[Storage] Safe fallback failed to write. Skipping storage operation.');
+            return window.localStorage.getItem(name);
+          } catch {
+            return null;
           }
-        } else {
-          console.error('[Storage] LocalStorage error:', error);
-        }
-      }
-    },
-    removeItem: (name) => localStorage.removeItem(name),
-  }))
+        },
+        setItem: (name, value) => {
+          try {
+            window.localStorage.setItem(name, value);
+          } catch (error) {
+            if (error?.name === 'QuotaExceededError' || error?.code === 22) {
+              console.warn(`[Storage] LocalStorage quota exceeded on key "${name}". Running emergency purge.`);
+              const keysToPurge = ['recent_preview_cache', 'temp_pdf_data', 'draft_backups'];
+              keysToPurge.forEach(k => {
+                try { window.localStorage.removeItem(k); } catch { /* ignore */ }
+              });
+
+              try {
+                const compactValue = typeof value === 'object' ? JSON.stringify({ id: value?.id }) : '';
+                window.localStorage.setItem(name, compactValue);
+              } catch (innerErr) {
+                console.error('[Storage] Safe fallback failed to write:', innerErr);
+              }
+            } else {
+              console.error('[Storage] LocalStorage error:', error);
+            }
+          }
+        },
+        removeItem: (name) => {
+          try {
+            window.localStorage.removeItem(name);
+          } catch { /* ignore */ }
+        },
+      };
+    }
+    const memStore = new Map();
+    return {
+      getItem: (name) => memStore.get(name) || null,
+      setItem: (name, value) => memStore.set(name, String(value)),
+      removeItem: (name) => memStore.delete(name),
+    };
+  })
 }));
 
 // Auto-cleanup legacy local storage cache and heal stale tasks in storage
@@ -13635,6 +14220,22 @@ if (typeof window !== 'undefined' && window.localStorage) {
         persisted.state.masterDocuments = persisted.state.documents;
         persisted.state.supersededDocuments = persisted.state.documents.filter(d => d.status === 'SUPERSEDED' || d.is_superseded);
         localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration for Controlled Copies: Deduplicate Copy records & Sanitize QM-QC-01
+    if (persisted && persisted.state) {
+      const rawCopies = persisted.state.controlledCopyInstances || persisted.state.documentControlledCopies || [];
+      if (Array.isArray(rawCopies) && rawCopies.length > 0) {
+        const cleanedCopies = sanitizeControlledCopies(rawCopies);
+        if (cleanedCopies.length !== rawCopies.length || JSON.stringify(cleanedCopies) !== JSON.stringify(rawCopies)) {
+          persisted.state.controlledCopyInstances = cleanedCopies;
+          persisted.state.documentControlledCopies = cleanedCopies;
+          if (Array.isArray(persisted.state.controlledCopies)) {
+            persisted.state.controlledCopies = cleanedCopies;
+          }
+          localStorage.setItem(storageKey, JSON.stringify(persisted));
+        }
       }
     }
   } catch {

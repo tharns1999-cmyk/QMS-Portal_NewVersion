@@ -8,6 +8,7 @@ import {
   AlertTriangle, 
   Clock, 
   Building, 
+  Building2, 
   MapPin, 
   FileDown, 
   X, 
@@ -214,7 +215,14 @@ const ControlledCopyRegister = () => {
       return isDocSupersededOrObsolete && (c.status === 'ACTIVE' || c.status === 'ISSUED_ACTIVE' || c.status === 'RECEIVED');
     });
 
-    const active = allCopies.filter(c => c && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE')).length;
+    const active = allCopies.filter(c => {
+      if (!c) return false;
+      if (['PENDING_ISSUE', 'PENDING_PRINT', 'PENDING_DISPATCH', 'DISPATCHED', 'DISPATCHED_PENDING_RECEIPT', 'PENDING_RECEIPT', 'SUPERSEDED_PENDING_RECALL', 'PENDING_RECALL', 'RECALLED_PENDING_DESTRUCTION', 'DESTROYED', 'ARCHIVED_OBSOLETE'].includes(c.status)) return false;
+      if (c.is_active_in_field === false || c.is_superseded || c.is_obsolete) return false;
+      const isStatusActive = ['IN_USE', 'ISSUED_ACTIVE', 'ACTIVE'].includes(c.status);
+      const isFieldActive = c.is_active_in_field === true || (c.is_active_in_field !== false && (Boolean(c.receipt_confirmed_at) || Boolean(c.received_at)));
+      return isStatusActive && isFieldActive;
+    }).length;
 
     return {
       pendingIssue,
@@ -231,7 +239,7 @@ const ControlledCopyRegister = () => {
         id: l.id || `cc-audit-${Math.random()}`,
         timestamp: l.timestamp || l.createdAt || new Date().toISOString(),
         action: l.action || l.actionType || 'กิจกรรมสำเนา',
-        document_code: l.docTitle || l.doc_code || l.document_code || l.title || '-',
+        document_code: l.document_code || l.doc_code || l.code || (!isThaiText(l.docTitle) && l.docTitle ? l.docTitle : null) || (!isThaiText(l.title) && l.title ? l.title : null) || '-',
         copy_number: l.ccNumber || l.copy_no || l.copy_number || '',
         performed_by: l.user || l.actor || l.performed_by || 'DCC Officer',
         details: l.remarks || l.details || l.remark || '-'
@@ -240,7 +248,7 @@ const ControlledCopyRegister = () => {
         id: l.id || `action-log-${Math.random()}`,
         timestamp: l.timestamp || new Date().toISOString(),
         action: l.actionType || l.action || 'บันทึกการทำงาน',
-        document_code: l.docTitle || l.doc_code || l.document_code || l.darNo || '-',
+        document_code: l.document_code || l.doc_code || l.code || (!isThaiText(l.docTitle) && l.docTitle ? l.docTitle : null) || (!isThaiText(l.title) && l.title ? l.title : null) || l.darNo || '-',
         copy_number: l.ccNumber || l.copy_no || l.copy_number || '',
         performed_by: l.actor || l.user || 'DCC Officer',
         details: l.details || l.remark || '-'
@@ -309,13 +317,14 @@ const ControlledCopyRegister = () => {
         c.status === 'PENDING_DISPATCH';
       if (!isPending) return false;
 
-      const docCode = (c.doc_code || c.docTitle || '').toLowerCase();
+      const docCode = (c.document_code || c.doc_code || c.code || c.docNo || c.docTitle || '').toLowerCase();
+      const docTitleStr = (c.document_title || c.doc_title || c.docName || c.name || c.title || '').toLowerCase();
       const dept = (c.target_department || c.targetDepartment || c.recipientDepartment || c.holder_dept || c.department || '').toLowerCase();
       const loc = (c.location || c.locationName || '').toLowerCase();
       const copyNo = (c.copy_no || c.ccNumber || '').toLowerCase();
       const query = searchTerm.toLowerCase();
 
-      if (searchTerm && !docCode.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
+      if (searchTerm && !docCode.includes(query) && !docTitleStr.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
         return false;
       }
       if (selectedDeptFilter !== 'ALL' && (c.target_department || c.holder_dept || c.department) !== selectedDeptFilter) {
@@ -336,13 +345,14 @@ const ControlledCopyRegister = () => {
         c.status === 'IN_TRANSIT';
       if (!isDispatched) return false;
 
-      const docCode = (c.doc_code || c.docTitle || '').toLowerCase();
+      const docCode = (c.document_code || c.doc_code || c.code || c.docNo || c.docTitle || '').toLowerCase();
+      const docTitleStr = (c.document_title || c.doc_title || c.docName || c.name || c.title || '').toLowerCase();
       const dept = (c.target_department || c.targetDepartment || c.recipientDepartment || c.holder_dept || c.department || '').toLowerCase();
       const loc = (c.location || c.locationName || '').toLowerCase();
       const copyNo = (c.copy_no || c.ccNumber || '').toLowerCase();
       const query = searchTerm.toLowerCase();
 
-      if (searchTerm && !docCode.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
+      if (searchTerm && !docCode.includes(query) && !docTitleStr.includes(query) && !dept.includes(query) && !loc.includes(query) && !copyNo.includes(query)) {
         return false;
       }
       if (selectedDeptFilter !== 'ALL' && (c.target_department || c.holder_dept || c.department) !== selectedDeptFilter) {
@@ -396,10 +406,13 @@ const ControlledCopyRegister = () => {
             (String(t.doc_id) === docId || String(t.docId) === docId || String(t.externalDocId) === docId || String(t.darId) === String(doc?.darIdRef) || (doc && (t.title?.includes(doc.title) || t.document_code === doc.title)) || String(t.copyId) === String(copy.id) || String(t.instanceId) === String(copy.id) || (t.supersededCopyIds && t.supersededCopyIds.includes(copy.id)) || (t.doc_code && (t.doc_code === copy.doc_code || t.doc_code === copy.docTitle)))
           );
 
+          const groupDocCode = resolveDocCode(copy, doc);
+          const groupDocTitle = resolveDocTitle(copy, doc);
+
           groups[docId] = {
             docId,
-            docCode: copy.doc_code || copy.docTitle || doc?.edCode || doc?.title || 'Unknown Doc',
-            docTitle: copy.docName || doc?.title || doc?.name || copy.docTitle || 'Procedure Document',
+            docCode: (groupDocCode && groupDocCode !== 'DOC-UNKNOWN') ? groupDocCode : (copy.document_code || copy.doc_code || doc?.edCode || doc?.title || 'Unknown Doc'),
+            docTitle: (groupDocTitle && groupDocTitle !== groupDocCode) ? groupDocTitle : (copy.document_title || copy.doc_title || copy.docName || doc?.name || copy.docTitle || 'Procedure Document'),
             docVersion: copy.doc_version || copy.rev || doc?.rev || '01',
             docStatus: doc?.status || (copy.isDamaged || copy.status === 'DAMAGED_PENDING_RECALL' || copy.status === 'PENDING_RECALL' || copy.status === 'RECALLED' ? 'DAMAGED_RECALL' : 'SUPERSEDED'),
             taskId: recallTask?.id || `task-recall-${docId}`,
@@ -433,7 +446,14 @@ const ControlledCopyRegister = () => {
 
   // Raw Active Copies for Tab 4: ACTIVE_REGISTER
   const rawActiveCopies = useMemo(() => {
-    return allCopies.filter(c => c && (c.status === 'ISSUED_ACTIVE' || c.status === 'ACTIVE'));
+    return allCopies.filter(c => {
+      if (!c) return false;
+      if (['PENDING_ISSUE', 'PENDING_PRINT', 'PENDING_DISPATCH', 'DISPATCHED', 'DISPATCHED_PENDING_RECEIPT', 'PENDING_RECEIPT', 'SUPERSEDED_PENDING_RECALL', 'PENDING_RECALL', 'RECALLED_PENDING_DESTRUCTION', 'DESTROYED', 'ARCHIVED_OBSOLETE'].includes(c.status)) return false;
+      if (c.is_active_in_field === false || c.is_superseded || c.is_obsolete) return false;
+      const isStatusActive = ['IN_USE', 'ISSUED_ACTIVE', 'ACTIVE'].includes(c.status);
+      const isFieldActive = c.is_active_in_field === true || (c.is_active_in_field !== false && (Boolean(c.receipt_confirmed_at) || Boolean(c.received_at)));
+      return isStatusActive && isFieldActive;
+    });
   }, [allCopies]);
 
   // Group active copies by document code (Master-Detail Accordion)
@@ -462,7 +482,16 @@ const ControlledCopyRegister = () => {
           copies: []
         };
       }
-      groups[groupKey].copies.push(copy);
+
+      // Deduplicate copies within group by normalized copy number
+      const copyNoNormalized = String(copy.copy_no || copy.copyNo || copy.ccNumber || copy.id).replace(/\D/g, '') || copy.id;
+      const alreadyInGroup = groups[groupKey].copies.some(existing => {
+        const existingNo = String(existing.copy_no || existing.copyNo || existing.ccNumber || existing.id).replace(/\D/g, '') || existing.id;
+        return existingNo === copyNoNormalized || existing.id === copy.id;
+      });
+      if (!alreadyInGroup) {
+        groups[groupKey].copies.push(copy);
+      }
     });
 
     // Sort copies within each group by copy_no ascending (e.g. 01, 02)
@@ -1057,7 +1086,7 @@ const ControlledCopyRegister = () => {
                     <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">หมายเลขสำเนา</th>
                     <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">แผนกผู้รับ</th>
                     <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">จุดใช้งาน (Location)</th>
-                    <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">การดำเนินการ (Actions)</th>
+                    <th className="py-3 px-3.5 text-right select-none whitespace-nowrap bg-[#F8FAFC]">การดำเนินการ (Actions)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8F0]">
@@ -1065,36 +1094,55 @@ const ControlledCopyRegister = () => {
                     {pendingIssuePagination.paginatedData.map((copy) => {
                       const isSelected = selectedCopyIds.includes(copy.id);
                       const isProcessing = processingCopyId === copy.id;
+                      const linkedDoc = resolveCopyDoc(copy, documents, externalDocuments);
+                      const rawCode = copy.document_code || copy.doc_code || copy.code || copy.docNo;
+                      const resolvedCode = (!isThaiText(rawCode) && rawCode) ? rawCode : resolveDocCode(copy, linkedDoc);
+                      const itemDocCode = (resolvedCode && resolvedCode !== 'DOC-UNKNOWN') ? resolvedCode : (rawCode || '-');
+
+                      const rawTitle = copy.document_title || copy.doc_title || copy.docName || (copy.title !== itemDocCode ? copy.title : null) || (copy.docTitle !== itemDocCode ? copy.docTitle : null);
+                      const resolvedTitle = resolveDocTitle(copy, linkedDoc);
+                      let itemDocTitle = rawTitle || (resolvedTitle && resolvedTitle !== itemDocCode ? resolvedTitle : null) || linkedDoc?.name || linkedDoc?.document_name || copy.docName || copy.docTitle || '-';
+                      if (itemDocTitle === itemDocCode && (linkedDoc?.name || linkedDoc?.document_name)) {
+                        itemDocTitle = linkedDoc.name || linkedDoc.document_name;
+                      }
+
                       return (
                         <motion.tr
                           key={copy.id}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
-                          className={`hover:bg-[#F8FAFC] transition-colors ${isSelected ? 'bg-[#F1F5F9]' : ''}`}
+                          className={`hover:bg-slate-50/70 border-b border-slate-100 transition-colors ${isSelected ? 'bg-[#F1F5F9]' : ''}`}
                         >
-                          <td className="py-3.5 px-3.5 text-center align-middle">
+                          <td className="py-3.5 px-3.5 w-10 text-center align-middle">
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => handleToggleSelectCopy(copy.id)}
-                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                             />
                           </td>
                           <td className="py-3.5 px-3.5 align-middle">
-                            <div className="font-bold text-sm font-mono text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-[#B8E1FF] inline-block mb-1">
-                              {copy.doc_code || copy.docTitle}
-                            </div>
-                            <div className="text-sm font-medium text-[#1E293B] truncate max-w-xs leading-snug">
-                              {copy.docName || copy.docTitle}
+                            <div className="flex flex-col items-start">
+                              {/* 1. กล่องรหัสเอกสาร (Badge สีฟ้า) */}
+                              <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-xs inline-block">
+                                {itemDocCode}
+                              </span>
+                              
+                              {/* 2. ชื่อเอกสาร (ข้อความปกติสีเข้ม) */}
+                              <span className="text-xs font-medium text-slate-700 mt-1 line-clamp-1 max-w-[200px] xl:max-w-xs" title={itemDocTitle}>
+                                {itemDocTitle}
+                              </span>
                             </div>
                           </td>
-                          <td className="py-3.5 px-3.5 text-center font-mono font-bold text-slate-700 text-sm align-middle">
-                            Rev.{copy.doc_version || copy.rev || '01'}
+                          <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                            <span className="text-xs font-mono font-semibold text-slate-700">
+                              Rev.{copy.doc_version || copy.rev || '00'}
+                            </span>
                           </td>
-                          <td className="py-3.5 px-3.5 text-center align-middle">
+                          <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
                             <div className="flex flex-col items-center gap-1">
-                              <span className="px-2.5 py-1 bg-[#E6F7ED] text-[#14AE5C] font-semibold font-mono text-xs rounded-md border border-[#B3E7C9] whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs inline-block">
                                 Copy {copy.copy_no || copy.ccNumber || '01'}
                               </span>
                               {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
@@ -1104,41 +1152,41 @@ const ControlledCopyRegister = () => {
                               )}
                             </div>
                           </td>
-                          <td className="py-3.5 px-3.5 align-middle">
-                            <span className="font-semibold text-[#1E293B] flex items-center gap-1.5 text-sm">
-                              <Building size={14} className="text-slate-400" />
-                              {copy.holder_dept || copy.department}
-                            </span>
+                          <td className="py-3.5 px-3.5 align-middle whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>{copy.holder_dept || copy.department}</span>
+                            </div>
                           </td>
                           <td className="py-3.5 px-3.5 align-middle">
-                            <span className="font-medium text-slate-700 flex items-center gap-1.5 text-sm">
-                              <MapPin size={14} className="text-[#14AE5C]" />
-                              {copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}
-                            </span>
+                            <div className="flex items-center gap-1.5 text-xs text-slate-600 line-clamp-1 max-w-xs" title={copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}>
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{copy.location || copy.locationName || copy.station_name || `${copy.holder_dept || copy.department || 'PD'} Head Office`}</span>
+                            </div>
                           </td>
-                          <td className="py-3.5 px-3.5 text-center align-middle">
-                            <div className="flex items-center justify-center gap-2">
+                          <td className="py-3.5 px-3.5 align-middle text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-2 justify-end">
                               <button
                                 onClick={() => handlePrintSingleCopy(copy)}
                                 disabled={isProcessing}
-                                className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 whitespace-nowrap transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                                 title="พิมพ์สำเนาพร้อมลายน้ำระบุจุดใช้งาน"
                               >
                                 {isProcessing ? (
-                                  <div className="w-3 h-3 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
+                                  <div className="w-3.5 h-3.5 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
                                 ) : (
-                                  <Printer size={14} />
+                                  <Printer className="w-3.5 h-3.5" />
                                 )}
-                                พิมพ์สำเนาเดี่ยว
+                                <span>พิมพ์สำเนาเดี่ยว</span>
                               </button>
 
                               <button
                                 onClick={() => handleDispatchSingle(copy)}
-                                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0D99FF] hover:bg-[#007BE5] active:bg-[#0066BE] rounded-lg shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap shadow-xs transition-colors cursor-pointer"
                                 title="บันทึกส่งมอบเล่มจริงให้แผนกผู้รับ"
                               >
-                                <Send size={14} />
-                                บันทึกส่งมอบ (Dispatch)
+                                <Send className="w-3.5 h-3.5" />
+                                <span>บันทึกส่งมอบ (Dispatch)</span>
                               </button>
                             </div>
                           </td>
@@ -1205,7 +1253,7 @@ const ControlledCopyRegister = () => {
               <span className="text-xs font-mono text-slate-500 whitespace-nowrap">
                 รอตรวจรับ {dispatchedCopies.length} รายการ
               </span>
-              <span className="sr-only">ติดตามการส่งมอบและรอตรวจรับ</span>
+              <span className="sr-only">ติดตามการส่งมอบและรอตรวจรับ ({dispatchedCopies.length} รายการ)</span>
             </div>
           </div>
 
@@ -1224,53 +1272,79 @@ const ControlledCopyRegister = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
-                {dispatchedPagination.paginatedData.map((copy) => (
-                  <tr key={copy.id} className="hover:bg-[#F8FAFC] transition-colors">
-                    <td className="py-3.5 px-3.5 align-middle">
-                      <div className="font-bold text-sm font-mono text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-[#B8E1FF] inline-block mb-1">{copy.doc_code || copy.docTitle}</div>
-                      <div className="text-sm font-medium text-[#1E293B] truncate max-w-xs leading-snug">{copy.docName || copy.docTitle}</div>
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center font-mono font-bold text-slate-700 text-sm align-middle">
-                      Rev.{copy.doc_version || copy.rev || '01'}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center align-middle">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="px-2.5 py-1 bg-[#FFF8E6] text-[#B87C33] font-semibold font-mono text-xs rounded-md border border-[#FDE6B0] whitespace-nowrap">
-                          Copy {copy.copy_no || copy.ccNumber || '01'}
-                        </span>
-                        {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
-                          <span className="px-2 py-0.5 rounded-md bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-xs whitespace-nowrap font-sans">
-                            Issue {copy.issue_no || '02'} (ทดแทน)
+                {dispatchedPagination.paginatedData.map((copy) => {
+                  const linkedDoc = resolveCopyDoc(copy, documents, externalDocuments);
+                  const rawCode = copy.document_code || copy.doc_code || copy.code || copy.docNo;
+                  const resolvedCode = (!isThaiText(rawCode) && rawCode) ? rawCode : resolveDocCode(copy, linkedDoc);
+                  const itemDocCode = (resolvedCode && resolvedCode !== 'DOC-UNKNOWN') ? resolvedCode : (rawCode || '-');
+
+                  const rawTitle = copy.document_title || copy.doc_title || copy.docName || (copy.title !== itemDocCode ? copy.title : null) || (copy.docTitle !== itemDocCode ? copy.docTitle : null);
+                  const resolvedTitle = resolveDocTitle(copy, linkedDoc);
+                  let itemDocTitle = rawTitle || (resolvedTitle && resolvedTitle !== itemDocCode ? resolvedTitle : null) || linkedDoc?.name || linkedDoc?.document_name || copy.docName || copy.docTitle || '-';
+                  if (itemDocTitle === itemDocCode && (linkedDoc?.name || linkedDoc?.document_name)) {
+                    itemDocTitle = linkedDoc.name || linkedDoc.document_name;
+                  }
+
+                  return (
+                    <tr key={copy.id} className="hover:bg-slate-50/70 border-b border-slate-100 transition-colors">
+                      <td className="py-3.5 px-3.5 align-middle">
+                        <div className="flex flex-col items-start">
+                          {/* 1. กล่องรหัสเอกสาร (Badge สีฟ้า) */}
+                          <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-xs inline-block">
+                            {itemDocCode}
                           </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3.5 align-middle">
-                      <span className="font-semibold text-[#1E293B] text-sm">
-                        {copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3.5 align-middle">
-                      <span className="font-medium text-slate-700 flex items-center gap-1.5 text-sm">
-                        <MapPin size={14} className="text-slate-400" />
-                        {copy.location || copy.locationName || copy.station_name || `${copy.target_department || copy.holder_dept || copy.department || 'PD'} Head Office`}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3.5 text-center align-middle">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
-                        <span className="w-2 h-2 rounded-full bg-[#D49800] animate-pulse" />
-                        <span>รอตรวจรับ ({copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department})</span>
-                        <span className="sr-only">รอยืนยันรับเล่ม</span>
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3.5 text-xs text-slate-600 font-mono align-middle">
-                      {copy.dispatched_at ? new Date(copy.dispatched_at).toLocaleString('th-TH') : '-'}
-                    </td>
-                    <td className="py-3.5 px-3.5 text-sm font-medium text-slate-700 align-middle">
-                      {copy.dispatched_by || 'DCC Officer'}
-                    </td>
-                  </tr>
-                ))}
+                          
+                          {/* 2. ชื่อเอกสาร (ข้อความปกติสีเข้ม) */}
+                          <span className="text-xs font-medium text-slate-700 mt-1 line-clamp-1 max-w-[200px] xl:max-w-xs" title={itemDocTitle}>
+                            {itemDocTitle}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                        <span className="text-xs font-mono font-semibold text-slate-700">
+                          Rev.{copy.doc_version || copy.rev || '00'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="px-2 py-0.5 rounded-md text-xs font-mono font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0] shadow-xs inline-block">
+                            Copy {copy.copy_no || copy.ccNumber || '01'}
+                          </span>
+                          {(copy.is_replacement || (copy.issue_no && copy.issue_no !== '01')) && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#FFF8E6] text-[#B87C33] font-semibold border border-[#FDE6B0] text-xs whitespace-nowrap font-sans">
+                              Issue {copy.issue_no || '02'} (ทดแทน)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3.5 align-middle whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3.5 align-middle">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 line-clamp-1 max-w-xs" title={copy.location || copy.locationName || copy.station_name || `${copy.target_department || copy.holder_dept || copy.department || 'PD'} Head Office`}>
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{copy.location || copy.locationName || copy.station_name || `${copy.target_department || copy.holder_dept || copy.department || 'PD'} Head Office`}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
+                          <span className="w-2 h-2 rounded-full bg-[#D49800] animate-pulse" />
+                          <span>รอตรวจรับ ({copy.target_department || copy.targetDepartment || copy.recipientDepartment || copy.holder_dept || copy.department})</span>
+                          <span className="sr-only">รอยืนยันรับเล่ม</span>
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-3.5 text-xs text-slate-600 font-mono align-middle whitespace-nowrap">
+                        {copy.dispatched_at ? new Date(copy.dispatched_at).toLocaleString('th-TH') : '-'}
+                      </td>
+                      <td className="py-3.5 px-3.5 text-xs font-medium text-slate-700 align-middle whitespace-nowrap">
+                        {copy.dispatched_by || 'DCC Officer'}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {dispatchedPagination.paginatedData.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
@@ -1298,6 +1372,7 @@ const ControlledCopyRegister = () => {
       {/* ========================================================================= */}
       {(activeTab === 'RECALL_CHECKLIST' || activeTab === 'RECALL') && (
         <div className="space-y-4">
+          <h2 className="sr-only">เช็กลิสต์การเรียกคืนเอกสารฉบับเดิม (Recall Checklist)</h2>
           {/* Unified Action Toolbar */}
           <div className="bg-white p-3 rounded-xl border border-[#E5E5E5] flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 shadow-2xs">
             {/* Left: Compact Search & Department Select */}

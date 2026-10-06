@@ -1,22 +1,22 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
 import toast from 'react-hot-toast';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
-import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Zap, Globe, Lock, Building2, RotateCcw, Check } from 'lucide-react';
+import { FileText, XCircle, ChevronLeft, Download, MessageSquare, ShieldAlert, Globe, Lock, Building2, RotateCcw } from 'lucide-react';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import DarReviewModal from '../../components/workflow/DarReviewModal';
+import TaskActionDock from '../../components/workflow/TaskActionDock';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { resolveApprover } from '../../utils/workflowResolver';
 import { 
-  stampDarPreviewPdf,
   stampUnifiedInternalPdf,
-  formatSignOffDate, 
   resolveRawFileBlob, 
   getActiveUserSignatureAsset, 
   resolveSubmissionDate 
 } from '../../utils/pdfStamper';
+import { formatSignOffDate } from '../../utils/dateFormatter';
 import { resolveFileBlob } from '../../utils/fileStorage';
 import { generateQmsDownloadName, triggerBrowserDownload, formatDarHeaderTitle } from '../../utils/documentNamingHelper';
 
@@ -148,7 +148,7 @@ const TaskReview = () => {
     users = [] 
   } = useStore();
   
-  const [comment, setComment] = useState('');
+  const [pendingComment, setPendingComment] = useState('');
   const [hasReadToBottom, setHasReadToBottom] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -158,23 +158,28 @@ const TaskReview = () => {
   const scrollRef = useRef(null);
   const createdUrlsRef = useRef([]);
 
-  // Graceful unmount cleanup to protect against React Strict Mode premature Blob revocation
-  useEffect(() => {
-    return () => {
-      const urlsToClean = [...createdUrlsRef.current];
-      setTimeout(() => {
-        urlsToClean.forEach(u => {
-          try { URL.revokeObjectURL(u); } catch {}
-        });
-      }, 15000);
-    };
-  }, []);
+  const iframeSrc = useMemo(() => {
+    return pdfBlobUrl ? `${pdfBlobUrl}#toolbar=0&navpanes=0&view=FitH` : null;
+  }, [pdfBlobUrl]);
 
   const task = (tasks || []).find(t => String(t.id) === String(id) || String(t.taskId) === String(id));
   const dar = task ? (
     (dars || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId) ||
     (darRequests || []).find(d => String(d.id) === String(task.darId) || d.darNo === task.darId || d.darNumber === task.darId)
   ) : null;
+
+  // Systematic cleanup of PDF Blob URLs on document switch & component unmount
+  useEffect(() => {
+    return () => {
+      const urlsToClean = [...createdUrlsRef.current];
+      createdUrlsRef.current = [];
+      setTimeout(() => {
+        urlsToClean.forEach(u => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
+      }, 500);
+    };
+  }, [id, dar?.id]);
   
   const darTimeline = useMemo(() => {
     return dar ? (timeline || []).filter(t => String(t.darId) === String(dar.id)) : [];
@@ -594,22 +599,23 @@ const TaskReview = () => {
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 
-  const handleAction = (action) => {
+  const handleAction = (action, userComment = '') => {
     if (!hasReadToBottom) {
       toast.error('กรุณาเลื่อนอ่านเอกสารให้ครบทุกหน้าก่อนตัดสินใจ');
       return;
     }
-    if (action === 'RETURN' && !comment) {
+    if (action === 'RETURN' && !userComment?.trim()) {
       toast.error('กรุณาระบุเหตุผลการส่งคืน (Comment)');
       return;
     }
+    setPendingComment(userComment || '');
     setPendingAction(action);
     setShowConfirm(true);
   };
 
   const executeAction = () => {
     try {
-      processWorkflow(task.id, pendingAction, comment);
+      processWorkflow(task?.id, pendingAction, pendingComment);
       toast.success(`ดำเนินการ ${pendingAction === 'APPROVE' ? 'ผ่านการทบทวน' : 'ส่งกลับแก้ไข'} สำเร็จ`);
       setShowConfirm(false);
       navigate('/tasks');
@@ -787,39 +793,12 @@ const TaskReview = () => {
           )}
         </div>
 
-        {/* 1.3 Pinned Action Dock (Bottom-Padded, 2-Button Stack) */}
-        <div className="shrink-0 p-3.5 border-t border-slate-100 bg-slate-50/90 space-y-2.5">
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="ระบุเหตุผล ข้อเสนอแนะ หรือสิ่งที่ต้องปรับปรุง..."
-            rows={2}
-            className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none shadow-xs"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('RETURN')}
-              className="w-full py-2 px-3 rounded-xl border border-rose-200 text-rose-700 bg-white hover:bg-rose-50 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>ส่งกลับแก้ไข</span>
-            </button>
-            <button
-              type="button"
-              disabled={!hasReadToBottom}
-              onClick={() => handleAction('APPROVE')}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>ผ่านการทบทวน</span>
-            </button>
-          </div>
-          {!hasReadToBottom && (
-            <p className="text-[11px] text-rose-500 text-center font-medium">⚠️ กรุณาเลื่อนอ่านเอกสารทางขวาให้จบเพื่อปลดล็อคปุ่ม</p>
-          )}
-        </div>
+        {/* 1.3 Pinned Action Dock (Bottom-Padded, Isolated Sub-component) */}
+        <TaskActionDock
+          mode="REVIEW"
+          hasReadToBottom={hasReadToBottom}
+          onAction={handleAction}
+        />
       </div>
 
       {/* ================= 2. การ์ดฝั่งขวา: FLOATING EXPANDED PREVIEW CARD ================= */}
@@ -856,7 +835,7 @@ const TaskReview = () => {
             </div>
           ) : pdfBlobUrl ? (
             <iframe
-              src={`${pdfBlobUrl}#toolbar=0&navpanes=0&view=FitH`}
+              src={iframeSrc}
               title="PDF Preview"
               className="w-full border-none block"
               style={{
@@ -901,7 +880,7 @@ const TaskReview = () => {
           { label: 'ผู้ดำเนินการ', value: `${currentUser?.name || 'ผู้ทบทวน'} (${currentUser?.department || '-'})` },
           { label: 'เอกสาร', value: dar ? `[${getDarDocInfo(dar, documents).docCode}] ${dar.title}` : '-' },
           { label: 'ผลการทบทวน', value: pendingAction === 'APPROVE' ? 'ผ่านการทบทวน (Review Passed)' : 'ส่งกลับแก้ไข (Revision Required)' },
-          { label: 'ความเห็นประกอบ', value: comment || '-' },
+          { label: 'ความเห็นประกอบ', value: pendingComment || '-' },
           { 
             label: 'สายการอนุมัติถัดไป', 
             value: pendingAction === 'APPROVE' 
@@ -917,13 +896,13 @@ const TaskReview = () => {
         dar={dar}
         role="REVIEWER"
         onApprove={(modalComment) => {
-          setComment(modalComment || comment);
+          setPendingComment(modalComment || pendingComment);
           setIsInspectorOpen(false);
           setPendingAction('APPROVE');
           setShowConfirm(true);
         }}
         onReturn={(modalComment) => {
-          setComment(modalComment || comment);
+          setPendingComment(modalComment || pendingComment);
           setIsInspectorOpen(false);
           setPendingAction('RETURN');
           setShowConfirm(true);

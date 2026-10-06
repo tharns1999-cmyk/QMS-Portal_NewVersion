@@ -74,8 +74,8 @@ const Library = () => {
   const [filterDept, setFilterDept] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterStandard, setFilterStandard] = useState('');
-  const [filterStatus, setFilterStatus] = useState('EFFECTIVE');
-  const [filterDate, setFilterDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ACTIVE');
+  const [filterDate] = useState('');
   const [filterAccessScope, setFilterAccessScope] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
   const [studioDoc, setStudioDoc] = useState(null);
@@ -125,13 +125,16 @@ const Library = () => {
     };
     window.addEventListener('click', handleOutsideClick);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', handleScrollOrResize, true);
     window.addEventListener('resize', handleScrollOrResize);
     return () => {
       window.removeEventListener('click', handleOutsideClick);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
     };
   }, [openMenuDocId]);
+
 
   // Department normalization & multi-department resolver
   const normalizeDept = (d) => {
@@ -263,6 +266,8 @@ const Library = () => {
     if (selectedTab === 'SUPERSEDED') {
       const isObsolete = st === 'OBSOLETE' || st === 'OBSOLETE_ARCHIVED' || st === 'ARCHIVED_OBSOLETE' || st === 'OBSOLETE_PENDING_RECALL' || st.startsWith('OBSOLETE') || Boolean(doc?.is_obsolete);
       if (isObsolete) return false;
+      const isCurrentEffective = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(doc?.is_active);
+      if (isCurrentEffective) return false;
       return (st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(doc?.is_superseded));
     }
     // 3. แท็บ "ยกเลิกถาวร (Obsolete)": กรองเฉพาะ: doc.status === 'OBSOLETE' || doc.is_obsolete === true
@@ -280,9 +285,6 @@ const Library = () => {
     return st === selectedTab;
   };
 
-  // ดึงสิทธิ์ DCC
-  const isDcc = isDccUser;
-
   // ขั้นตอนที่ 1: กรองตาม Scope แท็บหลัก (Data Segregation เด็ดขาด)
   const baseDocs = useMemo(() => {
     return (documents || []).filter((doc) => {
@@ -294,7 +296,6 @@ const Library = () => {
       }
       if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
         // แท็บ 2: เอกสารในแผนกฉัน
-        if (isDccUser && (filterStatus === '' || filterStatus === 'ALL')) return true;
         // แสดงเฉพาะเอกสารที่แผนกเจ้าของคือแผนกเดียวกับผู้ใช้งาน
         return isOwnerDept(doc);
       }
@@ -531,21 +532,32 @@ const Library = () => {
 
     const groups = [];
     map.forEach(({ code, docs }) => {
+      // In SUPERSEDED view, strictly exclude any revision that is EFFECTIVE / ACTIVE / current
+      const safeDocs = filterStatus === 'SUPERSEDED'
+        ? docs.filter(d => {
+            const st = (d.status || '').toUpperCase();
+            const isEff = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(d.is_active);
+            return !isEff && (st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(d.is_superseded));
+          })
+        : docs;
+
+      if (safeDocs.length === 0) return;
+
       // Sort docs by revision descending (e.g. Rev.02, Rev.01, Rev.00)
-      docs.sort((a, b) => {
+      safeDocs.sort((a, b) => {
         const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
         const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
         return revB - revA;
       });
 
-      const latestDoc = docs[0];
-      const revNums = docs.map(d => parseInt(String(d.rev || d.revision || '0').replace(/\D/g, ''), 10) || 0).sort((a, b) => a - b);
+      const latestDoc = safeDocs[0];
+      const revNums = safeDocs.map(d => parseInt(String(d.rev || d.revision || '0').replace(/\D/g, ''), 10) || 0).sort((a, b) => a - b);
       const minRevStr = String(revNums[0] ?? 0).padStart(2, '0');
       const maxRevStr = String(revNums[revNums.length - 1] ?? 0).padStart(2, '0');
-      const revRange = docs.length > 1 ? `R${minRevStr} - R${maxRevStr}` : `R${minRevStr}`;
+      const revRange = safeDocs.length > 1 ? `R${minRevStr} - R${maxRevStr}` : `R${minRevStr}`;
 
       // Build revisions with individual recall metrics
-      const revisions = docs.map(d => {
+      const revisions = safeDocs.map(d => {
         const revStr = String(d.rev || d.revision || '00').padStart(2, '0');
         const revNum = parseInt(revStr, 10);
         const relCopies = allCopiesList.filter(copy => {
@@ -610,7 +622,6 @@ const Library = () => {
   const currentStatusTabTotal = useMemo(() => {
     if (filterStatus === 'SUPERSEDED') return tabCounts.superseded;
     if (filterStatus === 'OBSOLETE') return tabCounts.obsolete;
-    if (filterStatus === '' || filterStatus === 'ALL') return tabCounts.all;
     return tabCounts.active;
   }, [filterStatus, tabCounts]);
 
@@ -1032,13 +1043,7 @@ const Library = () => {
     }
   };
 
-  const handleOpenDetailModal = (doc, e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    setPreviewDoc(doc);
-  };
+
 
   const handleRequestAdditionalCopy = (doc) => {
     navigate('/controlled-copies/request', {
@@ -1117,6 +1122,8 @@ const Library = () => {
       });
     }
   };
+
+
 
   const renderSecurityBadge = (doc) => {
     const scope = doc?.access_control?.scope || doc?.access_scope || 'GENERAL';
@@ -1315,6 +1322,8 @@ const Library = () => {
                 const c = (d.document_code || d.doc_code || d.code || d.docCode || d.title || String(d.id)).trim().toUpperCase();
                 if (c !== docCodeUpper) return false;
                 const st = (d.status || '').toUpperCase();
+                const isEff = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(d.is_active);
+                if (isEff) return false;
                 return st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(d.is_superseded);
               }).sort((a, b) => {
                 const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
@@ -1322,15 +1331,7 @@ const Library = () => {
                 return revA - revB;
               });
 
-              const effectiveSupersededDocs = supersededDocsList.length > 0 
-                ? supersededDocsList 
-                : (isGroup && item.docs ? item.docs : [primaryDoc]);
 
-              const supersededCount = effectiveSupersededDocs.length;
-              const supersededRevTags = effectiveSupersededDocs.map(d => {
-                const r = String(d.rev || d.revision || '00').padStart(2, '0');
-                return `R${r}`;
-              });
 
               // Workflow and Distribution
               const workflow = resolveDocWorkflow(primaryDoc);
@@ -1405,42 +1406,30 @@ const Library = () => {
                       )}
                     </td>
 
-                    {/* 3. ฉบับและวันบังคับใช้ หรือ จำนวนฉบับตกรุ่น */}
+                    {/* 3. ฉบับและวันบังคับใช้เดิม (Clean Text Summary) */}
                     <td className="py-2.5 px-3 align-middle">
                       {isSupersededTab ? (() => {
-                        const revs = item.revisions || (item.docs ? item.docs : [primaryDoc]);
-                        const displayRevs = revs.slice(0, 2);
-                        const extraCount = revs.length - 2;
-                        const latestEffectiveDate = revs[0]?.effectiveDate || primaryDoc.effectiveDate || '-';
+                        const rawRevs = item.revisions || (item.docs ? item.docs : [primaryDoc]);
+                        const revs = rawRevs.filter(r => {
+                          const st = (r.status || '').toUpperCase();
+                          return st !== 'EFFECTIVE' && st !== 'ACTIVE' && st !== 'APPROVED' && st !== 'PUBLISHED' && !r.is_active;
+                        });
+                        const earliestRev = revs && revs.length > 0 ? (revs[revs.length - 1].revision || revs[revs.length - 1].rev || '00') : '00';
+                        const latestRev = revs && revs.length > 0 ? (revs[0].revision || revs[0].rev || '00') : '00';
+                        const supersededDate = revs?.[0]?.effectiveDate || revs?.[0]?.supersededAt || revs?.[0]?.effective_date || primaryDoc.effectiveDate || '-';
 
                         return (
-                          <div className="flex flex-col items-start gap-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {displayRevs.map((revDoc, rIdx) => {
-                                const revStr = String(revDoc.rev || revDoc.revision || '00').padStart(2, '0');
-                                const isLatest = rIdx === 0;
-                                return (
-                                  <span 
-                                    key={revDoc.id || rIdx}
-                                    className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${
-                                      isLatest 
-                                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
-                                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                                    }`}
-                                  >
-                                    Rev.{revStr}
-                                    {isLatest && <span className="text-[10px] font-sans font-normal ml-1 text-amber-600">(ล่าสุด)</span>}
-                                  </span>
-                                );
-                              })}
-                              {extraCount > 0 && (
-                                <span className="px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                                  +{extraCount} ฉบับเดิม
-                                </span>
-                              )}
+                          <div className="flex flex-col items-start gap-0.5">
+                            <div className="text-xs font-semibold text-slate-700">
+                              {revs && revs.length > 1
+                                ? `Rev.${earliestRev} – Rev.${latestRev}`
+                                : `Rev.${latestRev}`}
+                              <span className="text-slate-400 font-normal ml-1.5">
+                                ({revs?.length || 1} ฉบับเดิม)
+                              </span>
                             </div>
                             <div className="text-[11px] text-slate-400 mt-0.5">
-                              วันยกเลิกล่าสุด: {latestEffectiveDate}
+                              ตกรุ่นเมื่อ: {supersededDate}
                             </div>
                           </div>
                         );
@@ -1991,36 +1980,36 @@ const Library = () => {
         </div>
 
         {/* 2. Unified Filter Toolbar (Directly part of canvas) */}
-        <div className="px-4 py-2.5 space-y-2 border-b border-slate-100 bg-white shrink-0">
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
-            {/* Search Input: Compact (h-8.5) */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+        <div className="p-4 space-y-2 border-b border-slate-100 bg-white shrink-0 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2.5 w-full">
+            {/* Search Input: Compact (h-8.5 / py-2) */}
+            <div className="relative flex-1 min-w-[200px] sm:min-w-[240px] max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
               <input
                 type="text"
                 placeholder="ค้นหารหัส หรือชื่อเอกสาร..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-8.5 pl-8 pr-7 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-400"
+                className="w-full pl-9 pr-7 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-xs"
               />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
                 >
                   ✕
                 </button>
               )}
             </div>
 
-            {/* Quick Dropdowns: High-Density (h-8.5, text-xs) */}
-            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {/* Quick Dropdowns: Responsive & Compact */}
+            <div className="flex flex-wrap items-center gap-2">
               {/* Department Filter */}
               <select
                 value={filterDept || 'ALL'}
                 onChange={(e) => setFilterDept(e.target.value)}
-                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[120px]"
+                className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกแผนก (All)</option>
                 {availableDepts.map(d => (
@@ -2032,7 +2021,7 @@ const Library = () => {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[110px]"
+                className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกประเภท (Types)</option>
                 {availableTypes.map(t => {
@@ -2046,7 +2035,7 @@ const Library = () => {
               <select
                 value={filterStandard || 'ALL'}
                 onChange={(e) => setFilterStandard(e.target.value)}
-                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[105px]"
+                className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกมาตรฐาน</option>
                 {availableStandards.map(s => (
@@ -2058,7 +2047,7 @@ const Library = () => {
               <select
                 value={filterAccessScope || 'ALL'}
                 onChange={(e) => setFilterAccessScope(e.target.value)}
-                className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer min-w-[110px]"
+                className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกระดับความลับ</option>
                 <option value="GENERAL">ทั่วไป (General)</option>
@@ -2066,27 +2055,27 @@ const Library = () => {
                 <option value="TARGETED">ระบุแผนก (Targeted)</option>
                 <option value="RESTRICTED">ลับเฉพาะ (Restricted)</option>
               </select>
-
-              {/* Active Pill Badge (Inline Filter Chip) for General / Distributed tabs */}
-              {activeTab !== TAB_MY_DEPT && activeTab !== 'dept' && (
-                <span className="h-8.5 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
-                  <CheckCircle2 size={12} />
-                  <span>เฉพาะฉบับบังคับใช้</span>
-                </span>
-              )}
-
-              {/* Export Button: Ghost/Outline (h-8.5) */}
-              {(activeTab === TAB_MY_DEPT || activeTab === 'dept' || isDccUser) && (
-                <button
-                  type="button"
-                  onClick={handleExport}
-                  className="h-8.5 px-3 inline-flex items-center justify-center gap-1.5 text-xs font-semibold bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg whitespace-nowrap cursor-pointer transition-all shadow-2xs shrink-0"
-                >
-                  <Download className="text-slate-500 shrink-0" size={13} />
-                  <span>{isDccUser ? 'ส่งออกแม่บท' : 'ส่งออกแผนก'}</span>
-                </button>
-              )}
             </div>
+
+            {/* Active Pill Badge (Inline Filter Chip) for General / Distributed tabs */}
+            {activeTab !== TAB_MY_DEPT && activeTab !== 'dept' && (
+              <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border shadow-xs bg-emerald-50 text-emerald-800 border-emerald-300">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>เฉพาะฉบับบังคับใช้</span>
+              </span>
+            )}
+
+            {/* Export Button */}
+            {(activeTab === TAB_MY_DEPT || activeTab === 'dept' || isDccUser) && (
+              <button
+                type="button"
+                onClick={handleExport}
+                className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl whitespace-nowrap cursor-pointer transition-all shadow-xs ml-auto sm:ml-0"
+              >
+                <Download className="text-slate-500 shrink-0" size={13} />
+                <span>{isDccUser ? 'ส่งออกแม่บท' : 'ส่งออกแผนก'}</span>
+              </button>
+            )}
           </div>
 
 
@@ -2101,15 +2090,14 @@ const Library = () => {
                     { id: 'ACTIVE', label: 'มีผลบังคับใช้ (Active)', count: tabCounts.active, ariaLabel: 'มีผลบังคับใช้ (Active)' },
                     { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: tabCounts.superseded, ariaLabel: 'ฉบับตกรุ่น (Superseded) ฉบับเดิมตกรุ่น' },
                     { id: 'OBSOLETE', label: 'ยกเลิกถาวร (Obsolete)', count: tabCounts.obsolete, ariaLabel: 'ยกเลิกถาวร (Obsolete) ยกเลิกการใช้งาน' },
-                    { id: 'ALL', label: 'ทั้งหมด (All Records)', count: tabCounts.all, ariaLabel: 'ทั้งหมด (All Records)' },
                   ].map((tab) => {
-                    const isSelected = (filterStatus === tab.id) || (tab.id === 'ACTIVE' && filterStatus === 'EFFECTIVE') || (tab.id === 'ALL' && (filterStatus === '' || filterStatus === 'ALL'));
+                    const isSelected = (filterStatus === tab.id) || (tab.id === 'ACTIVE' && filterStatus === 'EFFECTIVE');
                     return (
                       <button
                         key={tab.id}
                         type="button"
                         aria-label={tab.ariaLabel || tab.label}
-                        onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : (tab.id === 'ACTIVE' ? 'EFFECTIVE' : tab.id))}
+                        onClick={() => setFilterStatus(tab.id === 'ACTIVE' ? 'EFFECTIVE' : tab.id)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                           isSelected
                             ? 'bg-white text-[#0D99FF] shadow-2xs font-bold border border-slate-200/70'

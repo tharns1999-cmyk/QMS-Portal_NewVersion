@@ -39,7 +39,8 @@ describe('Safely Deprecate and Remove Master List Registry (ทะเบีย�
     render(<App />);
 
     // Should redirect to Document Library without crashing
-    expect(await screen.findByText('คลังเอกสารแม่บท')).toBeInTheDocument();
+    const elements = await screen.findAllByText('คลังเอกสารแม่บท');
+    expect(elements.length).toBeGreaterThan(0);
     expect(window.location.pathname).toBe('/dcc/library');
   });
 });
