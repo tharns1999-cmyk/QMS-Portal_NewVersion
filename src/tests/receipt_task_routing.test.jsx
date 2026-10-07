@@ -112,7 +112,8 @@ describe('Controlled Copy Receipt Task Routing to Strict DAR Requester Tests', (
     );
 
     // Should find the task
-    expect(screen.getByText(/ตรวจรับเอกสารควบคุมฉบับพิมพ์: SOP-PD-001/i)).toBeInTheDocument();
+    expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
+    expect(screen.getAllByText('ตรวจรับสำเนา').length).toBeGreaterThan(0);
   });
 
   it('3. User in different department (U005 - Beam QA) does NOT see the Receipt Task in Task Inbox', () => {

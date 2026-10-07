@@ -71,8 +71,11 @@ const DarObsoleteForm = () => {
   
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+  const isSubmittedRef = useRef(false);
+  const hasHydratedDraftRef = useRef(false);
+  const hasHandledDeepLinkRef = useRef(false);
+  const prevUserRef = useRef({ id: currentUser?.id, dept: currentUser?.department || currentUser?.dept });
 
-  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -178,9 +181,13 @@ const DarObsoleteForm = () => {
     return Object.entries(groups).map(([dept, copies]) => ({ dept, copies }));
   }, [activeCopiesList]);
 
-  // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
+  // Security Handling: Clear selected doc ONLY if user account or department actually switched
   useEffect(() => {
-    if (formData.docId) {
+    if (isSubmittedRef.current) return;
+    const userChanged = prevUserRef.current.id !== currentUser?.id || prevUserRef.current.dept !== (currentUser?.department || currentUser?.dept);
+    prevUserRef.current = { id: currentUser?.id, dept: currentUser?.department || currentUser?.dept };
+
+    if (userChanged && formData.docId) {
       const isStillValid = (effectiveDocs || []).some(d => d && d.id === formData.docId);
       if (!isStillValid && !lockedSource && !targetDraftId) {
         setFormData(prev => ({ ...prev, docId: '' }));
@@ -190,8 +197,12 @@ const DarObsoleteForm = () => {
 
   // Handle Prefill / Deep-link from Document Library or Periodic Review
   useEffect(() => {
+    if (hasHandledDeepLinkRef.current || isSubmittedRef.current) return;
     if (targetDraftId || location.state?.draftData) return;
-    if (formData.docId) return;
+    if (formData.docId) {
+      hasHandledDeepLinkRef.current = true;
+      return;
+    }
 
     if (deepLinkDocId || deepLinkDocCode) {
       const candidateList = (effectiveDocs && effectiveDocs.length > 0) ? effectiveDocs : (documents || []);
@@ -204,12 +215,14 @@ const DarObsoleteForm = () => {
       });
 
       if (matched) {
+        hasHandledDeepLinkRef.current = true;
         setFormData(prev => ({ ...prev, docId: matched.id }));
       }
     }
   }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId]);
 
   useEffect(() => {
+    if (hasHydratedDraftRef.current || isSubmittedRef.current) return;
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
       const draft = location.state?.draftData || allDarsList.find(d => {
@@ -221,6 +234,7 @@ const DarObsoleteForm = () => {
         );
       });
       if (draft) {
+        hasHydratedDraftRef.current = true;
         if (draft.sourceType === 'PERIODIC_REVIEW') {
           try {
             useStore.getState().validateLinkedDarSource(draft);
@@ -376,7 +390,7 @@ const DarObsoleteForm = () => {
       addDar(draftPayload);
     }
     toast.success('บันทึกแบบร่างสำเร็จ');
-    navigate('/dashboard');
+    navigate('/dcc/dar/list');
   };
 
   const handleFormSubmit = (e) => {
@@ -392,9 +406,10 @@ const DarObsoleteForm = () => {
     const newDar = buildPayload(false);
     if (targetDraftId && deleteDar) deleteDar(targetDraftId);
     addDar(newDar);
+    isSubmittedRef.current = true;
     setShowConfirm(false);
-    toast.success('สร้างคำร้องขอยกเลิกเอกสารสำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
-    navigate('/dashboard');
+    toast.success('ยื่นคำร้องขอยกเลิกเอกสาร (DAR Obsolete) สำเร็จเรียบร้อย');
+    navigate('/dcc/dar/list');
   };
 
   return (

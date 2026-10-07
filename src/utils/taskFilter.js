@@ -270,11 +270,8 @@ export const isActionableTask = (task, currentUser) => {
     if (isLevel6Plus(currentUser)) {
       return false;
     }
-    if (dccAdmin) {
-      return true;
-    }
 
-    const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.recipientDepartment || task.recipient_department || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || task.holderDept || task.targetDept || '';
+    const taskDept = task.recipient_department || task.recipientDepartment || task.target_department || task.targetDepartment || task.destinationDept || task.destination_dept || task.department || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || task.holderDept || task.targetDept || '';
     const isDeptMatch = userMatchesDepartment(currentUser, taskDept) || 
       userDepts.some(uDept => isSameDepartment(uDept, taskDept)) ||
       isSameDepartment(currentUser?.department, taskDept) ||

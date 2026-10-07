@@ -204,6 +204,15 @@ const TaskApprove = () => {
         let rawBlob = null;
         const allKeys = Array.from(new Set([primaryKey, ...fallbackKeys])).filter(Boolean);
 
+        let masterDocFallback = null;
+        const isObsoleteOrNoFile = dar?.darType === 'OBSOLETE' || dar?.type === 'OBSOLETE' || (!dar?.fileId && !dar?.file_id && !dar?.attachedFile && !task?.fileId);
+        if (isObsoleteOrNoFile && dar?.document_code) {
+          masterDocFallback = documents.find(d => 
+            (d.code === dar.document_code || d.document_code === dar.document_code) &&
+            (String(d.revision) === String(dar.current_revision || dar.target_revision || dar.revision) || d.status === 'EFFECTIVE' || d.status === 'ACTIVE')
+          );
+        }
+
         // 1. ตรวจหาจาก Synchronous In-Memory Registry ก่อน
         for (const cache of [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__]) {
           if (cache && !rawBlob) {
@@ -218,9 +227,10 @@ const TaskApprove = () => {
 
         // 2. Direct and instant raw file resolution from IndexedDB
         if (!rawBlob) {
-          rawBlob = await resolveRawFileBlob(primaryKey, fallbackKeys, dar);
+          const resolveKey = masterDocFallback ? (masterDocFallback.fileId || masterDocFallback.id) : primaryKey;
+          rawBlob = await resolveRawFileBlob(resolveKey, fallbackKeys, masterDocFallback || dar);
           if (!rawBlob) {
-            rawBlob = await resolveFileBlob(dar, primaryKey);
+            rawBlob = await resolveFileBlob(masterDocFallback || dar, resolveKey);
           }
         }
 
@@ -866,6 +876,11 @@ const TaskApprove = () => {
             <span className="font-bold text-slate-800 truncate text-sm" title={headerDisplayTitle}>
               {headerDisplayTitle}
             </span>
+            {(dar?.darType === 'OBSOLETE' || dar?.type === 'OBSOLETE') && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                (ฉบับปัจจุบันที่ขอยกเลิก)
+              </span>
+            )}
             <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">(โหมดการพิจารณาอนุมัติ)</span>
           </div>
           <button 

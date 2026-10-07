@@ -69,7 +69,7 @@ const Library = () => {
     currentUser?.role === 'DCC_STAFF'
   );
 
-  const [activeTab, setActiveTab] = useState(TAB_MY_DEPT);
+  const [activeTab, setActiveTab] = useState(TAB_GENERAL);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -290,9 +290,8 @@ const Library = () => {
     return (documents || []).filter((doc) => {
       if (activeTab === TAB_GENERAL || activeTab === 'general') {
         // แท็บ 1: เอกสารทั่วไป
-        // แสดงเฉพาะเอกสารจากแผนกอื่นที่ผู้ใช้มีสิทธิ์เข้าถึง (General, Targeted Dept, ระบุตัวบุคคล)
-        // Condition: doc.department !== currentUser.department AND userHasAccess(doc, currentUser)
-        return !isOwnerDept(doc) && hasDocumentAccess(doc, currentUser);
+        const docScope = (doc.access_control?.scope || doc.access_scope || doc.scope || 'GENERAL').toUpperCase();
+        return (docScope === 'GENERAL' || docScope === 'PUBLIC') && hasDocumentAccess(doc, currentUser);
       }
       if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
         // แท็บ 2: เอกสารในแผนกฉัน
@@ -313,10 +312,11 @@ const Library = () => {
     return (documents || []).filter(d => hasDocumentAccess(d, currentUser));
   }, [documents, currentUser]);
 
-  // Tab 1: เอกสารทั่วไป (Active docs จากแผนกอื่น)
-  const generalDocsCount = accessibleDocs.filter(d => 
-    !isOwnerDept(d) && matchesStatusTab(d.status, 'EFFECTIVE', d)
-  ).length;
+  // Tab 1: เอกสารทั่วไป (Active docs ที่เป็น Scope ทั่วไป)
+  const generalDocsCount = accessibleDocs.filter(d => {
+    const docScope = (d.access_control?.scope || d.access_scope || d.scope || 'GENERAL').toUpperCase();
+    return (docScope === 'GENERAL' || docScope === 'PUBLIC') && matchesStatusTab(d.status, 'EFFECTIVE', d);
+  }).length;
 
   // Tab 2: เอกสารในแผนกฉัน (Strict Requirement: นับเฉพาะเอกสารที่มีสถานะ ACTIVE เท่านั้น ห้ามนับรวมเอกสารตกรุ่นหรือยกเลิก)
   const myDeptDocsCount = accessibleDocs.filter(d => 

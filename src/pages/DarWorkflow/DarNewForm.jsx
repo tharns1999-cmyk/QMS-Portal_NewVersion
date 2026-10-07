@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { getDeptOptions, getDocTypeOptions, QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
@@ -125,10 +125,12 @@ const DarNewForm = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
-
+  const isSubmittedRef = useRef(false);
+  const hasHydratedDraftRef = useRef(false);
 
   // Universal Hydration Lifecycle: ดึงข้อมูลแบบร่างกลับมาหยอดลงฟอร์มทันทีที่เปิดหน้า
   useEffect(() => {
+    if (hasHydratedDraftRef.current || isSubmittedRef.current) return;
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
       const draft = location.state?.draftData || allDarsList.find(d => {
@@ -140,6 +142,7 @@ const DarNewForm = () => {
         );
       });
       if (draft) {
+        hasHydratedDraftRef.current = true;
         const hydrated = normalizeDraftToFormState(draft, initialFormState);
         setFormData(hydrated);
       }
@@ -290,7 +293,7 @@ const DarNewForm = () => {
     }
 
     toast.success('บันทึกแบบร่างสำเร็จ');
-    navigate('/dashboard');
+    navigate('/dcc/dar/list');
   };
 
   const handleFormSubmit = (e) => {
@@ -403,10 +406,10 @@ const DarNewForm = () => {
       }
     }
     
-    void result;
+    isSubmittedRef.current = true;
     setShowConfirm(false);
-    toast.success('สร้างคำร้องสำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
-    navigate('/dashboard');
+    toast.success('ยื่นคำร้อง DAR สำเร็จเรียบร้อย และส่งต่อให้ผู้ทบทวนแล้ว');
+    navigate('/dcc/dar/list');
   };
 
   return (

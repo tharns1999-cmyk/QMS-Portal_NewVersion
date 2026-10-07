@@ -25,6 +25,20 @@ import {
   checkDocumentCodeCollision
 } from '../services/MasterDataService';
 import { getMockQaSeedData } from '../data/mockQaWorkflowSeed';
+import { 
+  defaultSeedDocuments, 
+  defaultSeedDars, 
+  defaultSeedTasks, 
+  defaultSeedCopies, 
+  defaultSeedCurrentUser 
+} from './mockSeedData';
+export {
+  defaultSeedDocuments, 
+  defaultSeedDars, 
+  defaultSeedTasks, 
+  defaultSeedCopies, 
+  defaultSeedCurrentUser 
+};
 import { hasDocumentAccess, canUserAccessDocument, canManageControlledCopy } from '../utils/accessControl';
 export { canManageControlledCopy } from '../utils/accessControl';
 import { calculateTaskDueDate } from '../utils/slaCalculator';
@@ -554,6 +568,7 @@ export const MOCK_DARS = [
     target_revision: '00',
     targetRevision: '00',
     rev: '00',
+    assignee_department: 'DC',
     department: 'QC',
     dept: 'QC',
     status: 'COMPLETED',
@@ -562,6 +577,8 @@ export const MOCK_DARS = [
     effective_date: '2025-01-15',
     requesterId: 'U005',
     requesterName: 'บีม',
+    requester_department: 'QC',
+    requesterDepartment: 'QC',
     reviewerId: 'U003',
     reviewerName: 'กัลยาณี',
     approverId: 'U004',
@@ -1168,12 +1185,15 @@ export const generateNextEdrNumber = (requests = []) => {
  * 2. NEVER falls back to docOwnerDept ('PD').
  */
 export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => {
-  if (!copyOrTask) return 'EN';
+  if (!copyOrTask) return 'QC';
 
   const normalizeDeptResult = (d) => {
-    if (!d) return 'EN';
+    if (!d) return 'QC';
     const str = String(d).trim().toUpperCase();
-    if (str === 'QA/QC' || str === 'QA' || str === 'QAQC' || str === 'QC' || str.startsWith('QA/QC') || str.startsWith('QC') || str.includes('ประกันและควบคุมคุณภาพ')) {
+    if (str === 'QA') {
+      return 'QA';
+    }
+    if (str === 'QA/QC' || str === 'QAQC' || str === 'QC' || str.startsWith('QA/QC') || str.startsWith('QC') || str.includes('ประกันและควบคุมคุณภาพ')) {
       return 'QC';
     }
     if (str === 'DCC' || str === 'DC') {
@@ -1238,7 +1258,17 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     if (loc.includes('PD') || loc.includes('Production') || loc.includes('ผลิต')) return 'PD';
   }
 
-  // 3. Fallback to copy department or task department if valid and non-DCC
+  // 3. Check document code or title prefix
+  const code = copyOrTask.doc_code || copyOrTask.docCode || copyOrTask.code || copyOrTask.title || matchedCopy?.doc_code || matchedCopy?.docCode || '';
+  if (typeof code === 'string') {
+    if (code.includes('-QA-') || code.startsWith('WI-QA') || code.startsWith('SOP-QA')) return 'QA';
+    if (code.includes('-QC-') || code.startsWith('WI-QC') || code.startsWith('SOP-QC')) return 'QC';
+    if (code.includes('-PD-') || code.startsWith('SOP-PD') || code.startsWith('WI-PD')) return 'PD';
+    if (code.includes('-WH-') || code.startsWith('SOP-WH') || code.startsWith('WI-WH')) return 'WH';
+    if (code.includes('-EN-') || code.startsWith('SOP-EN') || code.startsWith('WI-EN')) return 'EN';
+  }
+
+  // 4. Fallback to copy department or task department if valid and non-DCC
   const fallbackDept = 
     copyOrTask.department || 
     copyOrTask.departmentId || 
@@ -1254,7 +1284,7 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
     return normalizeDeptResult(fallbackDept);
   }
 
-  return 'EN';
+  return 'QC';
 };
 
 export const cleanupDccTasks = (tasks, instances, documents, dars = []) => {
@@ -1818,14 +1848,14 @@ export const getInitialStoreState = () => ({
   approvalMatrix: JSON.parse(JSON.stringify(DEFAULT_APPROVAL_MATRIX)),
   approval_matrix: JSON.parse(JSON.stringify(DEFAULT_APPROVAL_MATRIX)),
   docFormats: MOCK_DOC_FORMATS,
-  dars: [],
-  darRequests: [],
-  tasks: [],
+  dars: defaultSeedDars,
+  darRequests: defaultSeedDars,
+  tasks: defaultSeedTasks,
   completedTasks: [],
   timeline: [],
-  documents: [],
-  masterDocuments: [],
-  supersededDocuments: [],
+  documents: defaultSeedDocuments,
+  masterDocuments: defaultSeedDocuments,
+  supersededDocuments: defaultSeedDocuments.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
   externalDocuments: [],
   externalRequests: [],
   externalAuditTrail: [],
@@ -1916,8 +1946,9 @@ export const getInitialStoreState = () => ({
   ],
   actionLog: [],
   copyRequests: [],
-  documentControlledCopies: [],
-  controlledCopyInstances: [],
+  documentControlledCopies: defaultSeedCopies,
+  controlledCopies: defaultSeedCopies,
+  controlledCopyInstances: defaultSeedCopies,
   controlledCopyAuditTrail: [],
   copyDispositionRecords: [],
   dispositionHistory: [],
@@ -1933,7 +1964,8 @@ export const getInitialStoreState = () => ({
     department: 'DC', 
     depts: ['DC'], 
     primary_department: 'DC', 
-    affiliated_departments: ['DC'],
+    affiliated_departments: ['DC', 'QC', 'MGMT'],
+    affiliatedDepartments: ['DC', 'QC', 'MGMT'],
     approval_level: 4 
   },
 });
@@ -1943,6 +1975,21 @@ const useStore = create(persist((set, get) => ({
 
   // EXCLUSIVELY FOR TESTING - Resets store to deterministic initial state
   resetStore: () => set(getInitialStoreState()),
+
+  // Reset & Re-seed store to default mock data
+  resetToDefaultSeed: () => {
+    set({
+      documents: defaultSeedDocuments,
+      masterDocuments: defaultSeedDocuments,
+      supersededDocuments: defaultSeedDocuments.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
+      dars: defaultSeedDars,
+      darRequests: defaultSeedDars,
+      tasks: defaultSeedTasks,
+      controlledCopies: defaultSeedCopies,
+      documentControlledCopies: defaultSeedCopies,
+      controlledCopyInstances: defaultSeedCopies
+    });
+  },
 
   // Auto-running EDR Number Generator
   generateNextEdrNumber: () => generateNextEdrNumber(get().externalRequests || []),
@@ -1977,7 +2024,7 @@ const useStore = create(persist((set, get) => ({
     });
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      const storageKey = 'qms-storage-uat-v7';
+      const storageKey = 'qms-enterprise-storage';
       try {
         const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
         if (persisted && persisted.state) {
@@ -2022,7 +2069,7 @@ const useStore = create(persist((set, get) => ({
     }));
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      const storageKey = 'qms-storage-uat-v7';
+      const storageKey = 'qms-enterprise-storage';
       try {
         const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
         if (persisted && persisted.state) {
@@ -2085,7 +2132,7 @@ const useStore = create(persist((set, get) => ({
     });
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      const storageKey = 'qms-storage-uat-v7';
+      const storageKey = 'qms-enterprise-storage';
       try {
         const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
         if (persisted && persisted.state) {
@@ -3073,6 +3120,8 @@ const useStore = create(persist((set, get) => ({
         id: `task-dcc-issue-ext-${newId}-${Date.now()}`,
         referenceType: 'EXTERNAL_DOC',
         type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
         taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
         title: `จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสารภายนอก: ${edCode} (${stations.length} จุด)`,
         description: `มีคำขอสำเนาควบคุมสำหรับเอกสารภายนอก ${edCode} จำนวน ${stations.length} เล่ม กรุณาจัดพิมพ์และแจกจ่าย`,
@@ -4219,6 +4268,8 @@ const useStore = create(persist((set, get) => ({
               id: `task-dcc-recall-revision-${priorDoc.id}-${Date.now()}`,
               referenceType: 'EXTERNAL_DOC',
               type: 'DCC_RECALL_WITH_CHECKLIST',
+            assignee_department: 'DC',
+            document_department: 'QC',
               taskType: 'DCC_RECALL_WITH_CHECKLIST',
               title: `เรียกคืนเอกสารภายนอกฉบับ Superseded: ${targetDocNo} (${priorEdLabel}) จำนวน ${prevActiveCopiesForRevision.length} จุด`,
               description: `เอกสาร ${targetDocNo} มีฉบับใหม่ (${newEdition}) แล้ว ฉบับเดิม (${priorEdLabel}) ถูกเปลี่ยนสถานะเป็น Superseded กรุณาเรียกคืนตาม Checklist`,
@@ -4422,6 +4473,8 @@ const useStore = create(persist((set, get) => ({
             id: `task-dcc-issue-ext-${doc.id}-${Date.now()}`,
             referenceType: 'EXTERNAL_DOC',
             type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
             taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
             title: `จัดพิมพ์และส่งมอบสำเนาควบคุมเอกสารภายนอก: ${docCode} (${stations.length} จุด)`,
             description: `มีคำขอสำเนาควบคุมสำหรับเอกสารภายนอก ${docCode} จำนวน ${stations.length} เล่ม กรุณาจัดพิมพ์และแจกจ่าย`,
@@ -4493,6 +4546,8 @@ const useStore = create(persist((set, get) => ({
             id: `task-dcc-recall-ext-${targetDocId}-${Date.now()}`,
             referenceType: 'EXTERNAL_DOC',
             type: 'DCC_RECALL_WITH_CHECKLIST',
+            assignee_department: 'DC',
+            document_department: 'QC',
             taskType: 'DCC_RECALL_WITH_CHECKLIST',
             title: `เรียกคืนและทำลายเอกสารภายนอกที่ถูกยกเลิก: ${docCode} จำนวน ${activeDocCopies.length} จุด`,
             description: `เอกสารภายนอก ${docCode} ถูกยกเลิกการใช้งานแล้ว กรุณาเรียกคืนฉบับกระดาษตาม Checklist`,
@@ -7011,6 +7066,8 @@ const useStore = create(persist((set, get) => ({
                 title: `แจกจ่ายเอกสาร Controlled Copy (NEW): ${distDocOfficialTitle} (${newDoc.title})`,
                 description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
                 type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
                 taskType: 'DISTRIBUTION',
                 task_type: 'DISTRIBUTION',
                 status: 'PENDING',
@@ -7251,6 +7308,8 @@ const useStore = create(persist((set, get) => ({
                   newTasks.push({
                     id: `task-recall-${targetCode}-${oldRev}-${Date.now()}`,
                     type: 'DCC_RECALL',
+            assignee_department: 'DC',
+            document_department: 'QC',
                     taskType: 'RECALL',
                     task_type: 'RECALL',
                     targetRole: 'DCC_ADMIN',
@@ -7300,6 +7359,8 @@ const useStore = create(persist((set, get) => ({
                     title: `แจกจ่ายเอกสาร Controlled Copy: ${distDocOfficialTitle} (${newDoc.title} Rev.${newDoc.rev})`,
                     description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) (Rev.${newDoc.rev}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
                     type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
                     taskType: 'DISTRIBUTION',
                     task_type: 'DISTRIBUTION',
                     targetRole: 'DCC_ADMIN',
@@ -7500,6 +7561,8 @@ const useStore = create(persist((set, get) => ({
           newTasks.push({
             id: `task-recall-${targetDocCode}-ALL-${Date.now()}`,
             type: 'DCC_RECALL',
+            assignee_department: 'DC',
+            document_department: 'QC',
             taskType: 'RECALL',
             task_type: 'RECALL',
             targetRole: 'DCC_ADMIN',
@@ -7805,7 +7868,7 @@ const useStore = create(persist((set, get) => ({
       taskType: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
       task_type: 'CONFIRM_RECEIPT',
       category: 'RECEIPT',
-      title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${docOfficialTitle} (${docCode}) (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
+      title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${docCode || docOfficialTitle} (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
       description: `กรุณาตรวจสอบเอกสารฉบับพิมพ์จริงที่จุดใช้งาน ${copy.location || copy.locationName || destinationDept} (${destinationDept}) และยืนยันการรับเอกสาร`,
       copy_id: targetId,
       copyId: targetId,
@@ -8366,6 +8429,8 @@ const useStore = create(persist((set, get) => ({
       newTasks.push({
         id: `task-recall-${targetDocCode}-ALL-${Date.now()}`,
         type: 'DCC_RECALL',
+            assignee_department: 'DC',
+            document_department: 'QC',
         taskType: 'RECALL',
         task_type: 'RECALL',
         targetRole: 'DCC_ADMIN',
@@ -8949,6 +9014,8 @@ const useStore = create(persist((set, get) => ({
             title: `แจกจ่ายเอกสาร Controlled Copy (NEW): ${distDocOfficialTitle} (${createdDoc.title})`,
             description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${createdDoc.title} (${distDocOfficialTitle}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
             type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
             status: 'PENDING',
             assigneeId: resolveDccAdminUserId(state.masterUsers),
             assignedToRole: 'DCC_ADMIN',
@@ -9778,6 +9845,8 @@ const useStore = create(persist((set, get) => ({
         title: `แจกจ่ายเอกสาร Controlled Copy: ${distDocOfficialTitle} (${newDoc.title} Rev.${newDoc.rev})`,
         description: `กรุณาพิมพ์และแจกจ่ายสำเนาควบคุมสำหรับเอกสาร ${newDoc.title} (${distDocOfficialTitle}) (Rev.${newDoc.rev}) จำนวน ${allTargets.length} แผนก/จุดใช้งาน`,
         type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
         taskType: 'DISTRIBUTION',
         task_type: 'DISTRIBUTION',
         target_role: 'DCC',
@@ -9825,6 +9894,8 @@ const useStore = create(persist((set, get) => ({
         type: 'RECALL_HARDCOPY',
         taskType: 'DCC_RECALL_WITH_CHECKLIST',
         task_type: 'DCC_RECALL_WITH_CHECKLIST',
+            assignee_department: 'DC',
+        document_department: 'QC',
         targetRole: 'DCC_ADMIN',
         target_role: 'DCC_ADMIN',
         assignedToRole: 'DCC_ADMIN',
@@ -10206,6 +10277,8 @@ const useStore = create(persist((set, get) => ({
     const dccTask = {
       id: taskId,
       type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+        document_department: 'QC',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
       title: `ขอออกสำเนาควบคุมเพิ่มเติม: ${docOfficialTitle} (${docCode}) (${newLocationsList.length} จุด)`,
       description: `แผนก ${requesterDept} โดยคุณ ${requesterName} ขอรับสำเนาควบคุมเพิ่มเติมสำหรับ ${docCode} (${docOfficialTitle}) (Rev.${docVersion}) จำนวน ${newLocationsList.length} เล่ม เหตุผล: ${reason}`,
@@ -10407,6 +10480,8 @@ const useStore = create(persist((set, get) => ({
     const dccIssueTask = {
       id: `task-dcc-replacement-${inst.id}-${Date.now()}`,
       type: 'DCC_DISTRIBUTE',
+            assignee_department: 'DC',
+            document_department: 'QC',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
       task_type: 'DISTRIBUTION',
       title: `ออกสำเนาควบคุมทดแทน (Issue ${nextIssueNo}): ${docOfficialTitle} (${docCode}) (${inst.copy_no || inst.ccNumber || '01'})`,
@@ -10443,6 +10518,8 @@ const useStore = create(persist((set, get) => ({
       dccRecallTask = {
         id: `task-dcc-recall-${inst.id}-${Date.now()}`,
         type: 'DCC_RECALL',
+            assignee_department: 'DC',
+            document_department: 'QC',
         taskType: 'RECALL',
         task_type: 'RECALL',
         title: `เรียกคืนสำเนาชำรุด: ${docCode}${docOfficialTitle && docOfficialTitle !== docCode ? ` (${docOfficialTitle})` : ''} (${inst.copy_no ? (inst.copy_no.startsWith('Copy') ? inst.copy_no : `Copy ${inst.copy_no}`) : (inst.ccNumber || 'Copy 01')})`,
@@ -13313,7 +13390,7 @@ const useStore = create(persist((set, get) => ({
   setDars: (dars) => set({ dars }),
   setTimeline: (timeline) => set({ timeline })
 }), {
-  name: 'qms-storage-uat-v7',
+  name: 'qms-enterprise-storage',
   version: 5,
   migrate: (persistedState, version) => {
     if (!version || version < 5) {
@@ -13494,6 +13571,11 @@ const useStore = create(persist((set, get) => ({
     return persistedState;
   },
   onRehydrateStorage: () => (state) => {
+    // 0. Auto-Seed Fallback: If documents are empty, seed default rich QMS data
+    if (state && (!state.documents || state.documents.length === 0 || !state.dars || state.dars.length === 0)) {
+      state.resetToDefaultSeed?.();
+    }
+
     // 0. Master Data & Signature Asset Hydration Lifecycle from IndexedDB
     if (state && typeof state.hydrateMasterData === 'function') {
       state.hydrateMasterData();
@@ -13710,7 +13792,8 @@ const useStore = create(persist((set, get) => ({
     masterDocuments: state.masterDocuments || state.documents,
     externalDocuments: state.externalDocuments,
     externalRequests: state.externalRequests,
-    documentControlledCopies: state.documentControlledCopies,
+    controlledCopies: state.controlledCopies || state.documentControlledCopies,
+    documentControlledCopies: state.documentControlledCopies || state.controlledCopies,
     controlledCopyInstances: state.controlledCopyInstances,
     controlledCopyAuditTrail: state.controlledCopyAuditTrail,
     copyDispositionRecords: state.copyDispositionRecords,
@@ -13772,12 +13855,13 @@ const useStore = create(persist((set, get) => ({
 if (typeof window !== 'undefined' && window.localStorage) {
   try {
     localStorage.removeItem('qms-storage-uat-v6');
+    localStorage.removeItem('qms-storage-uat-v7');
   } catch {
     // Ignore in non-browser or sandbox environments
   }
 
   try {
-    const storageKey = 'qms-storage-uat-v7';
+    const storageKey = 'qms-enterprise-storage';
     const persisted = JSON.parse(localStorage.getItem(storageKey) || '{}');
     if (persisted && persisted.state && Array.isArray(persisted.state.tasks)) {
       let migrated = false;
@@ -14115,7 +14199,8 @@ if (typeof window !== 'undefined' && window.localStorage) {
             target_revision: '00',
             targetRevision: '00',
             rev: '00',
-            department: 'QC',
+            assignee_department: 'DC',
+    department: 'QC',
             dept: 'QC',
             status: 'COMPLETED',
             reason: 'จัดทำคู่มือปฏิบัติงานการตรวจสอบคุณภาพวัตถุดิบรับเข้าฉบับแรก (Genesis Rev.00)',
@@ -14123,6 +14208,8 @@ if (typeof window !== 'undefined' && window.localStorage) {
             effective_date: '2025-01-15',
             requesterId: 'U005',
             requesterName: 'บีม',
+            requester_department: 'QC',
+            requesterDepartment: 'QC',
             reviewerId: 'U003',
             reviewerName: 'กัลยาณี',
             approverId: 'U004',

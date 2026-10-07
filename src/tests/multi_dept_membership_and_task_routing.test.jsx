@@ -199,6 +199,14 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
     it('routes tasks across all affiliated departments (PD and QA) while hiding non-affiliated (EN)', () => {
       renderWithRouter(<TaskInbox />);
 
+      // Default filter is user's primary department (PD)
+      expect(screen.getByText(/ตรวจรับ SOP-PD-001/i)).toBeInTheDocument();
+      expect(screen.queryByText(/ตรวจรับ SOP-QA-001/i)).not.toBeInTheDocument();
+
+      // Switch to "ทุกแผนกที่สังกัด" to view across all affiliated departments
+      const allDeptsPill = screen.getByRole('button', { name: /ทุกแผนกที่สังกัด/i });
+      fireEvent.click(allDeptsPill);
+
       // Should see PD and QA tasks
       expect(screen.getByText(/ตรวจรับ SOP-PD-001/i)).toBeInTheDocument();
       expect(screen.getByText(/ตรวจรับ SOP-QA-001/i)).toBeInTheDocument();
@@ -220,9 +228,9 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
     it('filters tasks via the Department Filter Pill Bar', () => {
       renderWithRouter(<TaskInbox />);
 
-      // Initially on "งานทั้งหมดทุกแผนก"
+      // Initially on primary department (PD)
       expect(screen.getByText(/ตรวจรับ SOP-PD-001/i)).toBeInTheDocument();
-      expect(screen.getByText(/ตรวจรับ SOP-QA-001/i)).toBeInTheDocument();
+      expect(screen.queryByText(/ตรวจรับ SOP-QA-001/i)).not.toBeInTheDocument();
 
       // Click "เฉพาะงาน QA"
       const qaPill = screen.getByRole('button', { name: /เฉพาะงาน QA/i });
@@ -239,8 +247,8 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
       expect(screen.getByText(/ตรวจรับ SOP-PD-001/i)).toBeInTheDocument();
       expect(screen.queryByText(/ตรวจรับ SOP-QA-001/i)).not.toBeInTheDocument();
 
-      // Click back to "งานทั้งหมดทุกแผนก"
-      const allDeptsPill = screen.getByRole('button', { name: /งานทั้งหมดทุกแผนก/i });
+      // Click to "ทุกแผนกที่สังกัด"
+      const allDeptsPill = screen.getByRole('button', { name: /ทุกแผนกที่สังกัด/i });
       fireEvent.click(allDeptsPill);
 
       expect(screen.getByText(/ตรวจรับ SOP-PD-001/i)).toBeInTheDocument();
@@ -382,6 +390,10 @@ describe('Multi-Department Membership & Cross-Department Task Routing Tests', ()
       });
 
       renderWithRouter(<TaskInbox />);
+
+      // Switch to "งานทั้งหมดทุกแผนก" / "ทุกแผนกที่สังกัด" to view cross-department tasks
+      const allDeptsPill = screen.getByRole('button', { name: /งานทั้งหมดทุกแผนก|ทุกแผนกที่สังกัด/i });
+      fireEvent.click(allDeptsPill);
 
       // Physical receipt is strictly segregated to recipient department staff
       expect(screen.queryByText(/ตรวจรับ WI-QA-888/i)).not.toBeInTheDocument();

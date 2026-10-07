@@ -74,7 +74,11 @@ const DarRevisionForm = () => {
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  const isSubmittedRef = useRef(false);
+  const hasHydratedDraftRef = useRef(false);
+  const hasPrefilledDocRef = useRef(false);
+  const hasHandledDeepLinkRef = useRef(false);
+  const prevUserRef = useRef({ id: currentUser?.id, dept: currentUser?.department || currentUser?.dept });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('');
@@ -85,6 +89,7 @@ const DarRevisionForm = () => {
   const [lockedSourceError, setLockedSourceError] = useState(null);
 
   useEffect(() => {
+    if (hasHydratedDraftRef.current || isSubmittedRef.current) return;
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
       const draft = location.state?.draftData || allDarsList.find(d => {
@@ -96,6 +101,7 @@ const DarRevisionForm = () => {
         );
       });
       if (draft) {
+        hasHydratedDraftRef.current = true;
         if (draft.sourceType === 'PERIODIC_REVIEW') {
           try {
             useStore.getState().validateLinkedDarSource(draft);
@@ -125,9 +131,11 @@ const DarRevisionForm = () => {
 
   // Handle Prefill from Periodic Review
   useEffect(() => {
+    if (hasPrefilledDocRef.current || isSubmittedRef.current) return;
     if (prefillDocId) {
       const doc = documents.find(d => d.id === prefillDocId);
       if (doc) {
+        hasPrefilledDocRef.current = true;
         setFormData(prev => ({
           ...prev,
           docId: doc.id,
@@ -157,15 +165,19 @@ const DarRevisionForm = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Security Handling: Clear selected doc if user switches and the doc is no longer in the filtered list
+  // Security Handling: Clear selected doc ONLY if user account or department actually switched
   useEffect(() => {
-    if (formData.docId) {
+    if (isSubmitting || isSubmittedRef.current) return;
+    const userChanged = prevUserRef.current.id !== currentUser?.id || prevUserRef.current.dept !== (currentUser?.department || currentUser?.dept);
+    prevUserRef.current = { id: currentUser?.id, dept: currentUser?.department || currentUser?.dept };
+
+    if (userChanged && formData.docId) {
       const isStillValid = (effectiveDocs || []).some(d => d && d.id === formData.docId);
       if (!isStillValid) {
         setFormData(prev => ({ ...prev, docId: '', title: '' }));
       }
     }
-  }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs]);
+  }, [currentUser?.id, currentUser?.department, currentUser?.dept, formData.docId, effectiveDocs, isSubmitting]);
 
   const filteredDocs = effectiveDocs.filter(d => {
     const docCode = resolveDocCode(d);
@@ -476,8 +488,12 @@ const DarRevisionForm = () => {
 
   // Handle Prefill / Deep-link from Document Library or URL parameters
   useEffect(() => {
+    if (hasHandledDeepLinkRef.current || isSubmittedRef.current || isSubmitting) return;
     if (targetDraftId || location.state?.draftData) return;
-    if (formData.docId) return;
+    if (formData.docId) {
+      hasHandledDeepLinkRef.current = true;
+      return;
+    }
 
     if (deepLinkDocId || deepLinkDocCode) {
       const candidateList = (effectiveDocs && effectiveDocs.length > 0) ? effectiveDocs : (documents || []);
@@ -490,18 +506,21 @@ const DarRevisionForm = () => {
       });
 
       if (matched) {
+        hasHandledDeepLinkRef.current = true;
         handleDocSelect(matched);
       }
     }
-  }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId]);
+  }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId, isSubmitting]);
 
   // Auto-align initial distributions 1-to-1 with active copies of Rev.02 if distributions are empty
   const lastAlignedDocIdRef = useRef(null);
   useEffect(() => {
+    if (isSubmitting || isSubmittedRef.current) return;
     if (!selectedDoc) return;
     if (isFormDocument) return; // Clean Form Bypass: No controlled copy auto-alignment for FM
     if (targetDraftId || location.state?.draftData) return;
     if (lastAlignedDocIdRef.current === selectedDoc.id) return;
+    lastAlignedDocIdRef.current = selectedDoc.id;
 
     if (!formData.distributions || formData.distributions.length === 0) {
       let alignedDists = [];
@@ -573,8 +592,7 @@ const DarRevisionForm = () => {
         distributions: alignedDists
       }));
     }
-    lastAlignedDocIdRef.current = selectedDoc.id;
-  }, [selectedDoc, activeCopiesInCirculation, formData.distributions, targetDraftId, location.state?.draftData, currentUser?.department, distributionLocations]);
+  }, [selectedDoc?.id, targetDraftId, location.state?.draftData, distributionLocations, isSubmitting]);
 
 
   /**
@@ -953,9 +971,10 @@ const DarRevisionForm = () => {
         }
       }
 
+      isSubmittedRef.current = true;
       setShowConfirm(false);
-      toast.success('สร้างคำร้อง Revision สำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
-      navigate('/dashboard');
+      toast.success('ยื่นคำร้อง DAR สำเร็จเรียบร้อย และส่งต่อให้ผู้ทบทวนแล้ว');
+      navigate('/dcc/dar/list');
     } catch (err) {
       console.error('Failed to submit DAR Revision:', err);
       toast.error(`เกิดข้อผิดพลาดในการส่งคำร้อง: ${err?.message || 'Unknown Error'}`);

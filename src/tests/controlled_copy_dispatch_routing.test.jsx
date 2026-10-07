@@ -26,8 +26,8 @@ describe('Controlled Copy Dispatch & Independent Receipt Task Routing Tests', ()
 
   const dccAdminUser = {
     id: 'U001',
-    name: 'Admin QA (DCC)',
-    department: 'QA',
+    name: 'Admin DC (DCC)',
+    department: 'DC',
     role: 'DCC_ADMIN',
     level: 1,
     isDcc: true
@@ -172,7 +172,7 @@ describe('Controlled Copy Dispatch & Independent Receipt Task Routing Tests', ()
     expect(screen.queryByText(/Copy 01/i)).not.toBeInTheDocument();
   });
 
-  it('5. In TaskInbox: DCC Admin sees all receipt tasks across all departments', () => {
+  it('5. In TaskInbox: DCC Admin does NOT see other department receipt tasks (strict segregation of duties)', () => {
     useStore.getState().dispatchControlledCopies(['cc-qc-01', 'cc-pd-02']);
 
     // Log in as DCC Admin
@@ -184,9 +184,9 @@ describe('Controlled Copy Dispatch & Independent Receipt Task Routing Tests', ()
       </MemoryRouter>
     );
 
-    // DCC Admin should see both Copy 01 and Copy 02
-    expect(screen.getByText(/Copy 01/i)).toBeInTheDocument();
-    expect(screen.getByText(/Copy 02/i)).toBeInTheDocument();
+    // DCC Admin must NOT see QC or PD receipt tasks in personal action items
+    expect(screen.queryByText(/Copy 01/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Copy 02/i)).not.toBeInTheDocument();
   });
 
   it('6. Confirming receipt independently marks copy as ISSUED_ACTIVE and removes only that task', () => {

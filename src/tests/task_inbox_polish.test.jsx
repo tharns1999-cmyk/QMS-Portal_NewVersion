@@ -40,6 +40,7 @@ describe('TaskInbox UI/UX Bug Fixes & Polish Tests', () => {
         {
           id: 'TASK-MOCK-2',
           type: 'APPROVE',
+          department: 'PD',
           darId: 'DAR-MOCK-2',
           title: 'อนุมัติคำร้อง (Approve DAR) - SOP-WH-002',
           assigneeId: 'U002',

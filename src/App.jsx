@@ -162,6 +162,10 @@ function App() {
             <Route path="external-requests" element={<AliasRedirect to="/dcc/external/my-requests" />} />
             <Route path="dar-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
             <Route path="requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="dar/my-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="dar/tracking" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="my-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+            <Route path="dar-tracking" element={<AliasRedirect to="/dcc/dar/list" />} />
             <Route path="my-tasks" element={<AliasRedirect to="/dcc/tasks" />} />
             <Route path="task-dashboard" element={<AliasRedirect to="/dcc/tasks" />} />
 
@@ -189,6 +193,10 @@ function App() {
           <Route path="dar/:id" element={<AliasRedirect to="/dcc/dar/:id" />} />
           <Route path="dar-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
           <Route path="requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+          <Route path="dar/my-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+          <Route path="dar/tracking" element={<AliasRedirect to="/dcc/dar/list" />} />
+          <Route path="my-requests" element={<AliasRedirect to="/dcc/dar/list" />} />
+          <Route path="dar-tracking" element={<AliasRedirect to="/dcc/dar/list" />} />
 
           <Route path="tasks" element={<AliasRedirect to="/dcc/tasks" />} />
           <Route path="my-tasks" element={<AliasRedirect to="/dcc/tasks" />} />

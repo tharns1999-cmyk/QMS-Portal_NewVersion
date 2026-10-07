@@ -164,7 +164,8 @@ describe('Cross-Department Copy Dispatch Routing Tests', () => {
     const { unmount } = renderWithRouter(<TaskInbox />);
 
     // QA user should see the task
-    expect(screen.getByText(/ตรวจรับเอกสารควบคุมฉบับพิมพ์: SOP-PD-01 \(Copy 02\)/i)).toBeInTheDocument();
+    expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
+    expect(screen.getByText(/Copy 02/i)).toBeInTheDocument();
     expect(screen.getAllByText(/ตรวจรับเล่มสำเนา \(Receipt\)/i).length).toBeGreaterThan(0);
     unmount();
 
@@ -173,6 +174,7 @@ describe('Cross-Department Copy Dispatch Routing Tests', () => {
     renderWithRouter(<TaskInbox />);
 
     // PD user should NOT see this cross-department task
-    expect(screen.queryByText(/ตรวจรับเอกสารควบคุมฉบับพิมพ์: SOP-PD-01 \(Copy 02\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('SOP-PD-01')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Copy 02/i)).not.toBeInTheDocument();
   });
 });
