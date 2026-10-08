@@ -849,10 +849,21 @@ export class UniversalWatermarkService {
 
     const meta = this.sanitizeMetadata(combinedMeta);
 
+    const isObsoleteRequest = Boolean(
+      meta.type === 'OBSOLETE' ||
+      meta.action_type === 'OBSOLETE' ||
+      meta.darType === 'OBSOLETE' ||
+      meta.requestType === 'OBSOLETE' ||
+      combinedMeta.type === 'OBSOLETE' ||
+      combinedMeta.action_type === 'OBSOLETE' ||
+      combinedMeta.darType === 'OBSOLETE' ||
+      combinedMeta.requestType === 'OBSOLETE'
+    );
+
     // Single-Layer Exclusive Selection Flow:
     // 1. If DRAFT / In-Review stage, enforce DRAFT watermark ONLY.
     // Cut off any Confidential or Uncontrolled watermark execution.
-    const isDraft = (
+    const isDraft = !isObsoleteRequest && (
       resolvedType === WATERMARK_TYPES.DRAFT ||
       resolvedType === 'DRAFT' ||
       resolvedType === 'DRAFT_WATERMARK' ||
@@ -1684,6 +1695,60 @@ export const getWatermarkConfig = (status) => {
   }
 };
 
+/**
+ * Stamping engine for SUPERSEDED historical document versions
+ * Conforms to ISO 9001 Clause 7.5.3: Outdated historical revisions must bear
+ * high-visibility red SUPERSEDED watermark with former revision, replacement revision, and date.
+ *
+ * @param {Blob|File|ArrayBuffer|Uint8Array} rawPdfFile
+ * @param {Object} options - { documentCode, formerRev, replacedByRev, effectiveDate, userName, userDept }
+ * @returns {Promise<Blob>} Stamped PDF Blob
+ */
+export const applySupersededWatermark = async (rawPdfFile, options = {}) => {
+  let rawPdfBytes = null;
+  if (typeof Blob !== 'undefined' && rawPdfFile instanceof Blob) {
+    rawPdfBytes = await rawPdfFile.arrayBuffer();
+  } else if (rawPdfFile instanceof ArrayBuffer) {
+    rawPdfBytes = rawPdfFile;
+  } else if (rawPdfFile instanceof Uint8Array) {
+    rawPdfBytes = rawPdfFile.buffer;
+  } else if (rawPdfFile && typeof rawPdfFile.arrayBuffer === 'function') {
+    rawPdfBytes = await rawPdfFile.arrayBuffer();
+  } else {
+    throw new Error('Invalid PDF file provided to applySupersededWatermark');
+  }
+
+  const docCode = options.documentCode || options.docCode || options.code || options.title || 'DOCUMENT';
+  const formerRev = String(options.formerRev ?? options.revision ?? options.rev ?? '00').replace(/^rev\.?/i, '').padStart(2, '0');
+  const replacedByRev = String(options.replacedByRev ?? options.supersededByRev ?? options.nextRev ?? 'Latest').replace(/^rev\.?/i, '');
+  const effDate = options.effectiveDate || options.effective_date || options.date || new Date().toLocaleDateString('th-TH');
+
+  const meta = {
+    ...options,
+    docCode,
+    documentCode: docCode,
+    revNo: formerRev,
+    revision: formerRev,
+    formerRev,
+    replacedByRev,
+    supersededByRev: replacedByRev,
+    effectiveDate: effDate,
+    status: 'SUPERSEDED',
+    watermarkType: 'SUPERSEDED',
+    userName: options.userName || 'DCC Officer',
+    userDept: options.userDept || 'DC'
+  };
+
+  const stampedBytes = await drawStandardIsoWatermark(rawPdfBytes, WATERMARK_TYPES.SUPERSEDED, meta);
+  const finalBytes = (stampedBytes && typeof stampedBytes.save === 'function')
+    ? await stampedBytes.save()
+    : stampedBytes;
+
+  return new Blob([finalBytes], { type: 'application/pdf' });
+};
+
 UniversalWatermarkService.getWatermarkConfig = getWatermarkConfig;
+UniversalWatermarkService.applySupersededWatermark = applySupersededWatermark;
 
 export default UniversalWatermarkService;
+

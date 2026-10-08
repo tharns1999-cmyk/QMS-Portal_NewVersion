@@ -90,12 +90,12 @@ const isCrossOrgAuthority = (user) => {
   return CROSS_ORG_DEPTS.some(d => userDepts.includes(d));
 };
 
-/**
- * Checks if a user is affiliated with a specific department (Multi-Department Matcher).
- * Strictly requires an explicit department match.
- */
 export const isUserInDepartment = (user, department) => {
   if (!user || !department) return false;
+
+  if (Array.isArray(user.managedDepartments)) {
+    if (user.managedDepartments.includes('*') || user.managedDepartments.includes(department)) return true;
+  }
 
   // 1. Primary department
   if (user.department === department || user.dept === department || user.primaryDepartment === department || user.primary_department === department) {

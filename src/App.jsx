@@ -6,17 +6,23 @@ import Layout from './components/layout/Layout';
 import SLAEngine from './components/SLAEngine';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
-// [Blueprint: รันตอน Mount เพื่อเคลียร์ Key ที่บวมเกิน 1.5MB]
+// [Safe Cache Maintenance: รันตอน Boot เพื่อเคลียร์ Temporary Cache ที่บวมเกิน 1.5MB โดยไม่แตะต้อง Vault หลัก]
 (() => {
   try {
+    const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      const val = localStorage.getItem(key);
-      if (val && val.length > 1.5 * 1024 * 1024) {
-        console.warn(`[Auto-Purge] Removing bloated localStorage key: ${key} (${Math.round(val.length / 1024)} KB)`);
-        localStorage.removeItem(key);
+      if (key && key !== 'qms-enterprise-storage' && key !== 'qms-storage-vault') {
+        const val = localStorage.getItem(key);
+        if (val && val.length > 1.5 * 1024 * 1024) {
+          keysToRemove.push(key);
+        }
       }
     }
+    keysToRemove.forEach(k => {
+      console.warn(`[Auto-Purge] Removing bloated temporary cache key: ${k}`);
+      localStorage.removeItem(k);
+    });
   } catch (e) {
     console.error('Storage cleanup check failed', e);
   }

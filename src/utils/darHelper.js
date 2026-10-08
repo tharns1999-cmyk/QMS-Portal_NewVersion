@@ -66,18 +66,141 @@ export const getDarDocInfo = (dar, documents) => {
       docRev: dar.docRev || '00'
     };
   } else if (dar.type === 'REVISION' || dar.type === 'OBSOLETE') {
-    const refDoc = documents?.find(d => d.id === dar.docIdRef);
+    const refDoc = documents?.find(d => 
+      (dar.docIdRef && d.id === dar.docIdRef) ||
+      (dar.targetDocumentId && d.id === dar.targetDocumentId) ||
+      (dar.doc_id && d.id === dar.doc_id) ||
+      (dar.docId && d.id === dar.docId) ||
+      (dar.document_code && (d.code === dar.document_code || d.title === dar.document_code || d.document_code === dar.document_code))
+    );
     if (refDoc) {
-      const docType = refDoc.title.split('-')[0] || '-';
+      const docType = refDoc.docType || refDoc.type || (refDoc.title ? refDoc.title.split('-')[0] : '-');
       return {
-        docCode: refDoc.title || '-',
+        docCode: refDoc.title || refDoc.code || refDoc.document_code || '-',
         docType: docType,
-        docRev: refDoc.rev || '-'
+        docRev: refDoc.rev || refDoc.revision || '-'
       };
     }
+    const fallbackCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || '-';
+    return {
+      docCode: fallbackCode,
+      docType: dar.docType || (fallbackCode !== '-' ? fallbackCode.split('-')[0] : '-'),
+      docRev: dar.docRev || dar.rev || dar.revision || '-'
+    };
   }
   
   return { docCode: '-', docType: '-', docRev: '-' };
+};
+
+/**
+ * Standardizes DAR Document Code & Title Display (2-line layout)
+ * Strips [OBSOLETE], [REVISION], [NEW], or [ยกเลิก] tags.
+ * 
+ * Line 1: docCode (e.g. SOP-QC-01)
+ * Line 2: docTitle (e.g. ระเบียบปฏิบัติการควบคุมคุณภาพและการสุ่มตัวอย่าง)
+ * 
+ * @param {Object} dar - DAR request object
+ * @param {Array} documents - Documents collection from store
+ * @returns {{ docCode: string, docTitle: string }}
+ */
+export const formatDarDocumentDisplay = (dar, documents = []) => {
+  if (!dar) return { docCode: '-', docTitle: '-' };
+
+  let rawCode = dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.docNo || dar.code || '';
+  let rawTitle = dar.document_title || dar.name || dar.title || '';
+
+  // Clean tags like [OBSOLETE], [REVISION], [NEW], [ยกเลิก]
+  let cleanCode = String(rawCode || '').replace(/^\[(OBSOLETE|REVISION|NEW|ยกเลิก)\]\s*/i, '').trim();
+  let cleanTitle = String(rawTitle || '').replace(/^\[(OBSOLETE|REVISION|NEW|ยกเลิก)\]\s*/i, '').trim();
+
+  // If code is empty but cleanTitle looks like an alphanumeric document code (e.g. SOP-QC-01)
+  if (!cleanCode && /^[A-Z]{2,4}-[A-Z0-9]+(-[A-Z0-9]+)?$/i.test(cleanTitle)) {
+    cleanCode = cleanTitle;
+  }
+
+  let docCode = cleanCode || '-';
+  let docTitle = cleanTitle || '-';
+
+  // Cross-reference with documents library to enrich title or code
+  if (Array.isArray(documents) && documents.length > 0) {
+    const matched = documents.find(d => 
+      (dar.targetDocumentId && String(d.id) === String(dar.targetDocumentId)) ||
+      (dar.docIdRef && String(d.id) === String(dar.docIdRef)) ||
+      (dar.doc_id && String(d.id) === String(dar.doc_id)) ||
+      (dar.docId && String(d.id) === String(dar.docId)) ||
+      (docCode !== '-' && (
+        d.code === docCode || 
+        d.document_code === docCode || 
+        d.doc_code === docCode || 
+        d.title === docCode
+      ))
+    );
+    if (matched) {
+      if (docCode === '-' && (matched.code || matched.document_code || matched.doc_code || matched.title)) {
+        docCode = matched.code || matched.document_code || matched.doc_code || matched.title;
+      }
+      if ((docTitle === '-' || docTitle === docCode) && (matched.name || matched.document_title || matched.docName)) {
+        docTitle = matched.name || matched.document_title || matched.docName;
+      }
+    }
+  }
+
+  return { docCode, docTitle };
+};
+
+/**
+ * Unified DAR status badge metadata for consistent localization & styling.
+ * 
+ * @param {string} status - Workflow status string
+ * @returns {{ label: string, className: string }}
+ */
+export const getDarStatusBadgeMeta = (status) => {
+  const normStatus = String(status || '').trim().toUpperCase();
+  switch (normStatus) {
+    case 'DRAFT':
+    case 'ฉบับร่าง':
+      return { label: 'ฉบับร่าง', className: 'badge-draft' };
+    case 'UNDER_REVIEW':
+    case 'PENDING_REVIEW':
+    case 'WAITING_DCC_REVIEW':
+    case 'WAITING_REVIEW':
+    case 'รอการทบทวน':
+      return { label: 'รอการทบทวน', className: 'badge-pending' };
+    case 'PENDING_APPROVAL':
+    case 'UNDER_APPROVAL':
+    case 'รอการอนุมัติ':
+      return { label: 'รอการอนุมัติ', className: 'badge-pending' };
+    case 'APPROVED':
+    case 'อนุมัติแล้ว':
+      return { label: 'อนุมัติแล้ว', className: 'badge-active' };
+    case 'APPROVED_WAITING_EFFECTIVE':
+    case 'WAITING_EFFECTIVE':
+    case 'รอประกาศใช้':
+      return { label: 'รอประกาศใช้', className: 'badge-pending' };
+    case 'EFFECTIVE':
+    case 'มีผลบังคับใช้':
+      return { label: 'มีผลบังคับใช้', className: 'badge-active' };
+    case 'COMPLETED':
+    case 'เสร็จสมบูรณ์':
+      return { label: 'เสร็จสมบูรณ์', className: 'badge-active' };
+    case 'CANCELLED':
+    case 'ยกเลิก':
+      return { label: 'ยกเลิก', className: 'badge-rejected' };
+    case 'CANCELLED_OVERDUE':
+    case 'ยกเลิก (เกินกำหนด)':
+      return { label: 'ยกเลิก (เกินกำหนด)', className: 'badge-rejected' };
+    case 'REJECTED':
+    case 'ไม่อนุมัติ':
+      return { label: 'ไม่อนุมัติ', className: 'badge-rejected' };
+    case 'RETURNED_FOR_REVISION':
+    case 'ส่งกลับแก้ไข':
+      return { label: 'ส่งกลับแก้ไข', className: 'badge-rejected' };
+    case 'OBSOLETE':
+    case 'ยกเลิก / ตกรุ่น':
+      return { label: 'ยกเลิก / ตกรุ่น', className: 'badge-draft' };
+    default:
+      return { label: status ? String(status).replace(/_/g, ' ') : '-', className: 'badge-active' };
+  }
 };
 
 export const getRequesterName = (dar, masterUsers) => {

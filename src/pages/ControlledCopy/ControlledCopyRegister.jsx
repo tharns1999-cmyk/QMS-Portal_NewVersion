@@ -60,6 +60,7 @@ const ControlledCopyRegister = () => {
     documentControlledCopies,
     issueControlledCopy, 
     dispatchControlledCopy,
+    markCopyPrinted,
     reportCcDamagedLost, 
     completeRecallChecklist: _completeRecallChecklist,
     recordCopyRecalled: _recordCopyRecalled,
@@ -139,6 +140,9 @@ const ControlledCopyRegister = () => {
 
   // DCC Recall Action Modal state
   const [recallModalGroup, setRecallModalGroup] = useState(null);
+
+  // Poka-Yoke: Unprinted Warning Modal state
+  const [unprintedWarningModal, setUnprintedWarningModal] = useState({ isOpen: false, targetItem: null });
 
   // Available Stations for Issue Modal based on selected issueDept
   const availableIssueStations = useMemo(() => {
@@ -691,7 +695,7 @@ const ControlledCopyRegister = () => {
 
   // --- ACTIONS ---
 
-  // 1. Single Print with Location-Specific Watermark
+  // 1. Single Print with Location-Specific Watermark (also tracks is_printed state)
   const handlePrintSingleCopy = async (item) => {
     setProcessingCopyId(item.id);
     const rawCopy = item.copyNo || item.copy_no || item.copyNumber || item.ccNumber || '01';
@@ -719,7 +723,7 @@ const ControlledCopyRegister = () => {
         effectiveDate: item.issuedDate || item.dispatchDate || item.dateIssued || formatQmsDate(new Date())
       };
 
-      // 2. Format Issue No. ให้เป็นตัวเลข 2 หลัก (เช่น "Issue 02 (ทดแทน)" หรือ 2 -> "02")
+      // 2. Format Issue No. ให้เป็นตัวเลข 2 หลัก
       const rawIssue = item.issueNo || item.issue_no || item.issueNumber || '01';
       const issueMatch = String(rawIssue).match(/\d+/);
       const cleanIssueNo = issueMatch ? issueMatch[0].padStart(2, '0') : '01';
@@ -733,7 +737,7 @@ const ControlledCopyRegister = () => {
 
       const isExternal = Boolean(item.is_external || item.isExternal || targetDoc.isExternal || targetDoc.docType === 'ED' || (docCode || '').startsWith('ED-'));
 
-      // 3. เรียก Watermark Service โหมด CONTROLLED พร้อมส่งพารามิเตอร์ครบชุด
+      // 3. เรียก Watermark Service โหมด CONTROLLED
       await UniversalWatermarkService.downloadWatermarkedPdf(targetDoc, WATERMARK_TYPES.CONTROLLED_COPY, {
         currentUser,
         docCode,
@@ -755,6 +759,9 @@ const ControlledCopyRegister = () => {
         isControlledPrint: true,
         is_replacement: Boolean(item.is_replacement || item.isReplacement || cleanIssueNo !== '01')
       });
+
+      // 4. อัปเดต print state ใน store (Poka-Yoke: ติดตามการพิมพ์)
+      if (markCopyPrinted) markCopyPrinted(item.id);
 
       toast.success(`ดาวน์โหลดเอกสารพร้อมลายน้ำ Copy ${cleanCopyNo} สำเร็จ`, { id: toastId });
     } catch (err) {
@@ -840,6 +847,9 @@ const ControlledCopyRegister = () => {
           is_replacement: Boolean(item.is_replacement || item.isReplacement || cleanIssueNo !== '01')
         });
 
+        // Update print tracking state in store
+        if (markCopyPrinted) markCopyPrinted(item.id);
+
         // Small pause between downloads to prevent browser pop-up blocking
         if (i < targets.length - 1) {
           await new Promise(r => setTimeout(r, 400));
@@ -854,10 +864,31 @@ const ControlledCopyRegister = () => {
     }
   };
 
-  // 3. Single Dispatch Action
-  const handleDispatchSingle = (copy) => {
+  // 3. Dispatch Guard (Poka-Yoke): ตรวจสอบว่าพิมพ์แล้วก่อนส่งมอบ
+  const handleDispatchClick = (copy) => {
+    if (!copy.is_printed) {
+      // ยังไม่พิมพ์ -> เปิด Warning Modal
+      setUnprintedWarningModal({ isOpen: true, targetItem: copy });
+      return;
+    }
+    // พิมพ์แล้ว -> ดำเนินการส่งมอบตามปกติ
     dispatchControlledCopy(copy.id);
     toast.success(`บันทึกส่งมอบสำเนา Copy ${copy.copy_no || copy.ccNumber} (${copy.holder_dept || copy.department}) สำเร็จ พร้อมสร้าง Task ตรวจรับ`);
+  };
+
+  // 3a. Print-then-Dispatch (จาก Warning Modal)
+  const handlePrintAndDispatch = async (item) => {
+    setUnprintedWarningModal({ isOpen: false, targetItem: null });
+    await handlePrintSingleCopy(item);
+    dispatchControlledCopy(item.id);
+    toast.success(`พิมพ์และบันทึกส่งมอบสำเนา Copy ${item.copy_no || item.ccNumber} สำเร็จ`);
+  };
+
+  // 3b. Force-Dispatch โดยข้ามการพิมพ์ (จาก Warning Modal)
+  const handleForceDispatch = (item) => {
+    setUnprintedWarningModal({ isOpen: false, targetItem: null });
+    dispatchControlledCopy(item.id);
+    toast(`บันทึกส่งมอบสำเนา Copy ${item.copy_no || item.ccNumber} (ข้ามการพิมพ์)`, { icon: '⚠️' });
   };
 
   // 4. Batch Dispatch All Pending Copies
@@ -1165,29 +1196,52 @@ const ControlledCopyRegister = () => {
                             </div>
                           </td>
                           <td className="py-3.5 px-3.5 align-middle text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-2 justify-end">
-                              <button
-                                onClick={() => handlePrintSingleCopy(copy)}
-                                disabled={isProcessing}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 whitespace-nowrap transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                                title="พิมพ์สำเนาพร้อมลายน้ำระบุจุดใช้งาน"
-                              >
-                                {isProcessing ? (
-                                  <div className="w-3.5 h-3.5 border-2 border-blue-700 border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <Printer className="w-3.5 h-3.5" />
-                                )}
-                                <span>พิมพ์สำเนาเดี่ยว</span>
-                              </button>
+                            <div className="flex flex-col items-end gap-1.5">
+                              {/* Print-status badge */}
+                              {copy.is_printed ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <Check className="w-3 h-3" />
+                                  พิมพ์แล้ว
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  ยังไม่ได้พิมพ์
+                                </span>
+                              )}
+                              {/* Action buttons: hierarchy swaps based on is_printed */}
+                              <div className="inline-flex items-center gap-2 justify-end">
+                                <button
+                                  onClick={() => handlePrintSingleCopy(copy)}
+                                  disabled={isProcessing}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shadow-xs disabled:opacity-50 ${
+                                    !copy.is_printed
+                                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/20'
+                                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                  }`}
+                                  title="พิมพ์สำเนาพร้อมลายน้ำระบุจุดใช้งาน"
+                                >
+                                  {isProcessing ? (
+                                    <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${!copy.is_printed ? 'border-white' : 'border-slate-600'}`} />
+                                  ) : (
+                                    <Printer className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>{copy.is_printed ? 'พิมพ์อีกครั้ง' : 'พิมพ์สำเนา'}</span>
+                                </button>
 
-                              <button
-                                onClick={() => handleDispatchSingle(copy)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap shadow-xs transition-colors cursor-pointer"
-                                title="บันทึกส่งมอบเล่มจริงให้แผนกผู้รับ"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                                <span>บันทึกส่งมอบ (Dispatch)</span>
-                              </button>
+                                <button
+                                  onClick={() => handleDispatchClick(copy)}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shadow-xs transition-all cursor-pointer ${
+                                    copy.is_printed
+                                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/20'
+                                      : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                                  }`}
+                                  title="บันทึกส่งมอบเล่มจริงให้แผนกผู้รับ"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>บันทึกส่งมอบ</span>
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </motion.tr>
@@ -1269,6 +1323,7 @@ const ControlledCopyRegister = () => {
                   <th className="py-3 px-3.5 text-center select-none whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
                   <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">วันเวลาที่นำส่ง</th>
                   <th className="py-3 px-3.5 text-left select-none whitespace-nowrap bg-[#F8FAFC]">ผู้นำส่ง (DCC)</th>
+                  <th className="py-3 px-3.5 text-right select-none whitespace-nowrap bg-[#F8FAFC]">การดำเนินการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0]">
@@ -1341,6 +1396,21 @@ const ControlledCopyRegister = () => {
                       </td>
                       <td className="py-3.5 px-3.5 text-xs font-medium text-slate-700 align-middle whitespace-nowrap">
                         {copy.dispatched_by || 'DCC Officer'}
+                      </td>
+                      <td className="py-3.5 px-3.5 align-middle text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => handlePrintSingleCopy(copy)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer shadow-xs"
+                            title="พิมพ์สำเนาประทับตราอีกครั้ง (Reprint Fallback)"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-slate-500" />
+                            <span>พิมพ์ซ้ำ</span>
+                          </button>
+                          <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                            รอปลายทางตรวจรับ
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2448,6 +2518,96 @@ const ControlledCopyRegister = () => {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* POKA-YOKE: Warning Modal - Dispatch Before Print Guard */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {unprintedWarningModal.isOpen && unprintedWarningModal.targetItem && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setUnprintedWarningModal({ isOpen: false, targetItem: null })}
+            />
+            {/* Modal Panel */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-amber-200 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-5 bg-amber-50 border-b border-amber-200 flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <AlertOctagon className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-amber-900">
+                    เอกสารนี้ยังไม่ได้สั่งพิมพ์สำเนาควบคุม
+                  </h3>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    ท่านยังไม่ได้สั่งพิมพ์สำเนาควบคุมฉบับจริง หากบันทึกส่งมอบ แผนกผู้รับจะไม่ได้รับเล่มจริงในการตรวจรับ
+                  </p>
+                </div>
+                <button
+                  onClick={() => setUnprintedWarningModal({ isOpen: false, targetItem: null })}
+                  className="ml-auto shrink-0 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Copy Info */}
+              <div className="px-6 py-4 border-b border-slate-100">
+                <div className="flex items-center gap-3 text-xs text-slate-600">
+                  <span className="px-2 py-0.5 rounded-md font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    {unprintedWarningModal.targetItem.document_code || unprintedWarningModal.targetItem.doc_code || '-'}
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span>Copy {unprintedWarningModal.targetItem.copy_no || unprintedWarningModal.targetItem.ccNumber || '01'}</span>
+                  <span className="text-slate-400">·</span>
+                  <span>{unprintedWarningModal.targetItem.holder_dept || unprintedWarningModal.targetItem.department || '-'}</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 py-5 flex flex-col gap-3">
+                {/* Primary: Print + Dispatch */}
+                <button
+                  onClick={() => handlePrintAndDispatch(unprintedWarningModal.targetItem)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.99] shadow-sm transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>สั่งพิมพ์และบันทึกส่งมอบทันที</span>
+                </button>
+
+                {/* Secondary: Force Dispatch (skip print) */}
+                <button
+                  onClick={() => handleForceDispatch(unprintedWarningModal.targetItem)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 active:scale-[0.99] transition-all cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>ยืนยันส่งมอบ (ข้ามการพิมพ์)</span>
+                </button>
+
+                {/* Cancel: Go back to print */}
+                <button
+                  onClick={() => setUnprintedWarningModal({ isOpen: false, targetItem: null })}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  <span>กลับไปพิมพ์ก่อน</span>
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

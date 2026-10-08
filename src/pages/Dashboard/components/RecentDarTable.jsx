@@ -1,5 +1,7 @@
 import React from 'react';
 import EmptyState from '../../../components/EmptyState';
+import useStore from '../../../store/useStore';
+import { formatDarDocumentDisplay } from '../../../utils/darHelper';
 
 /**
  * RecentDarTable Component
@@ -14,6 +16,7 @@ const RecentDarTable = ({
   getCurrentHandler,
   renderActionButtons
 }) => {
+  const documents = useStore(state => state.documents);
   return (
     <div className="overflow-x-auto w-full">
       {recentDars.length > 0 ? (
@@ -86,8 +89,26 @@ const RecentDarTable = ({
                     </span>
                   )}
                 </td>
-                <td className="py-3 px-4 font-medium text-slate-800 leading-relaxed break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-sky-600 transition-colors text-[13px] sm:text-sm" title={dar.title}>
-                  {dar.title || '-'}
+                {/* คอลัมน์ ชื่อเอกสาร / หัวข้อ */}
+                <td className="py-3 px-4 align-middle min-w-0">
+                  {(() => {
+                    const { docCode, docTitle } = formatDarDocumentDisplay(dar, documents);
+                    return (
+                      <div className="flex flex-col min-w-0">
+                        {/* บรรทัดที่ 1: รหัสเอกสาร */}
+                        <span className="text-[13px] sm:text-sm font-semibold text-slate-800 leading-tight group-hover:text-sky-600 transition-colors">
+                          {docCode}
+                        </span>
+                        {/* บรรทัดที่ 2: ชื่อเอกสารจริง (ตัด tag [OBSOLETE] ออกถ้ามีหลงเหลือ) */}
+                        <span 
+                          className="text-xs text-slate-500 line-clamp-1 leading-normal mt-0.5" 
+                          title={docTitle}
+                        >
+                          {docTitle}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td className="py-3 px-4 whitespace-nowrap">
                   <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-mono text-[11px] font-medium uppercase tracking-wider border border-slate-200">

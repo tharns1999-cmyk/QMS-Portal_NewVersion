@@ -143,6 +143,11 @@ export const isSameDepartment = (deptA, deptB) => {
  */
 export const userMatchesDepartment = (user, dept) => {
   if (!user || !dept) return false;
+  
+  if (Array.isArray(user.managedDepartments)) {
+    if (user.managedDepartments.includes('*') || user.managedDepartments.some(d => isSameDepartment(d, dept))) return true;
+  }
+
   const userDepts = [
     user.department,
     user.dept,
@@ -317,7 +322,7 @@ export const isActionableTask = (task, currentUser) => {
   if (isDeptReviewOrApprove) {
     const isQmr = currentUser?.role === 'QMR' || currentUser?.isQmr;
     const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || '';
-    const isDeptMatch = Boolean(isQmr || (taskDept && userDepts.some(uDept => isSameDepartment(uDept, taskDept))));
+    const isDeptMatch = Boolean(isQmr || (taskDept && userMatchesDepartment(currentUser, taskDept)));
     const requiredLevel = Number(task.required_approval_level || task.requiredLevel || task.currentHandlerLevel || task.min_level || 1);
     const isLevelMatch = isQmr || (userApprovalLevel >= requiredLevel);
 
@@ -326,7 +331,7 @@ export const isActionableTask = (task, currentUser) => {
 
   // 7. Generic unassigned department pooled tasks:
   const taskDept = task.department || task.target_department || task.targetDepartment || task.destinationDept || task.assignedToDept || task.currentHandlerDepartment || task.holder_dept || '';
-  if (!taskAssigneeId && taskDept && userDepts.some(uDept => isSameDepartment(uDept, taskDept))) {
+  if (!taskAssigneeId && taskDept && userMatchesDepartment(currentUser, taskDept)) {
     return true;
   }
 

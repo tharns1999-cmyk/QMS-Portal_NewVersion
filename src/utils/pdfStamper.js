@@ -319,13 +319,13 @@ export const generateSignOffStampImage = async ({ requester = {}, reviewer = {},
       status === 'DRAFT' ||
       !status;
 
-    const isCompleted = data?.isCompleted === true || (
-      Boolean(data) && 
-      !isExplicitPending && 
-      (status === 'SUBMITTED' || status === 'REVIEWED' || status === 'APPROVED' || status === 'COMPLETED')
-    );
+    const isSigned = data?.isSigned !== undefined
+      ? Boolean(data.isSigned)
+      : (data?.isCompleted !== undefined
+          ? Boolean(data.isCompleted)
+          : (!isExplicitPending && Boolean(data?.name && String(data.name).trim() !== '')));
 
-    if (!data || !isCompleted) {
+    if (!data || !isSigned) {
       continue;
     }
 
@@ -455,20 +455,23 @@ export const applyProgressiveSignatoryStamp = async (originalPdfBytesOrBlob, sig
 
   // Normalize signatories cell shape
   const toStampCell = (cell) => {
-    if (!cell) return { isCompleted: false, isPending: true };
-    const isCompleted = cell.isCompleted !== undefined 
-      ? Boolean(cell.isCompleted) 
-      : Boolean(cell.name && String(cell.name).trim() !== '');
+    if (!cell) return { isCompleted: false, isPending: true, isSigned: false };
+    const isSigned = cell.isSigned !== undefined 
+      ? Boolean(cell.isSigned) 
+      : (cell.isCompleted !== undefined 
+          ? Boolean(cell.isCompleted) 
+          : Boolean(cell.name && String(cell.name).trim() !== ''));
     return {
-      name: cell.name || '',
-      position: cell.position || '',
-      date: cell.date || cell.timestamp || '',
-      timestamp: cell.date || cell.timestamp || '',
-      signatureImage: cell.signatureImage || cell.signature || null,
-      signature: cell.signatureImage || cell.signature || null,
-      isCompleted,
-      isPending: !isCompleted,
-      status: isCompleted ? 'COMPLETED' : 'PENDING'
+      name: isSigned ? (cell.name || '') : '',
+      position: isSigned ? (cell.position || '') : '',
+      date: isSigned ? (cell.date || cell.timestamp || '') : '',
+      timestamp: isSigned ? (cell.date || cell.timestamp || '') : '',
+      signatureImage: isSigned ? (cell.signatureImage || cell.signature || null) : null,
+      signature: isSigned ? (cell.signatureImage || cell.signature || null) : null,
+      isCompleted: isSigned,
+      isSigned,
+      isPending: !isSigned,
+      status: isSigned ? 'COMPLETED' : 'PENDING'
     };
   };
 
@@ -915,6 +918,17 @@ export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata = {}) =
  * - 30% - 40% Opacity in Deep Carmine / Amber-Red
  */
 export const generateDraftWatermarkImage = async (metadata = {}) => {
+  if (
+    metadata?.type === 'OBSOLETE' ||
+    metadata?.action_type === 'OBSOLETE' ||
+    metadata?.darType === 'OBSOLETE' ||
+    metadata?.requestType === 'OBSOLETE' ||
+    metadata?.type === 'CANCEL' ||
+    metadata?.skipStamping
+  ) {
+    return null;
+  }
+
   await ensureThSarabunFontLoaded();
 
   return new Promise((resolve) => {
@@ -1014,6 +1028,17 @@ export const generateDraftWatermarkImage = async (metadata = {}) => {
  * @returns {Promise<Uint8Array>} Stamped PDF bytes
  */
 export const applyDraftWatermarkToPdf = async (pdfBytes, metadata = {}) => {
+  if (
+    metadata?.type === 'OBSOLETE' ||
+    metadata?.action_type === 'OBSOLETE' ||
+    metadata?.darType === 'OBSOLETE' ||
+    metadata?.requestType === 'OBSOLETE' ||
+    metadata?.type === 'CANCEL' ||
+    metadata?.skipStamping
+  ) {
+    return pdfBytes;
+  }
+
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const pages = pdfDoc.getPages();
 
@@ -1202,6 +1227,19 @@ export const stampDarPreviewPdf = async (rawPdfBytes, options = {}) => {
     throw new Error('stampDarPreviewPdf: rawPdfBytes is empty (0 bytes) — ห้ามสร้างเอกสารเปล่า');
   }
 
+  // Stamping Guard: Bypass Sign-off Matrix & Watermark for OBSOLETE Requests
+  const dar = options.dar || {};
+  const isObsoleteRequest = Boolean(
+    dar.type === 'OBSOLETE' ||
+    dar.action_type === 'OBSOLETE' ||
+    dar.darType === 'OBSOLETE' ||
+    dar.requestType === 'OBSOLETE' ||
+    dar.type === 'CANCEL'
+  );
+  if (options.skipStamping || isObsoleteRequest) {
+    return rawPdfBytes;
+  }
+
   // Resolve signOffData — support both calling conventions
   let signOffData = options.signOffData || {};
   let draftMetadata = options.draftMetadata || {};
@@ -1228,7 +1266,9 @@ export const stampDarPreviewPdf = async (rawPdfBytes, options = {}) => {
   let stampedBytes = await stampDocumentLastPage(rawPdfBytes, signOffData);
 
   // Step 2: Stamp DRAFT watermark on ALL pages — exclusively, no other center watermark
-  stampedBytes = await applyDraftWatermarkToPdf(stampedBytes, draftMetadata);
+  if (!isObsoleteRequest) {
+    stampedBytes = await applyDraftWatermarkToPdf(stampedBytes, draftMetadata);
+  }
 
   return stampedBytes;
 };
@@ -1249,6 +1289,18 @@ export const stampDarPreviewPdfFromBlob = async (rawPdfBlob, options = {}) => {
   }
   if (rawPdfBlob.size === 0) {
     throw new Error('stampDarPreviewPdfFromBlob: Blob มีขนาด 0 bytes — ไม่พบไฟล์เอกสาร PDF ต้นฉบับ');
+  }
+
+  const dar = options.dar || {};
+  const isObsoleteRequest = Boolean(
+    dar.type === 'OBSOLETE' ||
+    dar.action_type === 'OBSOLETE' ||
+    dar.darType === 'OBSOLETE' ||
+    dar.requestType === 'OBSOLETE' ||
+    dar.type === 'CANCEL'
+  );
+  if (options.skipStamping || isObsoleteRequest) {
+    return rawPdfBlob;
   }
 
   const rawBytes = await rawPdfBlob.arrayBuffer();
@@ -1272,17 +1324,21 @@ export { resolveProgressiveSignatories } from './signatoryResolver';
 export const drawSignatoryMatrixCanvas = async ({ requester, reviewer, approver } = {}) => {
   // Map resolveProgressiveSignatories output shape → generateSignOffStampImage input shape
   const toStampCell = (cell) => {
-    if (!cell) return { isCompleted: false, isPending: true };
+    if (!cell) return { isCompleted: false, isPending: true, isSigned: false };
+    const isSigned = cell.isSigned !== undefined 
+      ? Boolean(cell.isSigned) 
+      : Boolean(cell.isCompleted);
     return {
-      name:           cell.name           || '',
-      position:       cell.position       || '',
-      date:           cell.date           || '',
-      timestamp:      cell.date           || '',
-      signatureImage: cell.signatureImage || null,
-      signature:      cell.signatureImage || null,
-      isCompleted:    cell.isCompleted    ?? false,
-      isPending:      !(cell.isCompleted  ?? false),
-      status:         cell.isCompleted ? 'COMPLETED' : 'PENDING'
+      name:           isSigned ? (cell.name || '') : '',
+      position:       isSigned ? (cell.position || '') : '',
+      date:           isSigned ? (cell.date || '') : '',
+      timestamp:      isSigned ? (cell.date || '') : '',
+      signatureImage: isSigned ? (cell.signatureImage || null) : null,
+      signature:      isSigned ? (cell.signatureImage || null) : null,
+      isCompleted:    isSigned,
+      isSigned,
+      isPending:      !isSigned,
+      status:         isSigned ? 'COMPLETED' : 'PENDING'
     };
   };
 
@@ -1333,7 +1389,8 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
   currentUser  = null,
   watermarkType = 'DRAFT',
   docInfo      = {},
-  userInfo     = {}
+  userInfo     = {},
+  skipStamping = false
 } = {}) => {
   // Zero Blank PDF guard
   if (!rawPdfBlob || !(rawPdfBlob instanceof Blob)) {
@@ -1341,6 +1398,18 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
   }
   if (rawPdfBlob.size === 0) {
     throw new Error('stampUnifiedInternalPdf: Blob มีขนาด 0 bytes — ไม่พบไฟล์เอกสาร PDF ต้นฉบับ');
+  }
+
+  // Stamping Guard: Bypass Sign-off Matrix & Watermark for OBSOLETE Requests
+  const isObsoleteRequest = Boolean(
+    dar?.type === 'OBSOLETE' ||
+    dar?.action_type === 'OBSOLETE' ||
+    dar?.darType === 'OBSOLETE' ||
+    dar?.requestType === 'OBSOLETE' ||
+    dar?.type === 'CANCEL'
+  );
+  if (skipStamping || isObsoleteRequest) {
+    return rawPdfBlob;
   }
 
   // 1. Resolve progressive signatories
@@ -1383,17 +1452,22 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
 
   // 4. Stamp diagonal 45° watermark on ALL pages
   let watermarkPngData;
-  if (watermarkType === 'DRAFT') {
+  let effectiveWatermarkType = watermarkType;
+  if (isObsoleteRequest && effectiveWatermarkType === 'DRAFT') {
+    effectiveWatermarkType = 'NONE';
+  }
+
+  if (effectiveWatermarkType === 'DRAFT') {
     // Use DRAFT watermark (existing engine — diagonal -35° red text)
     watermarkPngData = await generateDraftWatermarkImage({
       darNo:    dar?.darNumber || dar?.darNo || dar?.id,
       docCode:  docInfo.docCode || dar?.docCode || dar?.document_code || dar?.title,
       timestamp: dar?.submittedAt || dar?.date
     });
-  } else {
+  } else if (effectiveWatermarkType !== 'NONE') {
     // Use UNCONTROLLED or CONTROLLED diagonal 45° canvas
     watermarkPngData = await generateDiagonalWatermarkCanvas({
-      type: watermarkType === 'CONTROLLED' ? 'CONTROLLED' : 'UNCONTROLLED',
+      type: effectiveWatermarkType === 'CONTROLLED' ? 'CONTROLLED' : 'UNCONTROLLED',
       docInfo,
       userInfo
     });
@@ -1419,6 +1493,37 @@ export const stampUnifiedInternalPdf = async (rawPdfBlob, {
   const finalBytes = await pdfDoc.save();
   return new Blob([finalBytes], { type: 'application/pdf' });
 };
+
+/**
+ * Stamping Guard & Entry Point:
+ * Orchestrates document stamping for DAR workflows.
+ * For OBSOLETE requests, bypasses all stamping and returns pristine raw PDF blob.
+ *
+ * @param {Blob} pdfBlob - Source PDF blob
+ * @param {Object} dar - DAR request object
+ * @param {Object} options - Stamping options (skipStamping, etc.)
+ * @returns {Promise<Blob>}
+ */
+export async function stampPdfDocument(pdfBlob, dar, options = {}) {
+  // หากเป็นคำร้อง OBSOLETE ให้ return ไฟล์ต้นทางกลับไปทันที ไม่วาดทับ
+  const isObsoleteRequest = Boolean(
+    dar?.type === 'OBSOLETE' || 
+    dar?.action_type === 'OBSOLETE' || 
+    dar?.darType === 'OBSOLETE' || 
+    dar?.requestType === 'OBSOLETE' || 
+    dar?.type === 'CANCEL'
+  );
+
+  if (options?.skipStamping || isObsoleteRequest) {
+    return pdfBlob;
+  }
+
+  // ขั้นตอนการวาดตาราง Sign-off สำหรับ NEW / REVISION...
+  return await stampUnifiedInternalPdf(pdfBlob, {
+    dar,
+    ...options
+  });
+}
 
 /**
  * Universal System Sample Document Generator (ISO 9001 SOP/WI Template)
@@ -1539,4 +1644,12 @@ export const getSystemSampleDocumentBlob = (docCode = 'SOP-QC-002', docTitle = '
 
   const fullBytes = encoder.encode(pdf);
   return new Blob([fullBytes], { type: 'application/pdf' });
+};
+
+/**
+ * Re-export applySupersededWatermark for backward compatibility and uniform access
+ */
+export const applySupersededWatermark = async (rawPdfFile, options = {}) => {
+  const { applySupersededWatermark: stamper } = await import('../services/UniversalWatermarkService');
+  return await stamper(rawPdfFile, options);
 };

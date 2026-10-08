@@ -6,6 +6,7 @@ import {
   stampDocumentFirstPage,
   drawSignatoryMatrixCanvas,
   stampUnifiedInternalPdf,
+  stampPdfDocument,
   SIGNATORY_FONT_FAMILY,
   PURE_BLACK,
   renderSignatoryText
@@ -21,7 +22,8 @@ export {
   stampDocumentLastPage,
   stampDocumentFirstPage,
   drawSignatoryMatrixCanvas,
-  stampUnifiedInternalPdf
+  stampUnifiedInternalPdf,
+  stampPdfDocument
 };
 
 export default {
@@ -34,5 +36,6 @@ export default {
   stampDocumentLastPage,
   stampDocumentFirstPage,
   drawSignatoryMatrixCanvas,
-  stampUnifiedInternalPdf
+  stampUnifiedInternalPdf,
+  stampPdfDocument
 };

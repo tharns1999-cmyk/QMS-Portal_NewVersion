@@ -30,7 +30,7 @@ const Sidebar = () => {
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
     masterUsers, setCurrentUser, switchUser, notifications,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, externalRequests
+    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, manualSeedData, externalRequests
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -348,14 +348,14 @@ const Sidebar = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    seedComprehensiveQaMockData();
-                    toast.success('โหลดชุดข้อมูลจำลอง QA Workflow เรียบร้อยแล้ว');
+                    manualSeedData();
+                    toast?.success?.('โหลดชุดข้อมูลตัวอย่างสำเร็จ');
                   }}
                   className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-blue-50 text-slate-600 hover:text-blue-700 transition-colors font-medium cursor-pointer"
-                  title="โหลดชุดข้อมูลจำลองสำหรับ QA Testing"
+                  title="โหลดชุดข้อมูลตัวอย่าง (Manual Seed)"
                 >
                   <Sparkles size={11} className="text-blue-600 shrink-0" />
-                  <span>Seed</span>
+                  <span>🔀 Seed</span>
                 </button>
                 <span className="text-slate-300">|</span>
                 <button

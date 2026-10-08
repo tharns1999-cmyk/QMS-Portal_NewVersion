@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { stampExternalDocumentTopRight, applyProgressiveSignatoryStamp } from '../utils/pdfStamper';
+import { stampExternalDocumentTopRight, applyProgressiveSignatoryStamp, getSystemSampleDocumentBlob } from '../utils/pdfStamper';
 import { resolveProgressiveSignatories } from '../utils/signatoryResolver';
 import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
@@ -419,7 +419,7 @@ export const MASTER_DATA_USER = [
     isWorkflowUser: true
   },
   { id: 'U003', empId: 'EMP-003', name: 'กัลยาณี พลไกร', fullName: 'กัลยาณี พลไกร', email: 'kalyanee.p@company.com', position: 'Production Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['PD', 'QC'], department: 'PD', dept: 'PD', primary_department: 'PD', departments: ['PD', 'QC'], secondaryDepartments: ['QC'], affiliated_departments: ['PD', 'QC'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'CLASSIC_CALLIGRAPHY', signatureInitials: 'KYN-PD', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-PD003', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
-  { id: 'U004', empId: 'EMP-004', name: 'คุณเรย์', fullName: 'คุณเรย์', email: 'ray.gm@company.com', position: 'General Manager / QMR', level: 6, approval_level: 6, role: 'DEPT_ADMIN', isDcc: false, isQmr: true, depts: ['MGMT'], department: 'MGMT', dept: 'MGMT', primary_department: 'MGMT', affiliated_departments: ['MGMT'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'RAY-GM', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-GM004', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER', 'QMR_ACCESS'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
+  { id: 'U004', empId: 'EMP-004', name: 'คุณเรย์', fullName: 'คุณเรย์', email: 'ray.gm@company.com', position: 'General Manager / QMR', level: 6, approval_level: 6, role: 'DEPT_ADMIN', isDcc: false, isQmr: true, depts: ['MGMT'], department: 'MGMT', dept: 'MGMT', primary_department: 'MGMT', affiliated_departments: ['MGMT', 'QC', 'PD', 'EN', 'DC'], managedDepartments: ['*'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'RAY-GM', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-GM004', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER', 'QMR_ACCESS'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U005', empId: 'EMP-005', name: 'บีม', fullName: 'บีม', email: 'beam.qa@company.com', position: 'QAQC Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['QC'], department: 'QC', dept: 'QC', primary_department: 'QC', primaryDepartment: 'QC', departments: ['QC'], departmentMemberships: ['QC'], affiliated_departments: ['QC'], secondaryDepartments: [], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'DRAWN', signatureStyle: 'BRUSH_SCRIPT', signatureInitials: 'Beam', signatureImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAABQCAYAAAAnSfh8AAACZklEQVR4nO3SwQnAIBAF0W8XtiW7sXWbEEQM5g+D78C4r/f5Pqf31Xvf81335T46B7DTAZy17wmc6gDOKn0F+1UAcNYBHNUBnFUGcFYHcFYZAM7qAM4qAzirDDCsDOAsA8BZZQA4qwzgrDMAvGUAOKsMAM4yAJx1BoCzzgDOKgPAWQaw2wEczc8w/QpW5gCO6gDOKgPAWR3AWZUB4KwzgLN6wLDOAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDqAM7qAM7qAM7qAM4qAzirDAAcPQBOZQBndQBwVgcAZ3UAcFYZAM4yAJxVBnBWB3BWBwBndQBndQBn9RnwfF4HcFZlADirDAA/HQCe9wDwrDOAMwBnlQHgrDOAszoAMCsDOCsDODsCODsDOKsMAM4A4KwOAM7qAMDq/wEAAP//0mZ89XbJ6f8AAAAASUVORK5CYII=', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-QA005', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U006', empId: 'EMP-006', name: 'รัตนพล', fullName: 'รัตนพล', email: 'rattanapol.en@company.com', position: 'Engineering Supervisor', level: 4, approval_level: 4, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'MODERN_SANS', signatureInitials: 'RTP-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN006', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
   { id: 'U007', empId: 'EMP-007', name: 'ชัยวัฒน์', fullName: 'ชัยวัฒน์', email: 'chaiwat.en@company.com', position: 'Engineering Assistant Manager', level: 5, approval_level: 5, role: 'DEPT_ADMIN', isDcc: false, isQmr: false, depts: ['EN'], department: 'EN', dept: 'EN', primary_department: 'EN', affiliated_departments: ['EN'], status: 'ACTIVE', pin: '123456', failedPinAttempts: 0, isLocked: false, lastPinChangedAt: '2026-01-01T00:00:00.000Z', signatureType: 'TYPOGRAPHIC', signatureStyle: 'FORMAL_SERIF', signatureInitials: 'CWT-EN', hasRegisteredSignature: true, certificateSerial: 'CERT-2026-EN007', permissions: ['DAR_CREATE', 'TASK_ACCESS', 'VIEW_REGISTER'], canCreateDar: true, canAccessTasks: true, canViewRegister: true, isWorkflowUser: true },
@@ -1848,14 +1848,14 @@ export const getInitialStoreState = () => ({
   approvalMatrix: JSON.parse(JSON.stringify(DEFAULT_APPROVAL_MATRIX)),
   approval_matrix: JSON.parse(JSON.stringify(DEFAULT_APPROVAL_MATRIX)),
   docFormats: MOCK_DOC_FORMATS,
-  dars: defaultSeedDars,
-  darRequests: defaultSeedDars,
-  tasks: defaultSeedTasks,
+  dars: [],
+  darRequests: [],
+  tasks: [],
   completedTasks: [],
   timeline: [],
-  documents: defaultSeedDocuments,
-  masterDocuments: defaultSeedDocuments,
-  supersededDocuments: defaultSeedDocuments.filter(d => d.status === 'SUPERSEDED' || d.is_superseded),
+  documents: [],
+  masterDocuments: [],
+  supersededDocuments: [],
   externalDocuments: [],
   externalRequests: [],
   externalAuditTrail: [],
@@ -1946,9 +1946,9 @@ export const getInitialStoreState = () => ({
   ],
   actionLog: [],
   copyRequests: [],
-  documentControlledCopies: defaultSeedCopies,
-  controlledCopies: defaultSeedCopies,
-  controlledCopyInstances: defaultSeedCopies,
+  documentControlledCopies: [],
+  controlledCopies: [],
+  controlledCopyInstances: [],
   controlledCopyAuditTrail: [],
   copyDispositionRecords: [],
   dispositionHistory: [],
@@ -1976,8 +1976,8 @@ const useStore = create(persist((set, get) => ({
   // EXCLUSIVELY FOR TESTING - Resets store to deterministic initial state
   resetStore: () => set(getInitialStoreState()),
 
-  // Reset & Re-seed store to default mock data
-  resetToDefaultSeed: () => {
+  // DEV TOOL: Manual Mock Data Seeding (Runs strictly when user clicks Manual Seed in Dev Tools)
+  manualSeedData: () => {
     set({
       documents: defaultSeedDocuments,
       masterDocuments: defaultSeedDocuments,
@@ -1990,6 +1990,95 @@ const useStore = create(persist((set, get) => ({
       controlledCopyInstances: defaultSeedCopies
     });
   },
+
+  // Reset & Re-seed store to default mock data (kept for manual trigger & backward compatibility)
+  resetToDefaultSeed: () => {
+    get().manualSeedData();
+  },
+
+  // Alias for manual seed trigger strictly via DevTools
+  seedMockData: () => {
+    get().manualSeedData();
+  },
+
+  // Clear all transaction data back to empty state
+  clearAllData: () => {
+    set({
+      documents: [],
+      masterDocuments: [],
+      supersededDocuments: [],
+      dars: [],
+      darRequests: [],
+      tasks: [],
+      completedTasks: [],
+      timeline: [],
+      externalDocuments: [],
+      externalRequests: [],
+      externalAuditTrail: [],
+      notifications: [],
+      actionLog: [],
+      copyRequests: [],
+      controlledCopies: [],
+      documentControlledCopies: [],
+      controlledCopyInstances: [],
+      controlledCopyAuditTrail: [],
+      copyDispositionRecords: [],
+      dispositionHistory: [],
+      periodicReviewSchedules: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: [],
+      distributionLogs: [],
+      acknowledgments: [],
+      darHistory: []
+    });
+    try {
+      localStorage.removeItem('qms-enterprise-storage');
+      localStorage.removeItem('qms-storage-vault');
+    } catch { /* ignore */ }
+  },
+
+  // Controlled Copy Print State Tracking
+  markCopyPrinted: (copyId) => set(state => {
+    const now = new Date().toISOString();
+    let targetCopy = null;
+
+    const updateCopy = (c) => {
+      if (c && c.id === copyId) {
+        targetCopy = c;
+        const currentCount = typeof c.print_count === 'number' ? c.print_count : 0;
+        return {
+          ...c,
+          is_printed: true,
+          printed_at: now,
+          print_count: currentCount + 1
+        };
+      }
+      return c;
+    };
+
+    const newInstances = (state.controlledCopyInstances || []).map(updateCopy);
+    const newDocCopies = (state.documentControlledCopies || []).map(updateCopy);
+    const newCopies = (state.controlledCopies || []).map(updateCopy);
+
+    const auditEntry = {
+      id: "audit-print-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7),
+      action: "PRINT_COPY",
+      copyId: copyId,
+      docCode: targetCopy?.document_code || targetCopy?.docCode || "",
+      copyNo: targetCopy?.copy_no || targetCopy?.copyNo || "",
+      actor: state.currentUser?.name || "System",
+      actorId: state.currentUser?.id || "SYSTEM",
+      timestamp: now,
+      note: "พิมพ์สำเนาควบคุม ครั้งที่ " + ((targetCopy?.print_count || 0) + 1)
+    };
+
+    return {
+      controlledCopyInstances: newInstances,
+      documentControlledCopies: newDocCopies,
+      controlledCopies: newCopies,
+      controlledCopyAuditTrail: [auditEntry, ...(state.controlledCopyAuditTrail || [])]
+    };
+  }),
 
   // Auto-running EDR Number Generator
   generateNextEdrNumber: () => generateNextEdrNumber(get().externalRequests || []),
@@ -2042,6 +2131,7 @@ const useStore = create(persist((set, get) => ({
           persisted.state.actionLog = [];
           persisted.state.copyRequests = [];
           persisted.state.documentControlledCopies = [];
+          persisted.state.controlledCopies = [];
           persisted.state.controlledCopyInstances = [];
           persisted.state.controlledCopyAuditTrail = [];
           persisted.state.copyDispositionRecords = [];
@@ -2084,6 +2174,39 @@ const useStore = create(persist((set, get) => ({
 
   // Seed historical superseded snapshots (WI-QC-01 Rev.00 & Rev.01) if overwritten or absent
   seedSupersededMockHistory: () => {
+    let blob00 = null;
+    let blob01 = null;
+    let blob02 = null;
+    try {
+      if (typeof getSystemSampleDocumentBlob === 'function') {
+        blob00 = getSystemSampleDocumentBlob('WI-QC-01', 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า Rev.00');
+        blob01 = getSystemSampleDocumentBlob('WI-QC-01', 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า Rev.01');
+        blob02 = getSystemSampleDocumentBlob('WI-QC-01', 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า Rev.02');
+        if (blob00) {
+          saveFile('DOC_WI-QC-01_REV00', blob00).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV00', blob00).catch(() => {});
+          saveFile('DOC_WI-QC-01_REV_00', blob00).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV_00', blob00).catch(() => {});
+          saveFile('WI-QC-01_REV_00', blob00).catch(() => {});
+        }
+        if (blob01) {
+          saveFile('DOC_WI-QC-01_REV01', blob01).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV01', blob01).catch(() => {});
+          saveFile('DOC_WI-QC-01_REV_01', blob01).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV_01', blob01).catch(() => {});
+          saveFile('WI-QC-01_REV_01', blob01).catch(() => {});
+        }
+        if (blob02) {
+          saveFile('DOC_WI-QC-01_REV02', blob02).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV02', blob02).catch(() => {});
+          saveFile('DOC_WI-QC-01_REV_02', blob02).catch(() => {});
+          saveFile('FILE_WI-QC-01_REV_02', blob02).catch(() => {});
+          saveFile('WI-QC-01_REV_02', blob02).catch(() => {});
+          saveFile('WI-QC-01', blob02).catch(() => {});
+        }
+      }
+    } catch {}
+
     const qcBaselineDocs = MOCK_DOCUMENTS.filter(d => 
       ['WI-QC-01_REV_00', 'WI-QC-01_REV_01', 'WI-QC-01_REV_02'].includes(d.id)
     );
@@ -2100,14 +2223,35 @@ const useStore = create(persist((set, get) => ({
           const r = String(d.revision || d.rev || '00').replace(/\D/g, '');
           return c && c.trim().toUpperCase() === 'WI-QC-01' && r === cleanRev;
         });
+        const assignedBlob = cleanRev === '00' ? blob00 : (cleanRev === '01' ? blob01 : blob02);
+        const docWithBlob = {
+          ...seedDoc,
+          file: assignedBlob || seedDoc.file,
+          fileBlob: assignedBlob || seedDoc.fileBlob,
+          revision_history: seedDoc.revision_history || [
+            ...(cleanRev === '02' ? [
+              { revision: '00', rev: '00', dar_no: 'DAR-2026-001', file: blob00, fileBlob: blob00, effective_date: '2025-01-15' },
+              { revision: '01', rev: '01', dar_no: 'DAR-2026-002', file: blob01, fileBlob: blob01, effective_date: '2025-06-20' }
+            ] : (cleanRev === '01' ? [
+              { revision: '00', rev: '00', dar_no: 'DAR-2026-001', file: blob00, fileBlob: blob00, effective_date: '2025-01-15' }
+            ] : []))
+          ]
+        };
+
         if (existingIdx === -1) {
-          currentDocs.push({ ...seedDoc });
+          currentDocs.push(docWithBlob);
         } else if (cleanRev === '00' || cleanRev === '01') {
           currentDocs[existingIdx] = {
             ...currentDocs[existingIdx],
+            ...docWithBlob,
             status: 'SUPERSEDED',
             is_superseded: true,
             is_active: false
+          };
+        } else {
+          currentDocs[existingIdx] = {
+            ...currentDocs[existingIdx],
+            ...docWithBlob
           };
         }
       });
@@ -2115,8 +2259,19 @@ const useStore = create(persist((set, get) => ({
       let currentDars = [...(state.dars || [])];
       qcBaselineDars.forEach(seedDar => {
         const exists = currentDars.some(d => d.id === seedDar.id || d.dar_no === seedDar.dar_no);
+        const darRev = String(seedDar.revision || seedDar.target_revision || '00').replace(/\D/g, '');
+        const assignedBlob = darRev === '00' ? blob00 : (darRev === '01' ? blob01 : blob02);
+        const darWithBlob = {
+          ...seedDar,
+          file: assignedBlob || seedDar.file,
+          fileBlob: assignedBlob || seedDar.fileBlob,
+          final_file: assignedBlob || seedDar.final_file
+        };
+
         if (!exists) {
-          currentDars.push({ ...seedDar });
+          currentDars.push(darWithBlob);
+        } else {
+          currentDars = currentDars.map(d => (d.id === seedDar.id || d.dar_no === seedDar.dar_no) ? { ...d, ...darWithBlob } : d);
         }
       });
 
@@ -5724,6 +5879,7 @@ const useStore = create(persist((set, get) => ({
         assigneeId: reviewerObj.id,
         assignee_id: reviewerObj.id,
         assigneeName: reviewerObj.name || '',
+        assignee_department: reviewerObj.dept || '',
         department: newDar.department || newDar.dept || 'PD',
         target_department: newDar.department || newDar.dept || 'PD',
         owner_dept: newDar.department || newDar.dept || 'PD',
@@ -5829,7 +5985,9 @@ const useStore = create(persist((set, get) => ({
         };
       }
     }
-    return get().addDar(finalDar);
+    get().addDar(finalDar);
+    const addedDar = get().dars.find(d => (fileId && d.fileId === fileId) || (finalDar.id && d.id === finalDar.id)) || get().dars[get().dars.length - 1] || finalDar;
+    return addedDar;
   },
 
   submitDarRequest: async (formData, rawFile) => {
@@ -5966,28 +6124,74 @@ const useStore = create(persist((set, get) => ({
       const nowIso = new Date().toISOString();
       const stampedBlobUrl = (typeof URL !== 'undefined' && URL.createObjectURL) ? URL.createObjectURL(stampedBlob) : null;
 
+      const darTargetRev = String(dar.targetRevision || dar.target_revision || dar.newRevision || dar.revision || dar.rev || dar.proposedRev || '01').replace(/^rev\.?/i, '').trim();
+      const darFormerRev = String(dar.previousRevision || dar.previous_revision || dar.currentRevision || '00').replace(/^rev\.?/i, '').trim();
+
       // Collect all keys to persist into IndexedDB
       const keysToSave = new Set();
       if (activeFileId) keysToSave.add(activeFileId);
-      if (targetDocCode) keysToSave.add(targetDocCode);
+      if (targetDocCode) {
+        keysToSave.add(targetDocCode);
+        keysToSave.add(`DOC_${targetDocCode}_REV${darTargetRev}`);
+        keysToSave.add(`FILE_${targetDocCode}_REV${darTargetRev}`);
+        keysToSave.add(`DOC_${targetDocCode}_REV${darTargetRev.padStart(2, '0')}`);
+        keysToSave.add(`FILE_${targetDocCode}_REV${darTargetRev.padStart(2, '0')}`);
+        keysToSave.add(`DOC_${targetDocCode}_REV_${darTargetRev}`);
+        keysToSave.add(`FILE_${targetDocCode}_REV_${darTargetRev}`);
+        keysToSave.add(`DOC_${targetDocCode}_REV_${darTargetRev.padStart(2, '0')}`);
+        keysToSave.add(`FILE_${targetDocCode}_REV_${darTargetRev.padStart(2, '0')}`);
+      }
       if (targetDocId) keysToSave.add(targetDocId);
       if (dar.id) keysToSave.add(dar.id);
       if (dar.darNo) keysToSave.add(dar.darNo);
       if (dar.darNumber) keysToSave.add(dar.darNumber);
 
       const allExistingDocs = [...(state.documents || []), ...(state.masterDocuments || [])];
+
+      // 1. Snapshot former revision file into IndexedDB & in-memory registry before publishing new master
+      const formerActiveDoc = allExistingDocs.find(d => {
+        const c = d.code || d.document_code || d.docNo || d.title || d.docCode;
+        const isCodeMatch = c && targetDocCode && c.trim().toLowerCase() === targetDocCode.trim().toLowerCase();
+        const dRev = String(d.revision || d.rev || '').replace(/^rev\.?/i, '').trim();
+        const isFormer = dRev !== darTargetRev && dRev !== darTargetRev.padStart(2, '0');
+        return isCodeMatch && (d.status === 'SUPERSEDED' || d.is_superseded || (isFormer && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE')));
+      });
+
+      if (formerActiveDoc && targetDocCode) {
+        const fRev = String(formerActiveDoc.revision || formerActiveDoc.rev || darFormerRev).replace(/^rev\.?/i, '').trim();
+        const fFile = formerActiveDoc.file || formerActiveDoc.fileBlob || formerActiveDoc.fileData;
+        if (fFile) {
+          const fKeys = [
+            `DOC_${targetDocCode}_REV${fRev}`,
+            `FILE_${targetDocCode}_REV${fRev}`,
+            `DOC_${targetDocCode}_REV${fRev.padStart(2, '0')}`,
+            `FILE_${targetDocCode}_REV${fRev.padStart(2, '0')}`,
+            `DOC_${targetDocCode}_REV_${fRev}`,
+            `FILE_${targetDocCode}_REV_${fRev}`,
+            `DOC_${targetDocCode}_REV_${fRev.padStart(2, '0')}`,
+            `FILE_${targetDocCode}_REV_${fRev.padStart(2, '0')}`
+          ];
+          for (const fk of fKeys) {
+            await saveFile(fk, fFile).catch(() => {});
+          }
+        }
+      }
+
+      // 2. Only add ID of the target document being published (DO NOT overwrite IDs of superseded documents!)
       for (const d of allExistingDocs) {
-        const isMatch = (targetDocId && String(d.id) === String(targetDocId)) ||
-                        (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode)) ||
-                        (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
-                        (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo));
+        const isSuperseded = d.status === 'SUPERSEDED' || d.is_superseded;
+        const dRev = String(d.revision || d.rev || '').replace(/^rev\.?/i, '').trim();
+        const isTargetRevMatch = dRev === darTargetRev || dRev.padStart(2, '0') === darTargetRev.padStart(2, '0');
+
+        const isMatch = !isSuperseded && (
+          (targetDocId && String(d.id) === String(targetDocId)) ||
+          (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode) && (isTargetRevMatch || d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.status === 'SCHEDULED_EFFECTIVE')) ||
+          (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
+          (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo))
+        );
         if (isMatch) {
           if (d.id) keysToSave.add(d.id);
           if (d.fileId) keysToSave.add(d.fileId);
-          if (d.document_code) keysToSave.add(d.document_code);
-          if (d.code) keysToSave.add(d.code);
-          if (d.docNo) keysToSave.add(d.docNo);
-          if (d.docCode) keysToSave.add(d.docCode);
         }
       }
 
@@ -5997,23 +6201,57 @@ const useStore = create(persist((set, get) => ({
         }
       }
 
+      const formerHistSnapshot = formerActiveDoc ? {
+        revision: String(formerActiveDoc.revision || formerActiveDoc.rev || darFormerRev).replace(/^rev\.?/i, '').trim(),
+        rev: String(formerActiveDoc.revision || formerActiveDoc.rev || darFormerRev).replace(/^rev\.?/i, '').trim(),
+        dar_no: formerActiveDoc.darNo || formerActiveDoc.darNumber || formerActiveDoc.darId || dar.previousDarNo || dar.darNo,
+        dar_id: formerActiveDoc.darId || dar.id,
+        effective_date: formerActiveDoc.effectiveDate || formerActiveDoc.effective_date,
+        file: formerActiveDoc.file || formerActiveDoc.fileBlob,
+        fileBlob: formerActiveDoc.fileBlob || formerActiveDoc.file,
+        fileData: formerActiveDoc.fileData,
+        superseded_at: nowIso,
+        superseded_by_rev: darTargetRev
+      } : null;
+
       set(s => {
         const mapDoc = (d) => {
-          const isMatch = (targetDocId && String(d.id) === String(targetDocId)) ||
-                          (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode)) ||
-                          (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
-                          (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo));
+          const isSuperseded = d.status === 'SUPERSEDED' || d.is_superseded;
+          const dRev = String(d.revision || d.rev || '').replace(/^rev\.?/i, '').trim();
+          const isTargetRevMatch = dRev === darTargetRev || dRev.padStart(2, '0') === darTargetRev.padStart(2, '0');
+
+          const isMatch = !isSuperseded && (
+            (targetDocId && String(d.id) === String(targetDocId)) ||
+            (targetDocCode && (d.code === targetDocCode || d.document_code === targetDocCode || d.docNo === targetDocCode || d.title === targetDocCode || d.docCode === targetDocCode) && (isTargetRevMatch || d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.status === 'SCHEDULED_EFFECTIVE')) ||
+            (dar.id && (d.darId === dar.id || d.darNo === dar.id)) ||
+            (dar.darNo && (d.darNo === dar.darNo || d.darId === dar.darNo))
+          );
+
           if (isMatch) {
+            const existingHistory = Array.isArray(d.revision_history) ? d.revision_history : [];
+            const hasFormer = formerHistSnapshot && existingHistory.some(h => String(h.revision || h.rev) === String(formerHistSnapshot.revision));
             return {
               ...d,
+              file: stampedBlob,
               fileData: permanentlyStampedPdfBytes,
               fileBlob: stampedBlob,
               pdfUrl: stampedBlobUrl || d.pdfUrl,
               fileUrl: stampedBlobUrl || d.fileUrl,
               isSignatoryStamped: true,
-              stampedAt: nowIso
+              stampedAt: nowIso,
+              revision_history: formerHistSnapshot && !hasFormer ? [...existingHistory, formerHistSnapshot] : existingHistory
             };
           }
+
+          // If document is superseded, ensure its historical file is preserved and not overwritten
+          if (isSuperseded) {
+            return {
+              ...d,
+              file: d.file || d.fileBlob,
+              fileBlob: d.fileBlob || d.file
+            };
+          }
+
           return d;
         };
 
@@ -6022,6 +6260,7 @@ const useStore = create(persist((set, get) => ({
 
         const updatedDars = (s.dars || []).map(d => (d.id === dar.id || d.darNo === dar.darNo) ? {
           ...d,
+          file: stampedBlob,
           fileData: permanentlyStampedPdfBytes,
           fileBlob: stampedBlob,
           pdfUrl: stampedBlobUrl || d.pdfUrl,
@@ -6194,6 +6433,8 @@ const useStore = create(persist((set, get) => ({
             docName: docOfficialTitle,
             title: `[DAR รออนุมัติ] ${docOfficialTitle} (${docCode})`,
             type: 'Approve', assigneeId: approverObj.id,
+            assigneeName: approverObj.name || state.masterUsers.find(u => u.id === approverObj.id)?.name,
+            assignee_department: approverObj.dept || state.masterUsers.find(u => u.id === approverObj.id)?.department,
             department: darDept,
             target_department: darDept,
             owner_dept: darDept,
@@ -9156,12 +9397,23 @@ const useStore = create(persist((set, get) => ({
       if (isSameCode && isCurrentlyActive) {
         const docRev = String(d.revision || d.rev || previousRev || '00').replace(/^rev\.?/i, '').trim();
         const hasRevInId = d.id && d.id.includes(`_REV_${docRev}`);
+        const formerFile = d.file || d.fileBlob || d.fileData;
+        if (formerFile && cleanDocCode) {
+          saveFile(`DOC_${cleanDocCode}_REV${docRev}`, formerFile).catch(() => {});
+          saveFile(`FILE_${cleanDocCode}_REV${docRev}`, formerFile).catch(() => {});
+          saveFile(`DOC_${cleanDocCode}_REV${docRev.padStart(2, '0')}`, formerFile).catch(() => {});
+          saveFile(`FILE_${cleanDocCode}_REV${docRev.padStart(2, '0')}`, formerFile).catch(() => {});
+          saveFile(`DOC_${cleanDocCode}_REV_${docRev}`, formerFile).catch(() => {});
+          saveFile(`FILE_${cleanDocCode}_REV_${docRev}`, formerFile).catch(() => {});
+        }
         return {
           ...d,
           id: hasRevInId ? d.id : `${cleanDocCode}_REV_${docRev}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
+          file: d.file || d.fileBlob,
+          fileBlob: d.fileBlob || d.file,
           supersededAt: now,
           superseded_at: now,
           supersededByRev: targetRev,
@@ -9172,6 +9424,20 @@ const useStore = create(persist((set, get) => ({
     });
 
     // 2. เพิ่มหรืออัปเดตฉบับใหม่ให้เป็น EFFECTIVE
+    const prevRevClean = String(previousRev || '00').replace(/^rev\.?/i, '').trim();
+    const formerHistEntry = currentActiveDoc ? {
+      revision: prevRevClean,
+      rev: prevRevClean,
+      dar_no: currentActiveDoc.darNo || currentActiveDoc.darNumber || currentActiveDoc.darId || dar.previousDarNo || dar.darNo,
+      dar_id: currentActiveDoc.darId || dar.id,
+      effective_date: currentActiveDoc.effectiveDate || currentActiveDoc.effective_date,
+      file: currentActiveDoc.file || currentActiveDoc.fileBlob,
+      fileBlob: currentActiveDoc.fileBlob || currentActiveDoc.file,
+      fileData: currentActiveDoc.fileData,
+      superseded_at: now,
+      superseded_by_rev: targetRev
+    } : null;
+
     const newEffectiveDocId = `${cleanDocCode}_REV_${targetRev}`;
     const newEffectiveDoc = {
       ...(currentActiveDoc || {}),
@@ -9200,8 +9466,22 @@ const useStore = create(persist((set, get) => ({
       darId: dar.id,
       latestDarNo: dar.dar_no || dar.darNo || dar.darNumber || dar.id,
       published_at: now,
+      file: dar.file || dar.attachedFile || dar.final_file || currentActiveDoc?.file,
+      fileBlob: dar.fileBlob || dar.file || dar.attachedFile?.file || currentActiveDoc?.fileBlob,
+      revision_history: [
+        ...(currentActiveDoc?.revision_history || []),
+        ...(formerHistEntry ? [formerHistEntry] : [])
+      ],
       updatedAt: now
     };
+
+    if (newEffectiveDoc.file || newEffectiveDoc.fileBlob) {
+      const activeFile = newEffectiveDoc.file || newEffectiveDoc.fileBlob;
+      saveFile(`DOC_${cleanDocCode}_REV${targetRev}`, activeFile).catch(() => {});
+      saveFile(`FILE_${cleanDocCode}_REV${targetRev}`, activeFile).catch(() => {});
+      saveFile(`DOC_${cleanDocCode}_REV${String(targetRev).padStart(2, '0')}`, activeFile).catch(() => {});
+      saveFile(`FILE_${cleanDocCode}_REV${String(targetRev).padStart(2, '0')}`, activeFile).catch(() => {});
+    }
 
     const existingNewIndex = updatedDocs.findIndex(d => {
       const c = d.document_code || d.doc_code || d.code || d.docCode || d.docNo || d.title;
@@ -9346,12 +9626,21 @@ const useStore = create(persist((set, get) => ({
       const isMatch = c && cleanDocCode && c.trim().toLowerCase() === cleanDocCode.trim().toLowerCase();
       const isTargetRev = String(r).replace(/^rev\.?/i, '').trim() === String(previousRev).replace(/^rev\.?/i, '').trim();
       if (isMatch && isTargetRev && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active)) {
+        const formerFile = d.file || d.fileBlob || d.fileData;
+        if (formerFile && cleanDocCode) {
+          saveFile(`DOC_${cleanDocCode}_REV${previousRev}`, formerFile).catch(() => {});
+          saveFile(`FILE_${cleanDocCode}_REV${previousRev}`, formerFile).catch(() => {});
+          saveFile(`DOC_${cleanDocCode}_REV${String(previousRev).padStart(2, '0')}`, formerFile).catch(() => {});
+          saveFile(`FILE_${cleanDocCode}_REV${String(previousRev).padStart(2, '0')}`, formerFile).catch(() => {});
+        }
         return {
           ...d,
           id: `${cleanDocCode}_REV_${previousRev}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
+          file: d.file || d.fileBlob,
+          fileBlob: d.fileBlob || d.file,
           supersededAt: now,
           superseded_at: now,
           supersededByRev: targetRev,
@@ -9561,6 +9850,19 @@ const useStore = create(persist((set, get) => ({
     const docStatus = isEffectiveTodayOrPast ? 'EFFECTIVE' : 'SCHEDULED_EFFECTIVE';
     const nowIso = new Date().toISOString();
 
+    const prevRevClean = String(oldDoc?.revision || oldDoc?.rev || oldRev || '00').replace(/^rev\.?/i, '').trim();
+    if (oldDoc && targetCode) {
+      const formerFile = oldDoc.file || oldDoc.fileBlob || oldDoc.fileData;
+      if (formerFile) {
+        saveFile(`DOC_${targetCode}_REV${prevRevClean}`, formerFile).catch(() => {});
+        saveFile(`FILE_${targetCode}_REV${prevRevClean}`, formerFile).catch(() => {});
+        saveFile(`DOC_${targetCode}_REV${prevRevClean.padStart(2, '0')}`, formerFile).catch(() => {});
+        saveFile(`FILE_${targetCode}_REV${prevRevClean.padStart(2, '0')}`, formerFile).catch(() => {});
+        saveFile(`DOC_${targetCode}_REV_${prevRevClean}`, formerFile).catch(() => {});
+        saveFile(`FILE_${targetCode}_REV_${prevRevClean}`, formerFile).catch(() => {});
+      }
+    }
+
     // 1. Single Active Revision Invariant: If effective today or past, update ALL previous revisions of this code to SUPERSEDED
     let updatedDocs = (state.documents || []).map(doc => {
       const isTargetMatch = isDocMatchCode(doc) || (dar.docNo && (doc.docNo === dar.docNo || doc.code === dar.docNo || doc.document_code === dar.docNo));
@@ -9569,15 +9871,37 @@ const useStore = create(persist((set, get) => ({
       const isTargetActive = doc.status === 'EFFECTIVE' || doc.status === 'ACTIVE' || doc.is_active;
 
       if (isEffectiveTodayOrPast && isTargetMatch && isOldRevision && isTargetActive) {
-        const prevRevClean = docRev || '00';
+        const docFormerRev = docRev || '00';
+        const docFile = doc.file || doc.fileBlob || doc.fileData;
+        if (docFile && targetCode) {
+          saveFile(`DOC_${targetCode}_REV${docFormerRev}`, docFile).catch(() => {});
+          saveFile(`FILE_${targetCode}_REV${docFormerRev}`, docFile).catch(() => {});
+          saveFile(`DOC_${targetCode}_REV${docFormerRev.padStart(2, '0')}`, docFile).catch(() => {});
+          saveFile(`FILE_${targetCode}_REV${docFormerRev.padStart(2, '0')}`, docFile).catch(() => {});
+        }
+        const histEntry = {
+          revision: docFormerRev,
+          rev: docFormerRev,
+          dar_no: doc.darNo || doc.darNumber || doc.darId || dar.darNo || dar.id,
+          dar_id: doc.darId || dar.id,
+          effective_date: doc.effectiveDate || doc.effective_date,
+          file: docFile,
+          fileBlob: doc.fileBlob || doc.file,
+          fileData: doc.fileData,
+          superseded_at: nowIso,
+          superseded_by_rev: newRevStr
+        };
         return {
           ...doc,
-          id: doc.id || `${targetCode || doc.document_code || doc.code || 'DOC'}_REV_${prevRevClean}_${Date.now()}`,
+          id: doc.id || `${targetCode || doc.document_code || doc.code || 'DOC'}_REV_${docFormerRev}_${Date.now()}`,
           status: 'SUPERSEDED',
           is_active: false,
           is_superseded: true,
           isLocked: false,
           hasPendingDar: false,
+          file: doc.file || doc.fileBlob,
+          fileBlob: doc.fileBlob || doc.file,
+          revision_history: [...(doc.revision_history || []), histEntry],
           superseded_at: doc.superseded_at || nowIso,
           supersededAt: doc.supersededAt || nowIso,
           supersededByRev: newRevStr,
@@ -9602,6 +9926,19 @@ const useStore = create(persist((set, get) => ({
       oldDoc?.docType === 'FM' ||
       String(targetCode || oldDoc?.document_code || oldDoc?.code || oldDoc?.title || dar.title || '').startsWith('FM')
     );
+
+    const histEntryForNewDoc = oldDoc ? {
+      revision: prevRevClean,
+      rev: prevRevClean,
+      dar_no: oldDoc.darNo || oldDoc.darNumber || oldDoc.darId || dar.darNo || dar.id,
+      dar_id: oldDoc.darId || dar.id,
+      effective_date: oldDoc.effectiveDate || oldDoc.effective_date,
+      file: oldDoc.file || oldDoc.fileBlob,
+      fileBlob: oldDoc.fileBlob || oldDoc.file,
+      fileData: oldDoc.fileData,
+      superseded_at: nowIso,
+      superseded_by_rev: newRevStr
+    } : null;
 
     const activeFileId = dar.fileId || dar.file_id || dar.attachedFile?.fileId || dar.attachedFile?.id;
     const activeAttachedFile = dar.attachedFile || null;
@@ -9644,8 +9981,13 @@ const useStore = create(persist((set, get) => ({
       fileId: activeFileId || null,
       attachedFile: activeAttachedFile,
       file: dar.file || activeAttachedFile || null,
+      fileBlob: dar.fileBlob || dar.file || activeAttachedFile?.file || null,
       fileName: dar.fileName || activeAttachedFile?.name || null,
       pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
+      revision_history: [
+        ...(oldDoc?.revision_history || []),
+        ...(histEntryForNewDoc ? [histEntryForNewDoc] : [])
+      ],
       updatedAt: nowIso,
       createdAt: nowIso
     };
@@ -9653,11 +9995,26 @@ const useStore = create(persist((set, get) => ({
     if (activeFileId) {
       getFile(activeFileId).then(blob => {
         if (blob) {
-          if (targetCode) saveFile(targetCode, blob).catch(() => {});
+          if (targetCode) {
+            saveFile(targetCode, blob).catch(() => {});
+            saveFile(`DOC_${targetCode}_REV${newRevStr}`, blob).catch(() => {});
+            saveFile(`FILE_${targetCode}_REV${newRevStr}`, blob).catch(() => {});
+            saveFile(`DOC_${targetCode}_REV${newRevStr.padStart(2, '0')}`, blob).catch(() => {});
+            saveFile(`FILE_${targetCode}_REV${newRevStr.padStart(2, '0')}`, blob).catch(() => {});
+          }
           saveFile(newDocId, blob).catch(() => {});
           if (dar.id) saveFile(dar.id, blob).catch(() => {});
         }
       }).catch(() => {});
+    }
+    if (newDoc.file || newDoc.fileBlob) {
+      const activeBlob = newDoc.file || newDoc.fileBlob;
+      if (targetCode) {
+        saveFile(`DOC_${targetCode}_REV${newRevStr}`, activeBlob).catch(() => {});
+        saveFile(`FILE_${targetCode}_REV${newRevStr}`, activeBlob).catch(() => {});
+        saveFile(`DOC_${targetCode}_REV${newRevStr.padStart(2, '0')}`, activeBlob).catch(() => {});
+        saveFile(`FILE_${targetCode}_REV${newRevStr.padStart(2, '0')}`, activeBlob).catch(() => {});
+      }
     }
 
     const existingNewDocIndex = updatedDocs.findIndex(
@@ -13570,10 +13927,10 @@ const useStore = create(persist((set, get) => ({
 
     return persistedState;
   },
-  onRehydrateStorage: () => (state) => {
-    // 0. Auto-Seed Fallback: If documents are empty, seed default rich QMS data
-    if (state && (!state.documents || state.documents.length === 0 || !state.dars || state.dars.length === 0)) {
-      state.resetToDefaultSeed?.();
+  onRehydrateStorage: () => (state, error) => {
+    if (error) {
+      console.error('[Storage] Storage rehydration error:', error);
+      return;
     }
 
     // 0. Master Data & Signature Asset Hydration Lifecycle from IndexedDB
@@ -13736,73 +14093,178 @@ const useStore = create(persist((set, get) => ({
       }
     }
   },
-  partialize: (state) => ({
-    currentUser: state.currentUser,
-    masterUsers: state.masterUsers?.map(u => ({
-      ...u,
-      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
-    })),
-    requestUsers: state.requestUsers?.map(u => ({
-      ...u,
-      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
-    })),
-    reviewUsers: state.reviewUsers?.map(u => ({
-      ...u,
-      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
-    })),
-    approveUsers: state.approveUsers?.map(u => ({
-      ...u,
-      signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
-    })),
-    masterDepartments: state.masterDepartments,
-    departments: state.departments,
-    documentTypes: state.documentTypes,
-    distributionLocations: state.distributionLocations,
-    signatureSettings: state.signatureSettings,
-    slaSettings: state.slaSettings,
-    approvalMatrix: state.approvalMatrix,
-    approval_matrix: state.approval_matrix,
-    tasks: state.tasks?.map(t => ({
-      ...t,
-      attachedFile: t.attachedFile ? {
-        name: t.attachedFile.name,
-        fileId: t.attachedFile.fileId,
-        size: t.attachedFile.size
-      } : null
-    })),
-    notifications: state.notifications,
-    dars: state.dars?.map(d => ({
-      ...d,
-      attachedFile: d.attachedFile ? {
-        name: d.attachedFile.name,
-        fileId: d.attachedFile.fileId,
-        size: d.attachedFile.size
-      } : null
-    })),
-    darRequests: (state.darRequests || state.dars)?.map(d => ({
-      ...d,
-      attachedFile: d.attachedFile ? {
-        name: d.attachedFile.name,
-        fileId: d.attachedFile.fileId,
-        size: d.attachedFile.size
-      } : null
-    })),
-    timeline: state.timeline,
-    documents: state.documents,
-    masterDocuments: state.masterDocuments || state.documents,
-    externalDocuments: state.externalDocuments,
-    externalRequests: state.externalRequests,
-    controlledCopies: state.controlledCopies || state.documentControlledCopies,
-    documentControlledCopies: state.documentControlledCopies || state.controlledCopies,
-    controlledCopyInstances: state.controlledCopyInstances,
-    controlledCopyAuditTrail: state.controlledCopyAuditTrail,
-    copyDispositionRecords: state.copyDispositionRecords,
-    dispositionHistory: state.dispositionHistory,
-    actionLog: state.actionLog,
-    periodicReviewSchedules: state.periodicReviewSchedules,
-    periodicReviewTasks: state.periodicReviewTasks,
-    periodicReviewRecords: state.periodicReviewRecords
-  }),
+  partialize: (state) => {
+    // 🛡️ Sanitize documents: strip all in-memory File, Blobs, binary data to prevent QuotaExceededError
+    const sanitizeDoc = (doc) => {
+      if (!doc) return doc;
+      const {
+        fileBlob,
+        binaryData,
+        pdf_binary,
+        pdfBlob,
+        blob,
+        file,
+        previewBlob,
+        rawBlob,
+        fileContent,
+        ...cleanDoc
+      } = doc;
+
+      // Retain serializable fileKey and fileName
+      const fileName = cleanDoc.fileName || cleanDoc.file_name || cleanDoc.name || (typeof file === 'object' && file?.name ? file.name : undefined);
+      const fileKey = cleanDoc.fileKey || cleanDoc.fileId || cleanDoc.file_id || (typeof file === 'string' && !file.startsWith('data:') ? file : undefined);
+
+      const res = {
+        ...cleanDoc,
+        fileName,
+        fileKey: fileKey || cleanDoc.id
+      };
+
+      if (Array.isArray(res.revision_history)) {
+        res.revision_history = res.revision_history.map(rev => {
+          if (!rev) return rev;
+          const { fileBlob: _fb, binaryData: _bd, pdf_binary: _pb, pdfBlob: _pb2, blob: _b, file: _f, ...cleanRev } = rev;
+          return {
+            ...cleanRev,
+            fileName: cleanRev.fileName || res.fileName,
+            fileKey: cleanRev.fileKey || cleanRev.fileId || res.fileKey
+          };
+        });
+      }
+
+      return res;
+    };
+
+    // 🛡️ Sanitize DARs: strip attached file blobs and binary payloads
+    const sanitizeDar = (dar) => {
+      if (!dar) return dar;
+      const {
+        fileBlob,
+        pdf_binary,
+        binaryData,
+        pdfBlob,
+        blob,
+        file,
+        final_file,
+        previewBlob,
+        rawBlob,
+        fileContent,
+        ...cleanDar
+      } = dar;
+
+      let cleanAttachedFile = cleanDar.attachedFile;
+      if (cleanAttachedFile) {
+        cleanAttachedFile = {
+          name: cleanAttachedFile.name || cleanAttachedFile.fileName || cleanDar.fileName,
+          fileId: cleanAttachedFile.fileId || cleanAttachedFile.id || cleanDar.fileId || cleanDar.id,
+          size: cleanAttachedFile.size,
+          type: cleanAttachedFile.type
+        };
+      }
+
+      return {
+        ...cleanDar,
+        fileName: cleanDar.fileName || cleanDar.fileNameOriginal || cleanAttachedFile?.name,
+        fileKey: cleanDar.fileKey || cleanDar.fileId || cleanAttachedFile?.fileId || cleanDar.id,
+        attachedFile: cleanAttachedFile
+      };
+    };
+
+    // 🛡️ Sanitize Tasks: strip large file blobs
+    const sanitizeTask = (task) => {
+      if (!task) return task;
+      const {
+        fileBlob,
+        binaryData,
+        pdf_binary,
+        pdfBlob,
+        blob,
+        file,
+        previewBlob,
+        ...cleanTask
+      } = task;
+
+      let cleanAttachedFile = cleanTask.attachedFile;
+      if (cleanAttachedFile) {
+        cleanAttachedFile = {
+          name: cleanAttachedFile.name || cleanAttachedFile.fileName,
+          fileId: cleanAttachedFile.fileId || cleanAttachedFile.id,
+          size: cleanAttachedFile.size,
+          type: cleanAttachedFile.type
+        };
+      }
+
+      return {
+        ...cleanTask,
+        fileName: cleanTask.fileName || cleanAttachedFile?.name,
+        fileKey: cleanTask.fileKey || cleanTask.fileId || cleanAttachedFile?.fileId,
+        attachedFile: cleanAttachedFile
+      };
+    };
+
+    // 🛡️ Sanitize Controlled Copies: strip binary data
+    const sanitizeCopy = (copy) => {
+      if (!copy) return copy;
+      const {
+        fileBlob,
+        binaryData,
+        pdf_binary,
+        pdfBlob,
+        blob,
+        file,
+        ...cleanCopy
+      } = copy;
+      return cleanCopy;
+    };
+
+    return {
+      currentUser: state.currentUser,
+      masterUsers: state.masterUsers?.map(u => ({
+        ...u,
+        signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+      })),
+      requestUsers: state.requestUsers?.map(u => ({
+        ...u,
+        signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+      })),
+      reviewUsers: state.reviewUsers?.map(u => ({
+        ...u,
+        signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+      })),
+      approveUsers: state.approveUsers?.map(u => ({
+        ...u,
+        signatureImage: u.signatureType === 'DRAWN' ? null : u.signatureImage
+      })),
+      masterDepartments: state.masterDepartments,
+      departments: state.departments,
+      documentTypes: state.documentTypes,
+      distributionLocations: state.distributionLocations,
+      signatureSettings: state.signatureSettings,
+      slaSettings: state.slaSettings,
+      approvalMatrix: state.approvalMatrix,
+      approval_matrix: state.approval_matrix,
+      tasks: state.tasks?.map(sanitizeTask),
+      notifications: state.notifications,
+      dars: state.dars?.map(sanitizeDar),
+      darRequests: (state.darRequests || state.dars)?.map(sanitizeDar),
+      timeline: state.timeline,
+      documents: state.documents?.map(sanitizeDoc),
+      masterDocuments: (state.masterDocuments || state.documents)?.map(sanitizeDoc),
+      supersededDocuments: state.supersededDocuments?.map(sanitizeDoc),
+      externalDocuments: state.externalDocuments?.map(sanitizeDoc),
+      externalRequests: state.externalRequests,
+      controlledCopies: (state.controlledCopies || state.documentControlledCopies)?.map(sanitizeCopy),
+      documentControlledCopies: (state.documentControlledCopies || state.controlledCopies)?.map(sanitizeCopy),
+      controlledCopyInstances: state.controlledCopyInstances?.map(sanitizeCopy),
+      controlledCopyAuditTrail: state.controlledCopyAuditTrail,
+      copyDispositionRecords: state.copyDispositionRecords,
+      dispositionHistory: state.dispositionHistory,
+      actionLog: state.actionLog,
+      periodicReviewSchedules: state.periodicReviewSchedules,
+      periodicReviewTasks: state.periodicReviewTasks,
+      periodicReviewRecords: state.periodicReviewRecords
+    };
+  },
   storage: createJSONStorage(() => {
     if (typeof window !== 'undefined' && window.localStorage) {
       return {
@@ -13818,17 +14280,16 @@ const useStore = create(persist((set, get) => ({
             window.localStorage.setItem(name, value);
           } catch (error) {
             if (error?.name === 'QuotaExceededError' || error?.code === 22) {
-              console.warn(`[Storage] LocalStorage quota exceeded on key "${name}". Running emergency purge.`);
+              console.warn(`[Storage] LocalStorage quota exceeded on key "${name}". Running emergency purge of temporary cache.`);
               const keysToPurge = ['recent_preview_cache', 'temp_pdf_data', 'draft_backups'];
               keysToPurge.forEach(k => {
                 try { window.localStorage.removeItem(k); } catch { /* ignore */ }
               });
 
               try {
-                const compactValue = typeof value === 'object' ? JSON.stringify({ id: value?.id }) : '';
-                window.localStorage.setItem(name, compactValue);
+                window.localStorage.setItem(name, value);
               } catch (innerErr) {
-                console.error('[Storage] Safe fallback failed to write:', innerErr);
+                console.error('[Storage] LocalStorage quota exceeded even after cache purge; preserving in-memory state without overwriting:', innerErr);
               }
             } else {
               console.error('[Storage] LocalStorage error:', error);
@@ -13971,341 +14432,6 @@ if (typeof window !== 'undefined' && window.localStorage) {
       });
       if (obsoleteDarsMigrated) {
         persisted.state.darRequests = persisted.state.dars;
-        localStorage.setItem(storageKey, JSON.stringify(persisted));
-      }
-    }
-
-    // Self-healing migration for ISO 9001 Clause 7.5.3: Ensure external document historical snapshots are immutable
-    if (persisted && persisted.state && Array.isArray(persisted.state.externalDocuments)) {
-      let extDocsMigrated = false;
-      const seedData = getMockQaSeedData();
-
-      // Ensure ED-QA-01-R00 (Rev.00) exists and is preserved with distinct historical metadata
-      const r00Index = persisted.state.externalDocuments.findIndex(d => d.id === 'ED-QA-01-R00');
-      const seedR00 = seedData.externalDocuments.find(d => d.id === 'ED-QA-01-R00');
-      if (r00Index === -1 && seedR00) {
-        persisted.state.externalDocuments.unshift({ ...seedR00 });
-        extDocsMigrated = true;
-      } else if (r00Index >= 0 && seedR00) {
-        const r00Doc = persisted.state.externalDocuments[r00Index];
-        if (r00Doc.rev !== '00' || r00Doc.edrNumber !== 'EDR-2026-0001' || r00Doc.changeReason !== seedR00.changeReason) {
-          persisted.state.externalDocuments[r00Index] = {
-            ...r00Doc,
-            rev: '00',
-            revision: 'Rev.00',
-            status: 'SUPERSEDED',
-            is_superseded: true,
-            requestId: 'EDR-2026-0001',
-            edrNumber: 'EDR-2026-0001',
-            changeReason: seedR00.changeReason
-          };
-          extDocsMigrated = true;
-        }
-      }
-
-      // Ensure ED-QA-01 (Rev.01) retains its own distinct changeReason and EDR number
-      const r01Index = persisted.state.externalDocuments.findIndex(d => d.id === 'ED-QA-01');
-      const seedR01 = seedData.externalDocuments.find(d => d.id === 'ED-QA-01');
-      if (r01Index >= 0 && seedR01) {
-        const r01Doc = persisted.state.externalDocuments[r01Index];
-        if (r01Doc.rev === '01' && (!r01Doc.changeReason || r01Doc.changeReason.includes('EDR-2026-0005') || (seedR00 && r01Doc.changeReason === seedR00.changeReason))) {
-          persisted.state.externalDocuments[r01Index] = {
-            ...r01Doc,
-            edrNumber: 'EDR-2026-0002',
-            requestId: 'EDR-2026-0002',
-            changeReason: seedR01.changeReason
-          };
-          extDocsMigrated = true;
-        }
-      }
-
-      if (extDocsMigrated) {
-        localStorage.setItem(storageKey, JSON.stringify(persisted));
-      }
-    }
-
-    // Self-healing migration for ISO 9001 Clause 7.5.3: Ensure internal document historical snapshots (WI-QC-01 Rev.00 & Rev.01) are immutable and persist
-    if (persisted && persisted.state && Array.isArray(persisted.state.documents)) {
-      let qcDocsMigrated = false;
-      const qcBaselineDocs = [
-        {
-          id: 'WI-QC-01_REV_00',
-          title: 'WI-QC-01',
-          document_code: 'WI-QC-01',
-          doc_code: 'WI-QC-01',
-          code: 'WI-QC-01',
-          docNo: 'WI-QC-01',
-          docCode: 'WI-QC-01',
-          docTitle: 'WI-QC-01',
-          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          status: 'SUPERSEDED',
-          is_superseded: true,
-          is_active: false,
-          department: 'QC',
-          dept: 'QC',
-          ownerId: 'U005',
-          effectiveDate: '2025-01-15',
-          effective_date: '2025-01-15',
-          superseded_at: '2025-06-20T09:00:00.000Z',
-          supersededAt: '2025-06-20T09:00:00.000Z',
-          supersededByRev: '01',
-          rev: '00',
-          revision: '00',
-          doc_version: '00',
-          darId: 'DAR-2026-001',
-          darNo: 'DAR-2026-001',
-          darNumber: 'DAR-2026-001',
-          darRef: 'DAR-2026-001',
-          latestDarNo: 'DAR-2026-001',
-          access_control: {
-            scope: 'GENERAL',
-            authorized_depts: [],
-            authorized_users: [],
-            min_access_level: 1
-          }
-        },
-        {
-          id: 'WI-QC-01_REV_01',
-          title: 'WI-QC-01',
-          document_code: 'WI-QC-01',
-          doc_code: 'WI-QC-01',
-          code: 'WI-QC-01',
-          docNo: 'WI-QC-01',
-          docCode: 'WI-QC-01',
-          docTitle: 'WI-QC-01',
-          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          status: 'SUPERSEDED',
-          is_superseded: true,
-          is_active: false,
-          department: 'QC',
-          dept: 'QC',
-          ownerId: 'U005',
-          effectiveDate: '2025-06-20',
-          effective_date: '2025-06-20',
-          superseded_at: '2026-03-01T08:30:00.000Z',
-          supersededAt: '2026-03-01T08:30:00.000Z',
-          supersededByRev: '02',
-          rev: '01',
-          revision: '01',
-          doc_version: '01',
-          darId: 'DAR-2026-002',
-          darNo: 'DAR-2026-002',
-          darNumber: 'DAR-2026-002',
-          darRef: 'DAR-2026-002',
-          latestDarNo: 'DAR-2026-002',
-          access_control: {
-            scope: 'GENERAL',
-            authorized_depts: [],
-            authorized_users: [],
-            min_access_level: 1
-          }
-        },
-        {
-          id: 'WI-QC-01_REV_02',
-          title: 'WI-QC-01',
-          document_code: 'WI-QC-01',
-          doc_code: 'WI-QC-01',
-          code: 'WI-QC-01',
-          docNo: 'WI-QC-01',
-          docCode: 'WI-QC-01',
-          docTitle: 'WI-QC-01',
-          name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-          status: 'EFFECTIVE',
-          is_superseded: false,
-          is_active: true,
-          department: 'QC',
-          dept: 'QC',
-          ownerId: 'U005',
-          effectiveDate: '2026-03-01',
-          effective_date: '2026-03-01',
-          rev: '02',
-          revision: '02',
-          doc_version: '02',
-          darId: 'DAR-2026-003',
-          darNo: 'DAR-2026-003',
-          darNumber: 'DAR-2026-003',
-          darRef: 'DAR-2026-003',
-          latestDarNo: 'DAR-2026-003',
-          access_control: {
-            scope: 'GENERAL',
-            authorized_depts: [],
-            authorized_users: [],
-            min_access_level: 1
-          }
-        }
-      ];
-
-      qcBaselineDocs.forEach(seedDoc => {
-        const cleanRev = String(seedDoc.revision || seedDoc.rev || '00').replace(/^rev\.?/i, '').trim();
-        const existingIndex = persisted.state.documents.findIndex(d => {
-          const c = d.document_code || d.code || d.doc_code || d.docNo || d.title;
-          const r = String(d.revision || d.rev || '00').replace(/^rev\.?/i, '').trim();
-          return c && c.trim().toUpperCase() === 'WI-QC-01' && r === cleanRev;
-        });
-
-        if (existingIndex === -1) {
-          persisted.state.documents.push({ ...seedDoc });
-          qcDocsMigrated = true;
-        } else {
-          const existing = persisted.state.documents[existingIndex];
-          if (cleanRev === '00' && (existing.status !== 'SUPERSEDED' || !existing.darId || existing.id === 'WI-QC-01')) {
-            persisted.state.documents[existingIndex] = {
-              ...existing,
-              ...seedDoc,
-              id: existing.id && existing.id !== 'WI-QC-01' ? existing.id : seedDoc.id,
-              status: 'SUPERSEDED',
-              is_superseded: true,
-              is_active: false
-            };
-            qcDocsMigrated = true;
-          } else if (cleanRev === '01' && (existing.status !== 'SUPERSEDED' || !existing.darId)) {
-            persisted.state.documents[existingIndex] = {
-              ...existing,
-              ...seedDoc,
-              status: 'SUPERSEDED',
-              is_superseded: true,
-              is_active: false
-            };
-            qcDocsMigrated = true;
-          }
-        }
-      });
-
-      // Ensure DARs for WI-QC-01 exist in persisted.state.dars
-      if (Array.isArray(persisted.state.dars)) {
-        const qcBaselineDars = [
-          {
-            id: 'DAR-2026-001',
-            darNo: 'DAR-2026-001',
-            dar_no: 'DAR-2026-001',
-            darNumber: 'DAR-2026-001',
-            docId: 'WI-QC-01_REV_00',
-            doc_id: 'WI-QC-01_REV_00',
-            title: 'WI-QC-01',
-            document_code: 'WI-QC-01',
-            doc_code: 'WI-QC-01',
-            docNo: 'WI-QC-01',
-            docTitle: 'WI-QC-01',
-            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            type: 'NEW_DOCUMENT',
-            docType: 'WI',
-            doc_type: 'WI',
-            revision: '00',
-            target_revision: '00',
-            targetRevision: '00',
-            rev: '00',
-            assignee_department: 'DC',
-    department: 'QC',
-            dept: 'QC',
-            status: 'COMPLETED',
-            reason: 'จัดทำคู่มือปฏิบัติงานการตรวจสอบคุณภาพวัตถุดิบรับเข้าฉบับแรก (Genesis Rev.00)',
-            effectiveDate: '2025-01-15',
-            effective_date: '2025-01-15',
-            requesterId: 'U005',
-            requesterName: 'บีม',
-            requester_department: 'QC',
-            requesterDepartment: 'QC',
-            reviewerId: 'U003',
-            reviewerName: 'กัลยาณี',
-            approverId: 'U004',
-            approverName: 'คุณเรย์'
-          },
-          {
-            id: 'DAR-2026-002',
-            darNo: 'DAR-2026-002',
-            dar_no: 'DAR-2026-002',
-            darNumber: 'DAR-2026-002',
-            docId: 'WI-QC-01_REV_01',
-            doc_id: 'WI-QC-01_REV_01',
-            title: 'WI-QC-01',
-            document_code: 'WI-QC-01',
-            doc_code: 'WI-QC-01',
-            docNo: 'WI-QC-01',
-            docTitle: 'WI-QC-01',
-            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            type: 'REVISION',
-            docType: 'WI',
-            doc_type: 'WI',
-            revision: '01',
-            target_revision: '01',
-            targetRevision: '01',
-            currentRevision: '00',
-            previous_revision: '00',
-            rev: '01',
-            department: 'QC',
-            dept: 'QC',
-            status: 'COMPLETED',
-            reason: 'ปรับปรุงเกณฑ์การชักตัวอย่างและการตรวจปล่อยวัตถุดิบ Rev.01',
-            effectiveDate: '2025-06-20',
-            effective_date: '2025-06-20',
-            requesterId: 'U005',
-            requesterName: 'บีม',
-            reviewerId: 'U003',
-            reviewerName: 'กัลยาณี',
-            approverId: 'U004',
-            approverName: 'คุณเรย์'
-          },
-          {
-            id: 'DAR-2026-003',
-            darNo: 'DAR-2026-003',
-            dar_no: 'DAR-2026-003',
-            darNumber: 'DAR-2026-003',
-            docId: 'WI-QC-01_REV_02',
-            doc_id: 'WI-QC-01_REV_02',
-            title: 'WI-QC-01',
-            document_code: 'WI-QC-01',
-            doc_code: 'WI-QC-01',
-            docNo: 'WI-QC-01',
-            docTitle: 'WI-QC-01',
-            document_title: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            docName: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            name: 'ขั้นตอนการตรวจสอบคุณภาพวัตถุดิบรับเข้า',
-            type: 'REVISION',
-            docType: 'WI',
-            doc_type: 'WI',
-            revision: '02',
-            target_revision: '02',
-            targetRevision: '02',
-            currentRevision: '01',
-            previous_revision: '01',
-            rev: '02',
-            department: 'QC',
-            dept: 'QC',
-            status: 'COMPLETED',
-            reason: 'ปรับปรุงขั้นตอนการทดสอบทางจุลชีววิทยาและสารตกค้าง Rev.02 ฉบับปัจจุบัน',
-            effectiveDate: '2026-03-01',
-            effective_date: '2026-03-01',
-            requesterId: 'U005',
-            requesterName: 'บีม',
-            reviewerId: 'U003',
-            reviewerName: 'กัลยาณี',
-            approverId: 'U004',
-            approverName: 'คุณเรย์'
-          }
-        ];
-
-        qcBaselineDars.forEach(seedDar => {
-          const hasDar = persisted.state.dars.some(d => d.id === seedDar.id || d.dar_no === seedDar.dar_no);
-          if (!hasDar) {
-            persisted.state.dars.push({ ...seedDar });
-            if (Array.isArray(persisted.state.darRequests)) {
-              persisted.state.darRequests.push({ ...seedDar });
-            }
-            qcDocsMigrated = true;
-          }
-        });
-      }
-
-      if (qcDocsMigrated) {
-        persisted.state.masterDocuments = persisted.state.documents;
-        persisted.state.supersededDocuments = persisted.state.documents.filter(d => d.status === 'SUPERSEDED' || d.is_superseded);
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       }
     }

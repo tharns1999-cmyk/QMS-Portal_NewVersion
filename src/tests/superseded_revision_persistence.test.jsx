@@ -251,9 +251,13 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
       </MemoryRouter>
     );
 
-    // Switch to Superseded tab
+    // Switch to Dept tab then Superseded tab
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i }));
     const supersededTabBtn = screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น/i });
     fireEvent.click(supersededTabBtn);
+
+    // Search for WI-QC-01
+    fireEvent.change(screen.getByPlaceholderText(/ค้นหา/i), { target: { value: 'WI-QC-01' } });
 
     // Document code WI-QC-01 must be present
     const docCodeElements = screen.getAllByText('WI-QC-01');
@@ -282,6 +286,7 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
       </MemoryRouter>
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i }));
     fireEvent.click(screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น/i }));
 
     // Find the row containing WI-QC-01
@@ -375,14 +380,15 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
       </MemoryRouter>
     );
 
-    // Switch to "ฉบับเดิมตกรุ่น (Superseded)" tab
+    // Switch to "ในแผนกฉัน" then "ฉบับเดิมตกรุ่น (Superseded)" tab
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i }));
     const supersededTabBtn = screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น|ฉบับตกรุ่น/i });
     fireEvent.click(supersededTabBtn);
 
     // Verify WI-QC-01 row displays Rev.00 - Rev.01 (2 ฉบับเดิม), strictly omitting Rev.02 (EFFECTIVE)
     expect(screen.getByText(/Rev\.00 – Rev\.01/i)).toBeInTheDocument();
     expect(screen.getByText(/\(2 ฉบับเดิม\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/ตกรุ่นเมื่อ:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/ตกรุ่นเมื่อ:/i).length).toBeGreaterThanOrEqual(1);
 
     // Verify no cluttered revision chips or (ล่าสุด) or +X ฉบับเดิม
     expect(screen.queryByText(/Rev\.02 \(ล่าสุด\)/i)).not.toBeInTheDocument();
@@ -404,7 +410,7 @@ describe('Superseded Revision History Overwrite Fix & Persistence Test Suite', (
     // Verify WI-QC-01 displays clean text summary
     expect(screen.getByText(/Rev\.00 – Rev\.01/i)).toBeInTheDocument();
     expect(screen.getByText(/\(2 ฉบับเดิม\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/ตกรุ่นเมื่อ:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/ตกรุ่นเมื่อ:/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/Rev\.02 \(ล่าสุด\)/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/\+1 ฉบับเดิม/i)).not.toBeInTheDocument();
   });

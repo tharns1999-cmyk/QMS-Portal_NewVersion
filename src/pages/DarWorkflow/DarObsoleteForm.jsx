@@ -335,12 +335,18 @@ const DarObsoleteForm = () => {
       : '01';
     const cleanTargetRev = String(rawTargetRev).replace(/^Rev\.?/i, '').padStart(2, '0');
 
+    const docCode = selectedDoc ? resolveDocCode(selectedDoc) : (formData.docCode || formData.docId || '');
+    const docTitle = selectedDoc ? resolveDocTitle(selectedDoc) : (formData.document_title || formData.title || 'Untitled Draft');
+
     return {
       id: targetDraftId || formData.id,
       dar_no: formData.darNo || formData.id,
       type: 'OBSOLETE',
       status: isDraft ? 'DRAFT' : 'UNDER_REVIEW',
-      title: selectedDoc ? `[OBSOLETE] ${resolveDocCode(selectedDoc)}` : (formData.title || 'Untitled Draft'),
+      title: docTitle,
+      document_title: docTitle,
+      docTitle: docTitle,
+      name: docTitle,
       requesterId: currentUser?.id,
       requester_id: currentUser?.id,
       requester_name: currentUser?.name,
@@ -349,7 +355,9 @@ const DarObsoleteForm = () => {
       docIdRef: formData.docId,
       doc_id: formData.docId,
       targetDocumentId: formData.docId,
-      document_code: selectedDoc ? resolveDocCode(selectedDoc) : (formData.docCode || formData.docId),
+      document_code: docCode,
+      doc_code: docCode,
+      docCode: docCode,
       obsoleteReason: formData.obsoleteReason || formData.reason || '',
       obsolete_reason: formData.obsoleteReason || formData.reason || '',
       reason: formData.obsoleteReason || formData.reason || '',

@@ -4,11 +4,11 @@ import useStore from '../../store/useStore';
 import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isDarDraft, isDarRequester } from '../../utils/darHelper';
+import { isDarDraft, isDarRequester, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
 
 const DarList = () => {
   const navigate = useNavigate();
-  const { dars, currentUser, tasks, masterUsers, deleteDar } = useStore();
+  const { dars, currentUser, tasks, masterUsers, deleteDar, documents } = useStore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
@@ -201,16 +201,8 @@ const DarList = () => {
   };
 
   const getStatusBadge = (status) => {
-    switch (status) {
-      case 'DRAFT': return <span className="badge-draft">ฉบับร่าง</span>;
-      case 'UNDER_REVIEW': return <span className="badge-pending">รอการทบทวน</span>;
-      case 'PENDING_APPROVAL': return <span className="badge-pending">รอการอนุมัติ</span>;
-      case 'CANCELLED': return <span className="badge-rejected">ยกเลิก</span>;
-      case 'EFFECTIVE': return <span className="badge-active">มีผลบังคับใช้</span>;
-      case 'OBSOLETE': return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
-      case 'RETURNED_FOR_REVISION': return <span className="badge-rejected">ส่งกลับแก้ไข</span>;
-      default: return <span className="badge-active">{status.replace(/_/g, ' ')}</span>;
-    }
+    const meta = getDarStatusBadgeMeta(status);
+    return <span className={meta.className}>{meta.label}</span>;
   };
 
   return (
@@ -356,8 +348,26 @@ const DarList = () => {
                       </span>
                     )}
                   </td>
-                  <td className="px-3.5 py-3 font-medium text-slate-800 break-all break-words min-w-0 [overflow-wrap:anywhere] text-sm sm:text-[15px] leading-relaxed" title={dar.title}>
-                    {dar.title}
+                  {/* คอลัมน์ ชื่อเอกสาร / หัวข้อ */}
+                  <td className="px-3.5 py-3 align-middle min-w-[200px]">
+                    {(() => {
+                      const { docCode, docTitle } = formatDarDocumentDisplay(dar, documents);
+                      return (
+                        <div className="flex flex-col min-w-0">
+                          {/* บรรทัดที่ 1: รหัสเอกสาร */}
+                          <span className="text-sm font-semibold text-slate-800 leading-tight">
+                            {docCode}
+                          </span>
+                          {/* บรรทัดที่ 2: ชื่อเอกสารจริง (ตัด tag [OBSOLETE] ออกถ้ามีหลงเหลือ) */}
+                          <span 
+                            className="text-xs text-slate-500 line-clamp-1 leading-normal mt-0.5" 
+                            title={docTitle}
+                          >
+                            {docTitle}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-3.5 py-3 whitespace-nowrap">
                     <span className="px-2.5 py-1 bg-[#F5F5F5] text-slate-700 rounded-lg font-mono text-xs font-bold">

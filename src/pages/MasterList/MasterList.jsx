@@ -1,6 +1,35 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import useStore from '../../store/useStore';
-import { Database, Download, Search, Eye, X, FilterX, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Database, Download, Search, Eye, X, FilterX, ChevronDown, CheckCircle2, Globe, Building2, Share2 } from 'lucide-react';
+
+export const filterDocumentsByScope = (documents, selectedScope, currentUser) => {
+  const userDept = currentUser?.department || 'DC';
+  const affiliatedDepts = currentUser?.affiliatedDepartments || currentUser?.affiliated_departments || [userDept];
+
+  return (documents || []).filter((doc) => {
+    const docDept = doc.department || doc.owner_dept || doc.dept_code || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+    const isMyDeptDoc = affiliatedDepts.includes(docDept) || (docDept && docDept === userDept);
+
+    switch (selectedScope) {
+      case 'MY_DEPT':
+        return isMyDeptDoc;
+      case 'GENERAL':
+      case 'PUBLIC':
+        return !isMyDeptDoc && (
+          doc.access_level === 'PUBLIC' || 
+          doc.is_public === true || 
+          doc.access_control?.scope === 'GENERAL' || 
+          doc.access_scope === 'GENERAL' || 
+          doc.scope === 'GENERAL' || 
+          !docDept
+        );
+      case 'DISTRIBUTED':
+        return (doc.distributed_departments || doc.distributed_depts || []).includes(userDept);
+      default:
+        return true;
+    }
+  });
+};
 import EmptyState from '../../components/EmptyState';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames } from '../../utils/darHelper';
 import { TablePagination } from '../../components/common/TablePagination';
@@ -30,12 +59,75 @@ const MasterList = () => {
     currentUser?.department === 'DCC'
   );
   
+  const [selectedScope, setSelectedScope] = useState('ALL');
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedType, setSelectedType] = useState('ALL');
   const [selectedStandard, setSelectedStandard] = useState('ALL');
   const [selectedSecurity, setSelectedSecurity] = useState('ALL');
   const [masterListStatus, setMasterListStatus] = useState('ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const userDept = currentUser?.department || 'DC';
+  const affiliatedDepts = useMemo(() => {
+    return currentUser?.affiliatedDepartments || currentUser?.affiliated_departments || [userDept];
+  }, [currentUser, userDept]);
+
+  const filteredByScope = useMemo(() => {
+    return (documents || []).filter((doc) => {
+      const docDept = doc.department || doc.owner_dept || doc.dept_code || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+      const isMyDeptDoc = affiliatedDepts.includes(docDept) || (docDept && docDept === userDept);
+
+      switch (selectedScope) {
+        case 'MY_DEPT':
+          // ✅ เฉพาะเอกสารที่แผนกฉันเป็นเจ้าของ
+          return isMyDeptDoc;
+        case 'GENERAL':
+        case 'PUBLIC':
+          // ✅ เอกสารทั่วไป/ส่วนกลาง หรือเอกสารแผนกอื่นที่อนุญาตให้อ่าน โดย "ต้องไม่ซ้ำกับเอกสารในแผนกฉัน"
+          return !isMyDeptDoc && (
+            doc.access_level === 'PUBLIC' || 
+            doc.is_public === true || 
+            doc.access_control?.scope === 'GENERAL' || 
+            doc.access_scope === 'GENERAL' || 
+            doc.scope === 'GENERAL' || 
+            !docDept
+          );
+        case 'DISTRIBUTED':
+          // ✅ เอกสารที่มีสำเนาแจกจ่ายมายังแผนกของฉัน
+          return (doc.distributed_departments || doc.distributed_depts || []).includes(userDept);
+        default:
+          return true;
+      }
+    });
+  }, [documents, selectedScope, currentUser, affiliatedDepts, userDept]);
+
+  const myDeptCount = useMemo(() => {
+    return (documents || []).filter((doc) => {
+      const docDept = doc.department || doc.owner_dept || doc.dept_code || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+      return affiliatedDepts.includes(docDept) || (docDept && docDept === userDept);
+    }).length;
+  }, [documents, affiliatedDepts, userDept]);
+
+  const generalCount = useMemo(() => {
+    return (documents || []).filter((doc) => {
+      const docDept = doc.department || doc.owner_dept || doc.dept_code || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+      const isMyDeptDoc = affiliatedDepts.includes(docDept) || (docDept && docDept === userDept);
+      return !isMyDeptDoc && (
+        doc.access_level === 'PUBLIC' || 
+        doc.is_public === true || 
+        doc.access_control?.scope === 'GENERAL' || 
+        doc.access_scope === 'GENERAL' || 
+        doc.scope === 'GENERAL' || 
+        !docDept
+      );
+    }).length;
+  }, [documents, affiliatedDepts, userDept]);
+
+  const distributedCount = useMemo(() => {
+    return (documents || []).filter((doc) => {
+      return (doc.distributed_departments || doc.distributed_depts || []).includes(userDept);
+    }).length;
+  }, [documents, userDept]);
 
   const masterListDept = selectedDept === 'ALL' ? '' : selectedDept;
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -107,9 +199,9 @@ const MasterList = () => {
   const docTypes = availableTypes;
   const standards = availableStandards;
 
-  // Base Filter Logic (Dept, Type, Standard, Security, Search)
+  // Base Filter Logic (Dept, Type, Standard, Security, Search, Scope)
   const baseFilteredDocs = useMemo(() => {
-    let docs = documents || [];
+    let docs = filteredByScope;
     
     if (!isAdmin) {
       docs = docs.filter(d => d.department === currentUser?.department);
@@ -148,7 +240,7 @@ const MasterList = () => {
 
     return docs;
   }, [
-    documents,
+    filteredByScope,
     isAdmin,
     currentUser?.department,
     selectedDept,
@@ -340,9 +432,83 @@ const MasterList = () => {
           </h2>
           <p className="text-sm text-[#666666] mt-1">ระบบคลังข้อมูลส่วนกลางสำหรับตรวจสอบและส่งออกทะเบียนเอกสาร QMS</p>
         </div>
-        <div className="bg-[#E5F4FF] px-4 py-2.5 rounded-xl border border-[#E5F4FF]/80 flex items-center gap-3">
-          <span className="text-[#007BE5] font-bold text-sm">เอกสารทั้งหมด (ตามเงื่อนไข):</span>
-          <span className="text-2xl font-bold text-indigo-900 font-mono">{filteredDocs.length}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 3 Scope Tabs: Minimal Segmented Pills */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-lg overflow-x-auto shrink-0 text-xs">
+            {/* Tab 1: เอกสารทั่วไป */}
+            <button
+              type="button"
+              title="เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น"
+              aria-label="เอกสารทั่วไป (เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น)"
+              onClick={() => setSelectedScope(selectedScope === 'GENERAL' || selectedScope === 'PUBLIC' ? 'ALL' : 'GENERAL')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                selectedScope === 'GENERAL' || selectedScope === 'PUBLIC'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Globe size={13} className={selectedScope === 'GENERAL' || selectedScope === 'PUBLIC' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>เอกสารทั่วไป</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                selectedScope === 'GENERAL' || selectedScope === 'PUBLIC'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                  : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {generalCount}
+              </span>
+            </button>
+
+            {/* Tab 2: ในแผนกฉัน */}
+            <button
+              type="button"
+              aria-label="ในแผนกฉัน"
+              title="เฉพาะเอกสารที่แผนกฉันเป็นเจ้าของ"
+              onClick={() => setSelectedScope(selectedScope === 'MY_DEPT' ? 'ALL' : 'MY_DEPT')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                selectedScope === 'MY_DEPT'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Building2 size={13} className={selectedScope === 'MY_DEPT' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ในแผนกฉัน</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                selectedScope === 'MY_DEPT'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                  : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {myDeptCount}
+              </span>
+            </button>
+
+            {/* Tab 3: เอกสารที่ได้รับการแจกจ่าย */}
+            <button
+              type="button"
+              aria-label="เอกสารที่ได้รับการแจกจ่าย"
+              title="เอกสารที่มีสำเนาแจกจ่ายมายังแผนกของฉัน"
+              onClick={() => setSelectedScope(selectedScope === 'DISTRIBUTED' ? 'ALL' : 'DISTRIBUTED')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                selectedScope === 'DISTRIBUTED'
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Share2 size={13} className={selectedScope === 'DISTRIBUTED' ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ที่ได้รับการแจกจ่าย</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                selectedScope === 'DISTRIBUTED'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                  : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {distributedCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="bg-[#E5F4FF] px-4 py-2.5 rounded-xl border border-[#E5F4FF]/80 flex items-center gap-3">
+            <span className="text-[#007BE5] font-bold text-sm">เอกสารทั้งหมด (ตามเงื่อนไข):</span>
+            <span className="text-2xl font-bold text-indigo-900 font-mono">{filteredDocs.length}</span>
+          </div>
         </div>
       </div>
 
@@ -433,10 +599,11 @@ const MasterList = () => {
 
           {/* Actions: Reset & Export */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
-            {(selectedDept !== 'ALL' || selectedType !== 'ALL' || selectedStandard !== 'ALL' || selectedSecurity !== 'ALL' || searchTerm || masterListStatus !== 'ACTIVE') && (
+            {(selectedScope !== 'ALL' || selectedDept !== 'ALL' || selectedType !== 'ALL' || selectedStandard !== 'ALL' || selectedSecurity !== 'ALL' || searchTerm || masterListStatus !== 'ACTIVE') && (
               <button 
                 type="button"
                 onClick={() => {
+                  setSelectedScope('ALL');
                   setSelectedDept('ALL');
                   setSelectedType('ALL');
                   setSelectedStandard('ALL');

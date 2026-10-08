@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { isActionableTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';
-import { isDarDraft, isDarRequester } from '../../utils/darHelper';
+import { isDarDraft, isDarRequester, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
 import DashboardHeader from './components/DashboardHeader';
 import { isMyDepartment } from '../../services/darService';
 
@@ -336,20 +336,8 @@ const Dashboard = () => {
   };
 
   const getStatusBadge = (status) => {
-    if (!status) return <span className="badge-draft">-</span>;
-    switch (status) {
-      case 'DRAFT': return <span className="badge-draft">ฉบับร่าง</span>;
-      case 'UNDER_REVIEW': return <span className="badge-pending">รอการทบทวน</span>;
-      case 'PENDING_APPROVAL': return <span className="badge-pending">รอการอนุมัติ</span>;
-      case 'CANCELLED': return <span className="badge-rejected">ยกเลิก</span>;
-      case 'CANCELLED_OVERDUE': return <span className="badge-rejected">ยกเลิก (เกินกำหนด)</span>;
-      case 'RETURNED_FOR_REVISION': return <span className="badge-rejected">ส่งกลับแก้ไข</span>;
-      case 'APPROVED_WAITING_EFFECTIVE':
-      case 'WAITING_EFFECTIVE': return <span className="badge-pending">รอประกาศใช้</span>;
-      case 'EFFECTIVE': return <span className="badge-active">มีผลบังคับใช้</span>;
-      case 'OBSOLETE': return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
-      default: return <span className="badge-active">{String(status).replace(/_/g, ' ')}</span>;
-    }
+    const meta = getDarStatusBadgeMeta(status);
+    return <span className={meta.className}>{meta.label}</span>;
   };
 
   return (
@@ -850,8 +838,26 @@ const Dashboard = () => {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 font-medium text-slate-800 leading-relaxed break-all break-words min-w-0 [overflow-wrap:anywhere] group-hover:text-sky-600 transition-colors text-[13px] sm:text-sm" title={dar.title}>
-                      {dar.title || '-'}
+                    {/* คอลัมน์ ชื่อเอกสาร / หัวข้อ */}
+                    <td className="py-3 px-4 align-middle min-w-0">
+                      {(() => {
+                        const { docCode, docTitle } = formatDarDocumentDisplay(dar, documents);
+                        return (
+                          <div className="flex flex-col min-w-0">
+                            {/* บรรทัดที่ 1: รหัสเอกสาร */}
+                            <span className="text-[13px] sm:text-sm font-semibold text-slate-800 leading-tight group-hover:text-sky-600 transition-colors">
+                              {docCode}
+                            </span>
+                            {/* บรรทัดที่ 2: ชื่อเอกสารจริง (ตัด tag [OBSOLETE] ออกถ้ามีหลงเหลือ) */}
+                            <span 
+                              className="text-xs text-slate-500 line-clamp-1 leading-normal mt-0.5" 
+                              title={docTitle}
+                            >
+                              {docTitle}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-mono text-[11px] font-medium uppercase tracking-wider border border-slate-200">

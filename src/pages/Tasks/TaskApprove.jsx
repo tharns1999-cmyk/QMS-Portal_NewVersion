@@ -101,6 +101,16 @@ const TaskApprove = () => {
   const targetRev = dar?.targetRevision || dar?.newRevision || dar?.revision || docInfo?.docRev || '00';
   const headerDisplayTitle = formatDarHeaderTitle(dar, targetDocCode, targetDocTitle);
 
+  const isObsolete = useMemo(() => {
+    return Boolean(
+      dar?.type === 'OBSOLETE' || 
+      dar?.darType === 'OBSOLETE' || 
+      dar?.action_type === 'OBSOLETE' ||
+      dar?.type === 'CANCEL' ||
+      dar?.requestType === 'OBSOLETE'
+    );
+  }, [dar]);
+
   const requesterName = useMemo(() => {
     return dar ? (getRequesterName(dar, masterUsers) || 'ผู้ร้องขอ') : 'ผู้ร้องขอ';
   }, [dar, masterUsers]);
@@ -201,16 +211,113 @@ const TaskApprove = () => {
           dar.title
         ].filter(Boolean);
 
-        let rawBlob = null;
-        const allKeys = Array.from(new Set([primaryKey, ...fallbackKeys])).filter(Boolean);
+        let activeMasterDoc = null;
+        const currentDocCode = dar?.document_code || dar?.docCode || dar?.doc_code || dar?.code || docInfo?.docCode;
+        const currentDocRev = dar?.current_revision || dar?.revision || docInfo?.docRev || dar?.targetRevision || dar?.rev;
 
-        let masterDocFallback = null;
-        const isObsoleteOrNoFile = dar?.darType === 'OBSOLETE' || dar?.type === 'OBSOLETE' || (!dar?.fileId && !dar?.file_id && !dar?.attachedFile && !task?.fileId);
-        if (isObsoleteOrNoFile && dar?.document_code) {
-          masterDocFallback = documents.find(d => 
-            (d.code === dar.document_code || d.document_code === dar.document_code) &&
-            (String(d.revision) === String(dar.current_revision || dar.target_revision || dar.revision) || d.status === 'EFFECTIVE' || d.status === 'ACTIVE')
+        if (currentDocCode) {
+          activeMasterDoc = (documents || []).find(d => 
+            (d.code === currentDocCode || d.document_code === currentDocCode || d.docCode === currentDocCode || (dar?.documentId && d.id === dar.documentId)) &&
+            (String(d.revision) === String(currentDocRev) || d.status === 'EFFECTIVE' || d.status === 'ACTIVE')
+          ) || (documents || []).find(d => 
+            (d.code === currentDocCode || d.document_code === currentDocCode || d.docCode === currentDocCode || (dar?.documentId && d.id === dar.documentId))
           );
+        }
+
+        let hasExplicitAttachment = Boolean(
+          dar.fileId || dar.file_id || dar.fileName ||
+          dar.attachedFile || dar.file ||
+          task?.fileId || task?.attachedFile || task?.fileName ||
+          activeMasterDoc
+        );
+
+        if (!hasExplicitAttachment) {
+          if (!isCancelled) {
+            setPdfBlobUrl(null);
+            setLoadingPdf(false);
+            setPdfLoadError('ไม่พบไฟล์เอกสารอ้างอิงจริง (No attached file)');
+          }
+          return;
+        }
+
+        let rawBlob = null;
+        const allKeys = Array.from(new Set([
+          primaryKey,
+          activeMasterDoc?.fileId,
+          activeMasterDoc?.id,
+          ...fallbackKeys
+        ])).filter(Boolean);
+
+        // 1. กรณีเป็นคำร้อง OBSOLETE: นำไฟล์จริงจาก Master Document มาแสดงโดยตรง ไม่ผ่านกระบวนการ Stamp
+        // ข้ามขั้นตอนการสร้างและวาดตารางลายเซ็น (Bypass / Skip Sign-off Stamp) และระงับลายน้ำ DRAFT
+        if (isObsolete) {
+          const directFile = activeMasterDoc?.file || activeMasterDoc?.fileUrl || activeMasterDoc?.pdf_blob || activeMasterDoc?.pdfBlob || dar?.file;
+
+          if (directFile instanceof Blob) {
+            rawBlob = directFile;
+          } else if (typeof directFile === 'string' && (directFile.startsWith('blob:') || directFile.startsWith('data:') || directFile.startsWith('http') || directFile.startsWith('/'))) {
+            if (!isCancelled) {
+              setPdfBlobUrl(directFile);
+              setLoadingPdf(false);
+            }
+            return;
+          }
+
+          if (!rawBlob) {
+            const resolveKey = activeMasterDoc ? (activeMasterDoc.fileId || activeMasterDoc.id) : primaryKey;
+            const obsoleteKeys = Array.from(new Set([
+              resolveKey,
+              activeMasterDoc?.fileId,
+              activeMasterDoc?.id,
+              activeMasterDoc?.fileName,
+              activeMasterDoc?.code,
+              activeMasterDoc?.document_code,
+              ...allKeys
+            ])).filter(Boolean);
+
+            for (const cache of [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__]) {
+              if (cache && !rawBlob) {
+                for (const k of obsoleteKeys) {
+                  if (cache.has(k)) {
+                    rawBlob = cache.get(k);
+                    if (rawBlob && rawBlob.size > 0) break;
+                  }
+                }
+              }
+            }
+
+            if (!rawBlob) {
+              rawBlob = await resolveRawFileBlob(resolveKey, obsoleteKeys, activeMasterDoc || dar);
+              if (!rawBlob) {
+                rawBlob = await resolveFileBlob(activeMasterDoc || dar, resolveKey);
+              }
+            }
+          }
+
+          if (!rawBlob || rawBlob.size === 0) {
+            console.warn('[TaskApprove] Real master file missing for OBSOLETE DAR. Falling back to system standard document template.');
+            rawBlob = getSystemSampleDocumentBlob(currentDocCode || 'SOP-QC-002', dar.title || activeMasterDoc?.title || 'Standard Operating Procedure');
+          }
+
+          if (!rawBlob || rawBlob.size === 0) {
+            const errMsg = 'ไม่สามารถเปิดอ่านไฟล์เอกสาร Master ได้';
+            if (!isCancelled) {
+              setPdfBlobUrl(null);
+              setLoadingPdf(false);
+              setPdfLoadError(errMsg);
+            }
+            return;
+          }
+
+          // Bypass pdfStamper completely for OBSOLETE requests: display Master PDF As-Is without DRAFT watermark
+          const rawUrl = URL.createObjectURL(rawBlob);
+          createdUrlsRef.current.push(rawUrl);
+
+          if (!isCancelled) {
+            setPdfBlobUrl(rawUrl);
+            setLoadingPdf(false);
+          }
+          return;
         }
 
         // 1. ตรวจหาจาก Synchronous In-Memory Registry ก่อน
@@ -227,10 +334,10 @@ const TaskApprove = () => {
 
         // 2. Direct and instant raw file resolution from IndexedDB
         if (!rawBlob) {
-          const resolveKey = masterDocFallback ? (masterDocFallback.fileId || masterDocFallback.id) : primaryKey;
-          rawBlob = await resolveRawFileBlob(resolveKey, fallbackKeys, masterDocFallback || dar);
+          const resolveKey = activeMasterDoc ? (activeMasterDoc.fileId || activeMasterDoc.id) : primaryKey;
+          rawBlob = await resolveRawFileBlob(resolveKey, fallbackKeys, activeMasterDoc || dar);
           if (!rawBlob) {
-            rawBlob = await resolveFileBlob(masterDocFallback || dar, resolveKey);
+            rawBlob = await resolveFileBlob(activeMasterDoc || dar, resolveKey);
           }
         }
 
@@ -274,6 +381,7 @@ const TaskApprove = () => {
             stage:       'APPROVE',
             dar,
             task,
+            masterDoc:   activeMasterDoc,
             masterUsers,
             users,
             currentUser,
@@ -316,17 +424,17 @@ const TaskApprove = () => {
       docCode: targetDocCode,
       title: targetDocTitle,
       revision: targetRev,
-      systemStatus: 'DRAFT'
+      systemStatus: isObsolete ? 'EFFECTIVE' : 'DRAFT'
     });
 
-    // Primary: pdfBlobUrl is the already-stamped Blob URL — download it directly (Preview=Download parity)
+    // Primary: pdfBlobUrl is the file URL (for OBSOLETE it's raw Master PDF As-Is, for NEW/REVISION it's stamped DRAFT)
     if (pdfBlobUrl) {
       triggerBrowserDownload(pdfBlobUrl, fileName);
       toast.success('เริ่มการดาวน์โหลดเอกสารแล้ว');
       return;
     }
 
-    // Fallback: resolve raw blob then stamp through stampUnifiedInternalPdf (same pipeline as preview)
+    // Fallback: resolve raw blob
     try {
       const primaryKey = dar?.attachedFile?.fileId || dar?.fileId || dar?.id;
       const fallbackKeys = [dar?.attachedFile?.name, dar?.darNumber, dar?.darNo, dar?.id].filter(Boolean);
@@ -334,6 +442,11 @@ const TaskApprove = () => {
       if (!raw) raw = await resolveFileBlob(dar, primaryKey);
 
       if (raw) {
+        if (isObsolete) {
+          triggerBrowserDownload(raw, fileName);
+          toast.success('ดาวน์โหลดไฟล์เอกสารสำเร็จ');
+          return;
+        }
         const stampedBlob = await stampUnifiedInternalPdf(raw, {
           stage: 'APPROVE', dar, task, masterUsers, users, currentUser,
           watermarkType: 'DRAFT',
@@ -423,13 +536,7 @@ const TaskApprove = () => {
     );
   }, [subsequentSteps]);
 
-  const isObsolete = Boolean(
-    dar?.type === 'OBSOLETE' || 
-    dar?.darType === 'OBSOLETE' || 
-    dar?.type === 'CANCEL' ||
-    dar?.requestType === 'OBSOLETE'
-  );
-
+  // Subsequent workflow destinations
   const approvalNextStep = useMemo(() => {
     return isObsolete ? {
       title: 'ส่งมอบงานต่อให้ Document Control Center (DCC)',
@@ -876,9 +983,9 @@ const TaskApprove = () => {
             <span className="font-bold text-slate-800 truncate text-sm" title={headerDisplayTitle}>
               {headerDisplayTitle}
             </span>
-            {(dar?.darType === 'OBSOLETE' || dar?.type === 'OBSOLETE') && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
-                (ฉบับปัจจุบันที่ขอยกเลิก)
+            {isObsolete && (
+              <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/90 shadow-2xs shrink-0 flex items-center gap-1">
+                <span>[ฉบับปัจจุบันที่ขอยกเลิก (Effective Master Document)]</span>
               </span>
             )}
             <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">(โหมดการพิจารณาอนุมัติ)</span>

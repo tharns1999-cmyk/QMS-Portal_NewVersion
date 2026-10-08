@@ -4,10 +4,10 @@ import toast from 'react-hot-toast';
 import { Download, FileText, AlertTriangle } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isDarDraft } from '../../utils/darHelper';
+import { isDarDraft, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
 
 const Reports = () => {
-  const { dars, tasks } = useStore();
+  const { dars, tasks, documents } = useStore();
   
   const submittedDars = (dars || []).filter(d => !isDarDraft(d));
   const darPagination = useTablePagination(submittedDars, 10);
@@ -61,16 +61,34 @@ const Reports = () => {
                 {darPagination.paginatedData.map((dar) => (
                   <tr key={dar.id} className="hover:bg-[#F8FAFC] transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px]">{dar.id}</td>
-                    <td className="px-4 py-3 font-medium text-slate-800 text-sm sm:text-[15px] break-all break-words min-w-0 [overflow-wrap:anywhere] leading-relaxed">{dar.title}</td>
+                    <td className="px-4 py-3 align-middle min-w-0">
+                      {(() => {
+                        const { docCode, docTitle } = formatDarDocumentDisplay(dar, documents);
+                        return (
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-semibold text-slate-800 leading-tight">
+                              {docCode}
+                            </span>
+                            <span 
+                              className="text-xs text-slate-500 line-clamp-1 leading-normal mt-0.5" 
+                              title={docTitle}
+                            >
+                              {docTitle}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-1 bg-[#F5F5F5] text-slate-700 rounded-lg font-mono font-bold text-xs">
                         {dar.type}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={dar.status === 'CANCELLED' ? 'badge-rejected' : 'badge-draft'}>
-                        {dar.status}
-                      </span>
+                      {(() => {
+                        const meta = getDarStatusBadgeMeta(dar.status);
+                        return <span className={meta.className}>{meta.label}</span>;
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-[#666666] text-xs sm:text-sm">{dar.date}</td>
                   </tr>

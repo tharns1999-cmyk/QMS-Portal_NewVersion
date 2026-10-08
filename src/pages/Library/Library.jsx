@@ -40,9 +40,38 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import { getDeptBadgeStyle } from '../../utils/departmentColors';
 
 // Tab Constants
-const TAB_GENERAL = 'GENERAL';
-const TAB_MY_DEPT = 'MY_DEPT';
-const TAB_DISTRIBUTED = 'DISTRIBUTED';
+export const TAB_GENERAL = 'GENERAL';
+export const TAB_MY_DEPT = 'MY_DEPT';
+export const TAB_DISTRIBUTED = 'DISTRIBUTED';
+
+export const filterDocumentsByScope = (documents, selectedScope, currentUser) => {
+  const userDept = currentUser?.department || 'DC';
+  const affiliatedDepts = currentUser?.affiliatedDepartments || currentUser?.affiliated_departments || [userDept];
+
+  return (documents || []).filter((doc) => {
+    const docDept = doc.department || doc.owner_dept || doc.dept_code || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+    const isMyDeptDoc = affiliatedDepts.includes(docDept) || (docDept && docDept === userDept);
+
+    switch (selectedScope) {
+      case 'MY_DEPT':
+        return isMyDeptDoc;
+      case 'GENERAL':
+      case 'PUBLIC':
+        return !isMyDeptDoc && (
+          doc.access_level === 'PUBLIC' || 
+          doc.is_public === true || 
+          doc.access_control?.scope === 'GENERAL' || 
+          doc.access_scope === 'GENERAL' || 
+          doc.scope === 'GENERAL' || 
+          !docDept
+        );
+      case 'DISTRIBUTED':
+        return (doc.distributed_departments || doc.distributed_depts || []).includes(userDept);
+      default:
+        return true;
+    }
+  });
+};
 
 const Library = () => {
   const navigate = useNavigate();
@@ -174,6 +203,7 @@ const Library = () => {
       ...(Array.isArray(currentUser.departments) ? currentUser.departments : []),
       ...(Array.isArray(currentUser.secondaryDepartments) ? currentUser.secondaryDepartments : []),
       ...(Array.isArray(currentUser.affiliated_departments) ? currentUser.affiliated_departments : []),
+      ...(Array.isArray(currentUser.affiliatedDepartments) ? currentUser.affiliatedDepartments : []),
       ...(Array.isArray(currentUser.depts) ? currentUser.depts : [])
     ];
     const unique = [];
@@ -285,23 +315,26 @@ const Library = () => {
     return st === selectedTab;
   };
 
-  // ขั้นตอนที่ 1: กรองตาม Scope แท็บหลัก (Data Segregation เด็ดขาด)
+  // ขั้นตอนที่ 1: กรองตาม Scope แท็บหลัก (Data Segregation เด็ดขาด - Mutually Exclusive Logic)
   const baseDocs = useMemo(() => {
     return (documents || []).filter((doc) => {
+      const isMyDeptDoc = isOwnerDept(doc);
+
       if (activeTab === TAB_GENERAL || activeTab === 'general') {
-        // แท็บ 1: เอกสารทั่วไป
+        // แท็บ 1: เอกสารทั่วไป (Strict Separation: ต้องไม่ซ้ำกับเอกสารในแผนกฉัน)
         const docScope = (doc.access_control?.scope || doc.access_scope || doc.scope || 'GENERAL').toUpperCase();
-        return (docScope === 'GENERAL' || docScope === 'PUBLIC') && hasDocumentAccess(doc, currentUser);
+        const isGeneralScope = docScope === 'GENERAL' || docScope === 'PUBLIC' || doc.access_level === 'PUBLIC' || doc.is_public === true || !doc.department;
+        return !isMyDeptDoc && isGeneralScope && hasDocumentAccess(doc, currentUser);
       }
       if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
         // แท็บ 2: เอกสารในแผนกฉัน
         // แสดงเฉพาะเอกสารที่แผนกเจ้าของคือแผนกเดียวกับผู้ใช้งาน
-        return isOwnerDept(doc);
+        return isMyDeptDoc;
       }
       if (activeTab === TAB_DISTRIBUTED || activeTab === 'dist') {
         // แท็บ 3: เอกสารที่ได้รับการแจกจ่าย
         // แสดงเฉพาะเอกสารจากแผนกอื่นที่มีการจัดสรรสำเนาควบคุมมาตั้งไว้ที่แผนกของผู้ใช้งาน (ไม่รวมเอกสารที่แผนกตัวเองเป็นเจ้าของเด็ดขาด)
-        return !isOwnerDept(doc) && hasDistributedCopyToUserDept(doc) && hasDocumentAccess(doc, currentUser);
+        return !isMyDeptDoc && hasDistributedCopyToUserDept(doc) && hasDocumentAccess(doc, currentUser);
       }
       return true;
     });
@@ -312,10 +345,12 @@ const Library = () => {
     return (documents || []).filter(d => hasDocumentAccess(d, currentUser));
   }, [documents, currentUser]);
 
-  // Tab 1: เอกสารทั่วไป (Active docs ที่เป็น Scope ทั่วไป)
+  // Tab 1: เอกสารทั่วไป (Active docs ที่เป็น Scope ทั่วไป และไม่รวมเอกสารของแผนกตนเอง)
   const generalDocsCount = accessibleDocs.filter(d => {
+    const isMyDeptDoc = isOwnerDept(d);
     const docScope = (d.access_control?.scope || d.access_scope || d.scope || 'GENERAL').toUpperCase();
-    return (docScope === 'GENERAL' || docScope === 'PUBLIC') && matchesStatusTab(d.status, 'EFFECTIVE', d);
+    const isGeneralScope = docScope === 'GENERAL' || docScope === 'PUBLIC' || d.access_level === 'PUBLIC' || d.is_public === true || !d.department;
+    return !isMyDeptDoc && isGeneralScope && matchesStatusTab(d.status, 'EFFECTIVE', d);
   }).length;
 
   // Tab 2: เอกสารในแผนกฉัน (Strict Requirement: นับเฉพาะเอกสารที่มีสถานะ ACTIVE เท่านั้น ห้ามนับรวมเอกสารตกรุ่นหรือยกเลิก)
@@ -333,8 +368,17 @@ const Library = () => {
   // ฐานข้อมูลเอกสารก่อนกรองด้วยแท็บสถานะ (แต่อิงตามสิทธิ์การมองเห็นและ Search/Filters หลัก)
   const statusScopeDocs = useMemo(() => {
     const sourceList = (documents || []).filter((doc) => {
+      const isMyDeptDoc = isOwnerDept(doc);
       if (activeTab === TAB_MY_DEPT || activeTab === 'dept') {
-        return isOwnerDept(doc) && hasDocumentAccess(doc, currentUser);
+        return isMyDeptDoc && hasDocumentAccess(doc, currentUser);
+      }
+      if (activeTab === TAB_GENERAL || activeTab === 'general') {
+        const docScope = (doc.access_control?.scope || doc.access_scope || doc.scope || 'GENERAL').toUpperCase();
+        const isGeneralScope = docScope === 'GENERAL' || docScope === 'PUBLIC' || doc.access_level === 'PUBLIC' || doc.is_public === true || !doc.department;
+        return !isMyDeptDoc && isGeneralScope && hasDocumentAccess(doc, currentUser);
+      }
+      if (activeTab === TAB_DISTRIBUTED || activeTab === 'dist') {
+        return !isMyDeptDoc && hasDistributedCopyToUserDept(doc) && hasDocumentAccess(doc, currentUser);
       }
       return hasDocumentAccess(doc, currentUser);
     });
@@ -1915,6 +1959,8 @@ const Library = () => {
             {/* Tab 1: เอกสารทั่วไป */}
             <button
               type="button"
+              title="เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น"
+              aria-label="เอกสารทั่วไป (เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น)"
               onClick={() => handleSelectTab(TAB_GENERAL)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === TAB_GENERAL || activeTab === 'general'

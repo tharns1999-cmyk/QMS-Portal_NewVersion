@@ -217,6 +217,19 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
       target.requestId,
       target.requestNo,
       target.edrNumber,
+      // Revision-scoped candidate keys
+      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
+        ? `DOC_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim()}`
+        : null,
+      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
+        ? `FILE_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim()}`
+        : null,
+      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
+        ? `DOC_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim().padStart(2, '0')}`
+        : null,
+      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
+        ? `FILE_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim().padStart(2, '0')}`
+        : null,
       fallbackKey
     ].filter(Boolean);
 
@@ -299,4 +312,40 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
  */
 export const resolveRawFileBlob = async (key) => {
   return await getFile(key);
+};
+
+/**
+ * Historical Document Version File Resolver
+ * Retrieves the specific file snapshot for a given document code and revision.
+ * Prioritizes IndexedDB & In-Memory storage under DOC_${code}_REV${rev} and FILE_${code}_REV${rev}
+ */
+export const getVersionFileFromStorage = async (docCode, revision) => {
+  if (!docCode || revision === undefined || revision === null) return null;
+  const cleanCode = String(docCode).trim();
+  const cleanRev = String(revision).replace(/^rev\.?/i, '').trim();
+  const padRev = cleanRev.padStart(2, '0');
+  const candidateKeys = [
+    `DOC_${cleanCode}_REV${cleanRev}`,
+    `FILE_${cleanCode}_REV${cleanRev}`,
+    `DOC_${cleanCode}_REV${padRev}`,
+    `FILE_${cleanCode}_REV${padRev}`,
+    `DOC_${cleanCode}_REV_${cleanRev}`,
+    `FILE_${cleanCode}_REV_${cleanRev}`,
+    `DOC_${cleanCode}_REV_${padRev}`,
+    `FILE_${cleanCode}_REV_${padRev}`,
+    `${cleanCode}_REV_${cleanRev}`,
+    `${cleanCode}_REV_${padRev}`
+  ];
+
+  for (const k of candidateKeys) {
+    const file = await getFile(k) || inMemoryBlobRegistry.get(String(k));
+    if (file) {
+      if (typeof Blob !== 'undefined' && file instanceof Blob) return file;
+      if (file instanceof ArrayBuffer) return new Blob([file], { type: 'application/pdf' });
+      if (ArrayBuffer.isView(file)) return new Blob([file.buffer], { type: 'application/pdf' });
+      return file;
+    }
+  }
+
+  return null;
 };

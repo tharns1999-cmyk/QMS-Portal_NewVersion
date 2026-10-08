@@ -989,12 +989,21 @@ const TaskInbox = () => {
   }, [storeContext]);
 
   const isTaskMatchingDept = useCallback((task, targetDept) => {
-    if (!targetDept || targetDept === 'ALL') {
-      return true;
-    }
+    if (!task) return false;
+
+    const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
+    const isDirectAssignee = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || task.assigneeName === currentUser?.name));
+    
     const tDept = resolveTaskDept(task);
+
+    if (isDirectAssignee) {
+      if (!targetDept || targetDept === 'ALL') return true;
+      return isSameDepartment(tDept, targetDept) || isSameDepartment(currentUser?.department, targetDept) || isSameDepartment(currentUser?.primary_department, targetDept);
+    }
+
+    if (!targetDept || targetDept === 'ALL') return true;
     return isSameDepartment(tDept, targetDept);
-  }, [resolveTaskDept]);
+  }, [resolveTaskDept, currentUser]);
 
   // Master Task Filtering: Distribution & Recall tasks are strictly exclusive to DCC Admin.
   // Receipt tasks are strictly hidden for Level 6+ executives and pooled for all Level < 6 department members.
@@ -1557,6 +1566,14 @@ const TaskInbox = () => {
                       <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium whitespace-nowrap">
                         <User size={11} className="text-slate-400" />
                         <span>ผู้ขอ: <strong className="text-slate-800 font-semibold">{requesterName}</strong></span>
+                      </span>
+                    )}
+
+                    {/* ข้อมูลผู้รับผิดชอบ (Assignee) ถ้ามีการกำหนดเจาะจงและไม่ใช่ผู้ร้องขอ */}
+                    {task.assigneeName && task.assigneeName !== requesterName && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 font-medium whitespace-nowrap">
+                        <User size={11} className="text-indigo-400" />
+                        <span>ผู้รับผิดชอบ: <strong className="text-indigo-700 font-semibold">{task.assigneeName}</strong></span>
                       </span>
                     )}
 
