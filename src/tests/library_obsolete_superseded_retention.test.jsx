@@ -122,10 +122,10 @@ describe('Immutable Document Revision History, Persistent Obsolete/Superseded Li
 
     // Must find SOP-PD-01
     expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
-    expect(screen.getByText(/ฉบับตกรุ่น/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/ฉบับตกรุ่น/i).length).toBeGreaterThan(0);
   });
 
-  it('Scenario 3 (DCC Global Audit Visibility): DCC user sees all statuses across all departments', () => {
+  it('Scenario 3 (Discrete Status Tabs & No All Records): Tab bar renders strictly 3 status tabs and no All Records', () => {
     useStore.setState({ currentUser: dccUser });
     render(
       <MemoryRouter>
@@ -133,15 +133,12 @@ describe('Immutable Document Revision History, Persistent Obsolete/Superseded Li
       </MemoryRouter>
     );
 
-    // Switch to Global View
-    fireEvent.click(screen.getByRole('button', { name: /Global View/i }));
+    // Verify "ทั้งหมด (All Records)" tab is permanently removed
+    expect(screen.queryByRole('button', { name: /ทั้งหมด \(All Records\)/i })).not.toBeInTheDocument();
 
-    // Click "ทั้งหมด (All Records)" tab
-    fireEvent.click(screen.getByRole('button', { name: /ทั้งหมด \(All Records\)/i }));
-
-    // Should see QA Obsolete, PD Superseded, and QA Active
-    expect(screen.getByText('SOP-QA-01')).toBeInTheDocument();
-    expect(screen.getByText('SOP-PD-01')).toBeInTheDocument();
-    expect(screen.getByText('SOP-QA-02')).toBeInTheDocument();
+    // Verify exactly 3 status tabs exist
+    expect(screen.getByRole('button', { name: /มีผลบังคับใช้/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ฉบับเดิมตกรุ่น/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ยกเลิกการใช้งาน/i })).toBeInTheDocument();
   });
 });

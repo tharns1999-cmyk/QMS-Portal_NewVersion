@@ -4,6 +4,7 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import useStore from '../store/useStore';
 import { calculateCopyAllocations, STANDARD_STATIONS } from '../services/MasterDataService';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../services/UniversalWatermarkService';
+import { WATERMARK_CONFIG } from '../config/qmsRegistry';
 import ControlledCopyRegister from '../pages/ControlledCopy/ControlledCopyRegister';
 import { renderWithRouter } from './test_utils';
 
@@ -327,6 +328,60 @@ describe('Point-of-Use Location Data Pipeline & Watermark Synchronization Tests'
           })
         );
       });
+    });
+
+    it('binds controlled copy metadata (Copy 02, Issue 02 (ทดแทน), EN, EN Office) and generates CONTROLLED COPY watermark', async () => {
+      const spyPrint = vi.spyOn(UniversalWatermarkService, 'downloadWatermarkedPdf').mockResolvedValue('blob:url');
+
+      // Seed a replacement controlled copy in PENDING_ISSUE matching acceptance criteria
+      useStore.setState((prev) => ({
+        ...prev,
+        controlledCopyInstances: [
+          {
+            id: 'cc-replacement-en-2',
+            docId: 'doc-pd-001',
+            docCode: 'SOP-QA-001',
+            docTitle: 'ระเบียบปฏิบัติงาน',
+            revNo: '02',
+            copyNo: '02',
+            copy_no: '02',
+            issueNo: 'Issue 02 (ทดแทน)',
+            issue_no: 'Issue 02 (ทดแทน)',
+            holderDept: 'EN',
+            holder_dept: 'EN',
+            location: 'EN Office',
+            status: 'PENDING_ISSUE',
+            is_replacement: true
+          }
+        ]
+      }));
+
+      renderWithRouter(<ControlledCopyRegister />, { route: '/controlled-copy?tab=PENDING_ISSUE' });
+
+      const printBtn = screen.getByRole('button', { name: /พิมพ์สำเนาเดี่ยว/i });
+      fireEvent.click(printBtn);
+
+      await waitFor(() => {
+        expect(spyPrint).toHaveBeenCalledTimes(1);
+        const [, watermarkType, meta] = spyPrint.mock.calls[0];
+
+        // Criteria 1: Watermark type must be CONTROLLED_COPY
+        expect(watermarkType).toBe(WATERMARK_TYPES.CONTROLLED_COPY);
+
+        // Criteria 2: Clean metadata
+        expect(meta.copyNo).toBe('02');
+        expect(meta.issueNo).toBe('02');
+        expect(meta.holderDept).toBe('EN');
+        expect(meta.location).toBe('EN Office');
+
+        // Check actual rendered watermark dictionary lines
+        const lines = WATERMARK_CONFIG.CONTROLLED.getLines(meta);
+        expect(lines[0].text).toBe('CONTROLLED COPY');
+        expect(lines[3].text).toContain('Copy No: 02 | Issue No: 02 | Holder: EN');
+        expect(lines[4].text).toContain('Loc: EN Office');
+      });
+
+      spyPrint.mockRestore();
     });
   });
 

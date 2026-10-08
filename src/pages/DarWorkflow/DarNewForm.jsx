@@ -1,36 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
+import { getDeptOptions, getDocTypeOptions, QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { 
-  Upload, 
   FileText, 
   User, 
-  Calendar, 
-  Settings, 
   X, 
   ShieldAlert, 
   ChevronLeft, 
-  ShieldCheck, 
-  Building2, 
   UploadCloud, 
-  CheckCircle2 
+  Settings,
+  CheckCircle2,
+  MapPin
 } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
-import FormDistributionSetup from '../../components/workflow/FormDistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
+import ConfirmRegistrationModal from '../../components/modals/ConfirmRegistrationModal';
 import Button from '../../components/ui/Button';
-import { resolveReviewer } from '../../utils/workflowResolver';
+import { generateDynamicWorkflow } from '../../utils/workflowEngine';
 import { 
   calculateCopyAllocations, 
+  cleanLocationName,
   formatDocumentRunningNumber, 
   calculateNextDocumentSequence 
 } from '../../services/MasterDataService';
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
+import { saveFile } from '../../utils/fileStorage';
 
 const DarNewForm = () => {
   const navigate = useNavigate();
@@ -38,26 +38,81 @@ const DarNewForm = () => {
   const params = useParams();
   const location = useLocation();
 
-  const targetDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
-  const { currentUser, addDar, saveDarDraft, deleteDar, dars, darRequests, documents, masterUsers, reviewUsers, documentTypes, simulatedDate } = useStore();
+  const rawDraftId = searchParams.get('draftId') || params?.draftId || params?.id || location.state?.draftId;
+  const targetDraftId = rawDraftId ? decodeURIComponent(String(rawDraftId)).trim() : null;
+  const { 
+    currentUser, 
+    addDar, 
+    submitDar,
+    saveDarDraft, 
+    deleteDar, 
+    dars, 
+    darRequests, 
+    documents, 
+    masterDocuments,
+    tasks,
+    masterUsers, 
+    documentTypes, 
+    departments, 
+    masterDepartments, 
+    simulatedDate 
+  } = useStore();
   
-  const activeDocumentTypes = (documentTypes || []).filter(t => (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) && t.allowDar !== false && t.category !== 'EXTERNAL' && t.code !== 'ED' && t.id !== 'ED');
+  // Departments: prefer runtime store data (admin-customised), fall back to registry seed
+  const availableDepartments = useMemo(() => {
+    const storeDepts = masterDepartments || departments || [];
+    if (storeDepts.length > 0) return storeDepts;
+    // Fallback: convert registry option objects back to dept-shape objects
+    return QMS_CONFIG.departments.filter(d => !d.status || d.status === 'ACTIVE');
+  }, [masterDepartments, departments]);
+
+  // Document types: prefer runtime store data, fall back to registry
+  const activeDocumentTypes = useMemo(() => {
+    const storeTypes = documentTypes || [];
+    const source = storeTypes.length > 0 ? storeTypes : QMS_CONFIG.documentTypes;
+    return source.filter(t =>
+      t &&
+      (t.status === 'ACTIVE' || t.status === 'Active' || t.isActive !== false) &&
+      t.allowDar !== false &&
+      t.category !== 'EXTERNAL' &&
+      t.code !== 'ED' &&
+      t.id !== 'ED'
+    );
+  }, [documentTypes]);
+
+  const initialDocType = useMemo(() => {
+    const pType = params?.docType;
+    if (pType && pType !== 'document' && pType !== 'create') {
+      return pType.toUpperCase();
+    }
+    return '';
+  }, [params?.docType]);
 
   const initialFormState = {
-    docType: '',
+    id: '',
+    darNo: '',
+    docType: initialDocType,
     docIdInput: '',
+    docCode: '',
     title: '',
+    department: currentUser?.department || 'PD',
+    date: new Date().toISOString().split('T')[0],
     requestDetail: '',
     requestReason: '',
+    reasonCategory: 'NEW_PROCESS',
+    confidentialityLevel: 'INTERNAL',
+    slaPriority: 'NORMAL',
+    isFastTrack: false,
+    dueDate: calculateDueDateBySla('NORMAL'),
     ackRequirement: 'NOT_REQUIRED',
     ackUserId: '',
     distributions: [],
     effectiveDate: '',
     file: null,
-    manualReviewerId: '',
-    manualApproverId: '',
     relatedStandards: [],
     otherStandardDetail: '',
+    accessScope: 'GENERAL',
+    authorizedDepartments: [],
     access_control: {
       scope: 'GENERAL',
       authorized_depts: [],
@@ -67,132 +122,64 @@ const DarNewForm = () => {
   };
 
   const [formData, setFormData] = useState(initialFormState);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+  const isSubmittedRef = useRef(false);
+  const hasHydratedDraftRef = useRef(false);
 
   // Universal Hydration Lifecycle: ดึงข้อมูลแบบร่างกลับมาหยอดลงฟอร์มทันทีที่เปิดหน้า
   useEffect(() => {
+    if (hasHydratedDraftRef.current || isSubmittedRef.current) return;
     if (targetDraftId || location.state?.draftData) {
       const allDarsList = dars || darRequests || [];
-      const draft = location.state?.draftData || allDarsList.find(d => (d.id === targetDraftId || d.dar_no === targetDraftId || d.darNo === targetDraftId) && (d.status === 'DRAFT' || d.isDraft));
+      const draft = location.state?.draftData || allDarsList.find(d => {
+        if (!targetDraftId) return false;
+        return (
+          String(d.id) === targetDraftId || 
+          String(d.dar_no) === targetDraftId || 
+          String(d.darNo) === targetDraftId
+        );
+      });
       if (draft) {
+        hasHydratedDraftRef.current = true;
         const hydrated = normalizeDraftToFormState(draft, initialFormState);
         setFormData(hydrated);
       }
     }
-  }, [targetDraftId, dars, darRequests, currentUser.department, location.state]);
-
-  const prevScopeRef = React.useRef(formData.access_control?.scope || 'GENERAL');
+  }, [targetDraftId, dars, darRequests, currentUser?.department, location.state]);
 
   // ตรวจสอบว่าเป็นเอกสารประเภท FM หรือไม่
   const isFormDocument = formData.docType === 'FM' || formData.doc_type === 'FM';
 
-  // อัปเดตขอบเขตการแจกจ่ายแบบฟอร์มเมื่อ Access Scope และ Authorized Departments เปลี่ยนแปลง (Cascading Security)
-  useEffect(() => {
-    if (!isFormDocument) return;
-
-    const currentScope = formData.access_control?.scope || formData.accessScope || 'GENERAL';
-    const ownerDept = currentUser?.department || 'PD';
-    const rawAuthDepts = formData.access_control?.authorized_depts || formData.authorizedDepartments || [];
-    const authorizedDepts = Array.from(new Set([ownerDept, ...rawAuthDepts]));
-
-    if (currentScope === 'TARGETED') {
-      setFormData((prev) => {
-        // กรองเอาเฉพาะแผนกที่ยังคงอยู่ใน Authorized List ด้านบน
-        const currentDistDepts = prev.distributedDepartments || [];
-        const validDistributedDepts = currentDistDepts.filter(
-          (deptCode) => deptCode === ownerDept || rawAuthDepts.includes(deptCode)
-        );
-        const nextDistDepts = validDistributedDepts.length > 0 
-          ? validDistributedDepts 
-          : authorizedDepts;
-
-        const nextPayload = nextDistDepts.map(dId => ({
-          departmentId: dId,
-          department: dId,
-          dept: dId,
-          dept_code: dId,
-          target_department: dId,
-          targetDepartment: dId,
-          locationId: dId,
-          locationName: `${dId} Department`,
-          copyNo: '00',
-          isForm: true
-        }));
-
-        return {
-          ...prev,
-          formDistributionMode: 'SPECIFIC_DEPTS',
-          distributedDepartments: nextDistDepts,
-          distributions: nextPayload
-        };
-      });
-    } else if (currentScope === 'DEPT_ONLY') {
-      const ownerPayload = [{
-        departmentId: ownerDept,
-        department: ownerDept,
-        dept: ownerDept,
-        dept_code: ownerDept,
-        target_department: ownerDept,
-        targetDepartment: ownerDept,
-        locationId: ownerDept,
-        locationName: `${ownerDept} Department`,
-        copyNo: '00',
-        isForm: true
-      }];
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'SPECIFIC_DEPTS',
-        distributedDepartments: [ownerDept],
-        distributions: ownerPayload
-      }));
-    } else if (currentScope === 'RESTRICTED') {
-      const ownerPayload = [{
-        departmentId: ownerDept,
-        department: ownerDept,
-        dept: ownerDept,
-        dept_code: ownerDept,
-        target_department: ownerDept,
-        targetDepartment: ownerDept,
-        locationId: ownerDept,
-        locationName: `${ownerDept} Department`,
-        copyNo: '00',
-        isForm: true
-      }];
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'RESTRICTED_USERS',
-        distributedDepartments: [ownerDept],
-        distributions: ownerPayload
-      }));
-    } else if (currentScope === 'GENERAL' && prevScopeRef.current !== 'GENERAL') {
-      // เมื่อสลับกลับเป็น GENERAL ให้คืนค่าเริ่มต้นเป็นทุกแผนก
-      setFormData((prev) => ({
-        ...prev,
-        formDistributionMode: 'ALL_DEPTS',
-        distributedDepartments: [],
-        distributions: []
+  // Auto-calculated Workflow Participants for Auto-Whitelisting
+  const workflowParticipants = useMemo(() => {
+    const targetDept = formData.department || currentUser?.department || 'PD';
+    const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+    if (dynamicSteps && dynamicSteps.length > 0) {
+      return dynamicSteps.map(step => ({
+        id: step.userId,
+        empId: step.userId,
+        name: step.userName,
+        department: targetDept,
+        role: step.role,
+        roleTitle: step.role === 'REQUESTER' ? 'ผู้จัดทำ (Requester)' : (step.role === 'REVIEWER' ? 'ผู้ทบทวน (Reviewer)' : 'ผู้อนุมัติ (Approver)')
       }));
     }
-    prevScopeRef.current = currentScope;
-  }, [
-    formData.access_control?.scope, 
-    JSON.stringify(formData.access_control?.authorized_depts), 
-    formData.accessScope, 
-    JSON.stringify(formData.authorizedDepartments), 
-    formData.docType, 
-    currentUser?.department
-  ]);
+    return [];
+  }, [currentUser, formData.department, masterUsers]);
 
   const getPreviewCode = () => {
-    if (!formData.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
-    const dept = currentUser.department || 'PD';
-    const selectedTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
+    if (!formData?.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
+    const dept = formData?.department || currentUser?.department || 'PD';
+    const selectedTypeObj = (documentTypes || []).find(t => t && (t.code || t.id) === formData.docType);
     const pattern = selectedTypeObj?.namingPattern || `${formData.docType}-{Dept}-{###}`;
-    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, documents, dars);
-    const seqFormatted = formatDocumentRunningNumber(nextSeq);
+    const allDocs = [...(documents || []), ...(masterDocuments || [])];
+    const allDars = [...(dars || []), ...(darRequests || [])];
+    const nextSeq = calculateNextDocumentSequence(formData.docType, dept, allDocs, allDars, tasks || []);
+    const seqFormatted = formatDocumentRunningNumber(nextSeq || 1);
     
-    if (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}')) {
+    if (pattern && (pattern.includes('{Type}') || pattern.includes('{Dept}') || pattern.includes('{###}') || pattern.includes('{##}'))) {
       return pattern
         .replace('{Type}', formData.docType)
         .replace('{Dept}', dept)
@@ -203,13 +190,27 @@ const DarNewForm = () => {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type !== 'application/pdf') {
-      toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
-      e.target.value = '';
-      return;
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        toast.error('รองรับเฉพาะไฟล์ PDF เท่านั้น');
+        e.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+      setFormData(prev => ({ ...prev, file }));
+
+      // Synchronous In-Memory Registry caching immediately upon selection
+      window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+      window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+      window.__PDF_CACHE__.set(file.name, file);
+      window.__UPLOADED_FILES_MAP__.set(file.name, file);
+      const previewCode = getPreviewCode();
+      if (previewCode) {
+        window.__PDF_CACHE__.set(previewCode, file);
+        window.__UPLOADED_FILES_MAP__.set(previewCode, file);
+      }
     }
-    setFormData({ ...formData, file });
   };
 
   const validate = () => {
@@ -217,7 +218,7 @@ const DarNewForm = () => {
     if (!formData.docType) newErrors.docType = 'กรุณาเลือกชนิดเอกสาร';
     if (!formData.title) newErrors.title = 'กรุณาระบุชื่อเอกสาร';
     if (!formData.requestDetail) newErrors.requestDetail = 'กรุณาระบุรายละเอียดคำร้องขอ';
-    if (!formData.requestReason) newErrors.requestReason = 'กรุณาระบุเหตุผลที่ร้องขอ';
+    if (!formData.requestReason?.trim() && !formData.reason?.trim()) newErrors.requestReason = 'กรุณาระบุเหตุผลที่ร้องขอ';
     
     if (formData.relatedStandards?.includes('อื่น ๆ (Others)') && !formData.otherStandardDetail?.trim()) {
       newErrors.otherStandardDetail = 'กรุณาระบุมาตรฐานอื่นๆ';
@@ -259,15 +260,22 @@ const DarNewForm = () => {
       document_code: formData.docCode || formData.docIdInput,
       requestDetail: formData.requestDetail,
       request_detail: formData.requestDetail,
-      reasonDetails: formData.requestDetail,
-      requestReason: formData.requestReason,
-      request_reason: formData.requestReason,
-      reasonCategory: formData.requestReason,
+      reasonDetails: formData.requestReason || formData.reason || '',
+      requestReason: formData.requestReason || formData.reason || '',
+      request_reason: formData.requestReason || formData.reason || '',
+      reason: formData.requestReason || formData.reason || '',
+      reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       ackRequirement: formData.ackRequirement,
       requireAck: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
       ackUserId: formData.ackUserId,
-      distributions: formData.distributions || [],
+      distributions: isFormDocument ? [] : (formData.distributions || []),
       effectiveDate: formData.effectiveDate,
       effective_date: formData.effectiveDate,
       relatedStandards: formData.relatedStandards || [],
@@ -285,7 +293,7 @@ const DarNewForm = () => {
     }
 
     toast.success('บันทึกแบบร่างสำเร็จ');
-    navigate('/dashboard');
+    navigate('/dcc/dar/list');
   };
 
   const handleFormSubmit = (e) => {
@@ -297,58 +305,129 @@ const DarNewForm = () => {
     }
   };
 
-  const executeSubmit = () => {
+  const executeSubmit = async () => {
+    const activeFile = selectedFile || formData.file;
+    if (!activeFile) {
+      toast.error('กรุณาเลือกไฟล์ PDF ที่ต้องการอัปโหลด');
+      return;
+    }
+
+    const docCode = formData.docCode || getPreviewCode();
+    const fileId = `file_${Date.now()}_${activeFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const fileName = activeFile.name; // บังคับใช้ชื่อไฟล์จริงจาก OS ไม่ใช่ Title
+
+    let attachedFile = {
+      fileId: fileId,
+      name: fileName,
+      size: activeFile.size,
+      type: activeFile.type || 'application/pdf',
+      file: activeFile,
+      uploadedAt: new Date().toISOString()
+    };
+
+    // 1. บันทึกลง Synchronous In-Memory Registry ทันที (Synchronous Access)
+    window.__PDF_CACHE__ = window.__PDF_CACHE__ || new Map();
+    window.__UPLOADED_FILES_MAP__ = window.__UPLOADED_FILES_MAP__ || new Map();
+    [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+      cache.set(fileId, activeFile);
+      cache.set(fileName, activeFile);
+      if (docCode) cache.set(docCode, activeFile);
+    });
+
+    // 2. บันทึกลง IndexedDB ควบคู่กัน
+    try {
+      await saveFile(fileId, activeFile);
+      if (docCode) await saveFile(docCode, activeFile);
+    } catch (err) {
+      console.warn('saveFile error fallback:', err);
+    }
+
+    const targetDept = formData.department || currentUser?.department || 'PD';
+    const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+
     const newDar = {
       type: 'NEW',
       title: formData.title,
+      fileName: fileName, // บังคับใช้ชื่อไฟล์จริงจาก OS
       requesterId: currentUser?.id,
-      department: currentUser?.department || formData.department,
+      requester_id: currentUser?.id,
+      requester_name: currentUser?.name,
+      department: targetDept,
+      workflowSteps: dynamicSteps,
       date: new Date().toISOString().split('T')[0],
+      submittedAt: new Date().toISOString(),
       docType: formData.docType,
-      docIdInput: getPreviewCode(),
-      document_code: formData.docCode || getPreviewCode(),
+      docIdInput: docCode,
+      document_code: docCode,
+      docCode: docCode,
       requestDetail: formData.requestDetail,
-      requestReason: formData.requestReason,
+      request_detail: formData.requestDetail,
+      requestReason: formData.requestReason || formData.reason || '',
+      request_reason: formData.requestReason || formData.reason || '',
+      reason: formData.requestReason || formData.reason || '',
+      reasonDetails: formData.requestReason || formData.reason || '',
+      reasonCategory: formData.reasonCategory || 'NEW_PROCESS',
+      confidentialityLevel: formData.confidentialityLevel || 'INTERNAL',
+      confidentiality: formData.confidentialityLevel || 'INTERNAL',
+      slaPriority: formData.slaPriority || 'NORMAL',
+      priority: formData.slaPriority || 'NORMAL',
+      isFastTrack: Boolean(formData.isFastTrack || formData.slaPriority === 'FAST_TRACK'),
+      dueDate: formData.dueDate || calculateDueDateBySla(formData.slaPriority || 'NORMAL'),
       ackRequirement: formData.ackRequirement,
+      requireAck: formData.ackRequirement === 'REQUIRED',
+      require_ack: formData.ackRequirement === 'REQUIRED',
       ackUserIds: formData.ackRequirement === 'REQUIRED' ? (formData.ackUserId ? [formData.ackUserId] : []) : [],
-      distributions: formData.distributions || [],
+      ackUserId: formData.ackRequirement === 'REQUIRED' ? formData.ackUserId : null,
+      distributions: isFormDocument ? [] : (formData.distributions || []),
       effectiveDate: formData.effectiveDate,
+      effective_date: formData.effectiveDate,
       isDraft: false,
-      manualReviewerId: formData.manualReviewerId,
-      manualApproverId: formData.manualApproverId,
       relatedStandards: formData.relatedStandards || [],
       otherStandardDetail: formData.otherStandardDetail,
-      access_control: formData.access_control
+      access_control: formData.access_control,
+      fileId: fileId,
+      file_id: fileId,
+      file: activeFile,
+      fileBlob: activeFile,
+      attachedFile
     };
     if (targetDraftId && deleteDar) deleteDar(targetDraftId);
-    addDar(newDar);
+    
+    // ส่งทั้ง metadata และ File Object ตัวจริง
+    const result = await submitDar(newDar, activeFile);
+    
+    if (result) {
+      const allocatedId = result.id || result.darNumber || result.darNo;
+      if (allocatedId) {
+        [window.__PDF_CACHE__, window.__UPLOADED_FILES_MAP__].forEach(cache => {
+          cache.set(allocatedId, activeFile);
+          if (result.darNumber) cache.set(result.darNumber, activeFile);
+        });
+      }
+    }
+    
+    isSubmittedRef.current = true;
     setShowConfirm(false);
-    toast.success('สร้างคำร้องสำเร็จ และส่งต่อให้ผู้ทบทวนแล้ว');
-    navigate('/dashboard');
+    toast.success('ยื่นคำร้อง DAR สำเร็จเรียบร้อย และส่งต่อให้ผู้ทบทวนแล้ว');
+    navigate('/dcc/dar/list');
   };
 
-  // Get available candidates for Dev Test UI
-  const availableReviewers = useStore.getState().reviewUsers.filter(u => (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser.department)) && u.id !== currentUser.id);
-  const availableApprovers = useStore.getState().approveUsers.filter(u => (!u.depts || u.depts.length === 0 || u.depts.includes(currentUser.department)) && u.id !== currentUser.id && u.id !== formData.manualReviewerId);
-
   return (
-    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full">
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-4 pb-2 w-full max-w-full h-auto">
+      <div className="flex items-center justify-between px-6 py-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#E5F4FF] text-[#0D99FF] flex items-center justify-center shadow-xs">
-            <FileText size={22} strokeWidth={1.75}/>
-          </div>
+          <FileText className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
           <div>
-            <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">ยื่นคำร้องสร้างเอกสารใหม่ (New Document DAR)</h2>
-            <p className="text-xs text-[#666666] mt-0.5">ออกรหัสเอกสารฉบับใหม่และกำหนดสายการอนุมัติตามมาตรฐาน ISO 9001</p>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">ยื่นคำร้องสร้างเอกสารใหม่ (New Document DAR)</h1>
+            <p className="text-xs text-slate-500 mt-0.5">ออกรหัสเอกสารฉบับใหม่และกำหนดสายการอนุมัติตามมาตรฐาน ISO 9001</p>
           </div>
         </div>
-        <button onClick={() => navigate('/dar/new')} className="flex items-center text-xs font-bold text-slate-600 hover:text-[#0D99FF] transition-colors cursor-pointer">
+        <button onClick={() => navigate('/dar/new')} className="h-9 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer">
           <ChevronLeft size={16} /> เปลี่ยนประเภท DAR
         </button>
       </div>
       
-      <form onSubmit={handleFormSubmit} className="space-y-4">
+      <form onSubmit={handleFormSubmit} noValidate className="space-y-4 h-auto">
         
         {/* ================= UNIFIED HIGH-DENSITY FORM CANVAS ================= */}
         <div className="card-surface overflow-hidden divide-y divide-[#F1F5F9] shadow-2xs">
@@ -362,7 +441,7 @@ const DarNewForm = () => {
                 <span className="text-[#CBD5E1] hidden sm:inline">•</span>
                 <label className="text-sm font-semibold text-[#64748B] flex items-center gap-1.5 cursor-default">
                   <span>ชื่อผู้ร้องขอ (Requester):</span>
-                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ธนาวุฒิ สมควรกิจดำรง'}</strong>
+                  <strong className="text-[#1E293B] font-bold text-sm">{currentUser?.name || 'ผู้ร้องขอ'}</strong>
                 </label>
               </div>
 
@@ -385,8 +464,13 @@ const DarNewForm = () => {
               </div>
             </div>
 
-            <div className="text-[11px] font-semibold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-full border border-[#B8E1FF] shrink-0">
-              ร่างคำร้อง DAR ใหม่
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                [ ฉบับร่าง (รอออกเลข DAR หลังส่งคำร้อง) ]
+              </span>
+              <div className="text-[11px] font-semibold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-full border border-[#B8E1FF]">
+                ร่างคำร้อง DAR ใหม่
+              </div>
             </div>
           </div>
 
@@ -472,6 +556,8 @@ const DarNewForm = () => {
                   <span className="text-[10px] text-[#64748B] font-sans font-normal shrink-0">Rev. 00</span>
                 </div>
               </div>
+
+
             </div>
           </div>
 
@@ -506,12 +592,18 @@ const DarNewForm = () => {
                 {/* 2. เหตุผลความจำเป็นในการร้องขอ */}
                 <div className="flex-1 flex flex-col">
                   <label className="block text-sm font-semibold text-[#334155] mb-1.5">
-                    เหตุผลความจำเป็นในการร้องขอ <span className="text-[#EF4444]">*</span>
+                    เหตุผลในการร้องขอ <span className="text-[#EF4444]">*</span>
                   </label>
                   <textarea 
                     rows={5}
-                    value={formData.requestReason}
-                    onChange={(e) => setFormData({...formData, requestReason: e.target.value})}
+                    required
+                    value={formData.requestReason || formData.reason || ''}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      requestReason: e.target.value,
+                      reason: e.target.value,
+                      reasonDetails: e.target.value
+                    }))}
                     className={`w-full flex-1 min-h-[100px] lg:min-h-[125px] p-3.5 text-sm bg-white border border-[#CBD5E1] rounded-xl text-[#1E293B] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all leading-relaxed resize-none ${errors.requestReason ? 'border-rose-400 bg-rose-50/50' : ''}`}
                     placeholder="ระบุเหตุผลความจำเป็นในการจัดทำ หรือการอ้างอิงข้อกำหนด ISO..."
                   />
@@ -551,7 +643,7 @@ const DarNewForm = () => {
                     </div>
                     <div className="text-left min-w-0 flex-1">
                       <p className="text-xs font-semibold text-[#1E293B] truncate">
-                        {formData.file ? formData.file.name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
+                        {(selectedFile || formData.file) ? (selectedFile || formData.file).name : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง'}
                       </p>
                       <p className="text-[10px] text-[#94A3B8]">รองรับไฟล์ PDF สูงสุด 25 MB</p>
                     </div>
@@ -612,7 +704,7 @@ const DarNewForm = () => {
                         value={formData.ackUserId} 
                         onChange={(id) => setFormData({...formData, ackUserId: id})} 
                         error={errors.ackUserId} 
-                        users={masterUsers.filter(u => u.id !== currentUser.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
+                        users={(masterUsers || []).filter(u => u && u.id !== currentUser?.id && !u.isDcc && u.role !== 'DCC_ADMIN')} 
                       />
                       {errors.ackUserId && <p className="text-rose-500 text-xs mt-1">{errors.ackUserId}</p>}
                     </div>
@@ -630,87 +722,32 @@ const DarNewForm = () => {
         <DocumentAccessControlSelector
           value={formData.access_control}
           onChange={(access_control) => setFormData({ ...formData, access_control })}
-          ownerDept={currentUser.department}
-          masterDepartments={useStore.getState().masterDepartments || useStore.getState().departments}
-          masterUsers={masterUsers}
+          ownerDept={currentUser?.department || formData?.department || 'PD'}
+          masterDepartments={availableDepartments}
+          masterUsers={masterUsers || []}
+          workflowParticipants={workflowParticipants || []}
         />
 
         {/* Section: การแจกจ่ายเอกสาร */}
         {isFormDocument ? (
-          <FormDistributionSetup
-            accessScope={formData.access_control?.scope || formData.accessScope}
-            accessControl={formData.access_control}
-            ownerDept={currentUser.department}
-            distributionMode={formData.formDistributionMode || 'SPECIFIC_DEPTS'}
-            selectedDepts={formData.distributedDepartments || []}
-            authorizedDepts={formData.access_control?.authorized_depts || []}
-            allDepartments={useStore.getState().masterDepartments || useStore.getState().departments}
-            onChangeMode={(mode) => {
-              setFormData(prev => ({ ...prev, formDistributionMode: mode }));
-            }}
-            onToggleDept={(deptCode) => {
-              setFormData(prev => {
-                const cur = prev.distributedDepartments || [];
-                const next = cur.includes(deptCode) ? cur.filter(d => d !== deptCode) : [...cur, deptCode];
-                return { ...prev, distributedDepartments: next };
-              });
-            }}
-          />
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50/80 border border-emerald-200/70 text-emerald-900 text-xs font-medium shadow-2xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>แบบฟอร์มเปล่า (FM) จะพร้อมให้ดาวน์โหลดตามสิทธิ์การเข้าถึงทันทีเมื่ออนุมัติเสร็จสมบูรณ์ (Bypass การออกเล่มสำเนาควบคุม)</span>
+          </div>
         ) : (
           <DistributionSetup 
-            ownerDept={currentUser.department}
-            distributions={formData.distributions}
+            ownerDept={currentUser?.department || formData?.department || 'PD'}
+            distributions={formData.distributions || []}
             onChange={(distributions) => setFormData({ ...formData, distributions })}
             documentType={formData.docType}
             accessControl={formData.access_control}
             accessScope={formData.access_control?.scope}
+            targetDepartments={formData.access_control?.authorized_depts || formData.access_control?.targetDepartments || []}
           />
         )}
 
-        {/* Developer Testing Section */}
-        <div className="card-surface bg-amber-50/40 border-amber-200 overflow-hidden">
-          <div className="px-6 py-3.5 border-b border-amber-200 bg-amber-100/50 flex items-center gap-2">
-            <Settings className="text-amber-700" size={16} />
-            <h3 className="font-bold text-sm text-amber-900 uppercase tracking-wider">ส่วนทดสอบระบบ: ตรวจสอบการแบ่งแยกหน้าที่ (SoD Validation)</h3>
-          </div>
-          <div className="p-6">
-             <p className="text-sm text-amber-900 mb-3 leading-relaxed">
-               (เฉพาะโหมดทดสอบ) ปกติระบบจะคำนวณ Reviewer และ Approver ให้คุณอัตโนมัติตาม Position Level แต่คุณสามารถใช้ช่องนี้เพื่อทดสอบหลักการ Segregation of Duties (SoD) ได้ว่ารายชื่อจะหายไปจากตัวเลือก
-             </p>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <label className="block font-semibold text-amber-950 mb-1.5">เลือก Reviewer ทดสอบ (ห้ามเป็น Requester)</label>
-                  <select 
-                    value={formData.manualReviewerId}
-                    onChange={(e) => setFormData({...formData, manualReviewerId: e.target.value, manualApproverId: ''})}
-                    className="w-full h-10.5 px-3.5 text-sm bg-white text-slate-800 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    <option value="">-- ให้ระบบคำนวณอัตโนมัติ --</option>
-                    {availableReviewers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} (ID: {u.id})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-amber-950 mb-1.5">เลือก Approver ทดสอบ (ห้ามซ้ำ Reviewer/Requester)</label>
-                  <select 
-                    value={formData.manualApproverId}
-                    onChange={(e) => setFormData({...formData, manualApproverId: e.target.value})}
-                    className="w-full h-10.5 px-3.5 text-sm bg-white text-slate-800 border border-amber-300 rounded-lg disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                    disabled={!formData.manualReviewerId}
-                  >
-                    <option value="">-- ให้ระบบคำนวณอัตโนมัติ --</option>
-                    {availableApprovers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} (ID: {u.id})</option>
-                    ))}
-                  </select>
-                </div>
-             </div>
-          </div>
-        </div>
-
         {/* Action Buttons */}
-        <div className="card-surface p-4 flex justify-end gap-2.5">
+        <div className="card-surface p-4 mt-6 flex items-center justify-end gap-3 shadow-2xs">
           <Button 
             variant="ghost"
             type="button" 
@@ -736,17 +773,17 @@ const DarNewForm = () => {
 
       {(() => {
         const selectedDocTypeObj = (documentTypes || []).find(t => (t.code || t.id) === formData.docType);
-        const resolvedRevId = formData.manualReviewerId
-          ? formData.manualReviewerId
-          : (resolveReviewer(currentUser.id, currentUser.department, masterUsers, reviewUsers || masterUsers)?.id);
-        const resolvedReviewerObj = (masterUsers || []).find(u => u.id === resolvedRevId);
+        const targetDept = formData.department || currentUser?.department || 'PD';
+        const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
+        const step2 = dynamicSteps.find(s => s.role === 'REVIEWER');
+        const resolvedReviewerObj = (masterUsers || []).find(u => u && (u.id === step2?.userId || u.userId === step2?.userId));
 
         return (
-          <ActionConfirmModal
+          <ConfirmRegistrationModal
             isOpen={showConfirm}
             onClose={() => setShowConfirm(false)}
             onConfirm={executeSubmit}
-            title="ยืนยันการส่งคำร้องขอขึ้นทะเบียนเอกสารใหม่ (New Document DAR)"
+            title="ยืนยันการส่งคำร้องขอขึ้นทะเบียนเอกสารใหม่ (Confirm New Document Registration)"
             actionType="submit"
             confirmText="ยืนยันการส่งคำร้องขอ"
             cancelText="ยกเลิก / กลับไปแก้ไข"
@@ -754,83 +791,73 @@ const DarNewForm = () => {
               {
                 label: 'ผู้ร้องขอ / แผนก',
                 value: (
-                  <span className="font-medium text-slate-800">
-                    {currentUser.name} ({currentUser.department})
-                  </span>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-800 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                    <span>{currentUser?.name || 'ผู้ร้องขอ'} • แผนก {currentUser?.department || 'PD'}</span>
+                  </div>
                 )
               },
               {
                 label: 'รหัสเอกสาร',
                 value: (
-                  <span className="font-mono font-bold text-[#0D99FF] bg-[#E5F4FF] px-2.5 py-0.5 rounded-md border border-indigo-100">
+                  <span className="font-mono text-xs font-semibold px-2.5 py-1 bg-white text-blue-600 border border-blue-200 rounded-lg shadow-2xs">
                     {getPreviewCode()}
                   </span>
                 )
               },
               {
-                label: 'ชนิดและประเภทเอกสาร',
+                label: 'ชนิดเอกสาร',
                 value: (
-                  <span className="font-medium text-slate-700">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-slate-100/90 text-slate-700 border border-slate-200 text-xs font-medium">
                     {selectedDocTypeObj?.nameTh || formData.docType} ({formData.docType})
                   </span>
                 )
               },
               {
                 label: 'ชื่อเอกสาร',
-                value: (
-                  <span className="text-sm sm:text-[15px] font-bold text-[#1E1E1E] leading-relaxed">
-                    {formData.title}
-                  </span>
-                )
+                value: formData.title
               },
               {
                 label: 'รายละเอียดคำร้องขอ',
-                value: (
-                  <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.requestDetail}
-                  </div>
-                )
+                value: formData.requestDetail
               },
               {
                 label: 'เหตุผลการร้องขอ',
-                value: (
-                  <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed bg-[#F5F5F5] p-3 rounded-xl border border-[#E5E5E5]/70">
-                    {formData.requestReason}
-                  </div>
-                )
+                value: formData.requestReason
               },
               {
                 label: 'มาตรฐานที่เกี่ยวข้อง',
                 value: (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <div className="flex flex-wrap gap-1.5 pt-0.5 break-words leading-normal">
                     {(formData.relatedStandards || []).length > 0 ? (
                       formData.relatedStandards.map((std, idx) => (
-                        <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#F5F5F5] text-slate-700 border border-[#E5E5E5]">
+                        <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100/80 text-slate-700 border border-slate-200 whitespace-nowrap">
                           {std === 'อื่น ๆ (Others)' ? `อื่นๆ: ${formData.otherStandardDetail || '-'}` : std}
                         </span>
                       ))
                     ) : (
-                      <span className="text-slate-400 text-xs">ระเบียบปฏิบัติการทั่วไป (General Operation)</span>
+                      <span className="text-slate-500 text-xs break-words leading-normal">ระเบียบปฏิบัติการทั่วไป (General Operation)</span>
                     )}
                   </div>
                 )
               },
               {
-                label: 'ระดับชั้นความลับและการเข้าถึง',
+                label: 'ระดับชั้นความลับ',
                 value: (() => {
-                  const scopeMeta = ACCESS_SCOPE_METADATA[formData.access_control?.scope || 'GENERAL'];
+                  const scopeMeta = ACCESS_SCOPE_METADATA[formData.access_control?.scope || 'GENERAL'] || ACCESS_SCOPE_METADATA.GENERAL || { label: 'ทั่วไป (General)', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                   return (
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${scopeMeta.badgeClass}`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         {scopeMeta.label}
                       </span>
                       {formData.access_control?.scope === 'TARGETED' && (
-                        <span className="text-xs text-[#666666] font-mono">
+                        <span className="text-xs text-slate-500 font-mono">
                           ({(formData.access_control?.authorized_depts || []).join(', ')})
                         </span>
                       )}
                       {formData.access_control?.scope === 'RESTRICTED' && (
-                        <span className="text-xs text-[#666666] font-mono">
+                        <span className="text-xs text-slate-500 font-mono">
                           (Min Level: {formData.access_control?.min_access_level || 4})
                         </span>
                       )}
@@ -840,46 +867,93 @@ const DarNewForm = () => {
               },
               {
                 label: 'ไฟล์เอกสารแนบ',
-                value: formData.file ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F5F5F5] border border-[#E5E5E5] text-slate-700 text-xs font-medium">
-                    <FileText size={15} className="text-rose-500 shrink-0" />
-                    <span className="font-medium truncate">{formData.file.name}</span>
-                    <span className="text-slate-400">({(formData.file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                value: (selectedFile || formData.file) ? (
+                  <div className="flex items-center justify-between p-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors w-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 mr-2">
+                      <FileText size={16} className="text-rose-500 shrink-0" />
+                      <span className="truncate text-xs font-medium text-slate-800" title={(selectedFile || formData.file).name}>
+                        {(selectedFile || formData.file).name}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400 ml-2 whitespace-nowrap shrink-0">
+                      {(((selectedFile || formData.file).size) / (1024 * 1024)).toFixed(2)} MB
+                    </span>
                   </div>
                 ) : (
-                  <span className="text-slate-400 text-xs">ไม่มีไฟล์แนบ</span>
+                  <div className="p-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs">
+                    ไม่มีไฟล์แนบ
+                  </div>
                 )
               },
               {
                 label: 'จุดใช้งานและแผนกแจกจ่าย',
-                value: (() => {
-                  const allocs = calculateCopyAllocations(currentUser.department, formData.distributions || []);
+                value: isFormDocument ? (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
+                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                    <span>แบบฟอร์มเปล่า (FM) ดิจิทัล - Bypass การออกเล่มสำเนาควบคุม</span>
+                  </div>
+                ) : (() => {
+                  const allocs = calculateCopyAllocations(currentUser?.department || formData?.department || 'PD', formData.distributions || []);
+                  const allList = allocs?.allAllocations || [];
+                  const defaultCopyData = {
+                    copyNo: 'Copy 01',
+                    locationName: 'QC Office',
+                    location: 'QC Office',
+                    department: currentUser?.department || formData?.department || 'QC',
+                    dept: currentUser?.department || formData?.department || 'QC',
+                    locationDetail: '(สำนักงานประกันและควบคุมคุณภาพ)'
+                  };
+                  const distributionList = allList.length > 0 ? allList : [defaultCopyData];
+
                   return (
-                    <div className="space-y-1.5 pt-0.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
-                          Copy 01 (Master): {allocs.masterCopy.station_name}
-                        </span>
-                        {(allocs.distributedCopies || []).map((d, idx) => (
-                          <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-[#E5F4FF] text-[#007BE5] border border-indigo-100">
-                            {d.copyLabel || `Copy ${d.copyNo}`}: {d.station_name || d.locationName || d.name || d.location}
-                          </span>
-                        ))}
-                      </div>
+                    <div className="space-y-2">
+                      {distributionList.map((item, idx) => {
+                        const copyNum = item.copyNo 
+                          ? (String(item.copyNo).startsWith('Copy') ? item.copyNo : `Copy ${item.copyNo}`)
+                          : `Copy ${String(idx + 1).padStart(2, '0')}`;
+                        const locName = cleanLocationName(item.locationName || item.station_name || item.name || item.location || 'QC Office');
+                        const deptTag = item.department || item.dept || item.departmentId || currentUser?.department || 'QC';
+                        const locDetail = item.locationDetail || item.fullLocationName || (item.dept_name ? `(${item.dept_name})` : '(สำนักงานประกันและควบคุมคุณภาพ)');
+
+                        return (
+                          <div 
+                            key={idx} 
+                            className="flex items-start gap-2.5 p-2.5 bg-slate-50 border border-slate-200/90 rounded-xl hover:bg-slate-100/60 transition-colors min-w-0"
+                          >
+                            {/* Copy Badge */}
+                            <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                              {copyNum}
+                            </span>
+
+                            {/* Location & Dept Content */}
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-slate-800 break-words line-clamp-2">
+                                  {locName}
+                                </span>
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70 shrink-0">
+                                  {deptTag}
+                                </span>
+                              </div>
+                              
+                              {/* Subtitle / รายละเอียดจุดติดตั้ง */}
+                              <div className="flex items-center gap-1 text-[11px] text-slate-500 min-w-0">
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0"/>
+                                <span className="truncate">
+                                  {locDetail}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()
               },
               {
                 label: 'ขั้นตอนถัดไป / ผู้มีอำนาจทบทวน',
-                value: (
-                  <div className="text-xs sm:text-sm font-medium text-indigo-800 bg-[#E5F4FF]/80 p-2.5 rounded-xl border border-indigo-100 flex items-center gap-1.5">
-                    <span>ส่งต่อให้:</span>
-                    <strong className="font-bold">
-                      {resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}
-                    </strong>
-                  </div>
-                )
+                value: `ส่งต่อให้: ${resolvedReviewerObj ? `${resolvedReviewerObj.name} (${resolvedReviewerObj.position || resolvedReviewerObj.department || 'Reviewer'})` : 'ผู้ทบทวนตามสายงาน (Reviewer Level 2)'}`
               }
             ]}
           />

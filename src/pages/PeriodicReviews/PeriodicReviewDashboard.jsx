@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, AlertTriangle, CheckCircle, FileText, Search, Filter, ArrowRight, RotateCw } from 'lucide-react';
+import { Calendar, Clock, AlertTriangle, CheckCircle, FileText, Search, Filter, ArrowRight, RotateCw, ClipboardList } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { canViewAllPeriodicReviews, getVisiblePeriodicReviews } from '../../services/PeriodicReviewAccessService';
 import PeriodicReviewControlBoard from './PeriodicReviewControlBoard';
@@ -242,22 +242,30 @@ const PeriodicReviewDashboard = () => {
           </p>
         </div>
 
-        {canSeeAll && (
-          <div className="bg-[#F5F5F5] p-1 rounded-xl flex items-center shadow-xs">
-            <button
-              onClick={() => setView('OWNER_DEPT')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${view === 'OWNER_DEPT' ? 'bg-white text-[#007BE5] shadow-xs' : 'text-slate-600 hover:text-[#1E1E1E]'}`}
-            >
-              งานของแผนกฉัน
-            </button>
-            <button
-              onClick={() => setView('CONTROL_BOARD')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${view === 'CONTROL_BOARD' ? 'bg-white text-[#007BE5] shadow-xs' : 'text-slate-600 hover:text-[#1E1E1E]'}`}
-            >
-              ภาพรวมทุกแผนก
-            </button>
-          </div>
-        )}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+          <button
+            onClick={() => navigate('/dcc/periodic-reviews/manage')}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-[#0D99FF] hover:bg-[#007BE5] rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
+          >
+            <ClipboardList size={14} /> จัดการทบทวน (Internal/External)
+          </button>
+          {canSeeAll && (
+            <div className="bg-[#F5F5F5] p-1 rounded-xl flex items-center shadow-xs">
+              <button
+                onClick={() => setView('OWNER_DEPT')}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${view === 'OWNER_DEPT' ? 'bg-white text-[#007BE5] shadow-xs' : 'text-slate-600 hover:text-[#1E1E1E]'}`}
+              >
+                งานของแผนกฉัน
+              </button>
+              <button
+                onClick={() => setView('CONTROL_BOARD')}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${view === 'CONTROL_BOARD' ? 'bg-white text-[#007BE5] shadow-xs' : 'text-slate-600 hover:text-[#1E1E1E]'}`}
+              >
+                ภาพรวมทุกแผนก
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {view === 'OWNER_DEPT' ? (

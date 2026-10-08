@@ -1,29 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText } from 'lucide-react';
+import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
+import { isDarDraft, isDarRequester, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
 
 const DarList = () => {
   const navigate = useNavigate();
-  const { dars, currentUser, tasks, masterUsers, deleteDar } = useStore();
+  const { dars, currentUser, tasks, masterUsers, deleteDar, documents } = useStore();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
-  const isAdmin = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.id === 'u5' || currentUser?.id === 'U001';
+  const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDccAdmin);
   
-  // Department-Wide Visibility
-  const myDars = (dars || []).filter(dar => 
-    isAdmin || 
-    dar.department === currentUser?.department || 
-    dar.requesterId === currentUser?.id
-  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const extractDarNumber = (darStr = '') => {
+    const match = String(darStr || '').match(/\d+/g);
+    return match ? parseInt(match.join(''), 10) : 0;
+  };
+
+  // Strict Personal Scoping: "คำร้อง DAR ของฉัน" displays ONLY the current user's requests
+  const myDars = (dars || []).filter(dar => isDarRequester(dar, currentUser));
 
   const filteredDars = myDars.filter(dar => {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
+      dar.darNumber?.toLowerCase().includes(term) ||
       dar.id?.toLowerCase().includes(term) ||
       dar.title?.toLowerCase().includes(term) ||
       dar.type?.toLowerCase().includes(term) ||
@@ -32,7 +36,36 @@ const DarList = () => {
     );
   });
 
-  const pagination = useTablePagination(filteredDars, 30);
+  const sortedDars = useMemo(() => {
+    return [...filteredDars].sort((a, b) => {
+      let comparison = 0;
+
+      if (sortConfig.key === 'dar_no') {
+        const numA = extractDarNumber(a.darNo || a.darNumber || a.dar_no || a.id);
+        const numB = extractDarNumber(b.darNo || b.darNumber || b.dar_no || b.id);
+        comparison = numA - numB;
+      } else {
+        const timeA = new Date(a.createdAt || a.submittedAt || a.date || a.request_date || 0).getTime();
+        const timeB = new Date(b.createdAt || b.submittedAt || b.date || b.request_date || 0).getTime();
+        comparison = timeA - timeB;
+
+        if (comparison === 0) {
+          comparison = extractDarNumber(a.darNo || a.darNumber || a.dar_no || a.id) - extractDarNumber(b.darNo || b.darNumber || b.dar_no || b.id);
+        }
+      }
+
+      return sortConfig.direction === 'desc' ? -comparison : comparison;
+    });
+  }, [filteredDars, sortConfig]);
+
+  const handleHeaderSort = (key) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
+  };
+
+  const pagination = useTablePagination(sortedDars, 30);
 
   const isMyTask = (t) => t.assigneeId === currentUser?.id || (t.currentHandlerDepartment === currentUser?.department && Number(t.currentHandlerLevel) === Number(currentUser?.level));
 
@@ -70,19 +103,24 @@ const DarList = () => {
     return '-';
   };
 
+  const isDraftDar = (dar) => isDarDraft(dar);
+
   const renderActionButtons = (dar) => {
-    const isRequesterOfDar = dar.requesterId === currentUser?.id;
+    const isRequesterOfDar = isDarRequester(dar, currentUser);
     const activeTask = (tasks || []).find(t => t.darId === dar.id && isMyTask(t));
     
-    if (dar.status === 'DRAFT' && isRequesterOfDar) {
+    if (isDraftDar(dar)) {
       return (
         <div className="flex items-center justify-center gap-1">
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              const basePath = dar.type === 'NEW' ? '/dar/new/document' : 
-                              dar.type === 'REVISION' ? '/dar/new/revision' : '/dar/new/obsolete';
-              navigate(`${basePath}?draftId=${dar.id}`);
+              const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                              (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                              '/dcc/dar/new/obsolete';
+              navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                state: { draftId: dar.id, draftData: dar }
+              });
             }}
             className="action-icon-btn text-[#0D99FF] hover:bg-[#E5F4FF]"
             title="ดำเนินการต่อ (Resume Draft)"
@@ -163,24 +201,16 @@ const DarList = () => {
   };
 
   const getStatusBadge = (status) => {
-    switch (status) {
-      case 'DRAFT': return <span className="badge-draft">ฉบับร่าง</span>;
-      case 'UNDER_REVIEW': return <span className="badge-pending">รอการทบทวน</span>;
-      case 'PENDING_APPROVAL': return <span className="badge-pending">รอการอนุมัติ</span>;
-      case 'CANCELLED': return <span className="badge-rejected">ยกเลิก</span>;
-      case 'EFFECTIVE': return <span className="badge-active">มีผลบังคับใช้</span>;
-      case 'OBSOLETE': return <span className="badge-draft">ยกเลิก / ตกรุ่น</span>;
-      case 'RETURNED_FOR_REVISION': return <span className="badge-rejected">ส่งกลับแก้ไข</span>;
-      default: return <span className="badge-active">{status.replace(/_/g, ' ')}</span>;
-    }
+    const meta = getDarStatusBadgeMeta(status);
+    return <span className={meta.className}>{meta.label}</span>;
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-4 w-full max-w-full overflow-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">ทะเบียนคำร้อง DAR (DAR Register)</h2>
-          <p className="text-xs text-[#666666] mt-0.5">รายการคำร้องขอขึ้นทะเบียน แก้ไข หรือยกเลิกเอกสารทั้งหมดในแผนก</p>
+          <h2 className="text-xl font-bold text-[#1E1E1E] tracking-tight">คำร้อง DAR ของฉัน (My DAR Requests)</h2>
+          <p className="text-xs text-[#666666] mt-0.5">รายการคำร้องขอจัดการเอกสารที่คุณเป็นผู้ยื่นคำร้อง ติดตามสถานะและจัดการฉบับร่างของคุณ</p>
         </div>
         <button 
           onClick={() => navigate('/dar/new')}
@@ -191,27 +221,42 @@ const DarList = () => {
       </div>
 
       {/* Filter and Search */}
-      <div className="card-surface p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="text-[#999999] absolute left-3.5 top-1/2 -translate-y-1/2" size={16} />
-          <input
-            type="text"
-            placeholder="ค้นหาเลขที่ DAR, ชื่อเอกสาร, ประเภท, สถานะ..."
-            value={searchTerm}
+      <div className="card-surface p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto flex-1">
+          <div className="relative w-full sm:w-80">
+            <Search className="text-[#999999] absolute left-3.5 top-1/2 -translate-y-1/2" size={16} />
+            <input
+              type="text"
+              placeholder="ค้นหาเลขที่ DAR, ชื่อเอกสาร, ประเภท, สถานะ..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                pagination.setCurrentPage(1);
+              }}
+              className="w-full pl-10 pr-8 py-2 h-10 text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-lg focus:bg-white focus:border-[#0D99FF] outline-none transition-all font-medium"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => { setSearchTerm(''); pagination.setCurrentPage(1); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          <select
+            value={`${sortConfig.key}_${sortConfig.direction}`}
             onChange={(e) => {
-              setSearchTerm(e.target.value);
-              pagination.setCurrentPage(1);
+              const [key, direction] = e.target.value.split('_');
+              setSortConfig({ key, direction });
             }}
-            className="w-full pl-10 pr-8 py-2 h-10 text-sm bg-[#F5F5F5] border border-[#E5E5E5] rounded-lg focus:bg-white focus:border-[#0D99FF] outline-none transition-all font-medium"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => { setSearchTerm(''); pagination.setCurrentPage(1); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-            >
-              <X size={15} />
-            </button>
-          )}
+            className="w-full sm:w-auto py-2 px-3 h-10 bg-[#F5F5F5] border border-[#E5E5E5] rounded-lg text-sm font-medium text-slate-700 focus:outline-none focus:bg-white focus:border-[#0D99FF] transition-all cursor-pointer"
+          >
+            <option value="date_desc">เรียง: ล่าสุดก่อน (ใหม่ → เก่า)</option>
+            <option value="date_asc">เรียง: เก่าสุดก่อน (เก่า → ใหม่)</option>
+            <option value="dar_no_desc">เลขที่ DAR (มาก → น้อย)</option>
+            <option value="dar_no_asc">เลขที่ DAR (น้อย → มาก)</option>
+          </select>
         </div>
 
         <div className="text-sm text-[#666666] font-medium">
@@ -222,30 +267,107 @@ const DarList = () => {
       {/* Table */}
       <div className="w-full bg-white border border-[#E2E8F0] rounded-xl overflow-hidden shadow-2xs flex flex-col min-h-0 h-auto">
         <div className="overflow-x-auto overflow-y-auto max-h-[560px] w-full max-w-full scrollbar-thin">
-          <table className="w-full text-left text-sm table-fixed border-collapse">
+          <table className="w-full text-left text-sm border-collapse min-w-[960px]">
             <thead className="table-header sticky top-0 z-10 bg-[#F8FAFC] border-b border-[#E2E8F0] shadow-xs backdrop-blur-sm whitespace-nowrap">
               <tr>
-                <th className="px-3.5 py-3 w-16 text-center bg-[#F8FAFC]">การจัดการ</th>
-                <th className="px-3.5 py-3 w-32 font-mono bg-[#F8FAFC]">เลขที่ DAR</th>
-                <th className="px-3.5 py-3 bg-[#F8FAFC]">ชื่อเอกสาร / หัวข้อ</th>
-                <th className="px-3.5 py-3 w-24 bg-[#F8FAFC]">ประเภท</th>
-                {isAdmin && <th className="px-3.5 py-3 w-20 bg-[#F8FAFC]">แผนก</th>}
-                <th className="px-3.5 py-3 w-32 bg-[#F8FAFC]">สถานะ</th>
-                <th className="px-3.5 py-3 w-48 bg-[#F8FAFC]">ผู้รับผิดชอบปัจจุบัน</th>
-                <th className="px-3.5 py-3 w-28 text-right font-mono bg-[#F8FAFC]">วันที่ยื่น</th>
+                <th className="px-3.5 py-3 w-20 min-w-[80px] text-center bg-[#F8FAFC]">การจัดการ</th>
+                <th 
+                  onClick={() => handleHeaderSort('dar_no')}
+                  className="px-3.5 py-3 w-40 min-w-[140px] bg-[#F8FAFC] font-semibold text-slate-600 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span>เลขที่ DAR</span>
+                    {sortConfig.key === 'dar_no' ? (
+                      sortConfig.direction === 'desc' ? <ArrowDown className="w-3.5 h-3.5 text-[#0D99FF]"/> : <ArrowUp className="w-3.5 h-3.5 text-[#0D99FF]"/>
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-50"/>
+                    )}
+                  </div>
+                </th>
+                <th className="px-3.5 py-3 min-w-[220px] bg-[#F8FAFC]">ชื่อเอกสาร / หัวข้อ</th>
+                <th className="px-3.5 py-3 w-28 min-w-[100px] bg-[#F8FAFC]">ประเภท</th>
+                {isAdmin && <th className="px-3.5 py-3 w-24 min-w-[80px] bg-[#F8FAFC]">แผนก</th>}
+                <th className="px-3.5 py-3 w-36 min-w-[130px] bg-[#F8FAFC]">สถานะ</th>
+                <th className="px-3.5 py-3 w-48 min-w-[160px] bg-[#F8FAFC]">ผู้รับผิดชอบปัจจุบัน</th>
+                <th 
+                  onClick={() => handleHeaderSort('date')}
+                  className="px-3.5 py-3 w-32 min-w-[110px] text-right bg-[#F8FAFC] font-semibold text-slate-600 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center justify-end gap-1.5 font-mono">
+                    {sortConfig.key === 'date' ? (
+                      sortConfig.direction === 'desc' ? <ArrowDown className="w-3.5 h-3.5 text-[#0D99FF]"/> : <ArrowUp className="w-3.5 h-3.5 text-[#0D99FF]"/>
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-50"/>
+                    )}
+                    <span>วันที่ยื่น</span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagination.paginatedData.map((dar) => (
-                <tr key={dar.id} className="hover:bg-[#F8FAFC] transition-colors cursor-pointer" onClick={() => navigate(`/dar/${dar.id}`)}>
+                <tr 
+                  key={dar.id} 
+                  className="hover:bg-[#F8FAFC] transition-colors cursor-pointer" 
+                  onClick={() => {
+                    if (isDraftDar(dar)) {
+                      const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                      (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                      '/dcc/dar/new/obsolete';
+                      navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                        state: { draftId: dar.id, draftData: dar }
+                      });
+                    } else {
+                      navigate(`/dar/${dar.id}`);
+                    }
+                  }}
+                >
                   <td className="px-3 py-2.5 text-center">
                     {renderActionButtons(dar)}
                   </td>
-                  <td className="px-3.5 py-3 whitespace-nowrap font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px]">
-                    <span className="hover:underline">{dar.id}</span>
+                  <td className="px-3.5 py-3 whitespace-nowrap">
+                    {isDraftDar(dar) ? (
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const basePath = (dar.type === 'NEW' || dar.type === 'NEW_DOCUMENT') ? '/dcc/dar/new/document' : 
+                                          (dar.type === 'REVISION' || dar.type === 'REVISE') ? '/dcc/dar/new/revision' : 
+                                          '/dcc/dar/new/obsolete';
+                          navigate(`${basePath}?draftId=${encodeURIComponent(dar.id)}`, {
+                            state: { draftId: dar.id, draftData: dar }
+                          });
+                        }}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors"
+                        title="คลิกเพื่อแก้ไขแบบร่างต่อ"
+                      >
+                        ฉบับร่าง (Draft)
+                      </span>
+                    ) : (
+                      <span className="font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px] hover:underline">
+                        {dar.darNumber || (String(dar.id).startsWith('draft_') ? 'ฉบับร่าง (Draft)' : dar.id)}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-3.5 py-3 font-medium text-slate-800 break-all break-words min-w-0 [overflow-wrap:anywhere] text-sm sm:text-[15px] leading-relaxed" title={dar.title}>
-                    {dar.title}
+                  {/* คอลัมน์ ชื่อเอกสาร / หัวข้อ */}
+                  <td className="px-3.5 py-3 align-middle min-w-[200px]">
+                    {(() => {
+                      const { docCode, docTitle } = formatDarDocumentDisplay(dar, documents);
+                      return (
+                        <div className="flex flex-col min-w-0">
+                          {/* บรรทัดที่ 1: รหัสเอกสาร */}
+                          <span className="text-sm font-semibold text-slate-800 leading-tight">
+                            {docCode}
+                          </span>
+                          {/* บรรทัดที่ 2: ชื่อเอกสารจริง (ตัด tag [OBSOLETE] ออกถ้ามีหลงเหลือ) */}
+                          <span 
+                            className="text-xs text-slate-500 line-clamp-1 leading-normal mt-0.5" 
+                            title={docTitle}
+                          >
+                            {docTitle}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-3.5 py-3 whitespace-nowrap">
                     <span className="px-2.5 py-1 bg-[#F5F5F5] text-slate-700 rounded-lg font-mono text-xs font-bold">
@@ -272,7 +394,9 @@ const DarList = () => {
                 <tr>
                   <td colSpan={isAdmin ? 8 : 7} className="px-6 py-14 text-center text-[#888888]">
                     <FileText className="w-10 h-10 text-[#CCCCCC] mx-auto mb-2" strokeWidth={1.5} />
-                    <p className="text-xs font-medium text-[#888888]">ไม่พบรายการคำร้อง DAR ที่ตรงกับเงื่อนไขการค้นหา</p>
+                    <p className="text-xs font-medium text-[#888888]">
+                      {searchTerm ? 'ไม่พบรายการคำร้อง DAR ที่ตรงกับเงื่อนไขการค้นหา' : 'ไม่พบรายการคำร้อง DAR ที่คุณเป็นผู้ยื่น'}
+                    </p>
                   </td>
                 </tr>
               )}

@@ -1,9 +1,36 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { FilePlus, Edit, Trash2, ArrowRight, Sparkles } from 'lucide-react';
 
 const DarSelection = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.state?.darType === 'REVISION' || location.state?.targetDocCode || location.state?.selectedDocId) {
+      const docCode = location.state.targetDocCode || location.state.docCode || '';
+      const docId = location.state.selectedDocId || location.state.docId || '';
+      const query = [];
+      if (docCode) query.push(`docCode=${encodeURIComponent(docCode)}`);
+      if (docId) query.push(`docId=${encodeURIComponent(docId)}`);
+      const searchStr = query.length > 0 ? `?${query.join('&')}` : '';
+      navigate(`/dar/new/revision${searchStr}`, {
+        state: location.state,
+        replace: true
+      });
+    } else if (location.state?.darType === 'OBSOLETE') {
+      const docCode = location.state.targetDocCode || location.state.docCode || '';
+      const docId = location.state.selectedDocId || location.state.docId || '';
+      const query = [];
+      if (docCode) query.push(`docCode=${encodeURIComponent(docCode)}`);
+      if (docId) query.push(`docId=${encodeURIComponent(docId)}`);
+      const searchStr = query.length > 0 ? `?${query.join('&')}` : '';
+      navigate(`/dar/new/obsolete${searchStr}`, {
+        state: location.state,
+        replace: true
+      });
+    }
+  }, [location.state, navigate]);
 
   const options = [
     {
@@ -55,7 +82,7 @@ const DarSelection = () => {
           return (
             <div 
               key={opt.id}
-              onClick={() => navigate(opt.route)}
+              onClick={() => navigate(opt.route, { state: location.state })}
               className="card-surface-hover p-6 cursor-pointer group flex flex-col justify-between"
             >
               <div className="space-y-4">

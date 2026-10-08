@@ -39,13 +39,15 @@ export const FormDistributionSetup = ({
   // กรองแผนกที่จะแสดงให้เลือกแจกจ่าย
   // ถ้าเป็น TARGETED: แสดงเฉพาะแผนกเจ้าของ + แผนกที่ถูกเลือกใน Authorized Departments ด้านบน
   const displayDepartments = React.useMemo(() => {
+    const list = Array.isArray(allDepartments) ? allDepartments : [];
     if (isTargeted) {
-      return allDepartments.filter((d) => {
+      return list.filter((d) => {
+        if (!d) return false;
         const dCode = normalizeDepartmentId(d.code || d.id || d);
-        return dCode === normOwner || authorizedDepts.includes(dCode);
+        return dCode === normOwner || (authorizedDepts || []).includes(dCode);
       });
     }
-    return allDepartments;
+    return list;
   }, [allDepartments, isTargeted, authorizedDepts, normOwner]);
 
   const effectiveDistributionMode = isAllDeptsDisabled ? 'SPECIFIC_DEPTS' : distributionMode;
@@ -164,16 +166,16 @@ export const FormDistributionSetup = ({
               {isTargeted ? 'แผนกที่ได้รับอนุญาตให้ใช้ฟอร์ม (จากขอบเขต Targeted):' : 'เลือกแผนกที่ต้องใช้งานแบบฟอร์มนี้:'}
             </span>
             <span className="text-[11px] font-mono text-[#64748B]">
-              เลือกแล้ว {selectedDepts.length} แผนก
+              เลือกแล้ว {(selectedDepts || []).length} แผนก
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {displayDepartments.map((dept) => {
-              const deptCode = dept.code || dept.id || dept;
-              const deptName = dept.nameTh || dept.name || deptCode;
+            {(displayDepartments || []).map((dept) => {
+              const deptCode = dept?.code || dept?.id || dept;
+              const deptName = dept?.nameTh || dept?.name || deptCode;
               const isOwner = normalizeDepartmentId(deptCode) === normOwner;
-              const isChecked = isOwner || selectedDepts.map(normalizeDepartmentId).includes(normalizeDepartmentId(deptCode));
+              const isChecked = isOwner || (selectedDepts || []).map(normalizeDepartmentId).includes(normalizeDepartmentId(deptCode));
 
               return (
                 <label
@@ -215,7 +217,7 @@ export const FormDistributionSetup = ({
             </span>
           ) : (
             <span>
-              ขอบเขตการแจกจ่าย: <strong className="text-[#1E293B]">{effectiveDistributionMode === 'ALL_DEPTS' ? 'ทุกแผนกในองค์กร' : `ระบุ ${selectedDepts.length} แผนก`}</strong> (Bypass ตรวจรับ PIN และคิวพิมพ์ DCC 100%)
+              ขอบเขตการแจกจ่าย: <strong className="text-[#1E293B]">{effectiveDistributionMode === 'ALL_DEPTS' ? 'ทุกแผนกในองค์กร' : `ระบุ ${(selectedDepts || []).length} แผนก`}</strong> (Bypass ตรวจรับ PIN และคิวพิมพ์ DCC 100%)
             </span>
           )}
         </div>

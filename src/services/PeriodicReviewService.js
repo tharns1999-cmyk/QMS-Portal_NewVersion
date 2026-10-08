@@ -45,38 +45,62 @@ export const getDueState = (dueDate, referenceDate = new Date()) => {
   return 'NOT_YET_DUE';
 };
 
+import { getReviewCycleYears, getReviewStatusFlag } from '../utils/documentUtils';
+
 export const generateSchedules = (internalDocs, externalDocs, existingSchedules = []) => {
   const newSchedules = [...existingSchedules];
   const now = new Date().toISOString();
+  const todayStr = now.split('T')[0];
 
   // Internal Docs
-  internalDocs.forEach(doc => {
-    if (doc.status !== 'EFFECTIVE') return; // Only effective internal docs
+  (internalDocs || []).forEach(doc => {
+    // 🛡️ Criteria 1: Exclude superseded and obsolete documents strictly
+    const statusUpper = (doc.status || '').toUpperCase();
+    if (statusUpper !== 'EFFECTIVE' && statusUpper !== 'ACTIVE') return;
+    if (
+      statusUpper === 'SUPERSEDED' || 
+      statusUpper === 'OBSOLETE' || 
+      statusUpper === 'SUPERSEDED_ARCHIVED' || 
+      statusUpper === 'OBSOLETE_ARCHIVED' ||
+      doc.is_superseded || 
+      doc.is_obsolete || 
+      doc.isSuperseded || 
+      doc.isObsolete
+    ) return;
 
     // Check if schedule already exists
     const exists = newSchedules.find(s => s.documentId === doc.id && s.documentCategory === 'INTERNAL' && s.isActive);
     if (exists) return;
 
+    // Determine review cycle years based on document type:
+    // QP, SOP = 1 yr, WI, FM = 2 yr
+    const docIdentifier = doc.doc_type || doc.type || doc.doc_code || doc.document_number || doc.title || '';
+    const cycleYears = getReviewCycleYears(docIdentifier);
+    const frequencyMonths = cycleYears * 12;
+
     // The anchor is the effective date of the document
-    const anchor = doc.effectiveDate || now.split('T')[0];
-    // Do not pass referenceDate here, so it just returns anchor + 12 months, allowing it to be overdue
-    const nextReviewDate = calculateNextReviewDate(anchor, 12, null);
+    const anchor = doc.last_reviewed_at || doc.lastReviewedDate || doc.effectiveDate || doc.effective_date || todayStr;
+    const nextReviewDate = calculateNextReviewDate(anchor, frequencyMonths, null);
+    const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
     
     newSchedules.push({
       id: `PRS-INT-${doc.id}-${Date.now()}`,
       documentCategory: 'INTERNAL',
       documentId: doc.id,
-      documentNumber: doc.title, // e.g., WI-IT-001
-      documentName: doc.name,
-      ownerUserId: doc.ownerId || 'U002', 
-      ownerDepartmentId: doc.department || 'QA',
-      responsibleUserId: doc.ownerId || 'U002',
-      frequencyMonths: 12,
+      documentNumber: doc.title || doc.doc_code || doc.doc_number || doc.id, // e.g., WI-IT-001
+      documentName: doc.name || doc.doc_name || doc.title,
+      ownerUserId: doc.ownerId || doc.owner_id || 'U002', 
+      ownerDepartmentId: doc.department || doc.dept || 'QA',
+      responsibleUserId: doc.ownerId || doc.owner_id || 'U002',
+      frequencyMonths: frequencyMonths,
+      cycleYears: cycleYears,
       originalReviewAnchorDate: anchor,
       currentScheduledReviewDate: nextReviewDate,
       nextReviewDate: nextReviewDate,
       status: 'NOT_YET_DUE',
       dueState: getDueState(nextReviewDate),
+      reviewStatusFlag: reviewStatusFlag,
+      statusFlag: reviewStatusFlag,
       escalationLevel: 0,
       isActive: true,
       createdAt: now,
@@ -85,30 +109,57 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
   });
 
   // External Docs
-  externalDocs.forEach(doc => {
-    if (doc.status !== 'ACTIVE') return;
+  (externalDocs || []).forEach(doc => {
+    // 🛡️ Criteria 1: Exclude superseded and obsolete documents strictly
+    const statusUpper = (doc.status || '').toUpperCase();
+    if (statusUpper !== 'ACTIVE' && statusUpper !== 'EFFECTIVE') return;
+    if (
+      statusUpper === 'SUPERSEDED' || 
+      statusUpper === 'OBSOLETE' || 
+      statusUpper === 'SUPERSEDED_ARCHIVED' || 
+      statusUpper === 'OBSOLETE_ARCHIVED' ||
+      doc.is_superseded || 
+      doc.is_obsolete || 
+      doc.isSuperseded || 
+      doc.isObsolete
+    ) return;
 
     const exists = newSchedules.find(s => s.externalDocumentId === doc.id && s.documentCategory === 'EXTERNAL' && s.isActive);
     if (exists) return;
 
-    const anchor = doc.receivedDate || now.split('T')[0];
-    const nextReviewDate = calculateNextReviewDate(anchor, 24, null);
+    // Verification frequency: from verification_frequency field or defaults to 1 year
+    let extYears = 1;
+    if (doc.verification_frequency !== undefined && doc.verification_frequency !== null) {
+      extYears = Number(doc.verification_frequency);
+    } else if (doc.verificationFrequency !== undefined && doc.verificationFrequency !== null) {
+      extYears = Number(doc.verificationFrequency);
+    } else if (doc.frequencyMonths) {
+      extYears = Number(doc.frequencyMonths) / 12;
+    }
+    const frequencyMonths = extYears * 12;
+
+    const anchor = doc.last_reviewed_at || doc.last_verified_at || doc.receivedDate || doc.received_date || doc.effectiveDate || todayStr;
+    const nextReviewDate = calculateNextReviewDate(anchor, frequencyMonths, null);
+    const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
 
     newSchedules.push({
       id: `PRS-EXT-${doc.id}-${Date.now()}`,
       documentCategory: 'EXTERNAL',
       externalDocumentId: doc.id,
-      documentNumber: doc.id, 
-      documentName: doc.title,
+      documentNumber: doc.edCode || doc.doc_code || doc.id, 
+      documentName: doc.title || doc.name,
       ownerUserId: doc.ownerId || 'U002',
-      ownerDepartmentId: doc.department || 'QA',
+      ownerDepartmentId: 'DC', // External verification routed to DCC / QA
       responsibleUserId: doc.ownerId || 'U002',
-      frequencyMonths: 24,
+      frequencyMonths: frequencyMonths,
+      cycleYears: extYears,
       originalReviewAnchorDate: anchor,
       currentScheduledReviewDate: nextReviewDate,
       nextReviewDate: nextReviewDate,
       status: 'NOT_YET_DUE',
       dueState: getDueState(nextReviewDate),
+      reviewStatusFlag: reviewStatusFlag,
+      statusFlag: reviewStatusFlag,
       escalationLevel: 0,
       isActive: true,
       createdAt: now,
@@ -132,6 +183,8 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
     // Update due state of existing task if it exists
     if (existingTask) {
       existingTask.dueState = getDueState(existingTask.dueDate, referenceDate);
+      existingTask.reviewStatusFlag = getReviewStatusFlag(existingTask.dueDate, referenceDate);
+      existingTask.statusFlag = existingTask.reviewStatusFlag;
       if (existingTask.dueState === 'ESCALATED') existingTask.escalationLevel = 1;
       return;
     }
@@ -141,15 +194,31 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
     if (dueState !== 'NOT_YET_DUE') {
       schedule.status = 'ACTION_REQUIRED';
       schedule.dueState = dueState;
+      const statusFlag = getReviewStatusFlag(schedule.currentScheduledReviewDate, referenceDate);
+      schedule.reviewStatusFlag = statusFlag;
+      schedule.statusFlag = statusFlag;
+
+      const isExternal = schedule.documentCategory === 'EXTERNAL';
+      const isInternal = !isExternal;
 
       newTasks.push({
         id: `PRT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         scheduleId: schedule.id,
-        assignedToUserId: schedule.responsibleUserId,
-        assignedToDepartmentId: schedule.ownerDepartmentId,
+        type: isInternal ? 'PERIODIC_REVIEW' : 'EXTERNAL_VERIFICATION',
+        taskType: isInternal ? 'PERIODIC_REVIEW' : 'EXTERNAL_VERIFICATION',
+        origin: isInternal ? 'INTERNAL' : 'EXTERNAL',
+        documentCategory: schedule.documentCategory || 'INTERNAL',
+        assignedToUserId: schedule.responsibleUserId || schedule.ownerUserId || null,
+        assigneeId: schedule.responsibleUserId || schedule.ownerUserId || null,
+        assignedToDepartmentId: isInternal ? (schedule.ownerDepartmentId || 'QA') : 'DC',
+        department: isInternal ? (schedule.ownerDepartmentId || 'QA') : 'DC',
+        target_department: isInternal ? (schedule.ownerDepartmentId || 'QA') : 'DC',
+        targetRole: isInternal ? 'OWNER_DEPT' : 'DCC',
         dueDate: schedule.currentScheduledReviewDate,
         status: 'ACTION_REQUIRED',
         dueState: dueState,
+        reviewStatusFlag: statusFlag,
+        statusFlag: statusFlag,
         overdueDays: 0,
         reminderState: dueState,
         escalationLevel: dueState === 'ESCALATED' ? 1 : 0,
@@ -157,9 +226,18 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
         updatedAt: now,
         
         // Denormalized for easy listing
+        docId: isInternal ? schedule.documentId : schedule.externalDocumentId,
+        referenceId: isInternal ? schedule.documentId : schedule.externalDocumentId,
+        referenceType: isInternal ? 'INTERNAL_DOC' : 'EXTERNAL_DOC',
         documentNumber: schedule.documentNumber,
         documentName: schedule.documentName,
-        documentCategory: schedule.documentCategory
+        docCode: schedule.documentNumber,
+        doc_code: schedule.documentNumber,
+        docTitle: schedule.documentName,
+        docName: schedule.documentName,
+        title: isInternal
+          ? `ทบทวนเอกสารตามรอบ: ${schedule.documentName} (${schedule.documentNumber})`
+          : `ตรวจสอบความทันสมัยเอกสารภายนอก: ${schedule.documentName} (${schedule.documentNumber})`
       });
     }
   });

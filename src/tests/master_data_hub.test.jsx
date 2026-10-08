@@ -41,7 +41,7 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
       expect(screen.queryByText(/ศูนย์กลางจัดการข้อมูลหลัก/i)).not.toBeInTheDocument();
     });
 
-    it('grants access to DCC Admin and renders 6 tabs', () => {
+    it('grants access to DCC Admin and renders 5 balanced tabs', () => {
       setTestUser(dccUser);
       renderWithRouter(<MasterDataHub />);
 
@@ -50,8 +50,8 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
       expect(screen.getByText(/2\. แผนกและโครงสร้าง/i)).toBeInTheDocument();
       expect(screen.getByText(/3\. ประเภทเอกสารและรหัส/i)).toBeInTheDocument();
       expect(screen.getByText(/4\. จุดใช้งานและไลน์ผลิต/i)).toBeInTheDocument();
-      expect(screen.getByText(/5\. ลายมือชื่อและความปลอดภัย/i)).toBeInTheDocument();
-      expect(screen.getByText(/6\. สายการอนุมัติและ SLAs/i)).toBeInTheDocument();
+      expect(screen.getByText(/5\. สายการอนุมัติและ SLAs/i)).toBeInTheDocument();
+      expect(screen.queryByText(/ลายมือชื่อและความปลอดภัย/i)).not.toBeInTheDocument();
     });
   });
 
@@ -91,7 +91,7 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
     it('resets user PIN and unlocks account', () => {
       // Lock a user first
       useStore.setState(state => ({
-        masterUsers: state.masterUsers.map(u => u.id === 'U002' ? { ...u, isLocked: true, failedPinAttempts: 3 } : u)
+        masterUsers: state.masterUsers.map(u => u.id === 'U003' ? { ...u, isLocked: true, failedPinAttempts: 3 } : u)
       }));
 
       renderWithRouter(<MasterDataHub />);
@@ -102,9 +102,9 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
       const unlockBtn = screen.getByTitle('ปลดล็อกบัญชี');
       fireEvent.click(unlockBtn);
 
-      const u2 = useStore.getState().masterUsers.find(u => u.id === 'U002');
-      expect(u2.isLocked).toBe(false);
-      expect(u2.failedPinAttempts).toBe(0);
+      const u3 = useStore.getState().masterUsers.find(u => u.id === 'U003');
+      expect(u3.isLocked).toBe(false);
+      expect(u3.failedPinAttempts).toBe(0);
     });
   });
 
@@ -248,36 +248,26 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
     });
   });
 
-  describe('6. Tab 5 & Tab 6: Security & SLA Settings', () => {
-    it('updates e-signature security policies and 21 CFR Part 11 toggles', () => {
+  describe('6. Tab 1: Integrated Signature Asset Management', () => {
+    it('opens 3-mode Signature Asset Manager modal from user list', () => {
       renderWithRouter(<MasterDataHub />);
 
-      const secTabBtn = screen.getByText(/5\. ลายมือชื่อและความปลอดภัย/i);
-      fireEvent.click(secTabBtn);
+      // Find signature asset button in user table
+      const sigButtons = screen.getAllByTitle(/จัดการลายเซ็น/i);
+      expect(sigButtons.length).toBeGreaterThan(0);
 
-      expect(screen.getByText(/นโยบายความปลอดภัย E-Signature/i)).toBeInTheDocument();
-      expect(screen.getByText(/21 CFR Part 11 Security & Authentication Policies/i)).toBeInTheDocument();
+      // Open modal for first user
+      fireEvent.click(sigButtons[0]);
 
-      useStore.getState().updateSignatureSettings({ 
-        maxFailedAttempts: 5, 
-        defaultPin: '999999',
-        requireReasonForSigning: true,
-        requireReAuthentication: true,
-        signatureStampFormat: 'FORMAL_BOXED_STAMP'
-      });
-      expect(useStore.getState().signatureSettings.maxFailedAttempts).toBe(5);
-      expect(useStore.getState().signatureSettings.defaultPin).toBe('999999');
-      expect(useStore.getState().signatureSettings.requireReasonForSigning).toBe(true);
-      expect(useStore.getState().signatureSettings.signatureStampFormat).toBe('FORMAL_BOXED_STAMP');
+      // Check modal heading and 3 modes
+      expect(screen.getByText(/จัดการลายเซ็นอิเล็กทรอนิกส์/i)).toBeInTheDocument();
+      expect(screen.getByText(/วาดลายเซ็น/i)).toBeInTheDocument();
+      expect(screen.getByText(/อัปโหลดรูป/i)).toBeInTheDocument();
+      expect(screen.getByText(/เลือก Font/i)).toBeInTheDocument();
     });
 
     it('updates user digital signature profile via updateUserSignatureProfile', () => {
       renderWithRouter(<MasterDataHub />);
-
-      const secTabBtn = screen.getByText(/5\. ลายมือชื่อและความปลอดภัย/i);
-      fireEvent.click(secTabBtn);
-
-      expect(screen.getByText(/ไดเรกทอรีลายเซ็นและโปรไฟล์ความปลอดภัยรายบุคคล/i)).toBeInTheDocument();
 
       useStore.getState().updateUserSignatureProfile('U005', {
         signatureType: 'TYPOGRAPHIC',
@@ -290,11 +280,13 @@ describe('Master Data Management Hub (DCC Admin) Tests', () => {
       expect(u5.signatureInitials).toBe('BEAM-QAQC');
       expect(u5.hasRegisteredSignature).toBe(true);
     });
+  });
 
-    it('updates workflow SLA duration thresholds', () => {
+  describe('7. Tab 5: SLA Settings', () => {
+    it('navigates to Tab 5 (SLAs) and updates workflow SLA duration thresholds', () => {
       renderWithRouter(<MasterDataHub />);
 
-      const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+      const slaTabBtn = screen.getByText(/5\. สายการอนุมัติและ SLAs/i);
       fireEvent.click(slaTabBtn);
 
       expect(screen.getByText(/1\. ทบทวนคำขอ \(Review SLA\)/i)).toBeInTheDocument();

@@ -135,15 +135,16 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     expect(screen.getByRole('button', { name: /เอกสารที่ได้รับการแจกจ่าย/i })).toBeInTheDocument();
   });
 
-  it('2. Tab "เอกสารทั่วไป" displays ALL GENERAL documents and hides non-general tiers', () => {
+  it('2. Tab "เอกสารทั่วไป" displays other department GENERAL documents and hides own department and non-general tiers', () => {
     render(
       <MemoryRouter>
         <Library />
       </MemoryRouter>
     );
 
-    // Should show both PD and QA GENERAL docs
-    expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
+    // Strict Separation: Should NOT show own PD GENERAL doc in General tab
+    expect(screen.queryByText('SOP-PD-001')).not.toBeInTheDocument();
+    // Should show QA GENERAL doc
     expect(screen.getByText('SOP-QA-001')).toBeInTheDocument();
 
     // Should NOT show DEPT_ONLY, TARGETED, or RESTRICTED in General tab
@@ -200,6 +201,6 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
 
     // In General tab, badges should display 'ทั่วไป'
     const badges = screen.getAllByText('ทั่วไป');
-    expect(badges.length).toBeGreaterThanOrEqual(2);
+    expect(badges.length).toBeGreaterThanOrEqual(1);
   });
 });
