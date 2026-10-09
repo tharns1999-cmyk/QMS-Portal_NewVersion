@@ -30,7 +30,8 @@ import {
   ChevronDown,
   AlertTriangle,
   FileText,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import useStore, { SYSTEM_CORE_DEPTS } from '../../store/useStore';
 import { QMS_CONFIG } from '../../config/qmsRegistry';
@@ -83,7 +84,8 @@ const MasterDataHub = () => {
     updateApprovalMatrix,
     updateApprovalMatrixEntry,
     resetTransactionDataToCleanSlate,
-    seedComprehensiveQaMockData
+    seedComprehensiveQaMockData,
+    seedPeriodicReviewMockData
   } = useStore();
 
   const [activeTab, setActiveTab] = useState('users'); // users, departments, docTypes, locations, security, sla
@@ -1031,6 +1033,19 @@ const MasterDataHub = () => {
           >
             <Sparkles size={12} className="text-sky-600" />
             <span className="hidden md:inline">Mock Data (QA)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              seedPeriodicReviewMockData();
+              toast.success('จำลองข้อมูลทบทวนเอกสารตามรอบ เรียบร้อยแล้ว');
+            }}
+            className="h-8 px-2.5 rounded-lg text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-colors flex items-center gap-1.5"
+            title="จำลองเอกสารและงานแจ้งเตือนสำหรับการทบทวนตามรอบ (Periodic Review)"
+          >
+            <Zap size={12} className="text-amber-600" />
+            <span className="hidden md:inline">จำลองรอบทวน (Internal & External)</span>
           </button>
 
           <button

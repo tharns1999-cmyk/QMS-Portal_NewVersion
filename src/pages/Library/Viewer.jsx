@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Sparkles, ExternalLink, ArrowLeft, ShieldAlert, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, ExternalLink, ArrowLeft, ShieldAlert, ChevronDown } from 'lucide-react';
 import { UniversalWatermarkService, WATERMARK_TYPES, getWatermarkConfig } from '../../services/UniversalWatermarkService';
 import { resolveFileBlob } from '../../utils/fileStorage';
 import { applyProgressiveSignatoryStamp } from '../../utils/pdfStamper';
 import { resolveProgressiveSignatories } from '../../utils/signatoryResolver';
-import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import toast from 'react-hot-toast';
 import { hasDocumentAccess } from '../../utils/accessControl';
 
@@ -16,7 +15,6 @@ const Viewer = () => {
   const [searchParams] = useSearchParams();
   const isArchive = searchParams.get('archive') === 'true';
   const { documents, currentUser, canDownloadDocument } = useStore();
-  const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [realPdfUrl, setRealPdfUrl] = useState(null);
   const [activePdfBlob, setActivePdfBlob] = useState(null);
   const [_loadingPdf, setLoadingPdf] = useState(false);
@@ -233,13 +231,6 @@ const Viewer = () => {
         </div>
         
         <div className="flex items-center gap-2 md:gap-3">
-          <button
-            onClick={() => setIsStudioOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0D99FF] hover:bg-[#007BE5] text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-            title="ทดสอบดูและดาวน์โหลดลายน้ำทั้ง 7 รูปแบบ"
-          >
-            <Sparkles size={14} /> <span className="hidden sm:inline">Watermark Studio</span>
-          </button>
 
           <div className="hidden md:flex items-center gap-1 bg-slate-700/80 rounded-xl px-2.5 py-1">
             <button 
@@ -408,15 +399,6 @@ const Viewer = () => {
         <button className="p-1 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"><ChevronRight size={16} /></button>
       </div>
 
-      {/* Watermark Studio Modal */}
-      {doc && (
-        <WatermarkStudioModal
-          isOpen={isStudioOpen}
-          onClose={() => setIsStudioOpen(false)}
-          document={doc}
-          currentUser={currentUser}
-        />
-      )}
     </div>
   );
 };

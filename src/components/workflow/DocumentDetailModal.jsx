@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -29,9 +30,7 @@ import { normalizeDepartmentId, cleanLocationName } from '../../services/MasterD
 import { ErrorBoundary } from '../ErrorBoundary';
 import { UniversalWatermarkService, resolveWatermarkConfig, WATERMARK_TYPES, applySupersededWatermark } from '../../services/UniversalWatermarkService';
 import * as fileStorage from '../../utils/fileStorage';
-import { getVersionFileFromStorage } from '../../utils/fileStorage';
 import RequestAdditionalCopiesModal from './RequestAdditionalCopiesModal';
-import WatermarkStudioModal from './WatermarkStudioModal';
 import ReplacementModal from '../../pages/Library/ReplacementModal';
 import RelocateCopyModal from './RelocateCopyModal';
 import ReturnCopyModal from './ReturnCopyModal';
@@ -46,7 +45,10 @@ import {
 } from '../../utils/darHelper';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import { generateQmsDownloadName } from '../../utils/documentNamingHelper';
+import { resolveFullDocumentHistory } from '../Documents/DocumentHistoryTab';
 import toast from 'react-hot-toast';
+
+export { resolveFullDocumentHistory };
 
 /**
  * Strict revision normalizer
@@ -144,7 +146,7 @@ export const handleDownloadHistoricalRevision = async (darItem, currentDoc, opti
     }
     const replacedByRevStr = String(replacementRev).replace(/^Rev\.?/i, '').padStart(2, '0');
 
-    // 2. ดึงไฟล์เฉพาะของ Revision นั้น (ห้ามใช้ currentDoc.file เด็ดขาด)
+    // 2. ดึงไฟล์เฉพาะของ Revision นั้น (ห้ามใช้ currentDoc.file เด็ดขาด ยกเว้นกรณีคำร้อง OBSOLETE ที่ใช้ไฟล์ Master PDF ฉบับสุดท้าย)
     let rawRevisionFile = 
       darItem.file || 
       darItem.fileBlob || 
@@ -160,6 +162,10 @@ export const handleDownloadHistoricalRevision = async (darItem, currentDoc, opti
       relatedDar?.fileData ||
       relatedDar?.attachedFile?.file ||
       relatedDar?.attachedFile?.blob;
+
+    if (isObsoleteItem && !rawRevisionFile) {
+      rawRevisionFile = currentDoc?.file || currentDoc?.fileBlob || currentDoc?.fileData;
+    }
 
     // ตรวจสอบใน revision_history ของเอกสาร
     if (!rawRevisionFile && currentDoc?.revision_history && Array.isArray(currentDoc.revision_history)) {
@@ -474,7 +480,8 @@ const DocumentDetailModal = ({
     masterUsers,
     reportCcDamagedLost,
     canDownloadDocument = () => true,
-    periodicReviewSchedules
+    periodicReviewSchedules,
+    confirmPeriodicReviewNoChange
   } = useStore();
 
   // Find all revisions for the current document code to enable switching
@@ -541,11 +548,56 @@ const DocumentDetailModal = ({
 
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'history' | 'periodic'
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-  const [isWatermarkStudioOpen, setIsWatermarkStudioOpen] = useState(false);
   const [selectedReplacementCopy, setSelectedReplacementCopy] = useState(null);
   const [selectedRelocateCopy, setSelectedRelocateCopy] = useState(null);
   const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const navigate = useNavigate();
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewAction, setReviewAction] = useState('NO_CHANGE');
+  const [reviewComment, setReviewComment] = useState('');
+
+  const handleRecordReview = () => {
+    if (!inputDoc) return;
+    const matchingSchedule = (periodicReviewSchedules || []).find(
+      s => s.documentId === inputDoc.id || s.externalDocumentId === inputDoc.id ||
+           (inputDoc.title && s.documentNumber === inputDoc.title) ||
+           (inputDoc.doc_code && s.documentNumber === inputDoc.doc_code)
+    );
+    if (reviewAction === 'NO_CHANGE') {
+      if (confirmPeriodicReviewNoChange) {
+        confirmPeriodicReviewNoChange({
+          scheduleId: matchingSchedule?.id || `SCH-${inputDoc.id}`,
+          comment: reviewComment || 'ทบทวนแล้ว ไม่มีการเปลี่ยนแปลง',
+          reviewer: currentUser?.name || 'Reviewer',
+          reviewDate: new Date().toISOString().split('T')[0]
+        });
+        toast.success('บันทึกผลทบทวน (No Change) และขยายเวลารอบถัดไปสำเร็จ');
+      } else {
+        toast.success('บันทึกผลทบทวนเรียบร้อย (จำลอง)');
+      }
+      setShowReviewForm(false);
+      setReviewComment('');
+    } else {
+      if (!reviewComment.trim()) {
+        toast.error('กรุณาระบุเหตุผลที่ต้องดำเนินการแก้ไขหรือยกเลิก');
+        return;
+      }
+      onClose();
+      navigate('/dcc/dar/new', {
+        state: {
+          prefillDocId: inputDoc.id,
+          prefillDocCode: inputDoc.docNo || inputDoc.document_code || inputDoc.doc_code || inputDoc.title,
+          prefillDocTitle: inputDoc.title || inputDoc.name,
+          darOrigin: 'PERIODIC_REVIEW',
+          dar_origin: 'PERIODIC_REVIEW',
+          reason: reviewComment,
+          type: reviewAction === 'OBSOLETE_REQUIRED' ? 'OBSOLETE' : 'REVISION'
+        }
+      });
+    }
+  };
 
   const isDccAdmin = Boolean(
     currentUser?.isDcc || 
@@ -1067,13 +1119,34 @@ const DocumentDetailModal = ({
   const docCopies = activeCopies;
 
   // Complete Status Mapping for Badges
-  const renderCopyStatusBadge = (status) => {
+  const renderCopyStatusBadge = (status, copy = {}) => {
     const normalized = String(status || '').toUpperCase();
+    
+    // Check if copy is destroyed
+    const isDestroyed = normalized === 'DESTROYED' || normalized === 'RECALLED_DESTROYED' || normalized === 'DISPOSED' || normalized === 'RECALLED' || normalized === 'RECALLED_HELD_AT_DCC' || normalized === 'RECEIVED_AT_DCC' || Boolean(copy.destroyed_at || copy.recalled_at);
+
+    if (isDestroyed) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+          ทำลายแล้ว
+        </span>
+      );
+    }
+
+    if (isObsoleteDoc || normalized === 'PENDING_RECALL' || normalized === 'SUPERSEDED_PENDING_RECALL' || normalized === 'OBSOLETE_PENDING_RECALL') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+          รอเรียกคืน/รอทำลาย
+        </span>
+      );
+    }
 
     if (normalized === 'ISSUED_ACTIVE' || normalized === 'ACTIVE' || normalized === 'ISSUED' || normalized === 'RECEIVED') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] whitespace-nowrap shadow-2xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
           ใช้งานปกติ
         </span>
       );
@@ -1276,13 +1349,18 @@ const DocumentDetailModal = ({
       }
     }
 
-    // 3. กรองเฉพาะ DAR ที่มี Revision ตรงกับ Revision ปัจจุบันของเอกสารที่กำลังเปิดดูเท่านั้น (Strict Current Revision)
+    // 3. สำหรับเอกสาร OBSOLETE (ยกเลิกถาวร):
+    // ต้องแสดงประวัติครบทุกรุ่น (Full Document Lifecycle Traceability from Rev.00 to Latest + Obsolete)
     const isDocObsolete = Boolean(doc.status?.toUpperCase() === 'OBSOLETE' || doc.is_obsolete || isObsoleteDoc);
-    const filtered = docDars.filter((dar) => {
-      const isObsDar = Boolean(dar.type === 'OBSOLETE' || dar.request_type === 'OBSOLETE' || dar.is_obsolete);
-      if (isDocObsolete && isObsDar) {
-        return true;
+    if (isDocObsolete) {
+      const fullHistory = resolveFullDocumentHistory(doc, allDars);
+      if (fullHistory && fullHistory.length > 0) {
+        return fullHistory;
       }
+    }
+
+    // 4. กรองเฉพาะ DAR ที่มี Revision ตรงกับ Revision ปัจจุบันของเอกสารที่กำลังเปิดดูเท่านั้น (Strict Current Revision)
+    const filtered = docDars.filter((dar) => {
       const darRevision = String(dar.target_revision ?? dar.targetRevision ?? dar.revision ?? dar.docRev ?? dar.rev ?? dar.doc_version ?? '00');
       const darRevisionNorm = normalizeRev(darRevision);
       return darRevision === currentRevision || (darRevisionNorm && darRevisionNorm === currentRevisionNorm);
@@ -1821,18 +1899,6 @@ const DocumentDetailModal = ({
                         )
                       )}
 
-                      {/* Action 2: Watermark Studio (DCC Admin Only) */}
-                      {(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.role === 'SUPER_ADMIN') && (
-                        <button
-                          type="button"
-                          onClick={() => setIsWatermarkStudioOpen(true)}
-                          className="h-10 px-4 bg-[#F0EDFF] border border-[#D5CDFF] hover:bg-[#E5DFFF] text-[#7B61FF] rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <Sparkles size={15} strokeWidth={1.75} />
-                          <span>Watermark Studio</span>
-                        </button>
-                      )}
-
                       {/* Action 3: ขอสำเนาควบคุมเพิ่มเติม */}
                       {canRequestAdditionalCopies && (
                         <button
@@ -1923,7 +1989,7 @@ const DocumentDetailModal = ({
                                   </div>
                                 </td>
                                 <td className="py-3 px-3.5 text-center whitespace-nowrap align-middle">
-                                  {renderCopyStatusBadge(copy.status)}
+                                  {renderCopyStatusBadge(copy.status, copy)}
                                 </td>
                                 <td className="py-3 px-3.5 text-slate-600 text-center whitespace-nowrap font-mono text-xs align-middle">
                                   {formatReceiptDate(copy.receipt_confirmed_at)}
@@ -2156,7 +2222,7 @@ const DocumentDetailModal = ({
                                               </span>
                                             </td>
                                             <td className="py-2.5 px-3 text-center whitespace-nowrap align-middle">
-                                              {renderCopyStatusBadge(copy.status)}
+                                              {renderCopyStatusBadge(copy.status, copy)}
                                             </td>
                                             <td className="py-2.5 px-3 text-slate-600 text-center whitespace-nowrap font-mono text-xs align-middle">
                                               {formatReceiptDate(copy.destroyed_at || copy.dateDestroyed || copy.recalled_at || copy.dateRecalled || copy.superseded_at)}
@@ -2265,7 +2331,7 @@ const DocumentDetailModal = ({
                                     </span>
                                   </td>
                                   <td className="py-2.5 px-3 text-center whitespace-nowrap align-middle">
-                                    {renderCopyStatusBadge(copy.status)}
+                                    {renderCopyStatusBadge(copy.status, copy)}
                                   </td>
                                   <td className="py-2.5 px-3 text-slate-600 text-center whitespace-nowrap font-mono text-xs align-middle">
                                     {formatReceiptDate(copy.destroyed_at || copy.dateDestroyed || copy.recalled_at || copy.dateRecalled || copy.superseded_at)}
@@ -2374,12 +2440,12 @@ const DocumentDetailModal = ({
 
                           const darRevStr = isObsoleteItem 
                             ? effectiveObsoleteRev 
-                            : String(dar.docRev || dar.rev || dar.revision || '00').replace(/^Rev\.?/i, '').padStart(2, '0');
+                            : String(dar.target_revision || dar.targetRevision || dar.docRev || dar.rev || dar.revision || '00').replace(/^Rev\.?/i, '').padStart(2, '0');
                           const darNo = dar.dar_no || dar.darNo || dar.id || `DAR-2026-${darRevStr}`;
                           const effDate = dar.completedAt || dar.effectiveDate || dar.effective_date_requested || dar.date || dar.createdAt?.split('T')[0] || '-';
 
                           const handleDownloadHistoricalPdf = async () => {
-                            const isHistoricalRev = !isLatest;
+                            const isHistoricalRev = !isLatest || isObsoleteDoc;
                             if (isHistoricalRev || isObsoleteItem) {
                               const relatedDar = (dars || []).concat(darRequests || []).find(d => 
                                 (dar.dar_no && (d.dar_no === dar.dar_no || d.darNo === dar.dar_no || d.id === dar.dar_no)) ||
@@ -2465,7 +2531,7 @@ const DocumentDetailModal = ({
                                         {isRevisionType ? 'ขอแก้ไข' : 'จัดทำใหม่'}
                                       </span>
                                     )}
-                                    {isLatest && !isObsoleteItem && (
+                                    {isLatest && !isObsoleteItem && !isObsoleteDoc && (
                                       <span className="text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded">ฉบับล่าสุด</span>
                                     )}
                                   </div>
@@ -2660,12 +2726,96 @@ const DocumentDetailModal = ({
                           {reviewLogs.length} ครั้ง
                         </span>
                       </div>
-                      {nextReviewDate && urgency && (
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${urgency.color}`}>
-                          {urgency.label} · ครบกำหนด {formatDate(nextReviewDate)}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {nextReviewDate && urgency && (
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${urgency.color}`}>
+                            {urgency.label} · ครบกำหนด {formatDate(nextReviewDate)}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowReviewForm(!showReviewForm)}
+                          className="px-3 py-1.5 bg-[#0D99FF] text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5"
+                        >
+                          <PlusCircle size={14} /> บันทึกผลทบทวน
+                        </button>
+                      </div>
                     </div>
+
+                    {showReviewForm && (
+                      <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-4">
+                        <h4 className="font-bold text-sm text-[#1E1E1E] mb-3 flex items-center gap-2">
+                          <CheckCircle2 size={16} className="text-[#0D99FF]" /> 
+                          แบบฟอร์มบันทึกผลการทบทวนเอกสารตามรอบ
+                        </h4>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-[#1E1E1E] mb-1.5">
+                              ผลการพิจารณา <span className="text-red-500">*</span>
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              {[
+                                { id: 'NO_CHANGE', label: 'ใช้งานปกติ (No Change)', desc: 'เนื้อหาถูกต้องตามปัจจุบัน' },
+                                { id: 'REVISION_REQUIRED', label: 'ต้องแก้ไข (Revise)', desc: 'เนื้อหาบางส่วนไม่ทันสมัย' },
+                                { id: 'OBSOLETE_REQUIRED', label: 'ขอยกเลิก (Obsolete)', desc: 'เอกสารนี้ไม่มีการใช้งานแล้ว' }
+                              ].map(action => (
+                                <button
+                                  key={action.id}
+                                  type="button"
+                                  onClick={() => setReviewAction(action.id)}
+                                  className={`p-2.5 border rounded-lg text-left transition-all ${
+                                    reviewAction === action.id 
+                                      ? 'border-[#0D99FF] bg-white ring-1 ring-[#0D99FF]' 
+                                      : 'border-[#E5E5E5] bg-white/50 hover:bg-white hover:border-gray-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
+                                      reviewAction === action.id ? 'border-[#0D99FF]' : 'border-gray-300'
+                                    }`}>
+                                      {reviewAction === action.id && <div className="w-1.5 h-1.5 rounded-full bg-[#0D99FF]" />}
+                                    </div>
+                                    <span className="font-semibold text-xs text-[#1E1E1E]">{action.label}</span>
+                                  </div>
+                                  <p className="text-[11px] text-[#666666] ml-5">{action.desc}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-[#1E1E1E] mb-1.5">
+                              ความเห็นผู้ทบทวน {reviewAction !== 'NO_CHANGE' && <span className="text-red-500">*</span>}
+                            </label>
+                            <textarea
+                              className="w-full text-sm border border-[#E5E5E5] rounded-lg p-3 bg-white focus:outline-none focus:border-[#0D99FF] focus:ring-1 focus:ring-[#0D99FF] min-h-[80px]"
+                              placeholder="ระบุเหตุผลประกอบการพิจารณา..."
+                              value={reviewComment}
+                              onChange={(e) => setReviewComment(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowReviewForm(false);
+                                setReviewComment('');
+                              }}
+                              className="px-4 py-2 bg-white border border-[#E5E5E5] text-[#1E1E1E] text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                              ยกเลิก
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRecordReview}
+                              className="px-4 py-2 bg-[#0D99FF] text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                            >
+                              <Save size={14} /> 
+                              {reviewAction === 'NO_CHANGE' ? 'ยืนยันใช้งานต่อ' : 'เปิดคำร้อง DAR'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Meta info row */}
                     {matchingSchedule && (
@@ -2746,16 +2896,6 @@ const DocumentDetailModal = ({
           isOpen={isRequestModalOpen}
           onClose={() => setIsRequestModalOpen(false)}
           document={doc}
-        />
-      )}
-
-      {/* Watermark Studio Modal */}
-      {isWatermarkStudioOpen && (
-        <WatermarkStudioModal
-          isOpen={isWatermarkStudioOpen}
-          onClose={() => setIsWatermarkStudioOpen(false)}
-          document={doc}
-          currentUser={currentUser}
         />
       )}
 

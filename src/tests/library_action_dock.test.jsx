@@ -21,7 +21,7 @@ describe('Library Figma UI3 Action Dock & Overflow Menu Tests', () => {
   const dccUser = {
     id: 'U001',
     name: 'Admin QA (DCC)',
-    department: 'QA',
+    department: 'DC',
     role: 'DCC_ADMIN',
     level: 1,
     isDcc: true
@@ -68,7 +68,7 @@ describe('Library Figma UI3 Action Dock & Overflow Menu Tests', () => {
     );
 
     // Quick Action 1: Eye
-    const eyeBtn = screen.getByTitle('เปิดดูตัวอย่างเอกสาร');
+    const eyeBtn = screen.getByTitle('ดูรายละเอียดเอกสาร');
     expect(eyeBtn).toBeInTheDocument();
 
     // Quick Action 2: Download
@@ -93,7 +93,7 @@ describe('Library Figma UI3 Action Dock & Overflow Menu Tests', () => {
     // Context menu items
     expect(screen.queryByText('เปิดดูในแท็บใหม่ (Full Viewer)')).not.toBeInTheDocument();
     expect(screen.getByText('ดาวน์โหลด External Release')).toBeInTheDocument();
-    expect(screen.getByText('Watermark Studio (ทดสอบลายน้ำ)')).toBeInTheDocument();
+    expect(screen.queryByText('Watermark Studio (ทดสอบลายน้ำ)')).not.toBeInTheDocument();
     expect(screen.getByText('ขอสำเนาควบคุมเพิ่มเติม')).toBeInTheDocument();
     expect(screen.getByText('ยื่นคำร้องขอแก้ไขฉบับใหม่')).toBeInTheDocument();
     expect(screen.getByText('แจ้งชำรุด หรือสูญหาย')).toBeInTheDocument();
@@ -117,16 +117,18 @@ describe('Library Figma UI3 Action Dock & Overflow Menu Tests', () => {
     expect(menuPanel).toHaveClass('hidden');
   });
 
-  it('4. Clicking Watermark Studio opens WatermarkStudioModal', () => {
+  it('4. Watermark Studio is completely purged from overflow menu and modal is not rendered', () => {
     render(
       <MemoryRouter>
         <Library />
       </MemoryRouter>
     );
 
-    const studioBtn = screen.getByTitle('Watermark Studio (ทดสอบและดาวน์โหลดลายน้ำ 7 รูปแบบ)');
-    fireEvent.click(studioBtn);
+    const moreBtn = screen.getByTitle('เมนูการจัดการเพิ่มเติม');
+    fireEvent.click(moreBtn);
 
-    expect(screen.getByText(/Watermark Studio & PDF Downloader/i)).toBeInTheDocument();
+    expect(screen.queryByTitle('Watermark Studio (ทดสอบและดาวน์โหลดลายน้ำ 7 รูปแบบ)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Watermark Studio (ทดสอบลายน้ำ)')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Watermark Studio & PDF Downloader/i)).not.toBeInTheDocument();
   });
 });

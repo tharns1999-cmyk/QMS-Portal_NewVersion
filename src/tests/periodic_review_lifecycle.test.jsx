@@ -1,15 +1,15 @@
-﻿/**
+/**
  * periodic_review_lifecycle.test.jsx
  *
- * ISO 9001 Clause 7.5.3 – Periodic Document Review Lifecycle Engine Tests
+ * ISO 9001 Clause 7.5.3 � Periodic Document Review Lifecycle Engine Tests
  * ------------------------------------------------------------------------
  * Covers:
- *   1. calculateNextReviewDate  – pure date arithmetic (+1 year)
- *   2. getReviewStatus          – urgency bucket classification
- *   3. recordPeriodicReview     – CONFIRM_CONTINUE log + date roll
- *   4. recordPeriodicReview     – REVISION_REQUIRED log stamp (no roll)
- *   5. recordPeriodicReview     – revision number invariance
- *   6. reviewLog accumulation   – multiple reviews on same schedule
+ *   1. calculateNextReviewDate  � pure date arithmetic (+1 year)
+ *   2. getReviewStatus          � urgency bucket classification
+ *   3. recordPeriodicReview     � CONFIRM_CONTINUE log + date roll
+ *   4. recordPeriodicReview     � REVISION_REQUIRED log stamp (no roll)
+ *   5. recordPeriodicReview     � revision number invariance
+ *   6. reviewLog accumulation   � multiple reviews on same schedule
  *   7. internal vs external doc separation
  */
 
@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import useStore from '../store/useStore';
 import { calculateNextReviewDate, getReviewStatus } from '../utils/documentUtils';
 
-// ── Pure Utility: calculateNextReviewDate ─────────────────────────────────────
+// -- Pure Utility: calculateNextReviewDate -------------------------------------
 
 describe('calculateNextReviewDate()', () => {
   it('adds exactly 1 year to a YYYY-MM-DD string', () => {
@@ -43,7 +43,7 @@ describe('calculateNextReviewDate()', () => {
   });
 });
 
-// ── Pure Utility: getReviewStatus ─────────────────────────────────────────────
+// -- Pure Utility: getReviewStatus ---------------------------------------------
 
 describe('getReviewStatus()', () => {
   beforeEach(() => {
@@ -55,8 +55,8 @@ describe('getReviewStatus()', () => {
     vi.useRealTimers();
   });
 
-  it('returns ON_SCHEDULE when due date is >30 days away', () => {
-    expect(getReviewStatus('2027-09-24')).toBe('ON_SCHEDULE');
+  it('returns UP_TO_DATE when due date is >30 days away', () => {
+    expect(getReviewStatus('2027-09-24')).toBe('UP_TO_DATE');
   });
 
   it('returns UPCOMING when due date is <=30 days away', () => {
@@ -72,14 +72,14 @@ describe('getReviewStatus()', () => {
     expect(getReviewStatus('2025-01-01')).toBe('OVERDUE');
   });
 
-  it('returns ON_SCHEDULE for falsy input', () => {
-    expect(getReviewStatus('')).toBe('ON_SCHEDULE');
-    expect(getReviewStatus(null)).toBe('ON_SCHEDULE');
-    expect(getReviewStatus(undefined)).toBe('ON_SCHEDULE');
+  it('returns UP_TO_DATE for falsy input', () => {
+    expect(getReviewStatus('')).toBe('UP_TO_DATE');
+    expect(getReviewStatus(null)).toBe('UP_TO_DATE');
+    expect(getReviewStatus(undefined)).toBe('UP_TO_DATE');
   });
 });
 
-// ── Store Action: recordPeriodicReview ───────────────────────────────────────
+// -- Store Action: recordPeriodicReview ---------------------------------------
 
 describe('recordPeriodicReview store action', () => {
   const SCHEDULE_ID = 'SCH-TEST-001';
@@ -112,8 +112,8 @@ describe('recordPeriodicReview store action', () => {
     useStore.getState().recordPeriodicReview({
       scheduleId: SCHEDULE_ID,
       outcome: 'CONFIRM_CONTINUE',
-      comment: 'ยืนยันใช้งานต่อ ไม่มีการเปลี่ยนแปลง',
-      reviewer: 'สมชาย ทดสอบ',
+      comment: '??????????????? ???????????????????',
+      reviewer: '????? ?????',
       reviewDate: '2026-09-24',
     });
 
@@ -121,8 +121,8 @@ describe('recordPeriodicReview store action', () => {
     expect(sch.reviewLogs).toHaveLength(1);
     const log = sch.reviewLogs[0];
     expect(log.outcome).toBe('CONFIRM_CONTINUE');
-    expect(log.reviewer).toBe('สมชาย ทดสอบ');
-    expect(log.comment).toBe('ยืนยันใช้งานต่อ ไม่มีการเปลี่ยนแปลง');
+    expect(log.reviewer).toBe('????? ?????');
+    expect(log.comment).toBe('??????????????? ???????????????????');
     expect(log.reviewDate).toBe('2026-09-24');
     expect(log.newNextReviewDate).toBe('2027-09-24');
     expect(log.previousNextReviewDate).toBe(NEXT_REVIEW);

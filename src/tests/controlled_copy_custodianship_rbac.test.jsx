@@ -132,7 +132,7 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     expect(screen.queryByRole('button', { name: /Watermark Studio/i })).not.toBeInTheDocument();
   });
 
-  it('4. DCC Admin sees action buttons on ALL copies and has access to Watermark Studio', () => {
+  it('4. DCC Admin sees action buttons on ALL copies and Watermark Studio is removed from detail view', () => {
     const dccUser = { id: 'U001', name: 'Admin DC (DCC)', department: 'DC', isDcc: true, role: 'DCC_ADMIN' };
     useStore.setState({ currentUser: dccUser });
 
@@ -148,8 +148,8 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     // Zero Lock badges for DCC Admin
     expect(screen.queryByText(/เฉพาะแผนก/i)).not.toBeInTheDocument();
 
-    // DCC Admin sees Watermark Studio button
-    expect(screen.getByRole('button', { name: /Watermark Studio/i })).toBeInTheDocument();
+    // Watermark Studio button has been removed from detail view
+    expect(screen.queryByRole('button', { name: /Watermark Studio/i })).not.toBeInTheDocument();
   });
 
   it('5. Store-Level Security Guard: blocks unauthorized cross-department relocate, return, and damaged reporting', () => {

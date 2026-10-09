@@ -1,6 +1,30 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import useStore from '../../store/useStore';
-import { Database, Download, Search, Eye, X, FilterX, ChevronDown, CheckCircle2, Globe, Building2, Share2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import useStore, { getActiveDarForDocument } from '../../store/useStore';
+
+import { Database, Download, Search, Eye, X, FilterX, ChevronDown, CheckCircle2, Globe, Building2, Share2, Lock } from 'lucide-react';
+
+export const DropdownMenu = ({ children, className = '' }) => (
+  <div className={`inline-flex items-center gap-1.5 ${className}`}>{children}</div>
+);
+
+export const DropdownMenuItem = ({ disabled, onClick, title, className = '', children, ...props }) => (
+  <button
+    type="button"
+    disabled={disabled}
+    onClick={disabled ? undefined : onClick}
+    title={title}
+    className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+      disabled 
+        ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200' 
+        : 'cursor-pointer hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs'
+    } ${className}`}
+    {...props}
+  >
+    {children}
+  </button>
+);
+
 
 export const filterDocumentsByScope = (documents, selectedScope, currentUser) => {
   const userDept = currentUser?.department || 'DC';
@@ -58,6 +82,19 @@ const MasterList = () => {
     currentUser?.department === 'DC' || 
     currentUser?.department === 'DCC'
   );
+  
+  const navigate = useNavigate();
+
+  const handleOpenRevision = (doc) => {
+    const docCode = doc.code || doc.document_code || doc.docNo || doc.title;
+    navigate(`/dcc/dar/new/revision?docCode=${encodeURIComponent(docCode)}`);
+  };
+
+  const handleOpenObsolete = (doc) => {
+    const docCode = doc.code || doc.document_code || doc.docNo || doc.title;
+    navigate(`/dcc/dar/new/obsolete?docCode=${encodeURIComponent(docCode)}`);
+  };
+
   
   const [selectedScope, setSelectedScope] = useState('ALL');
   const [selectedDept, setSelectedDept] = useState('ALL');
@@ -713,17 +750,33 @@ const MasterList = () => {
                   <th className="px-4 py-3.5 w-36 whitespace-nowrap bg-[#F8FAFC]">ผู้อนุมัติ</th>
                   <th className="px-4 py-3.5 w-36 whitespace-nowrap bg-[#F8FAFC]">การแจกจ่าย</th>
                   <th className="px-4 py-3.5 w-28 text-center whitespace-nowrap bg-[#F8FAFC]">สถานะ</th>
-                  <th className="px-4 py-3.5 w-16 text-center whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
+                  <th className="px-4 py-3.5 min-w-[200px] text-center whitespace-nowrap bg-[#F8FAFC]">การจัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F1F5F9]">
                 {paginatedData.map((doc, idx) => {
                   const dar = (dars || []).find(d => d.id === doc.darId);
+                  const docCode = doc.code || doc.document_code || doc.docNo || doc.title;
+                  const activeDar = getActiveDarForDocument(dars, docCode);
+                  const isLocked = Boolean(activeDar);
                   
                   return (
                   <tr key={doc.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
                     <td className="px-4 py-3 text-center text-slate-400 font-mono text-xs sm:text-sm whitespace-nowrap">{(currentPage - 1) * pageSize + idx + 1}</td>
-                    <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px] whitespace-nowrap">{doc.title}</td>
+                    <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-sm sm:text-[15px] whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span>{doc.title || doc.code}</span>
+                        {isLocked && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"
+                            title={`อยู่ระหว่างขั้นตอน: ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'})`}
+                          >
+                            <Lock className="w-3 h-3 text-amber-600 shrink-0"/>
+                            <span>🔒 ติดคำร้อง {activeDar.dar_no || activeDar.darNo || activeDar.id}</span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 min-w-[280px] max-w-[420px]">
                       <span className="font-medium text-[#1E1E1E] text-sm sm:text-[15px] leading-relaxed block" title={doc.name}>
                         {doc.name}
@@ -773,16 +826,27 @@ const MasterList = () => {
                       {(doc.distributedTo || []).join(', ') || '-'}
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      {masterListStatus === 'SUPERSEDED' ? (
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                          ฉบับตกรุ่น ({doc.totalRevisions || (doc.revisions || []).length} ฉบับ)
-                        </span>
-                      ) : (
-                        getStatusBadge(doc.status)
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {masterListStatus === 'SUPERSEDED' ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            ฉบับตกรุ่น ({doc.totalRevisions || (doc.revisions || []).length} ฉบับ)
+                          </span>
+                        ) : (
+                          getStatusBadge(doc.status)
+                        )}
+                        {isLocked && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"
+                            title={`อยู่ระหว่างขั้นตอน: ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'})`}
+                          >
+                            <Lock className="w-3 h-3 text-amber-600 shrink-0"/>
+                            <span>🔒 ติดคำร้อง {activeDar.dar_no || activeDar.darNo || activeDar.id}</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
                         <button 
                           onClick={() => setPreviewDoc(doc)}
                           className="action-icon-btn text-[#0D99FF] hover:bg-[#E5F4FF] cursor-pointer"
@@ -797,10 +861,36 @@ const MasterList = () => {
                         >
                           <Download size={14} />
                         </button>
+                        {masterListStatus !== 'SUPERSEDED' && (
+                          <DropdownMenu>
+                            {/* ปุ่มขอแก้ไข */}
+                            <DropdownMenuItem 
+                              disabled={isLocked} 
+                              onClick={() => handleOpenRevision(doc)}
+                              title={isLocked ? `เอกสารนี้อยู่ระหว่างดำเนินการในคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'}) - ติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}` : ''}
+                              className={isLocked ? 'text-slate-400' : 'text-amber-700 hover:bg-amber-50 border-amber-200'}
+                            >
+                              {isLocked && <Lock className="w-3 h-3 text-amber-600 shrink-0 inline mr-0.5" />}
+                              <span>ขอแก้ไขเอกสาร (Revise)</span>
+                            </DropdownMenuItem>
+
+                            {/* ปุ่มขอยกเลิก */}
+                            <DropdownMenuItem 
+                              disabled={isLocked} 
+                              onClick={() => handleOpenObsolete(doc)}
+                              title={isLocked ? `เอกสารนี้อยู่ระหว่างดำเนินการในคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'}) - ติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}` : ''}
+                              className={isLocked ? 'text-slate-400' : 'text-rose-600 hover:bg-rose-50 border-rose-200'}
+                            >
+                              {isLocked && <Lock className="w-3 h-3 text-amber-600 shrink-0 inline mr-0.5" />}
+                              <span>ขอยกเลิกเอกสาร (Obsolete)</span>
+                            </DropdownMenuItem>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </td>
                   </tr>
                 )})}
+
               </tbody>
             </table>
           ) : (

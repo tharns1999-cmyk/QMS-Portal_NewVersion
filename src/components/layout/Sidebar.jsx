@@ -30,7 +30,7 @@ const Sidebar = () => {
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
     masterUsers, setCurrentUser, switchUser, notifications,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, manualSeedData, externalRequests
+    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, manualSeedData, externalRequests, seedPeriodicReviewMockData
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -356,6 +356,17 @@ const Sidebar = () => {
                 >
                   <Sparkles size={11} className="text-blue-600 shrink-0" />
                   <span>🔀 Seed</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    seedPeriodicReviewMockData();
+                    toast?.success?.('จำลองข้อมูลรอบทบทวน (Internal & External) และสร้าง Task สำเร็จ');
+                  }}
+                  className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded-md text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
+                  title="จำลองข้อมูลรอบทบทวนเอกสารทั้งภายในและภายนอก (Overdue, Due Soon, Up-to-Date)"
+                >
+                  <span>⚡ ทบทวน</span>
                 </button>
                 <span className="text-slate-300">|</span>
                 <button

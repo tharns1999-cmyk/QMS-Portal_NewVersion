@@ -113,7 +113,7 @@ describe('DocumentDetailModal Figma UI3 Master Overhaul Tests', () => {
 
     expect(screen.getByRole('button', { name: /เปิดดูเอกสาร/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /ดาวน์โหลด PDF/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Watermark Studio/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Watermark Studio/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /ขอสำเนาควบคุมเพิ่มเติม/i })).toBeInTheDocument();
   });
 

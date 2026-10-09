@@ -274,35 +274,33 @@ export const calculateNextReviewDate = (baseDateStr, years = 1) => {
  *
  * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
  * @param {Date|string} [today=new Date()] - reference date
- * @returns {'OVERDUE' | 'UPCOMING' | 'ON_SCHEDULE'} review urgency status
+ * @returns {'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'} review urgency status
  */
 export const getReviewStatus = (nextReviewDueDate, today = new Date()) => {
-  if (!nextReviewDueDate) return 'ON_SCHEDULE';
+  if (!nextReviewDueDate) return 'UP_TO_DATE';
   const now = new Date(today);
   now.setHours(0, 0, 0, 0);
   const due = new Date(nextReviewDueDate);
   due.setHours(0, 0, 0, 0);
-  if (isNaN(due.getTime())) return 'ON_SCHEDULE';
+  if (isNaN(due.getTime())) return 'UP_TO_DATE';
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return 'OVERDUE';     // เกินกำหนด
-  if (diffDays <= 30) return 'UPCOMING';  // ใกล้ถึงกำหนดใน 30 วัน
-  return 'ON_SCHEDULE';                   // ปกติ
+  if (diffDays <= 30) return 'DUE_SOON';  // ใกล้ถึงกำหนดใน 30 วัน
+  return 'UP_TO_DATE';                   // ปกติ
 };
 
 /**
- * Returns normalized status flag strictly as OVERDUE, UPCOMING, or NORMAL:
+ * Returns normalized status flag strictly as OVERDUE, DUE_SOON, or UP_TO_DATE:
  * - OVERDUE: today > next_review_date
- * - UPCOMING: next_review_date - today <= 30 days
- * - NORMAL: > 30 days
+ * - DUE_SOON: next_review_date - today <= 30 days
+ * - UP_TO_DATE: > 30 days
  *
  * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
  * @param {Date|string} [today=new Date()] - reference date
- * @returns {'OVERDUE' | 'UPCOMING' | 'NORMAL'}
+ * @returns {'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'}
  */
 export const getReviewStatusFlag = (nextReviewDueDate, today = new Date()) => {
-  const status = getReviewStatus(nextReviewDueDate, today);
-  if (status === 'ON_SCHEDULE') return 'NORMAL';
-  return status;
+  return getReviewStatus(nextReviewDueDate, today);
 };
 
 

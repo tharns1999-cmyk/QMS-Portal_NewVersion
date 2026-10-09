@@ -88,7 +88,7 @@ const DarNewForm = () => {
     return '';
   }, [params?.docType]);
 
-  const initialFormState = {
+  const initialFormState = useMemo(() => ({
     id: '',
     darNo: '',
     docType: initialDocType,
@@ -119,7 +119,7 @@ const DarNewForm = () => {
       authorized_users: [],
       min_access_level: 4
     }
-  };
+  }), [initialDocType, currentUser?.department]);
 
   const [formData, setFormData] = useState(initialFormState);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -147,7 +147,7 @@ const DarNewForm = () => {
         setFormData(hydrated);
       }
     }
-  }, [targetDraftId, dars, darRequests, currentUser?.department, location.state]);
+  }, [targetDraftId, dars, darRequests, currentUser?.department, location.state, initialFormState]);
 
   // ตรวจสอบว่าเป็นเอกสารประเภท FM หรือไม่
   const isFormDocument = formData.docType === 'FM' || formData.doc_type === 'FM';

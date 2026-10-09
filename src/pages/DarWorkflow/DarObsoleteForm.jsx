@@ -3,13 +3,13 @@ import { useNavigate, useSearchParams, useLocation, useParams } from 'react-rout
 import useStore from '../../store/useStore';
 import { QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
-import { Calendar, X, Settings, Trash2, FileText, ChevronLeft, User, AlertTriangle, Building, Layers, Search } from 'lucide-react';
+import { Calendar, X, Settings, Trash2, FileText, ChevronLeft, User, AlertTriangle, Building, Layers, Search, Lock } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import Button from '../../components/ui/Button';
 import { resolveReviewer } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
-import { isUserAuthorizedForDocDept } from '../../utils/darHelper';
+import { isUserAuthorizedForDocDept, getActiveDarForDocument } from '../../utils/darHelper';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 
 const DarObsoleteForm = () => {
@@ -38,6 +38,8 @@ const DarObsoleteForm = () => {
     controlledCopyInstances, 
     documentControlledCopies 
   } = useStore();
+
+  const allDars = useMemo(() => [...(dars || []), ...(darRequests || [])], [dars, darRequests]);
 
   // Document types: prefer runtime store data, fall back to registry
   const activeDocumentTypes = useMemo(() => {
@@ -270,6 +272,20 @@ const DarObsoleteForm = () => {
 
   const handleDocSelect = (doc) => {
     if (!doc) return;
+    const docCode = resolveDocCode(doc);
+    const activeDar = getActiveDarForDocument(allDars, docCode);
+    const isLocked = Boolean(activeDar) && (
+      !targetDraftId || (
+        String(activeDar.id) !== String(targetDraftId) &&
+        String(activeDar.dar_no) !== String(targetDraftId) &&
+        String(activeDar.darNo) !== String(targetDraftId)
+      )
+    );
+    if (isLocked) {
+      toast.error(`ไม่สามารถเลือกเอกสารได้ เนื่องจากติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}`);
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       docId: doc.id
@@ -575,16 +591,44 @@ const DarObsoleteForm = () => {
                     {isDropdownOpen && (
                       <div className="absolute left-0 right-0 top-full mt-1 border border-[#E2E8F0] rounded-xl max-h-52 overflow-y-auto divide-y divide-slate-100 shadow-xl bg-white z-30">
                         {filteredActiveDocs.length > 0 ? (
-                          filteredActiveDocs.map(doc => (
+                          filteredActiveDocs.map(doc => {
+                            const docCode = resolveDocCode(doc);
+                            const activeDar = getActiveDarForDocument(allDars, docCode);
+                            const isLocked = Boolean(activeDar) && (
+                              !targetDraftId || (
+                                String(activeDar.id) !== String(targetDraftId) &&
+                                String(activeDar.dar_no) !== String(targetDraftId) &&
+                                String(activeDar.darNo) !== String(targetDraftId)
+                              )
+                            );
+
+                            return (
                             <div
                               key={doc.id}
-                              onClick={() => handleDocSelect(doc)}
-                              className="p-3 hover:bg-[#E5F4FF]/50 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                              onClick={() => {
+                                if (isLocked) {
+                                  toast.error(`ไม่สามารถเลือกเอกสารได้ เนื่องจากติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}`);
+                                  return;
+                                }
+                                handleDocSelect(doc);
+                              }}
+                              className={`p-3 flex items-center justify-between text-xs transition-colors ${
+                                isLocked 
+                                  ? 'opacity-60 bg-slate-50 cursor-not-allowed hover:bg-slate-50' 
+                                  : 'hover:bg-[#E5F4FF]/50 cursor-pointer'
+                              }`}
+                              title={isLocked ? `เอกสารนี้อยู่ระหว่างดำเนินการในคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'})` : ''}
                             >
                               <div className="min-w-0 pr-2">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-bold text-[#0D99FF]">{resolveDocCode(doc)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono font-bold text-[#0D99FF]">{docCode}</span>
                                   <span className="text-slate-400 font-mono text-[10px]">Rev.{doc.rev || '00'}</span>
+                                  {isLocked && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                                      <Lock size={10} />
+                                      <span>(ติดคำร้อง {activeDar.dar_no || activeDar.darNo || activeDar.id})</span>
+                                    </span>
+                                  )}
                                 </div>
                                 <p className="text-[#334155] font-medium truncate mt-0.5">{resolveDocTitle(doc)}</p>
                               </div>
@@ -592,7 +636,7 @@ const DarObsoleteForm = () => {
                                 {doc.department || doc.dept || 'QC'}
                               </span>
                             </div>
-                          ))
+                          );})
                         ) : (
                           <div className="p-3 text-center text-slate-400 text-xs">
                             ไม่พบเอกสารที่มีผลบังคับใช้

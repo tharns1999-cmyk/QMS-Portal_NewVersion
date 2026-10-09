@@ -8,7 +8,6 @@ import {
   Globe, 
   Download, 
   ExternalLink, 
-  Sparkles, 
   AlertTriangle, 
   PlusCircle, 
   ShieldAlert, 
@@ -30,7 +29,6 @@ import { hasDocumentAccess } from '../../utils/accessControl';
 import { resolveDocCode, getReviewStatus } from '../../utils/documentUtils';
 import ReplacementModal from './ReplacementModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
-import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import DocumentDetailModal from '../../components/workflow/DocumentDetailModal';
 import toast from 'react-hot-toast';
 import { UniversalWatermarkService, WATERMARK_TYPES, resolveWatermarkConfig } from '../../services/UniversalWatermarkService';
@@ -107,7 +105,6 @@ const Library = () => {
   const [filterDate] = useState('');
   const [filterAccessScope, setFilterAccessScope] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
-  const [studioDoc, setStudioDoc] = useState(null);
   const [openMenuDocId, setOpenMenuDocId] = useState(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
   
@@ -1681,19 +1678,6 @@ const Library = () => {
                                     <span>ดาวน์โหลด External Release</span>
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    title="Watermark Studio (ทดสอบและดาวน์โหลดลายน้ำ 7 รูปแบบ)"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenMenuDocId(null);
-                                      setStudioDoc(primaryDoc);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2.5 transition-colors font-medium group cursor-pointer"
-                                  >
-                                    <Sparkles className="text-purple-500 shrink-0" size={14} />
-                                    <span>Watermark Studio (ทดสอบลายน้ำ)</span>
-                                  </button>
                                 </div>
                               )}
 
@@ -2219,15 +2203,6 @@ const Library = () => {
           filterStatus={filterStatus}
           activeTab={activeTab}
           onOpenViewer={(d) => navigate(`/viewer/${d.id}/${d.rev || d.revision || '01'}`)}
-        />
-      )}
-
-      {/* Watermark Studio Modal */}
-      {studioDoc && (
-        <WatermarkStudioModal
-          isOpen={!!studioDoc}
-          onClose={() => setStudioDoc(null)}
-          document={studioDoc}
         />
       )}
 

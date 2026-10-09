@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useLocation, useParams } from 'react-rout
 import useStore from '../../store/useStore';
 import { QMS_CONFIG, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
-import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer, CheckCircle2 } from 'lucide-react';
+import { FileText, Calendar, Settings, FileEdit, Search, X, ShieldAlert, ChevronLeft, ShieldCheck, UploadCloud, User, AlertTriangle, Building, Layers, RotateCcw, Printer, CheckCircle2, Lock } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
@@ -13,7 +13,9 @@ import Button from '../../components/ui/Button';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
 import { 
-  isDocumentEligibleForRevision 
+  isDocumentEligibleForRevision,
+  getActiveDarForDocument,
+  isUserAuthorizedForDocDept 
 } from '../../utils/darHelper';
 import { cleanLocationName, getMasterStationForDept, normalizeDepartmentId, calculateCopyAllocations } from '../../services/MasterDataService';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
@@ -149,10 +151,17 @@ const DarRevisionForm = () => {
 
   const allDars = useMemo(() => [...(dars || []), ...(darRequests || [])], [dars, darRequests]);
 
-  // Filter effective documents based on currentUser's department (Canonical Scoping & In-Flight Lock Prevention)
+  // Filter effective documents based on currentUser's department
   const effectiveDocs = useMemo(() => {
-    return (documents || []).filter(d => isDocumentEligibleForRevision(d, currentUser, allDars, targetDraftId));
-  }, [documents, currentUser, allDars, targetDraftId]);
+    return (documents || []).filter(d => {
+      if (!d) return false;
+      const status = String(d.status || (d.is_active ? 'ACTIVE' : '')).trim().toUpperCase();
+      if (status !== 'EFFECTIVE' && status !== 'ACTIVE') return false;
+      if (d.is_obsolete || d.is_superseded || status === 'OBSOLETE' || status === 'SUPERSEDED') return false;
+      const docDept = d.department || d.dept || d.owner_dept || d.ownerDepartmentId;
+      return isUserAuthorizedForDocDept(docDept, currentUser);
+    });
+  }, [documents, currentUser]);
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -328,6 +337,20 @@ const DarRevisionForm = () => {
   }, [selectedDoc, isFormDocument, currentUser?.department, formData.distributions]);
 
   const handleDocSelect = (doc) => {
+    const docCode = resolveDocCode(doc);
+    const activeDar = getActiveDarForDocument(allDars, docCode);
+    const isLocked = Boolean(activeDar) && (
+      !targetDraftId || (
+        String(activeDar.id) !== String(targetDraftId) &&
+        String(activeDar.dar_no) !== String(targetDraftId) &&
+        String(activeDar.darNo) !== String(targetDraftId)
+      )
+    );
+    if (isLocked) {
+      toast.error(`ไม่สามารถเลือกเอกสารได้ เนื่องจากติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}`);
+      return;
+    }
+
     const initialAc = doc.access_control || {
       scope: 'GENERAL',
       authorized_depts: [],
@@ -1129,22 +1152,50 @@ const DarRevisionForm = () => {
                     {isDropdownOpen && (
                       <div className="absolute left-0 right-0 top-full mt-1 border border-[#E2E8F0] rounded-xl max-h-52 overflow-y-auto divide-y divide-slate-100 shadow-xl bg-white z-30">
                         {filteredDocs.length > 0 ? (
-                          filteredDocs.map(doc => (
+                          filteredDocs.map(doc => {
+                            const docCode = resolveDocCode(doc);
+                            const activeDar = getActiveDarForDocument(allDars, docCode);
+                            const isLocked = Boolean(activeDar) && (
+                              !targetDraftId || (
+                                String(activeDar.id) !== String(targetDraftId) &&
+                                String(activeDar.dar_no) !== String(targetDraftId) &&
+                                String(activeDar.darNo) !== String(targetDraftId)
+                              )
+                            );
+
+                            return (
                             <div
                               key={doc.id}
-                              onClick={() => handleDocSelect(doc)}
-                              className="p-3 hover:bg-[#E5F4FF]/50 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                              onClick={() => {
+                                if (isLocked) {
+                                  toast.error(`ไม่สามารถเลือกเอกสารได้ เนื่องจากติดคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id}`);
+                                  return;
+                                }
+                                handleDocSelect(doc);
+                              }}
+                              className={`p-3 flex items-center justify-between text-xs transition-colors ${
+                                isLocked 
+                                  ? 'opacity-60 bg-slate-50 cursor-not-allowed hover:bg-slate-50' 
+                                  : 'hover:bg-[#E5F4FF]/50 cursor-pointer'
+                              }`}
+                              title={isLocked ? `เอกสารนี้อยู่ระหว่างดำเนินการในคำร้อง ${activeDar.dar_no || activeDar.darNo || activeDar.id} (${activeDar.type || 'DAR'})` : ''}
                             >
                               <div className="min-w-0 pr-2">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-bold text-[#0D99FF]">{resolveDocCode(doc)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono font-bold text-[#0D99FF]">{docCode}</span>
                                   <span className="text-slate-400 font-mono text-[10px]">Rev.{doc.rev || '01'}</span>
+                                  {isLocked && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                                      <Lock size={10} />
+                                      <span>(ติดคำร้อง {activeDar.dar_no || activeDar.darNo || activeDar.id})</span>
+                                    </span>
+                                  )}
                                 </div>
                                 <p className="text-[#334155] font-medium truncate mt-0.5">{resolveDocTitle(doc)}</p>
                               </div>
                               <span className="text-[10px] font-bold text-[#64748B] font-mono shrink-0">{doc.department || doc.dept || 'QC'}</span>
                             </div>
-                          ))
+                          );})
                         ) : (
                           <div className="p-3 text-center text-slate-400 text-xs">
                             ไม่พบเอกสารที่มีผลบังคับใช้

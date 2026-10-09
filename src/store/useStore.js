@@ -39,6 +39,9 @@ export {
   defaultSeedCopies, 
   defaultSeedCurrentUser 
 };
+import toast from 'react-hot-toast';
+import { IN_FLIGHT_DAR_STATUSES, getActiveDarForDocument } from '../utils/workflowHelpers';
+export { IN_FLIGHT_DAR_STATUSES, getActiveDarForDocument };
 import { hasDocumentAccess, canUserAccessDocument, canManageControlledCopy } from '../utils/accessControl';
 export { canManageControlledCopy } from '../utils/accessControl';
 import { calculateTaskDueDate } from '../utils/slaCalculator';
@@ -214,6 +217,11 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
       controlledCopy: isFormDoc ? 0 : (oldDoc?.controlledCopy || 0),
       distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || [])),
       pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
+      review_cycle_years: dar.review_cycle_years || oldDoc?.review_cycle_years || getReviewCycleYears(dar.documentType || dar.docType || dar.type || targetDocCode?.split('-')[0]),
+      last_reviewed_at: now,
+      next_review_date: addYears(effectiveDateStr, dar.review_cycle_years || oldDoc?.review_cycle_years || getReviewCycleYears(dar.documentType || dar.docType || dar.type || targetDocCode?.split('-')[0])),
+      review_status: 'UP_TO_DATE',
+      periodic_reviews: oldDoc?.periodic_reviews || [],
       published_at: now,
       updatedAt: now,
       createdAt: now
@@ -2031,11 +2039,25 @@ const useStore = create(persist((set, get) => ({
       acknowledgments: [],
       darHistory: []
     });
-    try {
-      localStorage.removeItem('qms-enterprise-storage');
-      localStorage.removeItem('qms-storage-vault');
-    } catch { /* ignore */ }
   },
+
+  cleanDuplicateDars: () => set(state => {
+    const darsList = state.dars || [];
+    const hasDar004 = darsList.some(d => (d?.id === 'DAR-2026-004' || d?.dar_no === 'DAR-2026-004' || d?.darNo === 'DAR-2026-004') && (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01'));
+    const hasDar005 = darsList.some(d => (d?.id === 'DAR-2026-005' || d?.dar_no === 'DAR-2026-005' || d?.darNo === 'DAR-2026-005') && (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01'));
+
+    if (hasDar004 && hasDar005) {
+      const sanitized = darsList.map(d => {
+        if ((d?.id === 'DAR-2026-005' || d?.dar_no === 'DAR-2026-005' || d?.darNo === 'DAR-2026-005') &&
+            (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01')) {
+          return { ...d, status: 'CANCELLED' };
+        }
+        return d;
+      });
+      return { dars: sanitized, darRequests: sanitized };
+    }
+    return state;
+  }),
 
   // Controlled Copy Print State Tracking
   markCopyPrinted: (copyId) => set(state => {
@@ -2151,6 +2173,156 @@ const useStore = create(persist((set, get) => ({
   },
 
   // DEV TOOL: Seed comprehensive QA workflow mock data (for manual testing & UAT)
+  seedPeriodicReviewMockData: () => set(state => {
+    const now = new Date();
+    
+    // Internal Documents
+    const overdueInternal = {
+      id: 'DOC-REV-OVERDUE',
+      title: 'SOP-PD-099',
+      name: 'มาตรฐานการผลิตฉบับจำลอง (Overdue)',
+      docCode: 'SOP-PD-099',
+      document_code: 'SOP-PD-099',
+      type: 'SOP',
+      department: 'PD',
+      status: 'EFFECTIVE',
+      is_active: true,
+      revision: '01',
+      review_cycle_years: 1,
+      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()).toISOString(),
+      next_review_date: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
+      review_status: 'OVERDUE',
+      periodic_reviews: []
+    };
+
+    const dueSoonInternal = {
+      id: 'DOC-REV-DUESOON',
+      title: 'WI-QC-099',
+      name: 'คู่มือจำลองรอบทวน (Due Soon)',
+      docCode: 'WI-QC-099',
+      document_code: 'WI-QC-099',
+      type: 'WI',
+      department: 'QC',
+      status: 'EFFECTIVE',
+      is_active: true,
+      revision: '03',
+      review_cycle_years: 2,
+      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate() - 20).toISOString(),
+      next_review_date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10).toISOString().split('T')[0],
+      review_status: 'DUE_SOON',
+      periodic_reviews: []
+    };
+
+    const upToDateInternal = {
+      id: 'DOC-REV-UPTODATE',
+      title: 'FM-HR-099',
+      name: 'แบบฟอร์มจำลอง (Up to Date)',
+      docCode: 'FM-HR-099',
+      document_code: 'FM-HR-099',
+      type: 'FM',
+      department: 'HR',
+      status: 'EFFECTIVE',
+      is_active: true,
+      revision: '00',
+      review_cycle_years: 1,
+      last_reviewed_at: now.toISOString(),
+      next_review_date: new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
+      review_status: 'UP_TO_DATE',
+      periodic_reviews: []
+    };
+
+    // External Documents
+    const overdueExternal = {
+      id: 'EXT-REV-OVERDUE',
+      edCode: 'ED-2026-001',
+      doc_code: 'ED-2026-001',
+      document_name: 'External Standard (Overdue)',
+      issuer: 'ISO',
+      status: 'ACTIVE',
+      is_active: true,
+      department: 'QA',
+      review_cycle_years: 1,
+      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()).toISOString(),
+      next_review_date: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
+      review_status: 'OVERDUE',
+      periodic_reviews: []
+    };
+
+    const dueSoonExternal = {
+      id: 'EXT-REV-DUESOON',
+      edCode: 'ED-2026-002',
+      doc_code: 'ED-2026-002',
+      document_name: 'Customer Spec (Due Soon)',
+      issuer: 'Customer',
+      status: 'ACTIVE',
+      is_active: true,
+      department: 'PD',
+      review_cycle_years: 1,
+      last_reviewed_at: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate() - 15).toISOString(),
+      next_review_date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 15).toISOString().split('T')[0],
+      review_status: 'DUE_SOON',
+      periodic_reviews: []
+    };
+
+    const upToDateExternal = {
+      id: 'EXT-REV-UPTODATE',
+      edCode: 'ED-2026-003',
+      doc_code: 'ED-2026-003',
+      document_name: 'Machine Manual (Up to Date)',
+      issuer: 'Supplier',
+      status: 'ACTIVE',
+      is_active: true,
+      department: 'EN',
+      review_cycle_years: 3,
+      last_reviewed_at: now.toISOString(),
+      next_review_date: new Date(now.getFullYear() + 3, now.getMonth(), now.getDate()).toISOString().split('T')[0],
+      review_status: 'UP_TO_DATE',
+      periodic_reviews: []
+    };
+
+    // 2 Pending Tasks for Periodic Review
+    const currentUserId = state.currentUser?.id || state.currentUser?.empId || 'U001';
+    
+    const reviewTask1 = {
+      id: 'TASK-REV-1',
+      type: 'PERIODIC_REVIEW',
+      taskType: 'PERIODIC_REVIEW',
+      title: 'ทบทวนเอกสารตามรอบ: SOP-PD-099',
+      docId: overdueInternal.id,
+      docCode: overdueInternal.title,
+      department: overdueInternal.department,
+      target_department: overdueInternal.department,
+      status: 'PENDING',
+      dueDate: overdueInternal.next_review_date,
+      origin: 'INTERNAL',
+      userId: currentUserId,
+      assigneeId: currentUserId
+    };
+
+    const reviewTask2 = {
+      id: 'TASK-REV-2',
+      type: 'PERIODIC_REVIEW',
+      taskType: 'PERIODIC_REVIEW',
+      title: 'ทบทวนเอกสารภายนอกตามรอบ: ED-2026-001',
+      docId: overdueExternal.id,
+      docCode: overdueExternal.edCode,
+      department: overdueExternal.department,
+      target_department: overdueExternal.department,
+      status: 'PENDING',
+      dueDate: overdueExternal.next_review_date,
+      origin: 'EXTERNAL',
+      userId: currentUserId,
+      assigneeId: currentUserId
+    };
+
+    return {
+      documents: [overdueInternal, dueSoonInternal, upToDateInternal, ...(state.documents || [])],
+      masterDocuments: [overdueInternal, dueSoonInternal, upToDateInternal, ...(state.masterDocuments || [])],
+      externalDocuments: [overdueExternal, dueSoonExternal, upToDateExternal, ...(state.externalDocuments || [])],
+      tasks: [reviewTask1, reviewTask2, ...(state.tasks || [])]
+    };
+  }),
+
   seedComprehensiveQaMockData: () => {
     const seed = getMockQaSeedData();
     set(state => ({
@@ -2548,13 +2720,8 @@ const useStore = create(persist((set, get) => ({
     };
 
     if (outcome === 'CONFIRM_CONTINUE' || outcome === 'NO_CHANGE') {
-      // Determine cycle years:
-      // QP/SOP = 1 yr, WI/FM = 2 yr, External = verification_frequency
-      const isExternal = schedule.documentCategory === 'EXTERNAL';
-      const cycleYears = schedule.cycleYears || 
-        (!isExternal 
-          ? getReviewCycleYears(schedule.documentNumber || '') 
-          : (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1));
+      // User Preference: "No Change" review action must automatically extend next_review_date by 1 year.
+      const cycleYears = 1;
       
       const nextDate = addYears(now, cycleYears);
       logEntry.newNextReviewDate = nextDate;
@@ -5490,6 +5657,22 @@ const useStore = create(persist((set, get) => ({
   }),
 
   addDarAndReturnId: (dar) => {
+    const docCodeToCheck = dar?.document_code || dar?.doc_code || dar?.docCode || dar?.docNo || (dar?.type !== 'NEW' && dar?.type !== 'NEW_DOCUMENT' ? (dar?.title || dar?.docIdInput) : null);
+    if (docCodeToCheck) {
+      const existingActiveDar = getActiveDarForDocument(get().dars, docCodeToCheck);
+      const isSelf = existingActiveDar && (
+        (dar.id && String(dar.id) === String(existingActiveDar.id)) ||
+        (dar.dar_no && String(dar.dar_no) === String(existingActiveDar.dar_no)) ||
+        (dar.darNo && String(dar.darNo) === String(existingActiveDar.dar_no))
+      );
+      if (existingActiveDar && !isSelf) {
+        const activeDarNo = existingActiveDar.dar_no || existingActiveDar.darNo || existingActiveDar.id;
+        const errorMsg = `ไม่สามารถสร้างคำร้องได้ เนื่องจากเอกสาร ${dar.document_code || docCodeToCheck} มีคำร้อง ${activeDarNo} อยู่ระหว่างดำเนินการ`;
+        try { toast?.error?.(errorMsg); } catch {}
+        throw new Error(errorMsg);
+      }
+    }
+
     let newDarId = '';
     set((state) => {
       const date = new Date();
@@ -5626,7 +5809,28 @@ const useStore = create(persist((set, get) => ({
     return { tasks: newTasks };
   }),
 
-  addDar: (dar) => set((state) => {
+  createDar: (dar) => {
+    return get().addDar(dar);
+  },
+
+  addDar: (dar) => {
+    const docCodeToCheck = dar?.document_code || dar?.doc_code || dar?.docCode || dar?.docNo || (dar?.type !== 'NEW' && dar?.type !== 'NEW_DOCUMENT' ? (dar?.title || dar?.docIdInput) : null);
+    if (docCodeToCheck) {
+      const existingActiveDar = getActiveDarForDocument(get().dars, docCodeToCheck);
+      const isSelf = existingActiveDar && (
+        (dar.id && String(dar.id) === String(existingActiveDar.id)) ||
+        (dar.dar_no && String(dar.dar_no) === String(existingActiveDar.dar_no)) ||
+        (dar.darNo && String(dar.darNo) === String(existingActiveDar.dar_no))
+      );
+      if (existingActiveDar && !isSelf) {
+        const activeDarNo = existingActiveDar.dar_no || existingActiveDar.darNo || existingActiveDar.id;
+        const errorMsg = `ไม่สามารถสร้างคำร้องได้ เนื่องจากเอกสาร ${dar.document_code || docCodeToCheck} มีคำร้อง ${activeDarNo} อยู่ระหว่างดำเนินการ`;
+        try { toast?.error?.(errorMsg); } catch {}
+        throw new Error(errorMsg);
+      }
+    }
+
+    return set((state) => {
     // Generate new ID DAR-YYYY-XXX upon non-draft submission
     let newDarId = dar.id;
     let allocatedDarNumber = dar.darNumber || null;
@@ -5933,7 +6137,8 @@ const useStore = create(persist((set, get) => ({
         timestamp: new Date().toISOString()
       }, ...(state.actionLog || [])]
     };
-  }),
+  });
+},
 
   submitDar: async (dar, rawFile) => {
     const finalDar = { ...dar, isDraft: false };
@@ -7742,12 +7947,44 @@ const useStore = create(persist((set, get) => ({
             const docCode = doc.document_code || doc.code || doc.title;
             const isMatch = (targetDocCode && docCode === targetDocCode) || (targetDocId && String(doc.id) === String(targetDocId));
             if (isMatch) {
+              const existingHist = Array.isArray(doc.revision_history) ? [...doc.revision_history] : [];
+              const curRev = String(doc.revision || doc.rev || '01').replace(/^Rev\.?/i, '').padStart(2, '0');
+              if (!existingHist.some(h => String(h.revision || h.rev || '').replace(/^Rev\.?/i, '').padStart(2, '0') === curRev)) {
+                existingHist.push({
+                  dar_no: doc.dar_no || doc.darNo || dar.dar_no || dar.id,
+                  revision: curRev,
+                  rev: curRev,
+                  type: curRev === '00' ? 'NEW' : 'REVISION',
+                  status: 'COMPLETED',
+                  effective_date: doc.effectiveDate || doc.effective_date,
+                  date: doc.effectiveDate || doc.effective_date,
+                  reason: doc.reason || doc.change_details || 'ประวัติการประกาศใช้เดิม',
+                  file: doc.file,
+                  fileBlob: doc.fileBlob
+                });
+              }
+              if (!existingHist.some(h => (h.type === 'OBSOLETE' || h.request_type === 'OBSOLETE') || h.dar_no === (dar.dar_no || dar.id))) {
+                existingHist.push({
+                  dar_no: dar.dar_no || dar.id,
+                  revision: curRev,
+                  rev: curRev,
+                  target_revision: curRev,
+                  type: 'OBSOLETE',
+                  request_type: 'OBSOLETE',
+                  status: 'COMPLETED',
+                  effective_date: todayStr,
+                  date: todayStr,
+                  reason: dar.obsoleteReason || dar.reason || 'ขอยกเลิกเอกสาร'
+                });
+              }
+
               return {
                 ...doc,
                 status: 'OBSOLETE',
                 is_obsolete: true,
                 obsolete_dar_id: dar.id,
-                obsolete_date: todayStr
+                obsolete_date: todayStr,
+                revision_history: existingHist
               };
             }
             return doc;
@@ -8593,6 +8830,37 @@ const useStore = create(persist((set, get) => ({
     // 1. Cascade Obsolete: Mark EVERY Revision of this document code OBSOLETE
     const updatedDocs = state.documents.map(doc => {
       if (isDocMatchCode(doc)) {
+        const existingHist = Array.isArray(doc.revision_history) ? [...doc.revision_history] : [];
+        const curRev = String(doc.revision || doc.rev || '01').replace(/^Rev\.?/i, '').padStart(2, '0');
+        if (!existingHist.some(h => String(h.revision || h.rev || '').replace(/^Rev\.?/i, '').padStart(2, '0') === curRev && h.type !== 'OBSOLETE')) {
+          existingHist.push({
+            dar_no: doc.dar_no || doc.darNo || doc.darId || `DAR-PREV-R${curRev}`,
+            revision: curRev,
+            rev: curRev,
+            type: curRev === '00' ? 'NEW' : 'REVISION',
+            status: 'COMPLETED',
+            effective_date: doc.effectiveDate || doc.effective_date,
+            date: doc.effectiveDate || doc.effective_date,
+            reason: doc.reason || doc.change_details || 'ประวัติการประกาศใช้เดิม',
+            file: doc.file,
+            fileBlob: doc.fileBlob
+          });
+        }
+        if (!existingHist.some(h => h.type === 'OBSOLETE' || h.request_type === 'OBSOLETE')) {
+          existingHist.push({
+            dar_no: darNo,
+            revision: curRev,
+            rev: curRev,
+            target_revision: curRev,
+            type: 'OBSOLETE',
+            request_type: 'OBSOLETE',
+            status: 'COMPLETED',
+            effective_date: obsoleteAt.split('T')[0],
+            date: obsoleteAt.split('T')[0],
+            reason: dar.obsoleteReason || dar.reason || 'ถูกยกเลิกตามคำร้อง DAR'
+          });
+        }
+
         return {
           ...doc,
           status: 'OBSOLETE',
@@ -8604,6 +8872,7 @@ const useStore = create(persist((set, get) => ({
           obsolete_dar_id: darNo,
           obsolete_reason: dar.obsoleteReason || dar.reason || 'ถูกยกเลิกตามคำร้อง DAR',
           obsolete_detail: dar.obsoleteDetail || dar.description || '',
+          revision_history: existingHist
         };
       }
       return doc;
@@ -8819,6 +9088,70 @@ const useStore = create(persist((set, get) => ({
       notifications: newNotifications,
       actionLog: [actionLogEntry, ...(state.actionLog || [])]
     };
+  }),
+
+  obsoleteDocument: (docIdOrCode, reason = 'ขอยกเลิกเอกสาร', customDarNo = null) => set((state) => {
+    const obsoleteAt = new Date().toISOString();
+    const todayStr = obsoleteAt.split('T')[0];
+    const darNo = customDarNo || `DAR-${new Date().getFullYear()}-OBS`;
+    const targetCodeUpper = String(docIdOrCode || '').replace(/^\[OBSOLETE\]\s*/i, '').trim().toUpperCase();
+
+    const isMatch = (doc) => {
+      const dId = String(doc.id || '');
+      const dCode = String(doc.document_code || doc.code || doc.doc_code || doc.title || '').replace(/^\[OBSOLETE\]\s*/i, '').trim().toUpperCase();
+      return dId === String(docIdOrCode) || (targetCodeUpper && dCode === targetCodeUpper);
+    };
+
+    const updatedDocuments = (state.documents || []).map(doc => {
+      if (isMatch(doc)) {
+        const existingHist = Array.isArray(doc.revision_history) ? [...doc.revision_history] : [];
+        const curRev = String(doc.revision || doc.rev || '01').replace(/^Rev\.?/i, '').padStart(2, '0');
+        if (!existingHist.some(h => String(h.revision || h.rev || '').replace(/^Rev\.?/i, '').padStart(2, '0') === curRev && h.type !== 'OBSOLETE')) {
+          existingHist.push({
+            dar_no: doc.dar_no || doc.darNo || doc.darId || `DAR-PREV-R${curRev}`,
+            revision: curRev,
+            rev: curRev,
+            type: curRev === '00' ? 'NEW' : 'REVISION',
+            status: 'COMPLETED',
+            effective_date: doc.effectiveDate || doc.effective_date,
+            date: doc.effectiveDate || doc.effective_date,
+            reason: doc.reason || doc.change_details || 'ประวัติการประกาศใช้เดิม',
+            file: doc.file,
+            fileBlob: doc.fileBlob
+          });
+        }
+        if (!existingHist.some(h => h.type === 'OBSOLETE' || h.request_type === 'OBSOLETE')) {
+          existingHist.push({
+            dar_no: darNo,
+            revision: curRev,
+            rev: curRev,
+            target_revision: curRev,
+            type: 'OBSOLETE',
+            request_type: 'OBSOLETE',
+            status: 'COMPLETED',
+            effective_date: todayStr,
+            date: todayStr,
+            reason: reason || 'ขอยกเลิกเอกสาร'
+          });
+        }
+
+        return {
+          ...doc,
+          status: 'OBSOLETE',
+          is_active: false,
+          is_superseded: false,
+          is_obsolete: true,
+          obsolete_at: obsoleteAt,
+          obsoleted_at: obsoleteAt,
+          obsolete_dar_id: darNo,
+          obsolete_reason: reason,
+          revision_history: existingHist
+        };
+      }
+      return doc;
+    });
+
+    return { documents: updatedDocuments };
   }),
 
   // ─── NEW: DCC Physical Copy Disposition (Stamp & Archive OR Destroy) ──────
@@ -14436,6 +14769,57 @@ if (typeof window !== 'undefined' && window.localStorage) {
       }
     }
 
+    // Self-healing migration: Strict In-Flight DAR Deduplication (e.g. resolve duplicate OBSOLETE DAR-2026-004 vs DAR-2026-005 for SOP-QC-01)
+    if (persisted && persisted.state && Array.isArray(persisted.state.dars)) {
+      let duplicateDarsCleaned = false;
+      const darsList = persisted.state.dars;
+      const hasDar004 = darsList.some(d => (d?.id === 'DAR-2026-004' || d?.dar_no === 'DAR-2026-004' || d?.darNo === 'DAR-2026-004') && (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01'));
+      const hasDar005 = darsList.some(d => (d?.id === 'DAR-2026-005' || d?.dar_no === 'DAR-2026-005' || d?.darNo === 'DAR-2026-005') && (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01'));
+
+      if (hasDar004 && hasDar005) {
+        persisted.state.dars = darsList.map(d => {
+          if ((d?.id === 'DAR-2026-005' || d?.dar_no === 'DAR-2026-005' || d?.darNo === 'DAR-2026-005') &&
+              (d?.document_code === 'SOP-QC-01' || d?.doc_code === 'SOP-QC-01' || d?.title === 'SOP-QC-01' || d?.title === '[OBSOLETE] SOP-QC-01')) {
+            duplicateDarsCleaned = true;
+            return { ...d, status: 'CANCELLED' };
+          }
+          return d;
+        });
+      }
+
+      if (duplicateDarsCleaned) {
+        persisted.state.darRequests = persisted.state.dars;
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration: Sanitize SOP-QC-01 revision_history duplicates
+    if (persisted && persisted.state && Array.isArray(persisted.state.documents)) {
+      let historySanitized = false;
+      persisted.state.documents = persisted.state.documents.map(doc => {
+        if ((doc.title === 'SOP-QC-01' || doc.document_code === 'SOP-QC-01' || doc.doc_code === 'SOP-QC-01') && Array.isArray(doc.revision_history)) {
+          const uniqueRevs = new Set();
+          const cleanHistory = [];
+          doc.revision_history.forEach(hist => {
+            const rev = String(hist.revision ?? hist.rev ?? hist.target_revision ?? hist.docRev ?? '00').padStart(2, '0');
+            if (!uniqueRevs.has(rev)) {
+              uniqueRevs.add(rev);
+              cleanHistory.push(hist);
+            }
+          });
+          if (cleanHistory.length !== doc.revision_history.length) {
+            historySanitized = true;
+            return { ...doc, revision_history: cleanHistory };
+          }
+        }
+        return doc;
+      });
+      if (historySanitized) {
+        persisted.state.masterDocuments = persisted.state.documents;
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
     // Self-healing migration for Controlled Copies: Deduplicate Copy records & Sanitize QM-QC-01
     if (persisted && persisted.state) {
       const rawCopies = persisted.state.controlledCopyInstances || persisted.state.documentControlledCopies || [];
@@ -14449,6 +14833,45 @@ if (typeof window !== 'undefined' && window.localStorage) {
           }
           localStorage.setItem(storageKey, JSON.stringify(persisted));
         }
+      }
+    }
+
+    // Self-healing migration for OBSOLETE Cascading: Fix active copies of obsolete documents (e.g. SOP-QC-01)
+    if (persisted && persisted.state) {
+      let obsoleteCopiesCleaned = false;
+      const allDocs = persisted.state.documents || [];
+      const copiesList = persisted.state.controlledCopyInstances || persisted.state.documentControlledCopies || [];
+      
+      const updatedCopiesList = copiesList.map(copy => {
+        const docCode = copy.document_code || copy.doc_code || copy.docTitle;
+        if (!docCode) return copy;
+        
+        const matchedDoc = allDocs.find(d => 
+          (d.id && (d.id === copy.doc_id || d.id === copy.docId)) || 
+          (docCode && (d.document_code === docCode || d.doc_code === docCode || d.title === docCode || d.code === docCode))
+        );
+        
+        if (matchedDoc && (matchedDoc.status === 'OBSOLETE' || matchedDoc.is_obsolete)) {
+          if (copy.status === 'ACTIVE' || copy.status === 'IN_USE' || copy.status === 'ISSUED_ACTIVE' || !copy.status) {
+            obsoleteCopiesCleaned = true;
+            return {
+              ...copy,
+              status: 'PENDING_RECALL',
+              obsoleted_at: matchedDoc.obsolete_at || new Date().toISOString(),
+              obsolete_dar_no: matchedDoc.obsolete_dar_id || matchedDoc.darId || matchedDoc.dar_no
+            };
+          }
+        }
+        return copy;
+      });
+
+      if (obsoleteCopiesCleaned) {
+        persisted.state.controlledCopyInstances = updatedCopiesList;
+        persisted.state.documentControlledCopies = updatedCopiesList;
+        if (Array.isArray(persisted.state.controlledCopies)) {
+          persisted.state.controlledCopies = updatedCopiesList;
+        }
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
       }
     }
   } catch {

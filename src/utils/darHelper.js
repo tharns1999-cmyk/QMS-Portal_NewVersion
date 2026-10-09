@@ -358,23 +358,7 @@ export const isUserAuthorizedForDocDept = (docDeptRaw, currentUser) => {
   return userDepts.includes(docDept);
 };
 
-export const IN_FLIGHT_DAR_STATUSES = [
-  'DRAFT',
-  'SUBMITTED',
-  'PENDING_REVIEW',
-  'UNDER_REVIEW',
-  'PENDING_APPROVE',
-  'PENDING_APPROVAL',
-  'UNDER_APPROVAL',
-  'IN_PROGRESS'
-];
-
-export const TERMINAL_DAR_STATUSES = [
-  'COMPLETED',
-  'REJECTED',
-  'CANCELLED',
-  'OBSOLETE'
-];
+export { IN_FLIGHT_DAR_STATUSES, TERMINAL_DAR_STATUSES, getActiveDarForDocument } from './workflowHelpers';
 
 /**
  * Checks if a document has any concurrent DAR currently in-flight.

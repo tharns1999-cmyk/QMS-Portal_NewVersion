@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { ChevronLeft, ExternalLink, History, FileText, Download, Sparkles, PlusCircle, X } from 'lucide-react';
+import { ChevronLeft, ExternalLink, History, FileText, Download, PlusCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getDarReason, getDarDetail, getRequesterName, getReviewerName, getApproverName, getAckNames } from '../../utils/darHelper';
 import ReplacementModal from './ReplacementModal';
 import { PDFDocument } from 'pdf-lib';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
-import WatermarkStudioModal from '../../components/workflow/WatermarkStudioModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
 import Button from '../../components/ui/Button';
 
@@ -18,7 +17,6 @@ const LibraryDetail = () => {
   
   const [selectedDar, setSelectedDar] = useState(null);
   const [replacementInstance, setReplacementInstance] = useState(null);
-  const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isRequestCopiesOpen, setIsRequestCopiesOpen] = useState(false);
 
   const doc = documents.find(d => d.id === id);
@@ -304,12 +302,6 @@ const LibraryDetail = () => {
                   </button>
                 )}
 
-                <button
-                  onClick={() => setIsStudioOpen(true)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#F5F5F5] hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all border border-[#E5E5E5]"
-                >
-                  <Sparkles size={16} className="text-[#0D99FF]" /> Watermark Studio (ทดสอบดูและดาวน์โหลดลายน้ำทั้ง 7 แบบ)
-                </button>
               </div>
             )}
           </div>
@@ -533,13 +525,6 @@ const LibraryDetail = () => {
         documentId={doc.id}
       />
 
-      {/* Watermark Studio Modal */}
-      <WatermarkStudioModal
-        isOpen={isStudioOpen}
-        onClose={() => setIsStudioOpen(false)}
-        document={doc}
-        currentUser={currentUser}
-      />
 
       {/* Request Additional Copies Modal */}
       {isRequestCopiesOpen && (
