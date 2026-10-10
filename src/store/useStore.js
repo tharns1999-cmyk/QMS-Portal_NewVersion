@@ -5,8 +5,8 @@ import { resolveProgressiveSignatories } from '../utils/signatoryResolver';
 import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../utils/fileStorage';
 import { resolveReviewer, resolveApprover } from '../utils/workflowResolver';
 import { generateDynamicWorkflow } from '../utils/workflowEngine';
-import { generateSchedules, generateTasksForSchedules } from '../services/PeriodicReviewService';
-import { addYears, getReviewCycleYears } from '../utils/documentUtils';
+import { generateSchedules, generateTasksForSchedules, getDueState } from '../services/PeriodicReviewService';
+import { addYears, getReviewCycleYears, getReviewStatusFlag, evaluateDocumentReviewStatus } from '../utils/documentUtils';
 import { 
   createOrGetLinkedDarDraft, 
   validateLinkedDarSource, 
@@ -58,6 +58,29 @@ import {
   isReceiptTask,
   isActionableTask
 } from '../utils/taskFilter';
+
+export const canFastTrackReview = (currentUser, docDepartment) => {
+  if (!currentUser) return false;
+  const privilegedRoles = ['HOD', 'MANAGER', 'DCC', 'ADMIN', 'DC', 'SUPER_ADMIN', 'QMR', 'DEPT_ADMIN', 'APPROVER', 'DEPT_SUPERVISOR'];
+  const userLevel = Number(
+    currentUser.level || 
+    currentUser.approval_level || 
+    currentUser.departmentMemberships?.find(m => (m.departmentId === docDepartment || m.department === docDepartment) && m.isActive)?.positionLevel ||
+    currentUser.departmentMemberships?.[0]?.positionLevel || 
+    0
+  );
+  const hasPrivilegedRole = privilegedRoles.includes(currentUser.role) || 
+                            Boolean(currentUser.is_manager) || 
+                            Boolean(currentUser.isDeptHead) || 
+                            userLevel >= 4;
+  const hasDeptScope = currentUser.managedDepartments?.includes('*') || 
+                       currentUser.managedDepartments?.includes(docDepartment) ||
+                       currentUser.department === docDepartment ||
+                       currentUser.primary_department === docDepartment ||
+                       (currentUser.affiliated_departments && currentUser.affiliated_departments.includes(docDepartment)) ||
+                       (currentUser.depts && currentUser.depts.includes(docDepartment));
+  return Boolean(hasPrivilegedRole && hasDeptScope);
+};
 
 export const getUserDepartments = (user) => {
   if (!user) return [];
@@ -1966,6 +1989,7 @@ export const getInitialStoreState = () => ({
   distributionLogs: [],
   acknowledgments: [],
   darHistory: [],
+  simulatedSystemDate: null,
   mockDateOffset: 0,
   currentUser: { 
     ...MASTER_DATA_USER[0], 
@@ -1980,6 +2004,72 @@ export const getInitialStoreState = () => ({
 
 const useStore = create(persist((set, get) => ({
   ...getInitialStoreState(),
+
+  // Centralized System Date Time Travel Simulator
+  simulatedSystemDate: null, // null หมายถึงใช้วันที่จริงของเครื่อง
+
+  // Action ปรับเปลี่ยนวันที่จำลอง
+  setSimulatedDate: (dateString) => {
+    set({ simulatedSystemDate: dateString });
+    get().syncPeriodicReviewSchedulesAndTasks?.(dateString ? new Date(dateString) : new Date());
+  },
+
+  // Action กระโดดเวลาไปข้างหน้า
+  fastForwardSystemDate: (monthsToAdd) => {
+    const baseDate = get().simulatedSystemDate 
+      ? new Date(get().simulatedSystemDate) 
+      : new Date();
+    baseDate.setMonth(baseDate.getMonth() + monthsToAdd);
+    const dateString = baseDate.toISOString().split('T')[0];
+    set({ simulatedSystemDate: dateString });
+    get().syncPeriodicReviewSchedulesAndTasks?.(baseDate);
+  },
+
+  // Action คืนค่ากลับสู่วันที่จริง
+  resetSimulatedDate: () => {
+    set({ simulatedSystemDate: null });
+    get().syncPeriodicReviewSchedulesAndTasks?.(new Date());
+  },
+
+  // Helper ดึงเวลาปัจจุบันที่มีผลบังคับใช้
+  getEffectiveToday: () => {
+    const sim = get().simulatedSystemDate;
+    return sim ? new Date(sim) : new Date();
+  },
+
+  // Helper ซิงค์สถานะรอบทบทวนและสร้าง/อัปเดตงานใน Task Inbox ตามเวลาจำลอง
+  syncPeriodicReviewSchedulesAndTasks: (targetDate = null) => {
+    try {
+      const state = get();
+      const effectiveToday = targetDate || state.getEffectiveToday();
+
+      let schedules = state.periodicReviewSchedules && state.periodicReviewSchedules.length > 0
+        ? [...state.periodicReviewSchedules]
+        : generateSchedules(state.documents || [], state.externalDocuments || [], []);
+
+      schedules = schedules.map(s => {
+        const dueDate = s.nextReviewDate || s.currentScheduledReviewDate;
+        if (!dueDate) return s;
+        const dueState = getDueState(dueDate, effectiveToday);
+        const statusFlag = getReviewStatusFlag(dueDate, effectiveToday);
+        return {
+          ...s,
+          dueState,
+          reviewStatusFlag: statusFlag,
+          statusFlag: statusFlag
+        };
+      });
+
+      const newTasks = generateTasksForSchedules(schedules, state.tasks || [], effectiveToday);
+
+      set({
+        periodicReviewSchedules: schedules,
+        tasks: newTasks
+      });
+    } catch {
+      // Safe fallback
+    }
+  },
 
   // EXCLUSIVELY FOR TESTING - Resets store to deterministic initial state
   resetStore: () => set(getInitialStoreState()),
@@ -2037,7 +2127,8 @@ const useStore = create(persist((set, get) => ({
       periodicReviewRecords: [],
       distributionLogs: [],
       acknowledgments: [],
-      darHistory: []
+      darHistory: [],
+      simulatedSystemDate: null
     });
   },
 
@@ -2172,156 +2263,7 @@ const useStore = create(persist((set, get) => ({
     }
   },
 
-  // DEV TOOL: Seed comprehensive QA workflow mock data (for manual testing & UAT)
-  seedPeriodicReviewMockData: () => set(state => {
-    const now = new Date();
-    
-    // Internal Documents
-    const overdueInternal = {
-      id: 'DOC-REV-OVERDUE',
-      title: 'SOP-PD-099',
-      name: 'มาตรฐานการผลิตฉบับจำลอง (Overdue)',
-      docCode: 'SOP-PD-099',
-      document_code: 'SOP-PD-099',
-      type: 'SOP',
-      department: 'PD',
-      status: 'EFFECTIVE',
-      is_active: true,
-      revision: '01',
-      review_cycle_years: 1,
-      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()).toISOString(),
-      next_review_date: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
-      review_status: 'OVERDUE',
-      periodic_reviews: []
-    };
 
-    const dueSoonInternal = {
-      id: 'DOC-REV-DUESOON',
-      title: 'WI-QC-099',
-      name: 'คู่มือจำลองรอบทวน (Due Soon)',
-      docCode: 'WI-QC-099',
-      document_code: 'WI-QC-099',
-      type: 'WI',
-      department: 'QC',
-      status: 'EFFECTIVE',
-      is_active: true,
-      revision: '03',
-      review_cycle_years: 2,
-      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate() - 20).toISOString(),
-      next_review_date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10).toISOString().split('T')[0],
-      review_status: 'DUE_SOON',
-      periodic_reviews: []
-    };
-
-    const upToDateInternal = {
-      id: 'DOC-REV-UPTODATE',
-      title: 'FM-HR-099',
-      name: 'แบบฟอร์มจำลอง (Up to Date)',
-      docCode: 'FM-HR-099',
-      document_code: 'FM-HR-099',
-      type: 'FM',
-      department: 'HR',
-      status: 'EFFECTIVE',
-      is_active: true,
-      revision: '00',
-      review_cycle_years: 1,
-      last_reviewed_at: now.toISOString(),
-      next_review_date: new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
-      review_status: 'UP_TO_DATE',
-      periodic_reviews: []
-    };
-
-    // External Documents
-    const overdueExternal = {
-      id: 'EXT-REV-OVERDUE',
-      edCode: 'ED-2026-001',
-      doc_code: 'ED-2026-001',
-      document_name: 'External Standard (Overdue)',
-      issuer: 'ISO',
-      status: 'ACTIVE',
-      is_active: true,
-      department: 'QA',
-      review_cycle_years: 1,
-      last_reviewed_at: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()).toISOString(),
-      next_review_date: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString().split('T')[0],
-      review_status: 'OVERDUE',
-      periodic_reviews: []
-    };
-
-    const dueSoonExternal = {
-      id: 'EXT-REV-DUESOON',
-      edCode: 'ED-2026-002',
-      doc_code: 'ED-2026-002',
-      document_name: 'Customer Spec (Due Soon)',
-      issuer: 'Customer',
-      status: 'ACTIVE',
-      is_active: true,
-      department: 'PD',
-      review_cycle_years: 1,
-      last_reviewed_at: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate() - 15).toISOString(),
-      next_review_date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 15).toISOString().split('T')[0],
-      review_status: 'DUE_SOON',
-      periodic_reviews: []
-    };
-
-    const upToDateExternal = {
-      id: 'EXT-REV-UPTODATE',
-      edCode: 'ED-2026-003',
-      doc_code: 'ED-2026-003',
-      document_name: 'Machine Manual (Up to Date)',
-      issuer: 'Supplier',
-      status: 'ACTIVE',
-      is_active: true,
-      department: 'EN',
-      review_cycle_years: 3,
-      last_reviewed_at: now.toISOString(),
-      next_review_date: new Date(now.getFullYear() + 3, now.getMonth(), now.getDate()).toISOString().split('T')[0],
-      review_status: 'UP_TO_DATE',
-      periodic_reviews: []
-    };
-
-    // 2 Pending Tasks for Periodic Review
-    const currentUserId = state.currentUser?.id || state.currentUser?.empId || 'U001';
-    
-    const reviewTask1 = {
-      id: 'TASK-REV-1',
-      type: 'PERIODIC_REVIEW',
-      taskType: 'PERIODIC_REVIEW',
-      title: 'ทบทวนเอกสารตามรอบ: SOP-PD-099',
-      docId: overdueInternal.id,
-      docCode: overdueInternal.title,
-      department: overdueInternal.department,
-      target_department: overdueInternal.department,
-      status: 'PENDING',
-      dueDate: overdueInternal.next_review_date,
-      origin: 'INTERNAL',
-      userId: currentUserId,
-      assigneeId: currentUserId
-    };
-
-    const reviewTask2 = {
-      id: 'TASK-REV-2',
-      type: 'PERIODIC_REVIEW',
-      taskType: 'PERIODIC_REVIEW',
-      title: 'ทบทวนเอกสารภายนอกตามรอบ: ED-2026-001',
-      docId: overdueExternal.id,
-      docCode: overdueExternal.edCode,
-      department: overdueExternal.department,
-      target_department: overdueExternal.department,
-      status: 'PENDING',
-      dueDate: overdueExternal.next_review_date,
-      origin: 'EXTERNAL',
-      userId: currentUserId,
-      assigneeId: currentUserId
-    };
-
-    return {
-      documents: [overdueInternal, dueSoonInternal, upToDateInternal, ...(state.documents || [])],
-      masterDocuments: [overdueInternal, dueSoonInternal, upToDateInternal, ...(state.masterDocuments || [])],
-      externalDocuments: [overdueExternal, dueSoonExternal, upToDateExternal, ...(state.externalDocuments || [])],
-      tasks: [reviewTask1, reviewTask2, ...(state.tasks || [])]
-    };
-  }),
 
   seedComprehensiveQaMockData: () => {
     const seed = getMockQaSeedData();
@@ -2500,133 +2442,339 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  submitPeriodicReview: (scheduleId, outcome, comment, linkedActionId = null, linkageStatus = null, idempotencyKey = null) => set(state => {
-    const schedules = [...state.periodicReviewSchedules];
-    const tasks = [...state.periodicReviewTasks];
-    const records = [...(state.periodicReviewRecords || [])];
-    
-    const scheduleIndex = schedules.findIndex(s => s.id === scheduleId);
-    if (scheduleIndex === -1) return state;
-    
-    const schedule = { ...schedules[scheduleIndex] };
-    const now = new Date().toISOString().split('T')[0];
-    
-    // Find active task
-    const taskIndex = tasks.findIndex(t => t.scheduleId === scheduleId && t.status === 'ACTION_REQUIRED');
-    if (taskIndex !== -1) {
-      tasks[taskIndex] = { ...tasks[taskIndex], status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
-    }
+  submitPeriodicReview: (...args) => {
+    let result = null;
+    set(state => {
+      let scheduleId, outcome, comment, linkedActionId, linkageStatus, idempotencyKey;
+      let reviewDetails = {}, currentUserParam = null, isExternalParam = false, docIdParam = null, docCodeParam = null;
 
-    const updatedTasks = (state.tasks || []).map(t => {
-      if (t.scheduleId === scheduleId || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
-        return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+      if (typeof args[0] === 'object' && args[0] !== null) {
+        const p = args[0];
+        scheduleId = p.scheduleId;
+        docIdParam = p.docId;
+        docCodeParam = p.docCode;
+        isExternalParam = Boolean(p.isExternal);
+        outcome = p.outcome;
+        comment = p.comment || p.reviewDetails?.comment || p.reviewDetails?.remarks || p.reviewDetails?.reason || '';
+        reviewDetails = p.reviewDetails || { comment };
+        currentUserParam = p.currentUser;
+        linkedActionId = p.linkedActionId;
+        linkageStatus = p.linkageStatus;
+        idempotencyKey = p.idempotencyKey;
+      } else {
+        [scheduleId, outcome, comment, linkedActionId, linkageStatus, idempotencyKey] = args;
+        reviewDetails = { comment };
       }
-      return t;
-    });
 
-    let newStatus = 'COMPLETED';
-    let requiresLinkedAction = false;
-
-    if (outcome === 'REVISION_REQUIRED' || outcome === 'OBSOLETE_REQUIRED') {
-      newStatus = 'IN_PROGRESS';
-      requiresLinkedAction = true;
-    } else if (outcome === 'NO_CHANGE' || outcome === 'CONFIRM_CONTINUE') {
-      newStatus = 'COMPLETED';
-    }
-
-    schedule.status = newStatus;
-    schedule.outcome = outcome; // Save outcome
-    if (linkedActionId) schedule.linkedActionId = linkedActionId;
-    if (linkageStatus) schedule.linkageStatus = linkageStatus;
-    if (idempotencyKey) schedule.idempotencyKey = idempotencyKey;
-    
-    // Clear due state as action is taken
-    schedule.dueState = 'NOT_YET_DUE';
-    schedule.updatedAt = new Date().toISOString();
-    
-    let updatedDocs = state.documents;
-    let updatedExtDocs = state.externalDocuments;
-
-    if (!requiresLinkedAction) {
-      const cycleYears = schedule.cycleYears || (schedule.documentCategory === 'INTERNAL' 
-        ? getReviewCycleYears(schedule.documentNumber) 
-        : (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1));
-      const nextDate = addYears(now, cycleYears);
+      const activeUser = currentUserParam || state.currentUser;
+      const schedules = [...(state.periodicReviewSchedules || [])];
+      const tasks = [...(state.periodicReviewTasks || [])];
+      const records = [...(state.periodicReviewRecords || [])];
       
-      schedule.currentScheduledReviewDate = nextDate;
-      schedule.nextReviewDate = nextDate;
-      schedule.lastReviewedDate = now;
-      schedule.status = 'UPCOMING';
-
-      const historyEntry = {
-        id: `PRR-${Date.now()}`,
-        reviewer: state.currentUser?.name || '-',
-        reviewerId: state.currentUser?.id || null,
-        reviewDate: now,
-        comment: comment || '',
-        outcome: outcome || 'NO_CHANGE',
-        nextReviewDate: nextDate
-      };
-
-      if (schedule.documentCategory !== 'EXTERNAL' && state.documents) {
-        const docIdx = state.documents.findIndex(d => 
-          (schedule.documentId && d.id === schedule.documentId) || 
-          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber))
+      let scheduleIndex = scheduleId ? schedules.findIndex(s => s.id === scheduleId) : -1;
+      if (scheduleIndex === -1 && (docIdParam || docCodeParam)) {
+        scheduleIndex = schedules.findIndex(s => 
+          (docIdParam && (s.documentId === docIdParam || s.externalDocumentId === docIdParam)) ||
+          (docCodeParam && s.documentNumber === docCodeParam)
         );
-        if (docIdx !== -1) {
-          const doc = { ...state.documents[docIdx] };
-          doc.last_reviewed_at = now;
-          doc.next_review_date = nextDate;
-          doc.review_history = [...(doc.review_history || []), historyEntry];
-          updatedDocs = [...state.documents];
-          updatedDocs[docIdx] = doc;
-        }
-      } else if (schedule.documentCategory === 'EXTERNAL' && state.externalDocuments) {
-        const docIdx = state.externalDocuments.findIndex(d => 
-          (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
-          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber))
-        );
-        if (docIdx !== -1) {
-          const doc = { ...state.externalDocuments[docIdx] };
-          doc.last_reviewed_at = now;
-          doc.last_verified_at = now;
-          doc.next_review_date = nextDate;
-          doc.review_history = [...(doc.review_history || []), historyEntry];
-          updatedExtDocs = [...state.externalDocuments];
-          updatedExtDocs[docIdx] = doc;
+      }
+
+      if (scheduleIndex === -1) {
+        const doc = isExternalParam 
+          ? (state.externalDocuments || []).find(d => d.id === docIdParam || d.edCode === docCodeParam || d.code === docCodeParam)
+          : (state.documents || []).find(d => d.id === docIdParam || d.code === docCodeParam || d.title === docCodeParam);
+        if (doc) {
+          const synthSchedule = {
+            id: `PRS-GEN-${doc.id}`,
+            documentId: isExternalParam ? null : doc.id,
+            externalDocumentId: isExternalParam ? doc.id : null,
+            documentNumber: doc.code || doc.edCode || doc.title,
+            documentName: doc.title || doc.name,
+            ownerDepartmentId: doc.department || doc.dept || 'DC',
+            status: 'ACTION_REQUIRED',
+            documentCategory: isExternalParam ? 'EXTERNAL' : 'INTERNAL'
+          };
+          schedules.push(synthSchedule);
+          scheduleIndex = schedules.length - 1;
         }
       }
-    }
 
-    schedules[scheduleIndex] = schedule;
+      if (scheduleIndex === -1) return state;
+      
+      const schedule = { ...schedules[scheduleIndex] };
+      const now = new Date().toISOString().split('T')[0];
+      const docDept = schedule.ownerDepartmentId || 'DC';
+      
+      // Find active review task
+      const taskIndex = tasks.findIndex(t => t.scheduleId === schedule.id && t.status === 'ACTION_REQUIRED');
+      if (taskIndex !== -1) {
+        tasks[taskIndex] = { ...tasks[taskIndex], status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+      }
 
-    records.push({
-      id: `PRR-${Date.now()}`,
-      scheduleId,
-      outcome,
-      comment,
-      linkedActionId,
-      reviewedByUserId: state.currentUser.id,
-      reviewedAt: new Date().toISOString()
+      const updatedTasks = (state.tasks || []).map(t => {
+        if (t.scheduleId === schedule.id || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
+          return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+        }
+        return t;
+      });
+
+      let newStatus = 'COMPLETED';
+      let requiresLinkedAction = false;
+
+      if (outcome === 'REVISION_REQUIRED' || outcome === 'OBSOLETE_REQUIRED') {
+        newStatus = 'IN_PROGRESS';
+        requiresLinkedAction = true;
+      } else if (outcome === 'NO_CHANGE' || outcome === 'CONFIRM_CONTINUE') {
+        newStatus = 'COMPLETED';
+      }
+
+      schedule.status = newStatus;
+      schedule.outcome = outcome;
+      if (linkedActionId) schedule.linkedActionId = linkedActionId;
+      if (linkageStatus) schedule.linkageStatus = linkageStatus;
+      if (idempotencyKey) schedule.idempotencyKey = idempotencyKey;
+      schedule.dueState = 'NOT_YET_DUE';
+      schedule.updatedAt = new Date().toISOString();
+      
+      let updatedDocs = state.documents;
+      let updatedExtDocs = state.externalDocuments;
+
+      if (!requiresLinkedAction) {
+        const isFastTrack = canFastTrackReview(activeUser, docDept);
+
+        if (isFastTrack) {
+          // === Flow 1: Fast-Track (1-Click Direct Approval by HOD/Manager/DCC/Admin) ===
+          const cycleYears = schedule.cycleYears || (schedule.documentCategory === 'INTERNAL' 
+            ? getReviewCycleYears(schedule.documentNumber) 
+            : (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1));
+          const nextDate = addYears(now, cycleYears);
+          
+          schedule.currentScheduledReviewDate = nextDate;
+          schedule.nextReviewDate = nextDate;
+          schedule.lastReviewedDate = now;
+          schedule.status = 'UPCOMING';
+          schedule.dueState = 'NOT_YET_DUE';
+
+          const periodicReviewAuditEntry = {
+            review_round: 1,
+            reviewed_date: now,
+            reviewer_name: activeUser?.name || 'Reviewer',
+            reviewer_role: activeUser?.role || 'Staff',
+            approver_name: activeUser?.name || 'HOD',
+            approver_role: activeUser?.role || 'HOD',
+            approved_at: new Date().toISOString(),
+            result: 'NO_CHANGE',
+            check_source: reviewDetails?.check_source || reviewDetails?.standards || '-',
+            remarks: reviewDetails?.remarks || reviewDetails?.reason || reviewDetails?.comment || comment || '-',
+            findings: reviewDetails?.findings || '-',
+            next_review_due: nextDate
+          };
+
+          const historyEntry = {
+            id: `PRR-${Date.now()}`,
+            reviewer: activeUser?.name || '-',
+            reviewerId: activeUser?.id || null,
+            reviewerRole: activeUser?.role || 'Staff',
+            approver: activeUser?.name || '-',
+            approverRole: activeUser?.role || 'HOD',
+            reviewDate: now,
+            comment: comment || '',
+            outcome: outcome || 'NO_CHANGE',
+            nextReviewDate: nextDate
+          };
+
+          if (schedule.documentCategory !== 'EXTERNAL' && state.documents) {
+            const docIdx = state.documents.findIndex(d => 
+              (schedule.documentId && d.id === schedule.documentId) || 
+              (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber || d.code === schedule.documentNumber))
+            );
+            if (docIdx !== -1) {
+              const doc = { ...state.documents[docIdx] };
+              periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+              doc.last_reviewed_at = now;
+              doc.next_review_date = nextDate;
+              doc.review_status = 'UP_TO_DATE';
+              delete doc.pending_periodic_review;
+              doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
+              doc.review_history = [...(doc.review_history || []), historyEntry];
+              updatedDocs = [...state.documents];
+              updatedDocs[docIdx] = doc;
+            }
+          } else if (schedule.documentCategory === 'EXTERNAL' && state.externalDocuments) {
+            const docIdx = state.externalDocuments.findIndex(d => 
+              (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+              (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber || d.code === schedule.documentNumber))
+            );
+            if (docIdx !== -1) {
+              const doc = { ...state.externalDocuments[docIdx] };
+              periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+              doc.last_reviewed_at = now;
+              doc.last_verified_at = now;
+              doc.next_review_date = nextDate;
+              doc.review_status = 'UP_TO_DATE';
+              delete doc.pending_periodic_review;
+              doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
+              doc.review_history = [...(doc.review_history || []), historyEntry];
+              updatedExtDocs = [...state.externalDocuments];
+              updatedExtDocs[docIdx] = doc;
+            }
+          }
+
+          schedules[scheduleIndex] = schedule;
+
+          records.push({
+            id: `PRR-${Date.now()}`,
+            scheduleId: schedule.id,
+            outcome,
+            comment,
+            linkedActionId,
+            reviewedByUserId: activeUser?.id,
+            reviewedAt: new Date().toISOString()
+          });
+
+          result = { status: 'COMPLETED', fastTrack: true };
+
+          return {
+            documents: updatedDocs,
+            externalDocuments: updatedExtDocs,
+            periodicReviewSchedules: schedules,
+            periodicReviewTasks: tasks,
+            tasks: updatedTasks,
+            periodicReviewRecords: records,
+            actionLog: [{
+              id: `LOG-${Date.now()}`,
+              actionType: 'PERIODIC_REVIEW_SUBMITTED',
+              details: `Periodic review (Fast-Track) completed for ${schedule.documentNumber} with outcome ${outcome}`,
+              actor: activeUser?.name,
+              actorId: activeUser?.id,
+              date: new Date().toISOString()
+            }, ...(state.actionLog || [])]
+          };
+        } else {
+          // === Flow 2: 2-Step Approval (Staff Submits -> Creates Task for HOD) ===
+          // Expiration date is NOT extended yet!
+          schedule.status = 'PENDING_APPROVAL';
+          schedule.dueState = 'PENDING_APPROVAL';
+
+          const pendingReviewPayload = {
+            id: `REV-REQ-${Date.now()}`,
+            doc_id: schedule.documentId || schedule.externalDocumentId || docIdParam,
+            doc_code: schedule.documentNumber || docCodeParam,
+            doc_title: schedule.documentName,
+            revision: schedule.rev || '00',
+            department: docDept,
+            is_external: Boolean(isExternalParam || schedule.documentCategory === 'EXTERNAL'),
+            scheduleId: schedule.id,
+            outcome: 'NO_CHANGE',
+            reviewer_id: activeUser?.id,
+            reviewer_name: activeUser?.name,
+            reviewer_role: activeUser?.role || 'Staff',
+            submitted_at: new Date().toISOString(),
+            details: reviewDetails || { comment }
+          };
+
+          const approvalTask = {
+            id: `TASK-APPR-REV-${Date.now()}`,
+            type: 'PERIODIC_REVIEW_APPROVAL',
+            title: `อนุมัติผลการทบทวนเอกสาร: ${schedule.documentNumber} (ไม่มีการเปลี่ยนแปลง)`,
+            document_code: schedule.documentNumber,
+            document_title: schedule.documentName,
+            docId: schedule.documentId || schedule.externalDocumentId,
+            docCode: schedule.documentNumber,
+            docTitle: schedule.documentName,
+            revision: schedule.rev || '00',
+            department: docDept,
+            target_role: 'HOD',
+            assignee_department: docDept,
+            status: 'PENDING',
+            payload: pendingReviewPayload,
+            scheduleId: schedule.id,
+            created_at: new Date().toISOString()
+          };
+
+          schedule.pendingApprovalTaskId = approvalTask.id;
+          schedule.pendingReview = pendingReviewPayload;
+          schedules[scheduleIndex] = schedule;
+
+          if (schedule.documentCategory !== 'EXTERNAL' && state.documents) {
+            const docIdx = state.documents.findIndex(d => 
+              (schedule.documentId && d.id === schedule.documentId) || 
+              (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.code === schedule.documentNumber))
+            );
+            if (docIdx !== -1) {
+              const doc = { ...state.documents[docIdx] };
+              doc.review_status = 'PENDING_APPROVAL';
+              doc.pending_periodic_review = pendingReviewPayload;
+              updatedDocs = [...state.documents];
+              updatedDocs[docIdx] = doc;
+            }
+          } else if (schedule.documentCategory === 'EXTERNAL' && state.externalDocuments) {
+            const docIdx = state.externalDocuments.findIndex(d => 
+              (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+              (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.code === schedule.documentNumber))
+            );
+            if (docIdx !== -1) {
+              const doc = { ...state.externalDocuments[docIdx] };
+              doc.review_status = 'PENDING_APPROVAL';
+              doc.pending_periodic_review = pendingReviewPayload;
+              updatedExtDocs = [...state.externalDocuments];
+              updatedExtDocs[docIdx] = doc;
+            }
+          }
+
+          result = { status: 'PENDING_APPROVAL', fastTrack: false, task: approvalTask };
+
+          return {
+            documents: updatedDocs,
+            externalDocuments: updatedExtDocs,
+            periodicReviewSchedules: schedules,
+            periodicReviewTasks: tasks,
+            tasks: [approvalTask, ...updatedTasks],
+            actionLog: [{
+              id: `LOG-${Date.now()}`,
+              actionType: 'PERIODIC_REVIEW_SUBMITTED_FOR_APPROVAL',
+              details: `Periodic review submitted for approval for ${schedule.documentNumber} to HOD (${docDept})`,
+              actor: activeUser?.name,
+              actorId: activeUser?.id,
+              date: new Date().toISOString()
+            }, ...(state.actionLog || [])]
+          };
+        }
+      }
+
+      schedules[scheduleIndex] = schedule;
+
+      records.push({
+        id: `PRR-${Date.now()}`,
+        scheduleId: schedule.id,
+        outcome,
+        comment,
+        linkedActionId,
+        reviewedByUserId: activeUser?.id,
+        reviewedAt: new Date().toISOString()
+      });
+
+      result = { status: newStatus, outcome };
+
+      return {
+        documents: updatedDocs,
+        externalDocuments: updatedExtDocs,
+        periodicReviewSchedules: schedules,
+        periodicReviewTasks: tasks,
+        tasks: updatedTasks,
+        periodicReviewRecords: records,
+        actionLog: [{
+          id: `LOG-${Date.now()}`,
+          actionType: 'PERIODIC_REVIEW_SUBMITTED',
+          details: `Periodic review submitted for ${schedule.documentNumber} with outcome ${outcome}`,
+          actor: activeUser?.name,
+          actorId: activeUser?.id,
+          date: new Date().toISOString()
+        }, ...(state.actionLog || [])]
+      };
     });
-
-    return {
-      documents: updatedDocs,
-      externalDocuments: updatedExtDocs,
-      periodicReviewSchedules: schedules,
-      periodicReviewTasks: tasks,
-      tasks: updatedTasks,
-      periodicReviewRecords: records,
-      actionLog: [{
-        id: `LOG-${Date.now()}`,
-        actionType: 'PERIODIC_REVIEW_SUBMITTED',
-        details: `Periodic review submitted for ${schedule.documentNumber} with outcome ${outcome}`,
-        actor: state.currentUser.name,
-        actorId: state.currentUser.id,
-        date: new Date().toISOString()
-      }, ...(state.actionLog || [])]
-    };
-  }),
+    return result;
+  },
 
   retryPeriodicReviewLinkage: (scheduleId, newLinkedActionId) => set(state => {
     const schedules = [...state.periodicReviewSchedules];
@@ -2699,12 +2847,16 @@ const useStore = create(persist((set, get) => ({
    *
    * @param {{ scheduleId, isExternal, outcome, comment, reviewer, reviewDate }} payload
    */
-  recordPeriodicReview: ({ scheduleId, outcome, comment, reviewer, reviewDate, verificationChannel }) => set(state => {
+  recordPeriodicReview: (payload) => set(state => {
+    const { scheduleId, outcome, comment, reviewer, reviewDate, verificationChannel } = payload || {};
     const schedules = [...(state.periodicReviewSchedules || [])];
     const idx = schedules.findIndex(s => s.id === scheduleId);
     if (idx === -1) return state;
 
     const schedule = { ...schedules[idx] };
+    const isExternal = payload?.isExternal !== undefined 
+      ? Boolean(payload.isExternal) 
+      : (schedule.documentCategory === 'EXTERNAL');
     const now = reviewDate || new Date().toISOString().split('T')[0];
 
     // Build a stamped review log entry (ISO 9001 Clause 7.5.3 evidence)
@@ -2720,8 +2872,8 @@ const useStore = create(persist((set, get) => ({
     };
 
     if (outcome === 'CONFIRM_CONTINUE' || outcome === 'NO_CHANGE') {
-      // User Preference: "No Change" review action must automatically extend next_review_date by 1 year.
-      const cycleYears = 1;
+      // Extend next_review_date by document cycle years (e.g. 1 yr for SOP/QP, 2 yr for WI/FM)
+      const cycleYears = schedule.cycleYears || (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1);
       
       const nextDate = addYears(now, cycleYears);
       logEntry.newNextReviewDate = nextDate;
@@ -2738,10 +2890,34 @@ const useStore = create(persist((set, get) => ({
       let updatedDocs = state.documents;
       let updatedExtDocs = state.externalDocuments;
 
+      const reviewerName = (typeof reviewer === 'object' ? reviewer?.name : reviewer) || state.currentUser?.name || '-';
+      const reviewerRole = (typeof reviewer === 'object' ? reviewer?.role : null) || state.currentUser?.role || 'Staff';
+      const approverUser = payload?.approver || state.currentUser;
+      const approverName = (typeof approverUser === 'object' ? approverUser?.name : approverUser) || state.currentUser?.name || 'HOD';
+      const approverRole = (typeof approverUser === 'object' ? approverUser?.role : null) || state.currentUser?.role || 'HOD';
+
+      const periodicReviewAuditEntry = {
+        review_round: 1,
+        reviewed_date: now,
+        reviewer_name: reviewerName,
+        reviewer_role: reviewerRole,
+        approver_name: approverName,
+        approver_role: approverRole,
+        approved_at: new Date().toISOString(),
+        result: 'NO_CHANGE',
+        check_source: payload?.reviewDetails?.check_source || payload?.reviewDetails?.standards || payload?.verificationChannel || '-',
+        remarks: payload?.reviewDetails?.remarks || payload?.reviewDetails?.reason || payload?.reviewDetails?.comment || comment || '-',
+        findings: payload?.reviewDetails?.findings || '-',
+        next_review_due: nextDate
+      };
+
       const reviewHistoryEntry = {
         id: logEntry.id,
-        reviewer: reviewer || state.currentUser?.name || '-',
+        reviewer: reviewerName,
         reviewerId: state.currentUser?.id || null,
+        reviewerRole,
+        approver: approverName,
+        approverRole,
         reviewDate: now,
         comment: comment || '',
         outcome: 'NO_CHANGE',
@@ -2752,13 +2928,17 @@ const useStore = create(persist((set, get) => ({
       if (!isExternal && state.documents && state.documents.length > 0) {
         const docIdx = state.documents.findIndex(d => 
           (schedule.documentId && d.id === schedule.documentId) || 
-          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber))
+          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber || d.code === schedule.documentNumber))
         );
         if (docIdx !== -1) {
           const doc = { ...state.documents[docIdx] };
+          periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
           // 🛡️ Criteria 2: Revision remains strictly unchanged!
           doc.last_reviewed_at = now;
           doc.next_review_date = nextDate;
+          doc.review_status = 'UP_TO_DATE';
+          delete doc.pending_periodic_review;
+          doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
           doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
           updatedDocs = [...state.documents];
           updatedDocs[docIdx] = doc;
@@ -2766,14 +2946,18 @@ const useStore = create(persist((set, get) => ({
       } else if (isExternal && state.externalDocuments && state.externalDocuments.length > 0) {
         const docIdx = state.externalDocuments.findIndex(d => 
           (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
-          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber))
+          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber || d.code === schedule.documentNumber))
         );
         if (docIdx !== -1) {
           const doc = { ...state.externalDocuments[docIdx] };
+          periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
           doc.last_reviewed_at = now;
           doc.last_verified_at = now;
           doc.next_review_date = nextDate;
+          doc.review_status = 'UP_TO_DATE';
+          delete doc.pending_periodic_review;
           if (verificationChannel) doc.verification_channel = verificationChannel;
+          doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
           doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
           updatedExtDocs = [...state.externalDocuments];
           updatedExtDocs[docIdx] = doc;
@@ -2835,6 +3019,244 @@ const useStore = create(persist((set, get) => ({
       outcome: 'CONFIRM_CONTINUE'
     });
   },
+
+  approvePeriodicReview: ({ taskId, approverUser, remarks }) => set(state => {
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task || !task.payload) return state;
+
+    const approver = approverUser || state.currentUser;
+    const { doc_id, doc_code, is_external, reviewer_id, reviewer_name, reviewer_role, submitted_at, details, scheduleId } = task.payload;
+
+    const now = new Date().toISOString().split('T')[0];
+    const targetSchedule = (state.periodicReviewSchedules || []).find(s => s.id === scheduleId || (doc_id && (s.documentId === doc_id || s.externalDocumentId === doc_id)));
+    const cycleYears = targetSchedule?.cycleYears || (targetSchedule?.documentNumber ? getReviewCycleYears(targetSchedule.documentNumber) : 1);
+    const nextDate = addYears(now, cycleYears || 1);
+
+    const periodicReviewAuditEntry = {
+      review_round: 1,
+      reviewed_date: submitted_at ? submitted_at.split('T')[0] : now,
+      reviewer_name: reviewer_name || 'Staff',
+      reviewer_role: reviewer_role || 'Staff',
+      approver_name: approver?.name || 'HOD',
+      approver_role: approver?.role || 'HOD',
+      approved_at: new Date().toISOString(),
+      result: 'NO_CHANGE',
+      check_source: details?.check_source || details?.standards || '-',
+      remarks: details?.remarks || details?.reason || details?.comment || remarks || '-',
+      findings: details?.findings || '-',
+      next_review_due: nextDate
+    };
+
+    let updatedDocs = state.documents;
+    let updatedExtDocs = state.externalDocuments;
+
+    if (!is_external && state.documents) {
+      const docIdx = state.documents.findIndex(d => 
+        (doc_id && d.id === doc_id) || 
+        (doc_code && (d.code === doc_code || d.doc_code === doc_code || d.title === doc_code))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.documents[docIdx] };
+        periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+        doc.last_reviewed_at = now;
+        doc.next_review_date = nextDate;
+        doc.review_status = 'UP_TO_DATE';
+        delete doc.pending_periodic_review;
+        doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
+        doc.review_history = [...(doc.review_history || []), {
+          id: `PRH-${Date.now()}`,
+          reviewer: reviewer_name,
+          reviewerId: reviewer_id,
+          reviewerRole: reviewer_role,
+          approver: approver?.name,
+          approverRole: approver?.role,
+          reviewDate: now,
+          comment: details?.comment || remarks || '',
+          outcome: 'NO_CHANGE',
+          nextReviewDate: nextDate
+        }];
+        updatedDocs = [...state.documents];
+        updatedDocs[docIdx] = doc;
+      }
+    } else if (is_external && state.externalDocuments) {
+      const docIdx = state.externalDocuments.findIndex(d => 
+        (doc_id && d.id === doc_id) || 
+        (doc_code && (d.id === doc_code || d.edCode === doc_code || d.code === doc_code))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.externalDocuments[docIdx] };
+        periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+        doc.last_reviewed_at = now;
+        doc.last_verified_at = now;
+        doc.next_review_date = nextDate;
+        doc.review_status = 'UP_TO_DATE';
+        delete doc.pending_periodic_review;
+        doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
+        doc.review_history = [...(doc.review_history || []), {
+          id: `PRH-${Date.now()}`,
+          reviewer: reviewer_name,
+          reviewerId: reviewer_id,
+          reviewerRole: reviewer_role,
+          approver: approver?.name,
+          approverRole: approver?.role,
+          reviewDate: now,
+          comment: details?.comment || remarks || '',
+          outcome: 'NO_CHANGE',
+          nextReviewDate: nextDate
+        }];
+        updatedExtDocs = [...state.externalDocuments];
+        updatedExtDocs[docIdx] = doc;
+      }
+    }
+
+    const schedules = (state.periodicReviewSchedules || []).map(s => {
+      if (s.id === scheduleId || (doc_id && (s.documentId === doc_id || s.externalDocumentId === doc_id))) {
+        return {
+          ...s,
+          status: 'UPCOMING',
+          dueState: 'NOT_YET_DUE',
+          outcome: 'NO_CHANGE',
+          lastReviewedDate: now,
+          nextReviewDate: nextDate,
+          currentScheduledReviewDate: nextDate,
+          pendingApprovalTaskId: null,
+          pendingReview: null,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    const updatedTasks = (state.tasks || []).map(t => {
+      if (t.id === taskId) {
+        return { 
+          ...t, 
+          status: 'COMPLETED', 
+          is_completed: true, 
+          actionRequired: false, 
+          approvedBy: approver?.name, 
+          approvedAt: new Date().toISOString() 
+        };
+      }
+      return t;
+    });
+
+    const updatedPeriodicReviewTasks = (state.periodicReviewTasks || []).map(t => {
+      if (t.id === taskId || t.scheduleId === scheduleId) {
+        return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+      }
+      return t;
+    });
+
+    const records = [...(state.periodicReviewRecords || []), {
+      id: `PRR-${Date.now()}`,
+      scheduleId,
+      outcome: 'NO_CHANGE',
+      comment: details?.comment || remarks || '',
+      reviewedByUserId: reviewer_id,
+      approvedByUserId: approver?.id,
+      reviewedAt: submitted_at || new Date().toISOString(),
+      approvedAt: new Date().toISOString()
+    }];
+
+    return {
+      documents: updatedDocs,
+      externalDocuments: updatedExtDocs,
+      periodicReviewSchedules: schedules,
+      periodicReviewTasks: updatedPeriodicReviewTasks,
+      tasks: updatedTasks,
+      periodicReviewRecords: records,
+      actionLog: [{
+        id: `LOG-${Date.now()}`,
+        actionType: 'PERIODIC_REVIEW_APPROVED',
+        details: `HOD Approved periodic review for ${task.document_code}: Next review ${nextDate}`,
+        actor: approver?.name,
+        actorId: approver?.id,
+        date: new Date().toISOString()
+      }, ...(state.actionLog || [])]
+    };
+  }),
+
+  rejectPeriodicReview: ({ taskId, approverUser, remarks }) => set(state => {
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if (!task) return state;
+
+    const approver = approverUser || state.currentUser;
+    const { scheduleId, doc_id } = task.payload || {};
+
+    let updatedDocs = state.documents;
+    let updatedExtDocs = state.externalDocuments;
+
+    if (!task.payload?.is_external && state.documents) {
+      const docIdx = state.documents.findIndex(d => 
+        (doc_id && d.id === doc_id) || 
+        (task.payload?.doc_code && (d.code === task.payload.doc_code || d.doc_code === task.payload.doc_code || d.title === task.payload.doc_code))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.documents[docIdx] };
+        doc.review_status = 'ACTION_REQUIRED';
+        delete doc.pending_periodic_review;
+        doc.rejection_remarks = remarks;
+        updatedDocs = [...state.documents];
+        updatedDocs[docIdx] = doc;
+      }
+    } else if (task.payload?.is_external && state.externalDocuments) {
+      const docIdx = state.externalDocuments.findIndex(d => 
+        (doc_id && d.id === doc_id) || 
+        (task.payload?.doc_code && (d.id === task.payload.doc_code || d.edCode === task.payload.doc_code || d.code === task.payload.doc_code))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.externalDocuments[docIdx] };
+        doc.review_status = 'ACTION_REQUIRED';
+        delete doc.pending_periodic_review;
+        doc.rejection_remarks = remarks;
+        updatedExtDocs = [...state.externalDocuments];
+        updatedExtDocs[docIdx] = doc;
+      }
+    }
+
+    const schedules = (state.periodicReviewSchedules || []).map(s => {
+      if (s.id === scheduleId || (doc_id && (s.documentId === doc_id || s.externalDocumentId === doc_id))) {
+        return {
+          ...s,
+          status: 'ACTION_REQUIRED',
+          dueState: 'DUE',
+          pendingApprovalTaskId: null,
+          rejectionRemarks: remarks,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return s;
+    });
+
+    const updatedTasks = (state.tasks || []).map(t => {
+      if (t.id === taskId) {
+        return { 
+          ...t, 
+          status: 'REJECTED', 
+          rejectReason: remarks, 
+          returnReason: remarks, 
+          updatedAt: new Date().toISOString() 
+        };
+      }
+      return t;
+    });
+
+    return {
+      documents: updatedDocs,
+      externalDocuments: updatedExtDocs,
+      periodicReviewSchedules: schedules,
+      tasks: updatedTasks,
+      actionLog: [{
+        id: `LOG-${Date.now()}`,
+        actionType: 'PERIODIC_REVIEW_REJECTED',
+        details: `Periodic review rejected for ${task.document_code}. Reason: ${remarks}`,
+        actor: approver?.name,
+        actorId: approver?.id,
+        date: new Date().toISOString()
+      }, ...(state.actionLog || [])]
+    };
+  }),
 
   verifyExternalDocument: ({ scheduleId, docId, verificationChannel, verificationResult, comment, reviewer, verificationDate }) => {
     const state = get();
@@ -7393,9 +7815,9 @@ const useStore = create(persist((set, get) => ({
   checkSLA: () => {
     let newlyCompletedDars = [];
     set((state) => {
-    const today = new Date();
+    const today = state.simulatedSystemDate ? new Date(state.simulatedSystemDate) : new Date();
     today.setDate(today.getDate() + (state.mockDateOffset || 0));
-    const todayStr = state.simulatedDate || today.toISOString().split('T')[0];
+    const todayStr = state.simulatedSystemDate || state.simulatedDate || today.toISOString().split('T')[0];
     const activeStatuses = ['DRAFT', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'RETURNED_FOR_REVISION', 'WAITING_ACKNOWLEDGEMENT'];
     const activeExtStatuses = ['PENDING_EXT_REVIEW', 'PENDING_EXT_APPROVAL', 'RETURNED_FOR_REVISION'];
     
@@ -14871,6 +15293,50 @@ if (typeof window !== 'undefined' && window.localStorage) {
         if (Array.isArray(persisted.state.controlledCopies)) {
           persisted.state.controlledCopies = updatedCopiesList;
         }
+        localStorage.setItem(storageKey, JSON.stringify(persisted));
+      }
+    }
+
+    // Self-healing migration for Periodic Review Mock Data: Remove leftover mock data
+    if (persisted && persisted.state) {
+      let mockDataCleaned = false;
+      const mockDocIds = ['DOC-REV-OVERDUE', 'DOC-REV-DUESOON', 'DOC-REV-UPTODATE', 'DOC-REVIEW-01', 'DOC-REVIEW-02'];
+      const mockExtIds = ['EXT-REV-OVERDUE', 'EXT-REV-DUESOON', 'EXT-REV-UPTODATE', 'EXT-LAW-001'];
+      const mockTaskIds = ['TASK-REV-1', 'TASK-REV-2', 'TASK-REV-001'];
+
+      if (Array.isArray(persisted.state.documents)) {
+        const cleanDocs = persisted.state.documents.filter(d => !mockDocIds.includes(d.id));
+        if (cleanDocs.length !== persisted.state.documents.length) {
+          persisted.state.documents = cleanDocs;
+          mockDataCleaned = true;
+        }
+      }
+
+      if (Array.isArray(persisted.state.masterDocuments)) {
+        const cleanMasterDocs = persisted.state.masterDocuments.filter(d => !mockDocIds.includes(d.id));
+        if (cleanMasterDocs.length !== persisted.state.masterDocuments.length) {
+          persisted.state.masterDocuments = cleanMasterDocs;
+          mockDataCleaned = true;
+        }
+      }
+
+      if (Array.isArray(persisted.state.externalDocuments)) {
+        const cleanExtDocs = persisted.state.externalDocuments.filter(d => !mockExtIds.includes(d.id));
+        if (cleanExtDocs.length !== persisted.state.externalDocuments.length) {
+          persisted.state.externalDocuments = cleanExtDocs;
+          mockDataCleaned = true;
+        }
+      }
+
+      if (Array.isArray(persisted.state.tasks)) {
+        const cleanTasks = persisted.state.tasks.filter(t => !mockTaskIds.includes(t.id));
+        if (cleanTasks.length !== persisted.state.tasks.length) {
+          persisted.state.tasks = cleanTasks;
+          mockDataCleaned = true;
+        }
+      }
+
+      if (mockDataCleaned) {
         localStorage.setItem(storageKey, JSON.stringify(persisted));
       }
     }

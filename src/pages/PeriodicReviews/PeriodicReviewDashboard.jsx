@@ -4,7 +4,8 @@ import { Calendar, Clock, AlertTriangle, CheckCircle, FileText, Search, Filter, 
 import useStore from '../../store/useStore';
 import { canViewAllPeriodicReviews, getVisiblePeriodicReviews } from '../../services/PeriodicReviewAccessService';
 import PeriodicReviewControlBoard from './PeriodicReviewControlBoard';
-import { getReviewStatusLabel } from '../../services/PeriodicReviewService';
+import PeriodicReviewManageModal from './PeriodicReviewManageModal';
+import { getReviewStatusLabel, getDueState } from '../../services/PeriodicReviewService';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 
@@ -36,11 +37,29 @@ const OwnerDepartmentView = ({ visibleRecords }) => {
   const [selectedDept, setSelectedDept] = useState('ALL');
 
   // Available departments for the user
-  const availableDepts = currentUser?.depts || [];
+  const availableDepts = useMemo(() => {
+    const depts = new Set();
+    if (currentUser?.department) depts.add(currentUser.department);
+    if (currentUser?.dept) depts.add(currentUser.dept);
+    if (currentUser?.primary_department) depts.add(currentUser.primary_department);
+    (currentUser?.depts || []).forEach(d => depts.add(d));
+    (currentUser?.affiliated_departments || []).forEach(d => depts.add(d));
+    if (Array.isArray(currentUser?.managedDepartments)) {
+      currentUser.managedDepartments.forEach(d => {
+        if (d !== '*') depts.add(d);
+      });
+    }
+    if (currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN') {
+      (visibleRecords || []).forEach(r => {
+        if (r.ownerDepartmentId) depts.add(r.ownerDepartmentId);
+      });
+    }
+    return Array.from(depts).filter(Boolean);
+  }, [currentUser, visibleRecords]);
 
   const stats = useMemo(() => {
     return {
-      actionRequired: visibleRecords.filter(r => ['UPCOMING', 'DUE_SOON', 'DUE', 'IN_PROGRESS'].includes(r.status)).length,
+      actionRequired: visibleRecords.filter(r => ['DUE_SOON', 'DUE', 'IN_PROGRESS', 'ACTION_REQUIRED', 'OVERDUE'].includes(r.status) || r.hasActiveTask).length,
       dueSoon30: visibleRecords.filter(r => ['DUE_SOON', 'DUE'].includes(r.status)).length,
       overdue: visibleRecords.filter(r => r.status === 'OVERDUE').length,
       completedThisYear: visibleRecords.filter(r => r.status === 'COMPLETED' && new Date(r.updatedAt).getFullYear() === new Date().getFullYear()).length,
@@ -52,7 +71,7 @@ const OwnerDepartmentView = ({ visibleRecords }) => {
 
     // Tab filter
     if (activeTab === 'ACTION_REQUIRED') {
-      result = result.filter(r => ['UPCOMING', 'DUE_SOON', 'DUE', 'IN_PROGRESS'].includes(r.status));
+      result = result.filter(r => ['DUE_SOON', 'DUE', 'IN_PROGRESS', 'ACTION_REQUIRED', 'OVERDUE'].includes(r.status) || r.hasActiveTask);
     } else if (activeTab === 'DUE_SOON') {
       result = result.filter(r => ['DUE_SOON', 'DUE'].includes(r.status));
     } else if (activeTab === 'OVERDUE') {
@@ -223,12 +242,72 @@ const OwnerDepartmentView = ({ visibleRecords }) => {
 
 
 const PeriodicReviewDashboard = () => {
-  const { currentUser, periodicReviewSchedules, documents, externalDocuments } = useStore();
+  const { currentUser, periodicReviewSchedules, documents, externalDocuments, tasks, simulatedSystemDate, getEffectiveToday } = useStore();
   const canSeeAll = canViewAllPeriodicReviews(currentUser);
   const [view, setView] = useState(canSeeAll ? 'CONTROL_BOARD' : 'OWNER_DEPT');
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 
   const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
-  const visibleRecords = useMemo(() => getVisiblePeriodicReviews(currentUser, periodicReviewSchedules, allDocs), [currentUser, periodicReviewSchedules, allDocs]);
+  const effectiveToday = useMemo(() => {
+    return getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+  }, [simulatedSystemDate, getEffectiveToday]);
+
+  const effectiveSchedules = useMemo(() => {
+    const existing = [...(periodicReviewSchedules || [])];
+    const registeredDocIds = new Set(
+      existing.map(s => String(s.documentId || s.externalDocumentId || s.documentNumber || '')).filter(Boolean)
+    );
+
+    // If there are documents not yet in schedules, synthesize schedule representations
+    (allDocs || []).forEach(doc => {
+      const docIdStr = String(doc.id || '');
+      const docCode = String(doc.title || doc.doc_code || doc.docNo || doc.document_number || docIdStr);
+      if (registeredDocIds.has(docIdStr) || registeredDocIds.has(docCode)) return;
+
+      const statusUpper = (doc.status || '').toUpperCase();
+      if (statusUpper === 'SUPERSEDED' || statusUpper === 'OBSOLETE' || doc.is_superseded || doc.is_obsolete) return;
+
+      const isExternal = Boolean(doc.is_external || doc.external || doc.document_type === 'EXTERNAL');
+      const docDept = doc.department || doc.dept || doc.owner_dept || (isExternal ? 'DC' : 'QA');
+      const nextReviewDate = doc.next_review_date || doc.nextReviewDate || doc.effectiveDate || doc.effective_date;
+      if (!nextReviewDate) return;
+
+      const activeTask = (tasks || []).find(t => 
+        (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW') &&
+        t.status !== 'COMPLETED' &&
+        (t.docId === doc.id || t.documentId === doc.id || t.docCode === docCode || t.documentNumber === docCode)
+      );
+
+      existing.push({
+        id: `PRS-AUTO-${doc.id}`,
+        documentCategory: isExternal ? 'EXTERNAL' : 'INTERNAL',
+        documentId: doc.id,
+        externalDocumentId: isExternal ? doc.id : undefined,
+        documentNumber: docCode,
+        documentName: doc.name || doc.doc_name || doc.title || docCode,
+        ownerUserId: doc.ownerId || doc.owner_id || 'U002',
+        ownerDepartmentId: docDept,
+        responsibleUserId: doc.ownerId || doc.owner_id || 'U002',
+        currentScheduledReviewDate: nextReviewDate,
+        nextReviewDate: nextReviewDate,
+        status: doc.review_status || (activeTask ? 'ACTION_REQUIRED' : 'UPCOMING'),
+        dueState: getDueState ? getDueState(nextReviewDate, effectiveToday) : 'UPCOMING',
+        hasActiveTask: Boolean(activeTask),
+        isActive: true,
+        createdAt: doc.createdAt || new Date().toISOString(),
+        updatedAt: doc.updatedAt || new Date().toISOString()
+      });
+      registeredDocIds.add(docIdStr);
+      registeredDocIds.add(docCode);
+    });
+
+    return existing;
+  }, [periodicReviewSchedules, allDocs, tasks, effectiveToday]);
+
+  const visibleRecords = useMemo(
+    () => getVisiblePeriodicReviews(currentUser, effectiveSchedules, allDocs, effectiveToday),
+    [currentUser, effectiveSchedules, allDocs, effectiveToday]
+  );
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
@@ -244,10 +323,11 @@ const PeriodicReviewDashboard = () => {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
           <button
-            onClick={() => navigate('/dcc/periodic-reviews/manage')}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-[#0D99FF] hover:bg-[#007BE5] rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
+            onClick={() => setIsManageModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm cursor-pointer"
           >
-            <ClipboardList size={14} /> จัดการทบทวน (Internal/External)
+            <FileText className="w-4 h-4"/>
+            <span>จัดการทบทวน (Internal/External)</span>
           </button>
           {canSeeAll && (
             <div className="bg-[#F5F5F5] p-1 rounded-xl flex items-center shadow-xs">
@@ -273,6 +353,12 @@ const PeriodicReviewDashboard = () => {
       ) : (
         <PeriodicReviewControlBoard />
       )}
+
+      {/* Periodic Review Management Modal (Internal / External) */}
+      <PeriodicReviewManageModal
+        isOpen={isManageModalOpen}
+        onClose={() => setIsManageModalOpen(false)}
+      />
 
     </div>
   );

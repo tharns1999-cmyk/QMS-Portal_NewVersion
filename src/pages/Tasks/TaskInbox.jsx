@@ -25,11 +25,13 @@ import {
   ArrowRight,
   FileText,
   Globe,
-  Star
+  Star,
+  RotateCcw
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
 import PeriodicReviewActionModal from './PeriodicReviewActionModal';
+import PeriodicReviewApprovalModal from './PeriodicReviewApprovalModal';
 import ExternalDocFormModal from '../ExternalDocs/ExternalDocFormModal';
 import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfirmHardcopyReceiptModal';
 import DccCustodyActionModal from '../../components/modals/DccCustodyActionModal';
@@ -584,6 +586,14 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
       badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
     };
   }
+  if (normType === 'PERIODIC_REVIEW_APPROVAL' || task?.type === 'PERIODIC_REVIEW_APPROVAL') {
+    return {
+      label: 'อนุมัติผลทบทวนตามรอบ (HOD)',
+      actionLabel: 'พิจารณาอนุมัติผลทบทวน',
+      icon: <ShieldCheck size={13} className="text-indigo-600" />,
+      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    };
+  }
   if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'EXTERNAL_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
     return {
       label: 'อนุมัติคำร้อง',
@@ -892,7 +902,7 @@ export function normalizeTaskCategory(task) {
   if (!task) return '';
   const rawType = (task.type || task.taskType || task.task_type || task.category || '').toUpperCase();
   if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW' || rawType === 'EXTERNAL_REVIEW' || rawType === 'PERIODIC_REVIEW' || rawType === 'EXTERNAL_VERIFICATION') return 'REVIEW';
-  if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'EXTERNAL_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL') return 'APPROVE';
+  if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'EXTERNAL_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL' || rawType === 'PERIODIC_REVIEW_APPROVAL') return 'APPROVE';
   if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
   if (rawType === 'REVISE' || rawType === 'EXTERNAL_REVISE' || rawType === 'EXT_REVISE') return 'REVISE';
   if (
@@ -917,7 +927,7 @@ export function normalizeTaskCategory(task) {
 // ─────────────────────────────────────────────────────────────────────────────
 const TaskInbox = () => {
   const navigate = useNavigate();
-  const { currentUser, tasks, dars, documents, externalDocuments, externalRequests, controlledCopyInstances, documentControlledCopies, mockDateOffset, checkSLA, masterDepartments, masterUsers } = useStore();
+  const { currentUser, tasks, dars, documents, externalDocuments, externalRequests, controlledCopyInstances, documentControlledCopies, mockDateOffset, simulatedSystemDate, checkSLA, masterDepartments, masterUsers } = useStore();
   const [activeTab, setActiveTab] = useState('ALL');
   const [originFilter, setOriginFilter] = useState('ALL'); // 'ALL' | 'INTERNAL' | 'EXTERNAL'
   const [searchTerm, setSearchTerm] = useState('');
@@ -925,13 +935,14 @@ const TaskInbox = () => {
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
   const [selectedCustodyTask, setSelectedCustodyTask] = useState(null);
   const [selectedPeriodicReviewTask, setSelectedPeriodicReviewTask] = useState(null);
+  const [selectedPeriodicReviewApprovalTask, setSelectedPeriodicReviewApprovalTask] = useState(null);
   const [editingExternalDoc, setEditingExternalDoc] = useState(null);
   const [resubmitTaskId, setResubmitTaskId] = useState(null);
   const [isExternalDocModalOpen, setIsExternalDocModalOpen] = useState(false);
 
   useEffect(() => {
     if (checkSLA) checkSLA();
-  }, [mockDateOffset, checkSLA]);
+  }, [mockDateOffset, simulatedSystemDate, checkSLA]);
 
   const storeContext = useMemo(() => ({
     documents: documents || [],
@@ -1175,6 +1186,12 @@ const TaskInbox = () => {
     // ISO 9001 Cl. 7.5.3 – Custody workflow tasks → open DCC physical verification modal
     if (normType === 'DCC_RELOCATE' || normType === 'DCC_RETURN') {
       setSelectedCustodyTask(task);
+      return;
+    }
+
+    // 🛡️ Periodic Review Approval for HOD
+    if (normType === 'PERIODIC_REVIEW_APPROVAL' || task.type === 'PERIODIC_REVIEW_APPROVAL') {
+      setSelectedPeriodicReviewApprovalTask(task);
       return;
     }
 
@@ -1542,10 +1559,33 @@ const TaskInbox = () => {
                     </div>
 
                     {/* 4. Card Action & Affordance (ปุ่ม Action ลัด) */}
-                    <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all whitespace-nowrap shrink-0">
-                      <span>{badgeConfig.actionLabel}</span>
-                      <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                    </div>
+                    {normType === 'PERIODIC_REVIEW_APPROVAL' || task.type === 'PERIODIC_REVIEW_APPROVAL' ? (
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPeriodicReviewApprovalTask(task)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+                          title="เปิดแบบฟอร์มพิจารณาอนุมัติผลการทบทวน"
+                        >
+                          <ShieldCheck size={12} />
+                          <span>พิจารณาอนุมัติ</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPeriodicReviewApprovalTask(task)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors whitespace-nowrap cursor-pointer"
+                          title="ตีกลับให้ผู้จัดทำแก้ไขผลการทบทวน"
+                        >
+                          <RotateCcw size={12} />
+                          <span>ตีกลับ</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-white border border-slate-200 text-slate-700 shadow-2xs group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all whitespace-nowrap shrink-0">
+                        <span>{badgeConfig.actionLabel}</span>
+                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    )}
                   </div>
 
                   {/* ── 3. Contextual Metadata Row (ข้อมูลประกอบการพิจารณา) ── */}
@@ -1658,6 +1698,13 @@ const TaskInbox = () => {
             onClose={() => setSelectedPeriodicReviewTask(null)}
             task={selectedPeriodicReviewTask}
             onSuccess={() => setSelectedPeriodicReviewTask(null)}
+          />
+        )}
+        {selectedPeriodicReviewApprovalTask && (
+          <PeriodicReviewApprovalModal
+            isOpen={!!selectedPeriodicReviewApprovalTask}
+            onClose={() => setSelectedPeriodicReviewApprovalTask(null)}
+            task={selectedPeriodicReviewApprovalTask}
           />
         )}
         {isExternalDocModalOpen && (

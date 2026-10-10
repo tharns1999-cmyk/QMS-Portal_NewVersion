@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode } from '../../utils/darHelper';
 import { hasDocumentAccess } from '../../utils/accessControl';
-import { resolveDocCode, getReviewStatus } from '../../utils/documentUtils';
+import { resolveDocCode, getReviewStatus, evaluateDocumentReviewStatus, addYears, getReviewCycleYears } from '../../utils/documentUtils';
 import ReplacementModal from './ReplacementModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
 import DocumentDetailModal from '../../components/workflow/DocumentDetailModal';
@@ -87,7 +87,9 @@ const Library = () => {
     documentTypes,
     masterDepartments,
     departments: storeDepts,
-    periodicReviewSchedules
+    periodicReviewSchedules,
+    simulatedSystemDate,
+    getEffectiveToday
   } = useStore();
   
   const isDccUser = Boolean(
@@ -1487,11 +1489,16 @@ const Library = () => {
                             const sch = (periodicReviewSchedules || []).find(
                               s => s.documentId === primaryDoc.id || s.externalDocumentId === primaryDoc.id
                             );
-                            if (!sch) return null;
-                            const reviewDue = sch.nextReviewDate || sch.currentScheduledReviewDate;
+                            let reviewDue = sch?.nextReviewDate || sch?.currentScheduledReviewDate || primaryDoc.nextReviewDate;
+                            if (!reviewDue && (primaryDoc.effectiveDate || primaryDoc.effective_date)) {
+                              const eff = primaryDoc.effectiveDate || primaryDoc.effective_date;
+                              const cycleYears = getReviewCycleYears(primaryDoc.docType || primaryDoc.document_code || primaryDoc.title || '');
+                              reviewDue = addYears(eff, cycleYears);
+                            }
                             if (!reviewDue) return null;
-                            const st = getReviewStatus(reviewDue);
-                            if (st === 'ON_SCHEDULE') return null; // silent when not due soon
+                            const todayRef = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+                            const st = evaluateDocumentReviewStatus(reviewDue, todayRef);
+                            if (st === 'UP_TO_DATE') return null; // silent when not due soon
                             const cfg = st === 'OVERDUE'
                               ? { label: '🚨 เกินกำหนดทบทวน', cls: 'bg-red-50 text-red-600 border-red-200' }
                               : { label: '⚠️ ใกล้ทบทวน', cls: 'bg-amber-50 text-amber-700 border-amber-200' };

@@ -285,23 +285,50 @@ export const getReviewStatus = (nextReviewDueDate, today = new Date()) => {
   if (isNaN(due.getTime())) return 'UP_TO_DATE';
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return 'OVERDUE';     // เกินกำหนด
-  if (diffDays <= 30) return 'DUE_SOON';  // ใกล้ถึงกำหนดใน 30 วัน
+  if (diffDays <= 30) return 'UPCOMING';  // ใกล้ถึงกำหนดใน 30 วัน
   return 'UP_TO_DATE';                   // ปกติ
 };
 
 /**
- * Returns normalized status flag strictly as OVERDUE, DUE_SOON, or UP_TO_DATE:
+ * Returns normalized status flag strictly as OVERDUE, UPCOMING, or NORMAL:
  * - OVERDUE: today > next_review_date
- * - DUE_SOON: next_review_date - today <= 30 days
- * - UP_TO_DATE: > 30 days
+ * - UPCOMING: next_review_date - today <= 30 days
+ * - NORMAL: > 30 days
  *
  * @param {string} nextReviewDueDate - YYYY-MM-DD date of next due review
  * @param {Date|string} [today=new Date()] - reference date
- * @returns {'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'}
+ * @returns {'OVERDUE' | 'UPCOMING' | 'NORMAL'}
  */
 export const getReviewStatusFlag = (nextReviewDueDate, today = new Date()) => {
-  return getReviewStatus(nextReviewDueDate, today);
+  const status = getReviewStatus(nextReviewDueDate, today);
+  if (status === 'UP_TO_DATE' || status === 'ON_SCHEDULE') return 'NORMAL';
+  return status;
 };
+
+/**
+ * Evaluates document periodic review status against reference date.
+ * Single source of truth helper for reactive Periodic Review testing.
+ *
+ * @param {string} nextReviewDate - YYYY-MM-DD date of next review
+ * @param {Date|string} [referenceDate=new Date()] - effective today reference date
+ * @returns {'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'}
+ */
+export function evaluateDocumentReviewStatus(nextReviewDate, referenceDate = new Date()) {
+  if (!nextReviewDate) return 'UP_TO_DATE';
+
+  const target = new Date(nextReviewDate);
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return 'OVERDUE';       // เลยกำหนด (แดง)
+  if (diffDays <= 30) return 'DUE_SOON';    // ใกล้ถึงกำหนดใน 30 วัน (ส้ม/เหลือง)
+  return 'UP_TO_DATE';                      // ปกติ (เขียว)
+}
+
 
 
 

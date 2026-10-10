@@ -553,7 +553,16 @@ const DocumentDetailModal = ({
   const [selectedReturnCopy, setSelectedReturnCopy] = useState(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
-  const navigate = useNavigate();
+  let navigate;
+  try {
+    navigate = useNavigate();
+  } catch {
+    navigate = (path) => {
+      if (typeof window !== 'undefined') {
+        window.location.href = path;
+      }
+    };
+  }
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewAction, setReviewAction] = useState('NO_CHANGE');
   const [reviewComment, setReviewComment] = useState('');
@@ -1361,7 +1370,8 @@ const DocumentDetailModal = ({
 
     // 4. กรองเฉพาะ DAR ที่มี Revision ตรงกับ Revision ปัจจุบันของเอกสารที่กำลังเปิดดูเท่านั้น (Strict Current Revision)
     const filtered = docDars.filter((dar) => {
-      const darRevision = String(dar.target_revision ?? dar.targetRevision ?? dar.revision ?? dar.docRev ?? dar.rev ?? dar.doc_version ?? '00');
+      const rawDarRev = dar.target_revision ?? dar.targetRevision ?? dar.revision ?? dar.docRev ?? dar.rev ?? dar.doc_version;
+      const darRevision = String(rawDarRev !== undefined && rawDarRev !== null ? rawDarRev : (docDars.length === 1 || dar.type === 'NEW' ? currentRevision : '00'));
       const darRevisionNorm = normalizeRev(darRevision);
       return darRevision === currentRevision || (darRevisionNorm && darRevisionNorm === currentRevisionNorm);
     });
@@ -1717,7 +1727,7 @@ const DocumentDetailModal = ({
                 }`}
               >
                 <RotateCw size={15} strokeWidth={1.75} />
-                <span>การทบทวนตามรอบ</span>
+                <span>ประวัติการทบทวนตามรอบ</span>
               </button>
             </div>
 
@@ -2720,7 +2730,7 @@ const DocumentDetailModal = ({
                       <div className="flex items-center gap-2">
                         <RotateCw size={16} className="text-[#0D99FF]" />
                         <h3 className="font-bold text-[#1E1E1E] text-sm">
-                          ประวัติการทบทวนตามรอบ (ISO 9001 Cl. 7.5.3)
+                          ประวัติการทบทวนตามรอบ
                         </h3>
                         <span className="text-xs text-[#666666] font-medium bg-[#FAFAFA] px-2.5 py-0.5 rounded-md border border-[#E5E5E5]">
                           {reviewLogs.length} ครั้ง

@@ -23,14 +23,17 @@ import {
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
 import { isActionableTask, isDccAdmin as checkDccAdmin } from '../../utils/taskFilter';
+import { evaluateDocumentReviewStatus } from '../../utils/documentUtils';
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
+    externalDocuments,
     masterUsers, setCurrentUser, switchUser, notifications,
-    resetTransactionDataToCleanSlate, seedComprehensiveQaMockData, manualSeedData, externalRequests, seedPeriodicReviewMockData
+    resetTransactionDataToCleanSlate, manualSeedData, externalRequests,
+    simulatedSystemDate, setSimulatedDate, fastForwardSystemDate, resetSimulatedDate
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -83,11 +86,30 @@ const Sidebar = () => {
   }).length;
 
   const periodicReviewCount = useMemo(() => {
-    return userTasks.filter(t => 
-      (t.type === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'PERIODIC_REVIEW' || t.taskType === 'EXTERNAL_VERIFICATION') &&
-      t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED'
+    // 1. นับจาก Task ประเภท PERIODIC_REVIEW หรือ EXTERNAL_VERIFICATION ที่ยังไม่เสร็จ
+    const reviewTasksCount = (tasks || []).filter(t => 
+      (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'EXTERNAL_VERIFICATION') && 
+      t.status !== 'COMPLETED' &&
+      !t.is_completed &&
+      (t.assigneeId === currentUser?.id || currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN')
     ).length;
-  }, [userTasks]);
+
+    // 2. หรือนับจากเอกสารที่ OVERDUE / DUE_SOON ในความรับผิดชอบ
+    const refDate = simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
+    const dueDocumentsCount = [...(documents || []), ...(externalDocuments || [])].filter(doc => {
+      const isDue = doc.review_status === 'OVERDUE' || doc.review_status === 'DUE_SOON' ||
+        (doc.next_review_date && ['OVERDUE', 'DUE_SOON'].includes(evaluateDocumentReviewStatus(doc.next_review_date, refDate))) ||
+        (doc.nextReviewDate && ['OVERDUE', 'DUE_SOON'].includes(evaluateDocumentReviewStatus(doc.nextReviewDate, refDate)));
+      const docDept = doc.department || doc.owner_dept || doc.dept;
+      const hasDeptAccess = currentUser?.managedDepartments?.includes('*') || 
+                            currentUser?.managedDepartments?.includes(docDept) ||
+                            (currentUser?.depts || []).includes(docDept) ||
+                            docDept === currentUser?.department;
+      return isDue && hasDeptAccess;
+    }).length;
+
+    return Math.max(reviewTasksCount, dueDocumentsCount);
+  }, [tasks, documents, externalDocuments, currentUser, simulatedSystemDate]);
 
   const myExternalReviseCount = useMemo(() => {
     const reviseDocIds = new Set();
@@ -357,17 +379,6 @@ const Sidebar = () => {
                   <Sparkles size={11} className="text-blue-600 shrink-0" />
                   <span>🔀 Seed</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    seedPeriodicReviewMockData();
-                    toast?.success?.('จำลองข้อมูลรอบทบทวน (Internal & External) และสร้าง Task สำเร็จ');
-                  }}
-                  className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded-md text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
-                  title="จำลองข้อมูลรอบทบทวนเอกสารทั้งภายในและภายนอก (Overdue, Due Soon, Up-to-Date)"
-                >
-                  <span>⚡ ทบทวน</span>
-                </button>
                 <span className="text-slate-300">|</span>
                 <button
                   type="button"
@@ -378,6 +389,61 @@ const Sidebar = () => {
                   <RotateCcw size={11} className="text-rose-600 shrink-0" />
                   <span>Reset</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Time Travel Simulator Widget */}
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5 mt-2">
+              <div className="flex items-center justify-between text-slate-700 font-medium">
+                <span className="flex items-center gap-1">⏱️ เวลาจำลองระบบ</span>
+                {simulatedSystemDate && (
+                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-mono font-semibold">
+                    จำลองอยู่
+                  </span>
+                )}
+              </div>
+
+              {/* Date Picker ป้อนวันที่ตามใจชอบ */}
+              <input
+                type="date"
+                value={simulatedSystemDate || new Date().toISOString().split('T')[0]}
+                onChange={(e) => setSimulatedDate(e.target.value)}
+                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              />
+
+              {/* ปุ่ม Jump ข้ามเวลาเร็ว */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fastForwardSystemDate(6)}
+                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 cursor-pointer text-slate-700"
+                >
+                  +6 เดือน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fastForwardSystemDate(12)}
+                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 font-semibold text-indigo-600 cursor-pointer"
+                >
+                  +1 ปี
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fastForwardSystemDate(24)}
+                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 text-slate-600 cursor-pointer"
+                >
+                  +2 ปี
+                </button>
+                {simulatedSystemDate && (
+                  <button
+                    type="button"
+                    onClick={resetSimulatedDate}
+                    className="py-0.5 px-1.5 bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] hover:bg-rose-100 cursor-pointer font-medium"
+                    title="รีเซ็ตกลับเป็นเวลาจริง"
+                  >
+                    🔄 คืนค่า
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -146,7 +146,9 @@ const ExternalDocsList = () => {
     masterDepartments, 
     departments: storeDepts,
     controlledCopyInstances,
-    documentControlledCopies
+    documentControlledCopies,
+    simulatedSystemDate,
+    getEffectiveToday
   } = useStore();
   
   // Level 1: Main Category Tabs (GENERAL, MY_DEPT, DISTRIBUTED)
@@ -283,7 +285,7 @@ const ExternalDocsList = () => {
       return { status: 'NORMAL', label: 'ปกติ', colorClass: 'badge-active' };
     }
 
-    const today = new Date();
+    const today = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
     today.setHours(0, 0, 0, 0);
 
     let reviewDateObj;
@@ -737,7 +739,7 @@ const ExternalDocsList = () => {
     }).length;
 
     return { total, active, superseded, obsolete, pending, dueSoon };
-  }, [allExternalDocs, accessibleDocs]);
+  }, [allExternalDocs, accessibleDocs, simulatedSystemDate]);
 
   // Filtered Document Stacks (Status + Toolbar Filters + Deep Search Transitivity)
   const filteredStacks = useMemo(() => {

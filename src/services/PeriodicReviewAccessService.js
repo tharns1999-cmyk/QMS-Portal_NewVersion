@@ -32,6 +32,26 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
       isActive: true
     };
   }
+
+  // 3. Managed departments (wildcard or specific department authority)
+  if (Array.isArray(user.managedDepartments)) {
+    if (user.managedDepartments.includes('*') || user.managedDepartments.includes(ownerDepartmentId)) {
+      return {
+        departmentId: ownerDepartmentId,
+        positionLevel: user.level || 4,
+        isActive: true
+      };
+    }
+  }
+
+  // 4. Primary or direct department
+  if (user.department === ownerDepartmentId || user.dept === ownerDepartmentId || user.primary_department === ownerDepartmentId) {
+    return {
+      departmentId: ownerDepartmentId,
+      positionLevel: user.level || 0,
+      isActive: true
+    };
+  }
   
   return null;
 };
@@ -48,32 +68,48 @@ export const getPositionLevelForDepartment = (user, ownerDepartmentId) => {
 
 export const canViewAllPeriodicReviews = (user) => {
   if (!user) return false;
-  return user.isDcc === true || user.role === 'DCC_ADMIN';
+  return user.isDcc === true || user.role === 'DCC_ADMIN' || (Array.isArray(user.managedDepartments) && user.managedDepartments.includes('*'));
 };
 
 export const canViewPeriodicReview = (user, review, document) => {
   if (canViewAllPeriodicReviews(user)) return true;
   
   const ownerDept = resolveReviewOwnerDepartmentId(review, review, document);
+  if (!ownerDept) return true;
+
+  if (Array.isArray(user?.managedDepartments)) {
+    if (user.managedDepartments.includes('*') || user.managedDepartments.includes(ownerDept)) {
+      return true;
+    }
+  }
+
+  if (user?.department === ownerDept || user?.dept === ownerDept || user?.primary_department === ownerDept) {
+    return true;
+  }
+
   return isMemberOfOwnerDepartment(user, ownerDept);
 };
 
 export const canPerformPeriodicReview = (user, review, document) => {
   if (!user) return false;
 
-  // 1. Is Document Owner
-  const ownerUserId = review?.ownerUserId || document?.ownerId;
-  if (user.id === ownerUserId) return true;
+  // 1. Is Document Owner or designated assignee
+  const ownerUserId = review?.ownerUserId || document?.ownerId || review?.assignedToUserId;
+  if (user.id === ownerUserId || user.empId === ownerUserId) return true;
 
-  // 2. Is Permitted Backup in that specific Owner Department (Level >= 4 for Supervisor/Manager)
+  // 2. Is Member of Owner Department (Staff or Manager can perform and submit review)
   const ownerDept = resolveReviewOwnerDepartmentId(review, review, document);
   if (isMemberOfOwnerDepartment(user, ownerDept)) {
-    const posLevel = getPositionLevelForDepartment(user, ownerDept);
-    if (posLevel >= 4) return true;
+    return true;
   }
 
-  // 3. Documented Override
-  // Currently no new overrides invented in this phase.
+  // 3. Privileged roles: DCC, QMR, Admin, or Wildcard Manager
+  if (user.isDcc || user.role === 'DCC' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'QMR') {
+    return true;
+  }
+  if (Array.isArray(user.managedDepartments) && (user.managedDepartments.includes('*') || (ownerDept && user.managedDepartments.includes(ownerDept)))) {
+    return true;
+  }
   
   return false;
 };
@@ -147,15 +183,15 @@ export const normalizePeriodicReviewRecord = (record, currentDate = new Date()) 
   return normalized;
 };
 
-export const getVisiblePeriodicReviews = (user, schedules, documents) => {
+export const getVisiblePeriodicReviews = (user, schedules, documents, currentDate = new Date()) => {
   if (!schedules) return [];
   return schedules.filter(schedule => {
     const doc = documents?.find(d => d.id === schedule.documentId || d.id === schedule.externalDocumentId);
     return canViewPeriodicReview(user, schedule, doc);
-  }).map(schedule => normalizePeriodicReviewRecord(schedule));
+  }).map(schedule => normalizePeriodicReviewRecord(schedule, currentDate));
 };
 
-export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules, documents) => {
+export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules, documents, currentDate = new Date()) => {
   const schedule = periodicReviewSchedules?.find(s => s.id === reviewId);
   if (!schedule) return { status: 'NOT_FOUND' };
   
@@ -170,7 +206,7 @@ export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules
   
   return {
     status: 'SUCCESS',
-    data: normalizePeriodicReviewRecord(schedule),
+    data: normalizePeriodicReviewRecord(schedule, currentDate),
     document: doc
   };
 };

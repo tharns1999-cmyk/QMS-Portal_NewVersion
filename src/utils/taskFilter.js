@@ -264,6 +264,30 @@ export const isActionableTask = (task, currentUser) => {
     return false;
   }
 
+  // 🛡️ Periodic Review Approval (Staff -> HOD Approval Workflow)
+  if (normType === 'PERIODIC_REVIEW_APPROVAL' || task.taskType === 'PERIODIC_REVIEW_APPROVAL') {
+    // 1. Separation of duties: Reviewer cannot approve their own review
+    const reviewerId = task.payload?.reviewer_id || task.reviewerId;
+    const reviewerName = task.payload?.reviewer_name || task.reviewerName;
+    if (
+      (reviewerId && (reviewerId === currentUser?.id || reviewerId === currentUser?.empId)) ||
+      (reviewerName && reviewerName === currentUser?.name)
+    ) {
+      return false;
+    }
+    const taskDept = task.department || task.assignee_department || task.target_department || task.payload?.department || '';
+    const isQmr = currentUser?.role === 'QMR' || currentUser?.isQmr;
+    const isDcc = currentUser?.role === 'DCC' || currentUser?.role === 'DC' || currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.isDcc;
+    const isDeptManager = Boolean(
+      currentUser?.isDeptHead || 
+      currentUser?.is_manager || 
+      ['HOD', 'MANAGER', 'APPROVER', 'DEPT_SUPERVISOR', 'DEPT_ADMIN'].includes(currentUser?.role) || 
+      userApprovalLevel >= 4
+    );
+    const hasDept = userMatchesDepartment(currentUser, taskDept) || userDepts.some(uDept => isSameDepartment(uDept, taskDept));
+    return Boolean(isQmr || isDcc || (isDeptManager && hasDept));
+  }
+
   // 4. Department-Pooled Receipt Task (Physical controlled copy confirmation at department stations):
   // Strictly scoped to destination department. Never leak to DCC or other departments.
   // 🛡️ ISO 9001 Segregation of Duties:

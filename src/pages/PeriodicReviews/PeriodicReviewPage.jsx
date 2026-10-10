@@ -24,7 +24,9 @@ const formatDate = (dateStr) => {
 const reviewStatusConfig = {
   OVERDUE:     { label: '🚨 เกินกำหนด',           cls: 'bg-red-50 text-red-700 border-red-200' },
   UPCOMING:    { label: '⚠️ ใกล้ครบกำหนด',         cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  DUE_SOON:    { label: '⚠️ ใกล้ครบกำหนด',         cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   ON_SCHEDULE: { label: '✅ ยังไม่ถึงกำหนด',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  UP_TO_DATE:  { label: '✅ ยังไม่ถึงกำหนด',       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,9 +233,9 @@ const RecordReviewModal = ({ schedule, doc, onClose, onSubmit }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Document Row
 // ─────────────────────────────────────────────────────────────────────────────
-const DocRow = ({ schedule, doc, onRecord }) => {
+const DocRow = ({ schedule, doc, onRecord, referenceDate = new Date() }) => {
   const dueDate = schedule.nextReviewDate || schedule.currentScheduledReviewDate;
-  const status = getReviewStatus(dueDate);
+  const status = getReviewStatus(dueDate, referenceDate);
   const cfg = reviewStatusConfig[status] || reviewStatusConfig.ON_SCHEDULE;
 
   return (
@@ -292,7 +294,13 @@ const PeriodicReviewPage = () => {
     currentUser,
     recordPeriodicReview,
     submitPeriodicReview,
+    simulatedSystemDate,
+    getEffectiveToday
   } = useStore();
+
+  const effectiveToday = useMemo(() => {
+    return getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+  }, [simulatedSystemDate, getEffectiveToday]);
 
   // Segmented tab: INTERNAL | EXTERNAL
   const [docType, setDocType] = useState('INTERNAL');
@@ -328,7 +336,7 @@ const PeriodicReviewPage = () => {
     if (statusFilter !== 'ALL') {
       records = records.filter(s => {
         const dueDate = s.nextReviewDate || s.currentScheduledReviewDate;
-        return getReviewStatus(dueDate) === statusFilter;
+        return getReviewStatus(dueDate, effectiveToday) === statusFilter;
       });
     }
 
@@ -342,12 +350,12 @@ const PeriodicReviewPage = () => {
       const order = { OVERDUE: 0, UPCOMING: 1, ON_SCHEDULE: 2 };
       const dA = a.nextReviewDate || a.currentScheduledReviewDate;
       const dB = b.nextReviewDate || b.currentScheduledReviewDate;
-      const sA = order[getReviewStatus(dA)] ?? 2;
-      const sB = order[getReviewStatus(dB)] ?? 2;
+      const sA = order[getReviewStatus(dA, effectiveToday)] ?? 2;
+      const sB = order[getReviewStatus(dB, effectiveToday)] ?? 2;
       if (sA !== sB) return sA - sB;
       return new Date(dA || 0) - new Date(dB || 0);
     });
-  }, [periodicReviewSchedules, docType, searchTerm, statusFilter, deptFilter]);
+  }, [periodicReviewSchedules, docType, searchTerm, statusFilter, deptFilter, effectiveToday]);
 
   // Available departments
   const availableDepts = useMemo(() => {
@@ -367,7 +375,7 @@ const PeriodicReviewPage = () => {
       const isMatch = category === 'INTERNAL' ? (cat === 'INTERNAL' || cat === '') : cat === 'EXTERNAL';
       if (!isMatch) return false;
       const dueDate = s.nextReviewDate || s.currentScheduledReviewDate;
-      return status === 'ALL' || getReviewStatus(dueDate) === status;
+      return status === 'ALL' || getReviewStatus(dueDate, effectiveToday) === status;
     }).length;
     return {
       internalTotal: getCount('INTERNAL', 'ALL'),
@@ -375,7 +383,7 @@ const PeriodicReviewPage = () => {
       externalTotal: getCount('EXTERNAL', 'ALL'),
       externalOverdue: getCount('EXTERNAL', 'OVERDUE'),
     };
-  }, [periodicReviewSchedules]);
+  }, [periodicReviewSchedules, effectiveToday]);
 
   const pagination = useTablePagination(filteredSchedules, 15);
 
@@ -546,6 +554,7 @@ const PeriodicReviewPage = () => {
                     schedule={schedule}
                     doc={doc}
                     onRecord={handleRecord}
+                    referenceDate={effectiveToday}
                   />
                 );
               })}

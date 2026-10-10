@@ -1,15 +1,15 @@
 /**
  * periodic_review_lifecycle.test.jsx
  *
- * ISO 9001 Clause 7.5.3 – Periodic Document Review Lifecycle Engine Tests
+ * ISO 9001 Clause 7.5.3 ï¿½ Periodic Document Review Lifecycle Engine Tests
  * ------------------------------------------------------------------------
  * Covers:
- *   1. calculateNextReviewDate  – pure date arithmetic (+1 year)
- *   2. getReviewStatus          – urgency bucket classification
- *   3. recordPeriodicReview     – CONFIRM_CONTINUE log + date roll
- *   4. recordPeriodicReview     – REVISION_REQUIRED log stamp (no roll)
- *   5. recordPeriodicReview     – revision number invariance
- *   6. reviewLog accumulation   – multiple reviews on same schedule
+ *   1. calculateNextReviewDate  ï¿½ pure date arithmetic (+1 year)
+ *   2. getReviewStatus          ï¿½ urgency bucket classification
+ *   3. recordPeriodicReview     ï¿½ CONFIRM_CONTINUE log + date roll
+ *   4. recordPeriodicReview     ï¿½ REVISION_REQUIRED log stamp (no roll)
+ *   5. recordPeriodicReview     ï¿½ revision number invariance
+ *   6. reviewLog accumulation   ï¿½ multiple reviews on same schedule
  *   7. internal vs external doc separation
  */
 
