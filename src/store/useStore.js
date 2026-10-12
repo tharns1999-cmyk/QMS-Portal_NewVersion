@@ -2446,7 +2446,7 @@ const useStore = create(persist((set, get) => ({
     let result = null;
     set(state => {
       let scheduleId, outcome, comment, linkedActionId, linkageStatus, idempotencyKey;
-      let reviewDetails = {}, currentUserParam = null, isExternalParam = false, docIdParam = null, docCodeParam = null;
+      let reviewDetails = {}, currentUserParam = null, isExternalParam = false, docIdParam = null, docCodeParam = null, taskIdParam = null;
 
       if (typeof args[0] === 'object' && args[0] !== null) {
         const p = args[0];
@@ -2455,12 +2455,13 @@ const useStore = create(persist((set, get) => ({
         docCodeParam = p.docCode;
         isExternalParam = Boolean(p.isExternal);
         outcome = p.outcome;
-        comment = p.comment || p.reviewDetails?.comment || p.reviewDetails?.remarks || p.reviewDetails?.reason || '';
+        comment = p.comment || p.reviewDetails?.reason || p.reviewDetails?.comment || p.reviewDetails?.remarks || '';
         reviewDetails = p.reviewDetails || { comment };
         currentUserParam = p.currentUser;
         linkedActionId = p.linkedActionId;
         linkageStatus = p.linkageStatus;
         idempotencyKey = p.idempotencyKey;
+        taskIdParam = p.taskId;
       } else {
         [scheduleId, outcome, comment, linkedActionId, linkageStatus, idempotencyKey] = args;
         reviewDetails = { comment };
@@ -2512,7 +2513,12 @@ const useStore = create(persist((set, get) => ({
       }
 
       const updatedTasks = (state.tasks || []).map(t => {
-        if (t.scheduleId === schedule.id || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
+        if (
+          (taskIdParam && t.id === taskIdParam) ||
+          t.scheduleId === schedule.id || 
+          (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId)) ||
+          (schedule.documentNumber && (t.document_code === schedule.documentNumber || t.docCode === schedule.documentNumber || t.doc_code === schedule.documentNumber))
+        ) {
           return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
         }
         return t;
@@ -2564,9 +2570,14 @@ const useStore = create(persist((set, get) => ({
             approver_role: activeUser?.role || 'HOD',
             approved_at: new Date().toISOString(),
             result: 'NO_CHANGE',
-            check_source: reviewDetails?.check_source || reviewDetails?.standards || '-',
-            remarks: reviewDetails?.remarks || reviewDetails?.reason || reviewDetails?.comment || comment || '-',
+            outcome: outcome || 'NO_CHANGE',
+            reason: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
             findings: reviewDetails?.findings || '-',
+            standard_clause: reviewDetails?.standard_clause || reviewDetails?.standards || reviewDetails?.check_source || '-',
+            check_source: reviewDetails?.standard_clause || reviewDetails?.standards || reviewDetails?.check_source || '-',
+            evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '-',
+            additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '-',
+            remarks: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
             next_review_due: nextDate
           };
 
@@ -2579,6 +2590,11 @@ const useStore = create(persist((set, get) => ({
             approverRole: activeUser?.role || 'HOD',
             reviewDate: now,
             comment: comment || '',
+            reason: reviewDetails?.reason || comment || '',
+            findings: reviewDetails?.findings || '',
+            standard_clause: reviewDetails?.standard_clause || reviewDetails?.standards || '',
+            evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '',
+            additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '',
             outcome: outcome || 'NO_CHANGE',
             nextReviewDate: nextDate
           };
@@ -2627,6 +2643,11 @@ const useStore = create(persist((set, get) => ({
             scheduleId: schedule.id,
             outcome,
             comment,
+            reason: reviewDetails?.reason || reviewDetails?.comment || comment,
+            findings: reviewDetails?.findings || '',
+            standard_clause: reviewDetails?.standard_clause || reviewDetails?.standards || '',
+            evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '',
+            additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '',
             linkedActionId,
             reviewedByUserId: activeUser?.id,
             reviewedAt: new Date().toISOString()
@@ -2749,6 +2770,11 @@ const useStore = create(persist((set, get) => ({
         scheduleId: schedule.id,
         outcome,
         comment,
+        reason: reviewDetails?.reason || comment,
+        findings: reviewDetails?.findings || '',
+        standard_clause: reviewDetails?.standard_clause || reviewDetails?.standards || '',
+        evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '',
+        additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '',
         linkedActionId,
         reviewedByUserId: activeUser?.id,
         reviewedAt: new Date().toISOString()
@@ -2791,14 +2817,33 @@ const useStore = create(persist((set, get) => ({
   }),
   // --- Narrow Dependency-Injection Seam for Testing Real Workflow ---
   // Safe because these methods only orchestrate existing actions and are explicitly designed to take adapter dependencies
-  submitPeriodicReviewWithDarAction: (scheduleId, outcome, comment, darPayload, darAdapter) => {
+  submitPeriodicReviewWithDarAction: (scheduleId, outcome, comment, darPayload, darAdapter, extraOptions = {}) => {
     const store = get();
     const idempotencyKey = `PERIODIC_REVIEW_${scheduleId}_${outcome}`;
+    const reviewDetails = extraOptions.reviewDetails || { comment };
     try {
       const newLinkedId = darAdapter(darPayload);
-      store.submitPeriodicReview(scheduleId, outcome, comment, newLinkedId, 'SUCCESS', idempotencyKey);
+      store.submitPeriodicReview({
+        scheduleId,
+        outcome,
+        comment,
+        linkedActionId: newLinkedId,
+        linkageStatus: 'SUCCESS',
+        idempotencyKey,
+        taskId: extraOptions.taskId,
+        reviewDetails
+      });
     } catch {
-      store.submitPeriodicReview(scheduleId, outcome, comment, null, 'FAILED', idempotencyKey);
+      store.submitPeriodicReview({
+        scheduleId,
+        outcome,
+        comment,
+        linkedActionId: null,
+        linkageStatus: 'FAILED',
+        idempotencyKey,
+        taskId: extraOptions.taskId,
+        reviewDetails
+      });
     }
   },
 

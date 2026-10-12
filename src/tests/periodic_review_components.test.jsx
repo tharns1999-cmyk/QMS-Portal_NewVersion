@@ -43,7 +43,7 @@ describe('Periodic Review Components & Integration', () => {
 
     it('dashboard cards use permitted data only', () => {
       renderWithRouter(<PeriodicReviewDashboard />);
-      const dueSoonValue = screen.getByText('ใกล้ครบกำหนดภายใน 30 วัน').parentElement.querySelector('h3.text-3xl');
+      const dueSoonValue = screen.getByText('ใกล้ครบกำหนดใน 30 วัน').parentElement.querySelector('h3.text-3xl');
       expect(dueSoonValue).toHaveTextContent('1');
       const overdueValue = screen.getAllByText('เกินกำหนด')[0].parentElement.querySelector('h3.text-3xl');
       expect(overdueValue).toHaveTextContent('0');

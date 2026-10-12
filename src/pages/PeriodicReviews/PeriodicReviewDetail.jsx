@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   FileText, 
   ArrowLeft, 
@@ -15,13 +15,17 @@ import toast from 'react-hot-toast';
 import useStore, { canFastTrackReview } from '../../store/useStore';
 import { getPeriodicReviewForUser, canPerformPeriodicReview } from '../../services/PeriodicReviewAccessService';
 import { getReviewStatusLabel, getReviewOutcomeLabel } from '../../services/PeriodicReviewService';
+import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 import DocumentDetailModal from '../../components/workflow/DocumentDetailModal';
 import ExternalDocDetailModal from '../ExternalDocs/ExternalDocDetailModal';
 
 const PeriodicReviewDetail = () => {
-  const { reviewId } = useParams();
+  const { reviewId, docCode } = useParams();
+  const [searchParams] = useSearchParams();
+  const taskId = searchParams.get('taskId');
   const navigate = useNavigate();
   const periodicReviewSchedules = useStore(state => state.periodicReviewSchedules);
+  const tasks = useStore(state => state.tasks);
   const documents = useStore(state => state.documents);
   const externalDocuments = useStore(state => state.externalDocuments);
   const dars = useStore(state => state.dars);
@@ -29,9 +33,23 @@ const PeriodicReviewDetail = () => {
   
   const allDocs = [...(documents || []), ...(externalDocuments || [])];
   const effectiveToday = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+
+  const paramId = reviewId || docCode;
+  const targetTask = taskId ? (tasks || []).find(t => t.id === taskId) : null;
+  const matchedSchedule = periodicReviewSchedules?.find(s => 
+    s.id === paramId ||
+    s.documentNumber === paramId ||
+    s.documentId === paramId ||
+    s.externalDocumentId === paramId ||
+    (targetTask && s.id === targetTask.scheduleId) ||
+    (targetTask && (s.documentNumber === targetTask.docCode || s.documentNumber === targetTask.documentNumber)) ||
+    (targetTask && (s.documentId === targetTask.docId || s.externalDocumentId === targetTask.docId))
+  );
+
+  const effectiveLookupId = matchedSchedule ? matchedSchedule.id : paramId;
   
   // Service-level detail security
-  const accessCheck = getPeriodicReviewForUser(reviewId, currentUser, periodicReviewSchedules, allDocs, effectiveToday);
+  const accessCheck = getPeriodicReviewForUser(effectiveLookupId, currentUser, periodicReviewSchedules, allDocs, effectiveToday);
   
   const [outcome, setOutcome] = useState('');
   const [comment, setComment] = useState('');
@@ -113,6 +131,19 @@ const PeriodicReviewDetail = () => {
       return;
     }
 
+    const standardizedReviewDetails = {
+      outcome,
+      reason: comment,
+      comment,
+      findings,
+      standard_clause: standards,
+      standards,
+      evidence_reference: references,
+      references,
+      additional_comment: additionalComments,
+      additionalComments
+    };
+
     const postSubmitNavigation = (navOutcome, linkStatus, newDraftId) => {
       if (linkStatus === 'FAILED') {
         toast.error('การบันทึกสำเร็จ แต่การเชื่อมโยง DAR ล้มเหลว');
@@ -131,6 +162,9 @@ const PeriodicReviewDetail = () => {
           handleLinkedAction('REVISION', newDraftId);
         } else if (navOutcome === 'OBSOLETE_REQUIRED') {
           handleLinkedAction('OBSOLETE', newDraftId);
+        } else if (taskId) {
+          toast.success('อัปเดตงานใน Task Inbox สำเร็จ');
+          navigate('/tasks');
         } else {
           navigate('/dcc/periodic-reviews');
         }
@@ -144,7 +178,16 @@ const PeriodicReviewDetail = () => {
     if (idempotencyKey) {
       if (schedule.linkedActionId && schedule.linkageStatus === 'SUCCESS') {
         // Already created, just re-submit core
-        submitPeriodicReview(schedule.id, outcome, comment, schedule.linkedActionId, 'SUCCESS', idempotencyKey);
+        submitPeriodicReview({
+          scheduleId: schedule.id,
+          outcome,
+          comment,
+          linkedActionId: schedule.linkedActionId,
+          linkageStatus: 'SUCCESS',
+          idempotencyKey,
+          taskId,
+          reviewDetails: standardizedReviewDetails
+        });
         postSubmitNavigation(outcome, 'SUCCESS', schedule.linkedActionId);
       } else {
         // Generate actual DAR
@@ -158,7 +201,14 @@ const PeriodicReviewDetail = () => {
         };
         const darAdapter = (payload) => useStore.getState().createOrGetLinkedDarDraft(schedule.id, outcome, payload);
         
-        useStore.getState().submitPeriodicReviewWithDarAction(schedule.id, outcome, comment, darPayload, darAdapter);
+        useStore.getState().submitPeriodicReviewWithDarAction(
+          schedule.id, 
+          outcome, 
+          comment, 
+          darPayload, 
+          darAdapter,
+          { taskId, reviewDetails: standardizedReviewDetails }
+        );
         
         // Check new status directly from store for accurate navigation
         const updatedSchedule = useStore.getState().periodicReviewSchedules.find(s => s.id === schedule.id);
@@ -172,13 +222,8 @@ const PeriodicReviewDetail = () => {
         isExternal: schedule.documentCategory === 'EXTERNAL',
         outcome,
         comment,
-        reviewDetails: {
-          comment,
-          findings,
-          standards,
-          references,
-          additionalComments
-        }
+        taskId,
+        reviewDetails: standardizedReviewDetails
       });
       postSubmitNavigation(outcome, null, null);
     }
@@ -217,10 +262,16 @@ const PeriodicReviewDetail = () => {
       <div className="mb-4">
         <button 
           type="button"
-          onClick={() => navigate('/dcc/periodic-reviews')}
+          onClick={() => {
+            if (taskId) {
+              navigate('/tasks');
+            } else {
+              navigate('/dcc/periodic-reviews');
+            }
+          }}
           className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors font-medium text-sm"
         >
-          <ArrowLeft size={16} /> กลับสู่ภาพรวมการทบทวน
+          <ArrowLeft size={16} /> {taskId ? 'กลับสู่กล่องงาน (Task Inbox)' : 'กลับสู่ภาพรวมการทบทวน'}
         </button>
       </div>
 
@@ -273,14 +324,14 @@ const PeriodicReviewDetail = () => {
                 </div>
                 <div className="bg-slate-50/70 p-2 rounded-lg border border-slate-100">
                   <span className="text-slate-400 block text-[11px] mb-0.5">วันที่มีผลบังคับใช้</span>
-                  <span className="font-semibold text-slate-800">{schedule.originalReviewAnchorDate || targetDoc?.effectiveDate || '-'}</span>
+                  <span className="font-semibold text-slate-800">{formatQmsDisplayDate(schedule.originalReviewAnchorDate || targetDoc?.effectiveDate)}</span>
                 </div>
               </div>
 
               <div className="mt-2.5 p-2.5 bg-sky-50/60 rounded-lg border border-sky-100 flex items-center justify-between">
                 <span className="text-xs text-slate-600 font-medium">วันที่ครบกำหนดรอบนี้</span>
-                <span className="font-bold text-sm text-sky-600">
-                  {schedule.nextReviewDate || '-'}
+                <span className="font-bold text-sm text-sky-600 font-mono">
+                  {formatQmsDisplayDate(schedule.nextReviewDate)}
                 </span>
               </div>
             </div>
@@ -449,7 +500,7 @@ const PeriodicReviewDetail = () => {
                     rows={2} 
                     value={standards}
                     onChange={(e) => setStandards(e.target.value)}
-                    placeholder="เช่น ISO 9001:2015 ข้อ 7.5.3..."
+                    placeholder="เช่น ISO 9001, มอก., หรือระเบียบปฏิบัติ..."
                     disabled={!canPerform}
                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none"
                   />

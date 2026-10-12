@@ -118,6 +118,33 @@ export const formatThaiReadableDate = (timestamp, includeTime = false) => {
 };
 
 /**
+ * Standardize display date with international CE year (e.g. "9 ต.ค. 2028" or "2028-10-09")
+ * Avoids confusion between Buddhist Era (2571) and CE (2028).
+ *
+ * @param {Date|string|number} timestamp
+ * @param {boolean} [isoFormat=false]
+ * @returns {string}
+ */
+export const formatQmsDisplayDate = (timestamp, isoFormat = false) => {
+  if (!timestamp || timestamp === '-') return '-';
+  try {
+    const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (isNaN(d.getTime())) return String(timestamp);
+    const day = d.getDate();
+    const month = d.getMonth();
+    const year = d.getFullYear();
+    if (isoFormat) {
+      const monthPad = String(month + 1).padStart(2, '0');
+      const dayPad = String(day).padStart(2, '0');
+      return `${year}-${monthPad}-${dayPad}`;
+    }
+    return `${day} ${THAI_MONTHS_SHORT[month]} ${year}`;
+  } catch {
+    return String(timestamp);
+  }
+};
+
+/**
  * Format date/time to Thailand local time (Asia/Bangkok - GMT+7) in YYYY-MM-DD HH:mm format
  * @param {Date|string|number} [dateInput=new Date()]
  * @returns {string} e.g. "2026-08-24 10:58"

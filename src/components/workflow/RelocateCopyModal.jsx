@@ -99,7 +99,7 @@ const RelocateCopyModal = ({ isOpen, onClose, copy }) => {
                 </div>
                 <div>
                   <h2 className="text-white font-semibold text-base leading-tight">ขอย้ายจุดติดตั้งสำเนาควบคุม</h2>
-                  <p className="text-sky-200 text-xs mt-0.5">ISO 9001 Cl. 7.5.3 – Custody Workflow</p>
+                  <p className="text-sky-200 text-xs mt-0.5">Custody Workflow</p>
                 </div>
               </div>
               <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-white/15 transition-colors" aria-label="ปิด">

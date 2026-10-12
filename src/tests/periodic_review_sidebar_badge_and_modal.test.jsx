@@ -127,7 +127,7 @@ describe('Periodic Review Sidebar Badge & Management Modal Integration', () => {
     expect(badge).toHaveTextContent('2');
   });
 
-  it('3. PeriodicReviewDashboard displays managedDepartments (QC) records in metrics and "ต้องดำเนินการ" tab', () => {
+  it('3. PeriodicReviewDashboard displays managedDepartments (QC) records in metrics and workspace table', () => {
     render(
       <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
         <PeriodicReviewDashboard />
@@ -137,42 +137,36 @@ describe('Periodic Review Sidebar Badge & Management Modal Integration', () => {
     // QC document is visible because user has managedDepartments: ['QC']
     expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
 
-    // "งานที่ต้องดำเนินการ" metric card includes the overdue QC document
-    const actionCardValue = screen.getByText('งานที่ต้องดำเนินการ').parentElement.querySelector('h3.text-3xl');
-    expect(actionCardValue).toHaveTextContent('2');
+    // "ใกล้ครบกำหนดใน 30 วัน" metric card shows 0 (eliminates double counting of overdue document)
+    const dueSoonCardValue = screen.getByText('ครบกำหนดภายใน 30 วันข้างหน้า', { exact: false }).closest('.card-surface').querySelector('h3.text-3xl');
+    expect(dueSoonCardValue).toHaveTextContent('0');
 
     // "เกินกำหนด" card has 1
-    const overdueCardValue = screen.getAllByText('เกินกำหนด')[0].parentElement.querySelector('h3.text-3xl');
+    const overdueCardValue = screen.getAllByText('เกินกำหนด')[0].closest('.card-surface').querySelector('h3.text-3xl');
     expect(overdueCardValue).toHaveTextContent('1');
   });
 
-  it('4. Clicking "จัดการทบทวน (Internal/External)" button opens PeriodicReviewManageModal and allows switching tabs', () => {
+  it('4. Unified workspace switches between Internal and External tabs directly without modal and displays action buttons', () => {
     render(
       <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
         <PeriodicReviewDashboard />
       </MemoryRouter>
     );
 
-    // Find and click the manage button
-    const manageBtn = screen.getByRole('button', { name: /จัดการทบทวน \(Internal\/External\)/i });
-    expect(manageBtn).toBeInTheDocument();
-    fireEvent.click(manageBtn);
+    // Old duplicate modal button does NOT exist
+    expect(screen.queryByRole('button', { name: /จัดการทบทวน \(Internal\/External\)/i })).not.toBeInTheDocument();
 
-    // Modal opens
-    expect(screen.getByText('จัดการทบทวนเอกสารตามรอบ (Internal / External)')).toBeInTheDocument();
-    expect(screen.getAllByText('WI-QC-01').length).toBeGreaterThan(0);
+    // In Internal tab by default: WI-QC-01 is visible with action buttons
+    expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /บันทึกผล/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /ประวัติ/i }).length).toBeGreaterThan(0);
 
-    // Switch to External tab
+    // Switch to External tab directly in the workspace
     const extTabBtn = screen.getByRole('button', { name: /เอกสารภายนอก \(External\)/i });
     fireEvent.click(extTabBtn);
 
-    // External document shows up
-    expect(screen.getAllByText('ED-ISO-9001').length).toBeGreaterThan(0);
-
-    // Close button works
-    const closeBtn = screen.getByRole('button', { name: /ปิดหน้าต่าง/i });
-    fireEvent.click(closeBtn);
-
-    expect(screen.queryByText('จัดการทบทวนเอกสารตามรอบ (Internal / External)')).not.toBeInTheDocument();
+    // External document shows up directly in table with action buttons
+    expect(screen.getByText('ED-ISO-9001')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /บันทึกผล/i }).length).toBeGreaterThan(0);
   });
 });

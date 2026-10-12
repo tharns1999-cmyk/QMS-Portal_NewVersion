@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { Routes, Route } from 'react-router-dom';
 import useStore from '../store/useStore';
 import PeriodicReviewDetail from '../pages/PeriodicReviews/PeriodicReviewDetail';
+import { formatQmsDisplayDate } from '../utils/dateFormatter';
 import { renderWithRouter, setTestUser } from './test_utils';
 import { TEST_PERSONAS } from './fixtures/dccTestUsers';
 
@@ -81,9 +82,9 @@ describe('PeriodicReviewDetail - Two-Column Layout & Compact UI', () => {
     expect(screen.getByText('ผู้รับผิดชอบ / เจ้าของ')).toBeInTheDocument();
     expect(screen.getByText('U005')).toBeInTheDocument();
     expect(screen.getByText('วันที่มีผลบังคับใช้')).toBeInTheDocument();
-    expect(screen.getByText('2025-01-15')).toBeInTheDocument();
+    expect(screen.getByText(formatQmsDisplayDate('2025-01-15'))).toBeInTheDocument();
     expect(screen.getByText('วันที่ครบกำหนดรอบนี้')).toBeInTheDocument();
-    expect(screen.getByText('2027-01-15')).toBeInTheDocument();
+    expect(screen.getByText(formatQmsDisplayDate('2027-01-15'))).toBeInTheDocument();
 
     // Quick Action Bar
     expect(screen.getByRole('button', { name: /เปิดดูไฟล์เอกสาร/i })).toBeInTheDocument();

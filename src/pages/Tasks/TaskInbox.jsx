@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import ExternalDocActionModal from './ExternalDocActionModal';
-import PeriodicReviewActionModal from './PeriodicReviewActionModal';
 import PeriodicReviewApprovalModal from './PeriodicReviewApprovalModal';
 import ExternalDocFormModal from '../ExternalDocs/ExternalDocFormModal';
 import TaskConfirmHardcopyReceiptModal from '../../components/workflow/TaskConfirmHardcopyReceiptModal';
@@ -592,6 +591,14 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
       actionLabel: 'พิจารณาอนุมัติผลทบทวน',
       icon: <ShieldCheck size={13} className="text-indigo-600" />,
       badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    };
+  }
+  if (normType === 'PERIODIC_REVIEW' || task?.type === 'PERIODIC_REVIEW' || task?.taskType === 'PERIODIC_REVIEW' || normType === 'EXTERNAL_VERIFICATION') {
+    return {
+      label: 'ทบทวนเอกสารตามรอบ',
+      actionLabel: 'จัดการงาน',
+      icon: <RotateCcw size={13} className="text-sky-600" />,
+      badgeClass: 'bg-sky-50 text-sky-700 border-sky-200'
     };
   }
   if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'EXTERNAL_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
@@ -1183,7 +1190,7 @@ const TaskInbox = () => {
       return;
     }
 
-    // ISO 9001 Cl. 7.5.3 – Custody workflow tasks → open DCC physical verification modal
+    // Custody workflow tasks → open DCC physical verification modal
     if (normType === 'DCC_RELOCATE' || normType === 'DCC_RETURN') {
       setSelectedCustodyTask(task);
       return;
@@ -1195,15 +1202,17 @@ const TaskInbox = () => {
       return;
     }
 
-    // 🛡️ Periodic Review (Internal) & Verification (External) workflow tasks
+    // 🛡️ Periodic Review (Internal) & Verification (External) workflow tasks → navigate to full form
     if (
       normType === 'PERIODIC_REVIEW' || 
       normType === 'EXTERNAL_VERIFICATION' || 
+      task.type === 'PERIODIC_REVIEW' || 
       task.taskType === 'PERIODIC_REVIEW' || 
       task.taskType === 'EXTERNAL_VERIFICATION' ||
       Boolean(task.scheduleId)
     ) {
-      setSelectedPeriodicReviewTask(task);
+      const docCode = task.document_code || task.doc_code || task.docCode || task.documentNumber || task.scheduleId || task.id;
+      navigate(`/periodic-review/record/${encodeURIComponent(docCode)}?taskId=${encodeURIComponent(task.id)}`);
       return;
     }
 
@@ -1690,14 +1699,6 @@ const TaskInbox = () => {
             isOpen={!!selectedCustodyTask}
             onClose={() => setSelectedCustodyTask(null)}
             task={selectedCustodyTask}
-          />
-        )}
-        {selectedPeriodicReviewTask && (
-          <PeriodicReviewActionModal
-            isOpen={!!selectedPeriodicReviewTask}
-            onClose={() => setSelectedPeriodicReviewTask(null)}
-            task={selectedPeriodicReviewTask}
-            onSuccess={() => setSelectedPeriodicReviewTask(null)}
           />
         )}
         {selectedPeriodicReviewApprovalTask && (

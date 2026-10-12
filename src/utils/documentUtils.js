@@ -329,6 +329,68 @@ export function evaluateDocumentReviewStatus(nextReviewDate, referenceDate = new
   return 'UP_TO_DATE';                      // ปกติ (เขียว)
 }
 
+/**
+ * Calculates mutually exclusive (MECE) periodic review metrics for documents or review records.
+ * Eliminates double-counting of overdue documents in the due-soon bucket.
+ *
+ * @param {Array} docs - List of documents or review schedule records
+ * @param {Date|string} [referenceDate=new Date()] - Reference date (effective today)
+ * @returns {{ total: number, dueSoon: number, overdue: number, completed: number, upToDate: number, actionRequired: number }}
+ */
+export function getDocumentReviewMetrics(docs = [], referenceDate = new Date()) {
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+
+  let total = docs.length;
+  let dueSoon = 0;
+  let overdue = 0;
+  let completed = 0;
+  let upToDate = 0;
+
+  docs.forEach(doc => {
+    if (!doc) return;
+
+    // หากทบทวนแล้วเสร็จในรอบปัจจุบัน
+    if (doc.is_reviewed_this_cycle || doc.review_status === 'COMPLETED' || doc.status === 'COMPLETED') {
+      completed++;
+      return;
+    }
+
+    const reviewDate = doc.next_review_date || doc.nextReviewDate || doc.currentScheduledReviewDate;
+    if (!reviewDate) {
+      if (doc.status === 'OVERDUE') {
+        overdue++;
+      } else if (doc.status === 'DUE_SOON' || doc.status === 'DUE') {
+        dueSoon++;
+      } else {
+        upToDate++;
+      }
+      return;
+    }
+
+    const target = new Date(reviewDate);
+    if (isNaN(target.getTime())) {
+      upToDate++;
+      return;
+    }
+
+    target.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    // แยกเงื่อนไขเด็ดขาด ไม่ให้ทับซ้อนกัน:
+    if (diffDays < 0) {
+      overdue++; // เกินกำหนด (ติดลบ)
+    } else if (diffDays <= 30) {
+      dueSoon++; // ใกล้ครบกำหนด (0 ถึง 30 วัน)
+    } else {
+      upToDate++; // ยังไม่ถึงกำหนด (> 30 วัน)
+    }
+  });
+
+  return { total, dueSoon, overdue, completed, upToDate, actionRequired: dueSoon + overdue };
+}
+
+
 
 
 

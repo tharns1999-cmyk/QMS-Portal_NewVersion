@@ -97,9 +97,10 @@ export const canPerformPeriodicReview = (user, review, document) => {
   const ownerUserId = review?.ownerUserId || document?.ownerId || review?.assignedToUserId;
   if (user.id === ownerUserId || user.empId === ownerUserId) return true;
 
-  // 2. Is Member of Owner Department (Staff or Manager can perform and submit review)
+  // 2. Is Member of Owner Department with sufficient authority (Manager / Level >= 4)
   const ownerDept = resolveReviewOwnerDepartmentId(review, review, document);
-  if (isMemberOfOwnerDepartment(user, ownerDept)) {
+  const positionLevel = getPositionLevelForDepartment(user, ownerDept);
+  if (positionLevel >= 4) {
     return true;
   }
 
@@ -192,7 +193,12 @@ export const getVisiblePeriodicReviews = (user, schedules, documents, currentDat
 };
 
 export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules, documents, currentDate = new Date()) => {
-  const schedule = periodicReviewSchedules?.find(s => s.id === reviewId);
+  const schedule = periodicReviewSchedules?.find(s => 
+    s.id === reviewId || 
+    s.documentNumber === reviewId || 
+    s.documentId === reviewId || 
+    s.externalDocumentId === reviewId
+  );
   if (!schedule) return { status: 'NOT_FOUND' };
   
   const doc = documents?.find(d => d.id === schedule.documentId || d.id === schedule.externalDocumentId);

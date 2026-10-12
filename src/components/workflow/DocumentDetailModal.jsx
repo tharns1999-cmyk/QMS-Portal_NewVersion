@@ -46,6 +46,7 @@ import {
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import { generateQmsDownloadName } from '../../utils/documentNamingHelper';
 import { resolveFullDocumentHistory } from '../Documents/DocumentHistoryTab';
+import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 import toast from 'react-hot-toast';
 
 export { resolveFullDocumentHistory };
@@ -2705,11 +2706,7 @@ const DocumentDetailModal = ({
                 };
 
                 const formatDate = (dateStr) => {
-                  if (!dateStr) return '-';
-                  try {
-                    const d = new Date(dateStr);
-                    return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
-                  } catch { return dateStr; }
+                  return formatQmsDisplayDate(dateStr);
                 };
 
                 // Review urgency indicator
