@@ -362,5 +362,87 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(doc.periodic_reviews[0].approver_name).toBe(mockHodUser.name);
     });
   });
+
+  describe('5. L4 Supervisor vs L5+ HOD Authority Enforcements', () => {
+    const mockBeamL4 = {
+      id: 'U005',
+      name: 'บีม',
+      role: 'DEPT_ADMIN',
+      position: 'QAQC Supervisor',
+      level: 4,
+      approval_level: 4,
+      department: 'QC',
+      primary_department: 'QC',
+      depts: ['QC']
+    };
+
+    const mockKalyaneeL5 = {
+      id: 'U003',
+      name: 'กัลยาณี พลไกร',
+      role: 'DEPT_ADMIN',
+      position: 'Production Assistant Manager',
+      level: 5,
+      approval_level: 5,
+      department: 'PD',
+      depts: ['PD', 'QC'],
+      secondaryDepartments: ['QC']
+    };
+
+    it('evaluates Beam (L4 QAQC Supervisor) as strictly NOT eligible for Fast-Track', () => {
+      expect(canFastTrackReview(mockBeamL4, 'QC')).toBe(false);
+    });
+
+    it('evaluates Kalyanee (L5 Manager overseeing QC) as eligible for Fast-Track', () => {
+      expect(canFastTrackReview(mockKalyaneeL5, 'QC')).toBe(true);
+    });
+
+    it('creates PERIODIC_REVIEW_APPROVAL task with target_level: 5 when Beam submits review', () => {
+      const qcDoc = {
+        id: 'DOC-QC-001',
+        code: 'SOP-QC-001',
+        title: 'QC Test Standard',
+        department: 'QC',
+        next_review_date: '2026-10-15',
+        review_status: 'UPCOMING'
+      };
+      const qcSchedule = {
+        id: 'SCH-QC-001',
+        documentId: 'DOC-QC-001',
+        documentNumber: 'SOP-QC-001',
+        documentName: 'QC Test Standard',
+        ownerDepartmentId: 'QC',
+        status: 'ACTION_REQUIRED',
+        nextReviewDate: '2026-10-15',
+        cycleYears: 1
+      };
+      useStore.setState({
+        documents: [qcDoc],
+        periodicReviewSchedules: [qcSchedule],
+        tasks: [],
+        currentUser: mockBeamL4
+      });
+
+      const result = useStore.getState().submitPeriodicReview({
+        scheduleId: 'SCH-QC-001',
+        outcome: 'NO_CHANGE',
+        comment: 'ทบทวนแล้วถูกต้องตาม SOP',
+        reviewDetails: { reason: 'ทบทวนแล้วถูกต้องตาม SOP' }
+      });
+
+      expect(result.status).toBe('PENDING_APPROVAL');
+      expect(result.fastTrack).toBe(false);
+
+      const approvalTask = useStore.getState().tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+      expect(approvalTask).toBeDefined();
+      expect(approvalTask.target_level).toBe(5);
+      expect(approvalTask.target_role).toBe('HOD');
+      expect(approvalTask.department).toBe('QC');
+
+      // Task is NOT visible to Beam L4
+      expect(isActionableTask(approvalTask, mockBeamL4)).toBe(false);
+      // Task IS visible to Kalyanee L5
+      expect(isActionableTask(approvalTask, mockKalyaneeL5)).toBe(true);
+    });
+  });
 });
 

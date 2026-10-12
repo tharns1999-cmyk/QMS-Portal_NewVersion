@@ -189,21 +189,37 @@ export const syncObsoleteCompleted = (dar, storeGet, storeSet) => {
   if (dar.status !== 'COMPLETED') return;
 
   storeSet(state => {
-    let schedules = state.periodicReviewSchedules.map(s => {
+    const schedules = state.periodicReviewSchedules.map(s => {
       if (s.id === dar.sourceId) {
-        return { ...s, linkageStatus: 'COMPLETED' };
+        return { ...s, linkageStatus: 'COMPLETED', status: 'COMPLETED', isActive: false };
       }
-      return s;
-    });
-    
-    schedules = schedules.map(s => {
-      if (s.documentId === dar.targetDocumentId && s.id !== dar.sourceId && 
+      if (s.documentId === dar.targetDocumentId &&
           ['PENDING', 'UPCOMING', 'NOT_YET_DUE', 'ACTION_REQUIRED'].includes(s.status)) {
         return { ...s, status: 'CANCELLED', isActive: false };
       }
       return s;
     });
+
+    const documents = state.documents ? state.documents.map(d => {
+      const isMatch = d.id === dar.targetDocumentId || 
+        d.doc_code === dar.targetDocumentId || 
+        d.document_code === dar.targetDocumentId || 
+        (dar.docNo && (d.doc_code === dar.docNo || d.code === dar.docNo || d.title === dar.docNo));
+      if (isMatch) {
+        return {
+          ...d,
+          status: 'OBSOLETE',
+          is_active: false,
+          is_obsolete: true,
+          periodic_reviews: d.periodic_reviews || []
+        };
+      }
+      return d;
+    }) : undefined;
     
-    return { periodicReviewSchedules: schedules };
+    return { 
+      periodicReviewSchedules: schedules,
+      ...(documents ? { documents } : {})
+    };
   });
 };

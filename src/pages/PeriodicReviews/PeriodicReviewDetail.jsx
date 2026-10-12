@@ -6,10 +6,13 @@ import {
   CheckCircle, 
   AlertTriangle, 
   ShieldAlert,
+  ShieldCheck,
   FileEdit,
   Ban,
   Eye,
-  History
+  History,
+  Send,
+  Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useStore, { canFastTrackReview } from '../../store/useStore';
@@ -152,7 +155,7 @@ const PeriodicReviewDetail = () => {
           if (isFastTrack) {
             toast.success('อนุมัติผลการทบทวนเรียบร้อยแล้ว (Fast-Track ขยายรอบ 1 ปี)');
           } else {
-            toast.success('ส่งผลการทบทวนให้หัวหน้าแผนก (HOD) พิจารณาอนุมัติเรียบร้อยแล้ว');
+            toast.success('ส่งผลการทบทวนไปยังหัวหน้าแผนก (HOD) เรียบร้อยแล้ว');
           }
         } else {
           toast.success('บันทึกผลการทบทวนเรียบร้อยแล้ว');
@@ -307,52 +310,49 @@ const PeriodicReviewDetail = () => {
               </div>
             </div>
 
-            {/* Metadata Table / Grid */}
-            <div className="border-t border-slate-100 pt-3 mt-3">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <div className="bg-slate-50/70 p-2 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[11px] mb-0.5">ฉบับที่ (Revision)</span>
-                  <span className="font-semibold text-slate-800">{schedule.rev || targetDoc?.revision || targetDoc?.rev || '00'}</span>
-                </div>
-                <div className="bg-slate-50/70 p-2 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[11px] mb-0.5">แผนกเจ้าของ</span>
-                  <span className="font-semibold text-slate-800">{schedule.ownerDepartmentId || targetDoc?.department || '-'}</span>
-                </div>
-                <div className="bg-slate-50/70 p-2 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[11px] mb-0.5">ผู้รับผิดชอบ / เจ้าของ</span>
-                  <span className="font-semibold text-slate-800">{schedule.ownerUserId || targetDoc?.owner || '-'}</span>
-                </div>
-                <div className="bg-slate-50/70 p-2 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[11px] mb-0.5">วันที่มีผลบังคับใช้</span>
-                  <span className="font-semibold text-slate-800">{formatQmsDisplayDate(schedule.originalReviewAnchorDate || targetDoc?.effectiveDate)}</span>
-                </div>
+            {/* Metadata Table / Key-Value Rows */}
+            <div className="mt-4 pt-3 border-t border-slate-100 divide-y divide-slate-100 text-xs">
+              <div className="flex items-center justify-between py-2">
+                <span className="text-slate-500 font-medium">ฉบับที่ (Revision)</span>
+                <span className="font-semibold text-slate-800 font-mono">{schedule.rev || targetDoc?.revision || targetDoc?.rev || '00'}</span>
               </div>
-
-              <div className="mt-2.5 p-2.5 bg-sky-50/60 rounded-lg border border-sky-100 flex items-center justify-between">
-                <span className="text-xs text-slate-600 font-medium">วันที่ครบกำหนดรอบนี้</span>
-                <span className="font-bold text-sm text-sky-600 font-mono">
+              <div className="flex items-center justify-between py-2">
+                <span className="text-slate-500 font-medium">แผนกเจ้าของ</span>
+                <span className="font-semibold text-slate-800">{schedule.ownerDepartmentId || targetDoc?.department || '-'}</span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-slate-500 font-medium">ผู้รับผิดชอบ / เจ้าของ</span>
+                <span className="font-semibold text-slate-800">{schedule.ownerUserId || targetDoc?.owner || '-'}</span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-slate-500 font-medium">วันที่มีผลบังคับใช้</span>
+                <span className="font-semibold text-slate-800">{formatQmsDisplayDate(schedule.originalReviewAnchorDate || targetDoc?.effectiveDate)}</span>
+              </div>
+              <div className="flex items-center justify-between py-2.5 px-3 bg-sky-50/70 rounded-lg mt-2 border border-sky-100/80">
+                <span className="text-xs text-sky-900 font-medium">วันที่ครบกำหนดรอบนี้</span>
+                <span className="font-bold text-sm text-sky-700 font-mono">
                   {formatQmsDisplayDate(schedule.nextReviewDate)}
                 </span>
               </div>
             </div>
 
             {/* Quick Action Bar */}
-            <div className="border-t border-slate-100 pt-3 mt-3 flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={handleOpenDocModal}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200/80 transition-colors"
               >
                 <Eye size={14} className="text-slate-500" />
-                เปิดดูไฟล์เอกสาร
+                <span>เปิดดูไฟล์เอกสาร</span>
               </button>
               <button
                 type="button"
                 onClick={handleOpenDocModal}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200/80 transition-colors"
               >
                 <History size={14} className="text-slate-500" />
-                ดูประวัติย้อนหลัง
+                <span>ดูประวัติย้อนหลัง</span>
               </button>
             </div>
           </div>
@@ -401,170 +401,206 @@ const PeriodicReviewDetail = () => {
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
-              <h2 className="text-base font-bold text-slate-900 mb-4 border-b border-slate-100 pb-3">
-                แบบฟอร์มบันทึกผลการทบทวน
-              </h2>
-              
-              {/* 1. Outcome Radio Cards */}
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  ผลการทบทวน <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { 
-                      id: 'NO_CHANGE', 
-                      label: 'ไม่มีการเปลี่ยนแปลง',
-                      icon: CheckCircle,
-                      activeStyle: 'border-emerald-500 bg-emerald-50/70 text-emerald-800 ring-2 ring-emerald-200 font-semibold shadow-2xs',
-                      inactiveStyle: 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 text-slate-700',
-                      activeIcon: 'text-emerald-600',
-                      inactiveIcon: 'text-emerald-500'
-                    },
-                    { 
-                      id: 'REVISION_REQUIRED', 
-                      label: 'ต้องแก้ไขเอกสาร',
-                      icon: FileEdit,
-                      activeStyle: 'border-amber-500 bg-amber-50/70 text-amber-800 ring-2 ring-amber-200 font-semibold shadow-2xs',
-                      inactiveStyle: 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/30 text-slate-700',
-                      activeIcon: 'text-amber-600',
-                      inactiveIcon: 'text-amber-500'
-                    },
-                    { 
-                      id: 'OBSOLETE_REQUIRED', 
-                      label: 'ต้องยกเลิกเอกสาร',
-                      icon: Ban,
-                      activeStyle: 'border-rose-500 bg-rose-50/70 text-rose-800 ring-2 ring-rose-200 font-semibold shadow-2xs',
-                      inactiveStyle: 'border-slate-200 hover:border-rose-300 hover:bg-rose-50/30 text-slate-700',
-                      activeIcon: 'text-rose-600',
-                      inactiveIcon: 'text-rose-500'
-                    }
-                  ].map(opt => {
-                    const IconComponent = opt.icon;
-                    const isSelected = outcome === opt.id;
-                    return (
-                      <label 
-                        key={opt.id} 
-                        className={`flex flex-col items-center justify-center p-3 border rounded-xl cursor-pointer transition-all ${
-                          isSelected ? opt.activeStyle : opt.inactiveStyle
-                        } ${!canPerform ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      >
-                        <input 
-                          type="radio" 
-                          name="outcome" 
-                          value={opt.id} 
-                          checked={isSelected}
-                          className="sr-only"
-                          onChange={(e) => setOutcome(e.target.value)}
-                          disabled={!canPerform}
-                        />
-                        <IconComponent className={`w-5 h-5 mb-1.5 ${isSelected ? opt.activeIcon : opt.inactiveIcon}`} />
-                        <span className="text-xs font-medium leading-tight text-center">{opt.label}</span>
-                      </label>
-                    );
-                  })}
+              <div className="border-b border-slate-100 pb-3 mb-5">
+                <h2 className="text-base font-bold text-slate-900">
+                  แบบฟอร์มบันทึกผลการทบทวน
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  ระบุผลการพิจารณาความสอดคล้องของเอกสารและรายละเอียดประกอบ
+                </p>
+              </div>
+
+              {/* หมวดที่ 1: ผลและเหตุผลหลัก */}
+              <div className="space-y-4 mb-5">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      ผลการทบทวน <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-normal">เลือก 1 ข้อ</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { 
+                        id: 'NO_CHANGE', 
+                        label: 'ไม่มีการเปลี่ยนแปลง',
+                        icon: CheckCircle,
+                        activeStyle: 'border-2 border-emerald-500 bg-emerald-50/40 text-emerald-800 font-semibold shadow-xs',
+                        inactiveStyle: 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 text-slate-700',
+                        activeIcon: 'text-emerald-600',
+                        inactiveIcon: 'text-emerald-500'
+                      },
+                      { 
+                        id: 'REVISION_REQUIRED', 
+                        label: 'ต้องแก้ไขเอกสาร',
+                        icon: FileEdit,
+                        activeStyle: 'border-2 border-amber-500 bg-amber-50/40 text-amber-800 font-semibold shadow-xs',
+                        inactiveStyle: 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/30 text-slate-700',
+                        activeIcon: 'text-amber-600',
+                        inactiveIcon: 'text-amber-500'
+                      },
+                      { 
+                        id: 'OBSOLETE_REQUIRED', 
+                        label: 'ต้องยกเลิกเอกสาร',
+                        icon: Ban,
+                        activeStyle: 'border-2 border-rose-500 bg-rose-50/40 text-rose-800 font-semibold shadow-xs',
+                        inactiveStyle: 'border-slate-200 hover:border-rose-300 hover:bg-rose-50/30 text-slate-700',
+                        activeIcon: 'text-rose-600',
+                        inactiveIcon: 'text-rose-500'
+                      }
+                    ].map(opt => {
+                      const IconComponent = opt.icon;
+                      const isSelected = outcome === opt.id;
+                      return (
+                        <label 
+                          key={opt.id} 
+                          className={`flex flex-col items-center justify-center p-3 min-h-[72px] border rounded-xl cursor-pointer transition-all ${
+                            isSelected ? opt.activeStyle : opt.inactiveStyle
+                          } ${!canPerform ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        >
+                          <input 
+                            type="radio" 
+                            name="outcome" 
+                            value={opt.id} 
+                            checked={isSelected}
+                            className="sr-only"
+                            onChange={(e) => setOutcome(e.target.value)}
+                            disabled={!canPerform}
+                          />
+                          <IconComponent className={`w-5 h-5 mb-1.5 ${isSelected ? opt.activeIcon : opt.inactiveIcon}`} />
+                          <span className="text-xs font-medium leading-tight text-center">{opt.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Reason / Comment Textarea */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    เหตุผล / รายละเอียดการทบทวน <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea 
+                    rows={2} 
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว..."
+                    disabled={!canPerform}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none"
+                  />
                 </div>
               </div>
 
-              {/* 2. Reason / Comment Textarea */}
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  เหตุผล / รายละเอียดการทบทวน <span className="text-rose-500">*</span>
-                </label>
-                <textarea 
-                  rows={2} 
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว..."
-                  disabled={!canPerform}
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none"
-                />
-              </div>
+              {/* หมวดที่ 2: หลักฐานและรายละเอียดประกอบ (Audit Details Card) */}
+              <div className="p-3.5 bg-slate-50/60 rounded-xl border border-slate-100 space-y-3 mb-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">หลักฐานและรายละเอียดประกอบ</span>
+                  <span className="text-[11px] text-slate-400 font-normal">ไม่บังคับ (Optional)</span>
+                </div>
+                
+                {/* แถวที่ 1: ประเด็นที่พบ & มาตรฐานหรือข้อกำหนด */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">ประเด็นที่พบ</label>
+                    <textarea 
+                      rows={2} 
+                      value={findings}
+                      onChange={(e) => setFindings(e.target.value)}
+                      placeholder="ประเด็นหรือข้อสังเกตที่พบ..."
+                      disabled={!canPerform}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">มาตรฐานหรือข้อกำหนดที่ใช้พิจารณา</label>
+                    <textarea 
+                      rows={2} 
+                      value={standards}
+                      onChange={(e) => setStandards(e.target.value)}
+                      placeholder="เช่น ISO 9001, มอก., หรือระเบียบปฏิบัติ..."
+                      disabled={!canPerform}
+                      className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none bg-white"
+                    />
+                  </div>
+                </div>
 
-              {/* 3. Compact 2-Column Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ประเด็นที่พบ</label>
-                  <textarea 
-                    rows={2} 
-                    value={findings}
-                    onChange={(e) => setFindings(e.target.value)}
-                    placeholder="ประเด็นหรือข้อสังเกตที่พบ..."
-                    disabled={!canPerform}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">มาตรฐานหรือข้อกำหนดที่ใช้พิจารณา</label>
-                  <textarea 
-                    rows={2} 
-                    value={standards}
-                    onChange={(e) => setStandards(e.target.value)}
-                    placeholder="เช่น ISO 9001, มอก., หรือระเบียบปฏิบัติ..."
-                    disabled={!canPerform}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400 resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ข้อมูลหรือหลักฐานอ้างอิง</label>
-                  <input 
-                    type="text" 
-                    value={references}
-                    onChange={(e) => setReferences(e.target.value)}
-                    placeholder="เช่น รายงาน Internal Audit, CAR..."
-                    disabled={!canPerform}
-                    className="w-full h-9 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">ความคิดเห็นเพิ่มเติม</label>
-                  <input 
-                    type="text" 
-                    value={additionalComments}
-                    onChange={(e) => setAdditionalComments(e.target.value)}
-                    placeholder="ข้อเสนอแนะเพิ่มเติม..."
-                    disabled={!canPerform}
-                    className="w-full h-9 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm outline-none transition-all placeholder:text-slate-400"
-                  />
+                {/* แถวที่ 2: ข้อมูลหรือหลักฐานอ้างอิง & ความคิดเห็นเพิ่มเติม */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">ข้อมูลหรือหลักฐานอ้างอิง</label>
+                    <input 
+                      type="text" 
+                      value={references}
+                      onChange={(e) => setReferences(e.target.value)}
+                      placeholder="เช่น รายงาน Internal Audit, CAR..."
+                      disabled={!canPerform}
+                      className="w-full h-9 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-xs outline-none transition-all placeholder:text-slate-400 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">ความคิดเห็นเพิ่มเติม</label>
+                    <input 
+                      type="text" 
+                      value={additionalComments}
+                      onChange={(e) => setAdditionalComments(e.target.value)}
+                      placeholder="ข้อเสนอแนะเพิ่มเติม..."
+                      disabled={!canPerform}
+                      className="w-full h-9 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-xs outline-none transition-all placeholder:text-slate-400 bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* 4. Action Footer */}
               {canPerform ? (
-                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                  <div className="text-xs">
-                    {outcome === 'NO_CHANGE' && (
-                      isFastTrack ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                          ⚡ สิทธิ์ Fast-Track (Manager/HOD/DCC): ขยายรอบทบทวน 1 ปีทันทีโดยไม่ต้องส่งต่อ
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-indigo-700 font-semibold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
-                          📋 สิทธิ์ Staff: ผลทบทวนจะถูกส่งต่อไปยังหัวหน้าแผนก (HOD) เพื่อพิจารณาอนุมัติ
-                        </span>
-                      )
-                    )}
-                  </div>
+                <div className="mt-6 pt-4 border-t border-slate-100 space-y-4">
+                  {/* กล่องแจ้งเตือนสายการอนุมัติ: แสดงเต็มแถบพร้อมไอคอนเรียบร้อย */}
+                  {!isFastTrack ? (
+                    <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-sky-50/80 border border-sky-100 rounded-lg text-xs text-sky-800">
+                      <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0" />
+                      <span>
+                        <strong>สายการอนุมัติ 1 ระดับ:</strong> ผลการทบทวนนี้จะถูกส่งไปยังหัวหน้าแผนก <strong>({docDept} - HOD)</strong> เพื่อพิจารณาอนุมัติก่อนขยายรอบ
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-amber-50/80 border border-amber-100 rounded-lg text-xs text-amber-800">
+                      <Zap className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        <strong>สิทธิ์ Fast-Track (HOD/DCC):</strong> ผลการทบทวนจะได้รับการอนุมัติและขยายรอบ 1 ปีทันที
+                      </span>
+                    </div>
+                  )}
+
+                  {/* ปุ่มกดยกเลิกและยืนยัน จัดชิดขวา Balance สวยงาม */}
                   <div className="flex items-center justify-end gap-3">
                     <button 
                       type="button"
-                      onClick={() => navigate('/dcc/periodic-reviews')}
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium"
+                      onClick={() => {
+                        if (taskId) {
+                          navigate('/tasks');
+                        } else {
+                          navigate('/dcc/periodic-reviews');
+                        }
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                     >
                       ยกเลิก
                     </button>
                     <button 
                       type="button"
                       onClick={handleSubmit}
-                      className={`px-5 py-2 text-sm font-semibold rounded-lg shadow-sm transition-colors text-white ${
-                        outcome === 'NO_CHANGE' && !isFastTrack
-                          ? 'bg-indigo-600 hover:bg-indigo-700'
-                          : 'bg-sky-500 hover:bg-sky-600'
+                      className={`inline-flex items-center justify-center gap-2 px-5 py-2 h-10 text-sm font-medium text-white rounded-lg shadow-sm transition-all ${
+                        outcome === 'NO_CHANGE' && isFastTrack
+                          ? 'bg-amber-600 hover:bg-amber-700'
+                          : 'bg-sky-600 hover:bg-sky-700'
                       }`}
                     >
-                      {outcome === 'NO_CHANGE'
-                        ? (isFastTrack ? 'อนุมัติผลทบทวนทันที (Fast-Track)' : 'ส่งขออนุมัติผลทบทวน (ส่งต่อ HOD)')
-                        : 'บันทึกผลการทบทวน'}
+                      <Send className="w-4 h-4" />
+                      <span>
+                        {outcome === 'NO_CHANGE'
+                          ? (isFastTrack ? 'อนุมัติผลทบทวนทันที' : 'ส่งผลการทบทวนให้หัวหน้าแผนก')
+                          : 'บันทึกผลการทบทวน'}
+                      </span>
                     </button>
                   </div>
                 </div>

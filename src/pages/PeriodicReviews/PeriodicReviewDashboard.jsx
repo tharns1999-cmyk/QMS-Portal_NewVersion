@@ -22,6 +22,7 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 import { getDocumentReviewMetrics } from '../../utils/documentUtils';
+import { PeriodicReviewAuditCard } from '../../components/workflow/PeriodicReviewHistoryTab';
 
 const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick, active }) => (
   <div
@@ -80,13 +81,15 @@ const getStatusBadgeConfig = (status, hasActiveTask) => {
 const ReviewHistoryModal = ({ isOpen, onClose, record, doc, onNavigateRecord }) => {
   const reviewHistory = useMemo(() => {
     const list = [];
-    if (doc?.periodic_reviews && Array.isArray(doc.periodic_reviews)) {
+    if (doc?.periodic_reviews && Array.isArray(doc.periodic_reviews) && doc.periodic_reviews.length > 0) {
       list.push(...doc.periodic_reviews);
-    } else if (doc?.review_history && Array.isArray(doc.review_history)) {
+    } else if (doc?.review_history && Array.isArray(doc.review_history) && doc.review_history.length > 0) {
       list.push(...doc.review_history);
+    } else if (record?.reviewLogs && Array.isArray(record.reviewLogs)) {
+      list.push(...record.reviewLogs);
     }
     return list;
-  }, [doc]);
+  }, [doc, record]);
 
   if (!isOpen || !record) return null;
 
@@ -153,35 +156,7 @@ const ReviewHistoryModal = ({ isOpen, onClose, record, doc, onNavigateRecord }) 
             ) : (
               <div className="space-y-3">
                 {reviewHistory.map((item, idx) => (
-                  <div key={idx} className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">
-                        รอบที่ {item.review_round || idx + 1}: {item.review_type || 'ทบทวนประจำปี'}
-                      </span>
-                      <span className="text-slate-400 font-mono text-[11px]">
-                        {formatQmsDisplayDate(item.review_date || item.reviewedAt || item.date)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
-                        {item.outcome === 'CONFIRM_CONTINUE' || item.outcome === 'NO_CHANGE'
-                          ? '✅ ยืนยันใช้ต่อ (ไม่ต้องแก้ไข)'
-                          : item.outcome === 'REVISION_REQUIRED'
-                          ? '✏️ ขอแก้ไขเอกสาร (DAR)'
-                          : item.outcome === 'OBSOLETE_REQUIRED'
-                          ? '❌ ขอยกเลิกเอกสาร (DAR)'
-                          : item.outcome || 'เสร็จสิ้น'}
-                      </span>
-                      <span className="text-slate-500 text-[11px]">
-                        ผู้ทบทวน: {item.reviewer || item.reviewerName || '-'}
-                      </span>
-                    </div>
-                    {item.comment && (
-                      <p className="text-slate-600 bg-slate-50 p-2 rounded-lg text-xs leading-relaxed">
-                        {item.comment}
-                      </p>
-                    )}
-                  </div>
+                  <PeriodicReviewAuditCard key={item.id || idx} item={item} index={idx} />
                 ))}
               </div>
             )}

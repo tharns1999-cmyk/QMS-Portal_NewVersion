@@ -61,25 +61,44 @@ import {
 
 export const canFastTrackReview = (currentUser, docDepartment) => {
   if (!currentUser) return false;
-  const privilegedRoles = ['HOD', 'MANAGER', 'DCC', 'ADMIN', 'DC', 'SUPER_ADMIN', 'QMR', 'DEPT_ADMIN', 'APPROVER', 'DEPT_SUPERVISOR'];
+
+  // 1. ระดับสากล: DCC หรือ System Admin ทำ Fast-Track ได้เสมอ
+  const isDccOrAdmin = ['DCC', 'ADMIN', 'DC', 'SUPER_ADMIN'].includes(currentUser.role) || currentUser.is_dcc || currentUser.isDcc;
+  if (isDccOrAdmin) return true;
+
+  // 2. ตรวจสอบระดับ Level: ต้องเป็น L5 ขึ้นไปเท่านั้น (ตัด L4 Supervisor ออกเด็ดขาด)
   const userLevel = Number(
     currentUser.level || 
     currentUser.approval_level || 
     currentUser.departmentMemberships?.find(m => (m.departmentId === docDepartment || m.department === docDepartment) && m.isActive)?.positionLevel ||
-    currentUser.departmentMemberships?.[0]?.positionLevel || 
-    0
+    currentUser.departmentMemberships?.[0]?.positionLevel ||
+    (currentUser.role_level ? String(currentUser.role_level).replace(/\D/g, '') : 0)
   );
-  const hasPrivilegedRole = privilegedRoles.includes(currentUser.role) || 
-                            Boolean(currentUser.is_manager) || 
-                            Boolean(currentUser.isDeptHead) || 
-                            userLevel >= 4;
+
+  // ตัด L1 ถึง L4 (Staff, Officer, Supervisor) ออกจาก Fast-Track เด็ดขาด
+  const isSupervisorOrStaff = ['SUPERVISOR', 'DEPT_SUPERVISOR', 'STAFF', 'OFFICER'].includes(currentUser.role) || 
+                              String(currentUser.position || '').toLowerCase().includes('supervisor') ||
+                              String(currentUser.position || '').toLowerCase().includes('staff') ||
+                              String(currentUser.position || '').toLowerCase().includes('officer');
+  if (isSupervisorOrStaff && userLevel < 5) {
+    return false;
+  }
+
+  const isHodOrManager = userLevel >= 5 || 
+                         currentUser.role === 'HOD' || 
+                         currentUser.role === 'MANAGER' || 
+                         currentUser.is_hod === true ||
+                         currentUser.isDeptHead === true ||
+                         currentUser.is_manager === true;
+
+  // 3. ตรวจสอบขอบเขตแผนก: ต้องเป็น HOD/Manager ของแผนกเอกสารนั้น หรือดูแลข้ามแผนก ('*')
   const hasDeptScope = currentUser.managedDepartments?.includes('*') || 
                        currentUser.managedDepartments?.includes(docDepartment) ||
-                       currentUser.department === docDepartment ||
-                       currentUser.primary_department === docDepartment ||
-                       (currentUser.affiliated_departments && currentUser.affiliated_departments.includes(docDepartment)) ||
-                       (currentUser.depts && currentUser.depts.includes(docDepartment));
-  return Boolean(hasPrivilegedRole && hasDeptScope);
+                       userMatchesDepartment(currentUser, docDepartment) ||
+                       (isHodOrManager && (currentUser.department === docDepartment || currentUser.primary_department === docDepartment));
+
+  // ต้องเป็น L5+ และมีสิทธิ์ในแผนกนั้นเท่านั้น ถึงจะได้ Fast-Track
+  return Boolean(isHodOrManager && hasDeptScope);
 };
 
 export const getUserDepartments = (user) => {
@@ -172,7 +191,9 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
           superseded_at: now,
           supersededByRev: nextRevision,
           supersededByDar: dar.darNo || dar.darNumber || dar.id,
-          darRef: doc.darRef || doc.darId || dar.darNo || dar.darNumber || dar.id
+          superseded_by: `${targetDocCode} Rev.${nextRevision}`,
+          darRef: doc.darRef || doc.darId || dar.darNo || dar.darNumber || dar.id,
+          periodic_reviews: doc.periodic_reviews || []
         };
       }
       if (isMatchCode) {
@@ -204,10 +225,12 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
     );
 
     const effectiveDateStr = dar.effectiveDate || dar.effective_date || now.split('T')[0];
+    const cycleYears = dar.review_cycle_years || oldDoc?.review_cycle_years || getReviewCycleYears(dar.documentType || dar.docType || dar.type || targetDocCode?.split('-')[0]);
 
     const newDocumentRecord = {
       id: `DOC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       darId: dar.id,
+      origin_dar_id: dar.id,
       darNumber: dar.darNumber || dar.darNo || dar.id,
       latestDarNo: dar.darNo || dar.darNumber || dar.id,
       docNo: dar.docNo || targetDocCode,
@@ -240,11 +263,11 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
       controlledCopy: isFormDoc ? 0 : (oldDoc?.controlledCopy || 0),
       distributions: isFormDoc ? [] : (dar.distributions && dar.distributions.length > 0 ? dar.distributions : (oldDoc?.distributions || [])),
       pdfUrl: dar.pdfUrl || dar.fileUrl || '/mock.pdf',
-      review_cycle_years: dar.review_cycle_years || oldDoc?.review_cycle_years || getReviewCycleYears(dar.documentType || dar.docType || dar.type || targetDocCode?.split('-')[0]),
+      review_cycle_years: cycleYears,
       last_reviewed_at: now,
-      next_review_date: addYears(effectiveDateStr, dar.review_cycle_years || oldDoc?.review_cycle_years || getReviewCycleYears(dar.documentType || dar.docType || dar.type || targetDocCode?.split('-')[0])),
+      next_review_date: addYears(effectiveDateStr, cycleYears),
       review_status: 'UP_TO_DATE',
-      periodic_reviews: oldDoc?.periodic_reviews || [],
+      periodic_reviews: [], // เริ่มนับประวัติรอบใหม่สำหรับเวอร์ชันใหม่
       published_at: now,
       updatedAt: now,
       createdAt: now
@@ -260,6 +283,27 @@ export const syncCompletedDarToMasterDocuments = (dar, currentDocs = []) => {
     } else {
       updatedMasterDocs.unshift(newDocumentRecord);
     }
+  } else if (darType === 'OBSOLETE' || darType === 'CANCEL' || darType === 'OBSOLETE_DOCUMENT') {
+    updatedMasterDocs = updatedMasterDocs.map(doc => {
+      const code = doc.docNo || doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.title;
+      const isMatchCode = code && code.trim().toLowerCase() === targetDocCode.trim().toLowerCase();
+      if (isMatchCode) {
+        return {
+          ...doc,
+          status: 'OBSOLETE',
+          is_active: false,
+          is_obsolete: true,
+          isLocked: false,
+          hasPendingDar: false,
+          obsoleteAt: now,
+          obsolete_at: now,
+          obsoleteDarRef: dar.darNo || dar.darNumber || dar.id,
+          obsoleteReason: dar.reason || dar.obsolete_reason || dar.remarks || dar.description || '-',
+          periodic_reviews: doc.periodic_reviews || []
+        };
+      }
+      return doc;
+    });
   }
 
   return updatedMasterDocs;
@@ -2562,14 +2606,12 @@ const useStore = create(persist((set, get) => ({
           schedule.dueState = 'NOT_YET_DUE';
 
           const periodicReviewAuditEntry = {
+            id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            round: 1,
             review_round: 1,
+            reviewed_at: new Date().toISOString(),
             reviewed_date: now,
-            reviewer_name: activeUser?.name || 'Reviewer',
-            reviewer_role: activeUser?.role || 'Staff',
-            approver_name: activeUser?.name || 'HOD',
-            approver_role: activeUser?.role || 'HOD',
-            approved_at: new Date().toISOString(),
-            result: 'NO_CHANGE',
+            result: outcome === 'CONFIRM_CONTINUE' ? 'NO_CHANGE' : (outcome || 'NO_CHANGE'),
             outcome: outcome || 'NO_CHANGE',
             reason: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
             findings: reviewDetails?.findings || '-',
@@ -2578,7 +2620,20 @@ const useStore = create(persist((set, get) => ({
             evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '-',
             additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '-',
             remarks: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
-            next_review_due: nextDate
+            next_review_due: nextDate,
+            
+            // ผู้ทบทวน (Reviewer)
+            reviewer_id: activeUser?.id || null,
+            reviewer_name: activeUser?.name || 'Reviewer',
+            reviewer_role: activeUser?.role || 'Staff',
+            
+            // ผู้อนุมัติ (Approver - 1 Level Fast-Track)
+            approver_id: activeUser?.id || null,
+            approver_name: activeUser?.name || 'HOD',
+            approver_role: activeUser?.role || 'HOD',
+            approved_at: new Date().toISOString(),
+            approval_status: 'APPROVED',
+            approval_remarks: reviewDetails?.approval_remarks || '-'
           };
 
           const historyEntry = {
@@ -2706,6 +2761,7 @@ const useStore = create(persist((set, get) => ({
             revision: schedule.rev || '00',
             department: docDept,
             target_role: 'HOD',
+            target_level: 5,
             assignee_department: docDept,
             status: 'PENDING',
             payload: pendingReviewPayload,
@@ -2760,6 +2816,98 @@ const useStore = create(persist((set, get) => ({
               date: new Date().toISOString()
             }, ...(state.actionLog || [])]
           };
+        }
+      }
+
+      if (requiresLinkedAction) {
+        const isFastTrack = canFastTrackReview(activeUser, docDept);
+        const linkedAuditEntry = {
+          id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          round: 1,
+          review_round: 1,
+          reviewed_at: new Date().toISOString(),
+          reviewed_date: now,
+          result: outcome === 'REVISION_REQUIRED' ? 'REVISE' : (outcome === 'OBSOLETE_REQUIRED' ? 'OBSOLETE' : outcome),
+          outcome: outcome,
+          reason: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
+          findings: reviewDetails?.findings || '-',
+          standard_clause: reviewDetails?.standard_clause || reviewDetails?.standards || reviewDetails?.check_source || '-',
+          check_source: reviewDetails?.standard_clause || reviewDetails?.standards || reviewDetails?.check_source || '-',
+          evidence_reference: reviewDetails?.evidence_reference || reviewDetails?.references || '-',
+          additional_comment: reviewDetails?.additional_comment || reviewDetails?.additionalComments || '-',
+          remarks: reviewDetails?.reason || reviewDetails?.remarks || reviewDetails?.comment || comment || '-',
+          linkedActionId: linkedActionId || null,
+
+          // ผู้ทบทวน (Reviewer)
+          reviewer_id: activeUser?.id || null,
+          reviewer_name: activeUser?.name || 'Reviewer',
+          reviewer_role: activeUser?.role || 'Staff',
+
+          // ผู้อนุมัติ (Approver - 1 Level)
+          approver_id: isFastTrack ? activeUser?.id : null,
+          approver_name: isFastTrack ? activeUser?.name : null,
+          approver_role: isFastTrack ? activeUser?.role : null,
+          approved_at: isFastTrack ? new Date().toISOString() : null,
+          approval_status: isFastTrack ? 'APPROVED' : 'PENDING_APPROVAL',
+          approval_remarks: reviewDetails?.approval_remarks || '-'
+        };
+
+        if (schedule.documentCategory !== 'EXTERNAL' && state.documents) {
+          const docIdx = state.documents.findIndex(d => 
+            (schedule.documentId && d.id === schedule.documentId) || 
+            (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber || d.code === schedule.documentNumber))
+          );
+          if (docIdx !== -1) {
+            const doc = { ...state.documents[docIdx] };
+            linkedAuditEntry.round = (doc.periodic_reviews?.length || 0) + 1;
+            linkedAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+            doc.last_reviewed_at = now;
+            doc.review_status = outcome === 'OBSOLETE_REQUIRED' ? 'OBSOLETE_PENDING' : 'REVISION_PENDING';
+            doc.periodic_reviews = [...(doc.periodic_reviews || []), linkedAuditEntry];
+            doc.review_history = [...(doc.review_history || []), {
+              id: `PRR-${Date.now()}`,
+              reviewer: activeUser?.name || '-',
+              reviewerId: activeUser?.id || null,
+              reviewerRole: activeUser?.role || 'Staff',
+              approver: isFastTrack ? activeUser?.name : null,
+              approverRole: isFastTrack ? activeUser?.role : null,
+              reviewDate: now,
+              comment: comment || '',
+              reason: reviewDetails?.reason || comment || '',
+              outcome: outcome,
+              linkedActionId: linkedActionId || null
+            }];
+            updatedDocs = [...state.documents];
+            updatedDocs[docIdx] = doc;
+          }
+        } else if (schedule.documentCategory === 'EXTERNAL' && state.externalDocuments) {
+          const docIdx = state.externalDocuments.findIndex(d => 
+            (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+            (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber || d.code === schedule.documentNumber))
+          );
+          if (docIdx !== -1) {
+            const doc = { ...state.externalDocuments[docIdx] };
+            linkedAuditEntry.round = (doc.periodic_reviews?.length || 0) + 1;
+            linkedAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
+            doc.last_reviewed_at = now;
+            doc.review_status = outcome === 'OBSOLETE_REQUIRED' ? 'OBSOLETE_PENDING' : 'REVISION_PENDING';
+            doc.periodic_reviews = [...(doc.periodic_reviews || []), linkedAuditEntry];
+            doc.review_history = [...(doc.review_history || []), {
+              id: `PRR-${Date.now()}`,
+              reviewer: activeUser?.name || '-',
+              reviewerId: activeUser?.id || null,
+              reviewerRole: activeUser?.role || 'Staff',
+              approver: isFastTrack ? activeUser?.name : null,
+              approverRole: isFastTrack ? activeUser?.role : null,
+              reviewDate: now,
+              comment: comment || '',
+              reason: reviewDetails?.reason || comment || '',
+              outcome: outcome,
+              linkedActionId: linkedActionId || null
+            }];
+            updatedExtDocs = [...state.externalDocuments];
+            updatedExtDocs[docIdx] = doc;
+          }
         }
       }
 
@@ -2916,11 +3064,16 @@ const useStore = create(persist((set, get) => ({
       previousNextReviewDate: schedule.nextReviewDate || null,
     };
 
-    if (outcome === 'CONFIRM_CONTINUE' || outcome === 'NO_CHANGE') {
+    const isNoChange = outcome === 'CONFIRM_CONTINUE' || outcome === 'NO_CHANGE';
+    const isRevise = outcome === 'REVISION_REQUIRED' || outcome === 'REVISE';
+    const isObsolete = outcome === 'OBSOLETE_REQUIRED' || outcome === 'OBSOLETE';
+    const normalizedResult = isNoChange ? 'NO_CHANGE' : (isRevise ? 'REVISE' : (isObsolete ? 'OBSOLETE' : outcome));
+
+    let nextDate = null;
+    if (isNoChange) {
       // Extend next_review_date by document cycle years (e.g. 1 yr for SOP/QP, 2 yr for WI/FM)
       const cycleYears = schedule.cycleYears || (schedule.frequencyMonths ? schedule.frequencyMonths / 12 : 1);
-      
-      const nextDate = addYears(now, cycleYears);
+      nextDate = addYears(now, cycleYears);
       logEntry.newNextReviewDate = nextDate;
 
       schedule.lastReviewedDate = now;
@@ -2928,88 +3081,119 @@ const useStore = create(persist((set, get) => ({
       schedule.currentScheduledReviewDate = nextDate;
       schedule.status = 'UPCOMING';
       schedule.dueState = 'NOT_YET_DUE';
-      schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
-      schedule.updatedAt = new Date().toISOString();
-      schedules[idx] = schedule;
+    }
 
-      let updatedDocs = state.documents;
-      let updatedExtDocs = state.externalDocuments;
+    schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
+    schedule.updatedAt = new Date().toISOString();
+    schedules[idx] = schedule;
 
-      const reviewerName = (typeof reviewer === 'object' ? reviewer?.name : reviewer) || state.currentUser?.name || '-';
-      const reviewerRole = (typeof reviewer === 'object' ? reviewer?.role : null) || state.currentUser?.role || 'Staff';
-      const approverUser = payload?.approver || state.currentUser;
-      const approverName = (typeof approverUser === 'object' ? approverUser?.name : approverUser) || state.currentUser?.name || 'HOD';
-      const approverRole = (typeof approverUser === 'object' ? approverUser?.role : null) || state.currentUser?.role || 'HOD';
+    const reviewerName = (typeof reviewer === 'object' ? reviewer?.name : reviewer) || state.currentUser?.name || '-';
+    const reviewerRole = (typeof reviewer === 'object' ? reviewer?.role : null) || state.currentUser?.role || 'Staff';
+    const approverUser = isNoChange ? (payload?.approver || state.currentUser) : (payload?.approver || null);
+    const approverName = approverUser ? ((typeof approverUser === 'object' ? approverUser?.name : approverUser) || 'HOD') : null;
+    const approverRole = approverUser ? ((typeof approverUser === 'object' ? approverUser?.role : null) || 'HOD') : null;
 
-      const periodicReviewAuditEntry = {
-        review_round: 1,
-        reviewed_date: now,
-        reviewer_name: reviewerName,
-        reviewer_role: reviewerRole,
-        approver_name: approverName,
-        approver_role: approverRole,
-        approved_at: new Date().toISOString(),
-        result: 'NO_CHANGE',
-        check_source: payload?.reviewDetails?.check_source || payload?.reviewDetails?.standards || payload?.verificationChannel || '-',
-        remarks: payload?.reviewDetails?.remarks || payload?.reviewDetails?.reason || payload?.reviewDetails?.comment || comment || '-',
-        findings: payload?.reviewDetails?.findings || '-',
-        next_review_due: nextDate
-      };
+    const auditEntry = {
+      id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      round: 1,
+      review_round: 1,
+      reviewed_at: new Date().toISOString(),
+      reviewed_date: now,
+      result: normalizedResult,
+      outcome,
+      reason: payload?.reviewDetails?.reason || payload?.reviewDetails?.remarks || payload?.reviewDetails?.comment || comment || '-',
+      findings: payload?.reviewDetails?.findings || '-',
+      standard_clause: payload?.reviewDetails?.standard_clause || payload?.reviewDetails?.standards || payload?.verificationChannel || '-',
+      check_source: payload?.reviewDetails?.standard_clause || payload?.reviewDetails?.standards || payload?.verificationChannel || '-',
+      evidence_reference: payload?.reviewDetails?.evidence_reference || payload?.reviewDetails?.references || '-',
+      additional_comment: payload?.reviewDetails?.additional_comment || payload?.reviewDetails?.additionalComments || '-',
+      remarks: payload?.reviewDetails?.remarks || payload?.reviewDetails?.reason || payload?.reviewDetails?.comment || comment || '-',
+      ...(isNoChange ? { next_review_due: nextDate } : {}),
+      reviewer_id: (typeof reviewer === 'object' ? reviewer?.id : null) || state.currentUser?.id || null,
+      reviewer_name: reviewerName,
+      reviewer_role: reviewerRole,
+      approver_id: (typeof approverUser === 'object' ? approverUser?.id : null) || (isNoChange ? state.currentUser?.id : null),
+      approver_name: approverName,
+      approver_role: approverRole,
+      approved_at: approverUser ? new Date().toISOString() : null,
+      approval_status: approverUser ? 'APPROVED' : 'PENDING_APPROVAL',
+      approval_remarks: payload?.reviewDetails?.approval_remarks || '-'
+    };
 
-      const reviewHistoryEntry = {
-        id: logEntry.id,
-        reviewer: reviewerName,
-        reviewerId: state.currentUser?.id || null,
-        reviewerRole,
-        approver: approverName,
-        approverRole,
-        reviewDate: now,
-        comment: comment || '',
-        outcome: 'NO_CHANGE',
-        channel: verificationChannel || null,
-        nextReviewDate: nextDate
-      };
+    let updatedDocs = state.documents;
+    let updatedExtDocs = state.externalDocuments;
 
-      if (!isExternal && state.documents && state.documents.length > 0) {
-        const docIdx = state.documents.findIndex(d => 
-          (schedule.documentId && d.id === schedule.documentId) || 
-          (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber || d.code === schedule.documentNumber))
-        );
-        if (docIdx !== -1) {
-          const doc = { ...state.documents[docIdx] };
-          periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
-          // 🛡️ Criteria 2: Revision remains strictly unchanged!
-          doc.last_reviewed_at = now;
+    if (!isExternal && state.documents && state.documents.length > 0) {
+      const docIdx = state.documents.findIndex(d => 
+        (schedule.documentId && d.id === schedule.documentId) || 
+        (schedule.documentNumber && (d.title === schedule.documentNumber || d.doc_code === schedule.documentNumber || d.doc_number === schedule.documentNumber || d.code === schedule.documentNumber))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.documents[docIdx] };
+        const newRound = (doc.periodic_reviews?.length || 0) + 1;
+        auditEntry.round = newRound;
+        auditEntry.review_round = newRound;
+        doc.last_reviewed_at = now;
+        if (isNoChange) {
           doc.next_review_date = nextDate;
           doc.review_status = 'UP_TO_DATE';
           delete doc.pending_periodic_review;
-          doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-          doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
-          updatedDocs = [...state.documents];
-          updatedDocs[docIdx] = doc;
+          doc.review_history = [...(doc.review_history || []), {
+            id: logEntry.id,
+            reviewer: reviewerName,
+            reviewerId: state.currentUser?.id || null,
+            reviewerRole,
+            approver: approverName,
+            approverRole,
+            reviewDate: now,
+            comment: comment || '',
+            outcome: 'NO_CHANGE',
+            channel: verificationChannel || null,
+            nextReviewDate: nextDate
+          }];
         }
-      } else if (isExternal && state.externalDocuments && state.externalDocuments.length > 0) {
-        const docIdx = state.externalDocuments.findIndex(d => 
-          (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
-          (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber || d.code === schedule.documentNumber))
-        );
-        if (docIdx !== -1) {
-          const doc = { ...state.externalDocuments[docIdx] };
-          periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
-          doc.last_reviewed_at = now;
+        doc.periodic_reviews = [...(doc.periodic_reviews || []), auditEntry];
+        updatedDocs = [...state.documents];
+        updatedDocs[docIdx] = doc;
+      }
+    } else if (isExternal && state.externalDocuments && state.externalDocuments.length > 0) {
+      const docIdx = state.externalDocuments.findIndex(d => 
+        (schedule.externalDocumentId && d.id === schedule.externalDocumentId) || 
+        (schedule.documentNumber && (d.id === schedule.documentNumber || d.edCode === schedule.documentNumber || d.title === schedule.documentNumber || d.code === schedule.documentNumber))
+      );
+      if (docIdx !== -1) {
+        const doc = { ...state.externalDocuments[docIdx] };
+        const newRound = (doc.periodic_reviews?.length || 0) + 1;
+        auditEntry.round = newRound;
+        auditEntry.review_round = newRound;
+        doc.last_reviewed_at = now;
+        if (isNoChange) {
           doc.last_verified_at = now;
           doc.next_review_date = nextDate;
           doc.review_status = 'UP_TO_DATE';
           delete doc.pending_periodic_review;
           if (verificationChannel) doc.verification_channel = verificationChannel;
-          doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-          doc.review_history = [...(doc.review_history || []), reviewHistoryEntry];
-          updatedExtDocs = [...state.externalDocuments];
-          updatedExtDocs[docIdx] = doc;
+          doc.review_history = [...(doc.review_history || []), {
+            id: logEntry.id,
+            reviewer: reviewerName,
+            reviewerId: state.currentUser?.id || null,
+            reviewerRole,
+            approver: approverName,
+            approverRole,
+            reviewDate: now,
+            comment: comment || '',
+            outcome: 'NO_CHANGE',
+            channel: verificationChannel || null,
+            nextReviewDate: nextDate
+          }];
         }
+        doc.periodic_reviews = [...(doc.periodic_reviews || []), auditEntry];
+        updatedExtDocs = [...state.externalDocuments];
+        updatedExtDocs[docIdx] = doc;
       }
+    }
 
-      // Close tasks in state.tasks and state.periodicReviewTasks
+    if (isNoChange) {
       const updatedTasks = (state.tasks || []).map(t => {
         if (t.scheduleId === scheduleId || (t.docId && (t.docId === schedule.documentId || t.docId === schedule.externalDocumentId))) {
           return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
@@ -3052,10 +3236,11 @@ const useStore = create(persist((set, get) => ({
       };
     }
 
-    // For REVISION_REQUIRED / OBSOLETE_REQUIRED — just stamp the log then defer
-    schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
-    schedules[idx] = schedule;
-    return { periodicReviewSchedules: schedules };
+    return { 
+      documents: updatedDocs,
+      externalDocuments: updatedExtDocs,
+      periodicReviewSchedules: schedules 
+    };
   }),
 
   confirmPeriodicReviewNoChange: (payload) => {
@@ -3078,18 +3263,34 @@ const useStore = create(persist((set, get) => ({
     const nextDate = addYears(now, cycleYears || 1);
 
     const periodicReviewAuditEntry = {
+      id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      round: 1,
       review_round: 1,
+      reviewed_at: submitted_at ? submitted_at.split('T')[0] : now,
       reviewed_date: submitted_at ? submitted_at.split('T')[0] : now,
+      result: 'NO_CHANGE',
+      outcome: 'NO_CHANGE',
+      reason: details?.reason || details?.remarks || details?.comment || remarks || '-',
+      findings: details?.findings || '-',
+      standard_clause: details?.standard_clause || details?.standards || details?.check_source || '-',
+      check_source: details?.standard_clause || details?.standards || details?.check_source || '-',
+      evidence_reference: details?.evidence_reference || details?.references || '-',
+      additional_comment: details?.additional_comment || details?.additionalComments || '-',
+      remarks: details?.remarks || details?.reason || details?.comment || remarks || '-',
+      next_review_due: nextDate,
+
+      // ผู้ทบทวน (Reviewer)
+      reviewer_id: reviewer_id || null,
       reviewer_name: reviewer_name || 'Staff',
       reviewer_role: reviewer_role || 'Staff',
+
+      // ผู้อนุมัติ (Approver - 1 Level)
+      approver_id: approver?.id || null,
       approver_name: approver?.name || 'HOD',
       approver_role: approver?.role || 'HOD',
       approved_at: new Date().toISOString(),
-      result: 'NO_CHANGE',
-      check_source: details?.check_source || details?.standards || '-',
-      remarks: details?.remarks || details?.reason || details?.comment || remarks || '-',
-      findings: details?.findings || '-',
-      next_review_due: nextDate
+      approval_status: 'APPROVED',
+      approval_remarks: remarks || details?.approval_remarks || '-'
     };
 
     let updatedDocs = state.documents;
@@ -3102,6 +3303,7 @@ const useStore = create(persist((set, get) => ({
       );
       if (docIdx !== -1) {
         const doc = { ...state.documents[docIdx] };
+        periodicReviewAuditEntry.round = (doc.periodic_reviews?.length || 0) + 1;
         periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
         doc.last_reviewed_at = now;
         doc.next_review_date = nextDate;
@@ -3130,6 +3332,7 @@ const useStore = create(persist((set, get) => ({
       );
       if (docIdx !== -1) {
         const doc = { ...state.externalDocuments[docIdx] };
+        periodicReviewAuditEntry.round = (doc.periodic_reviews?.length || 0) + 1;
         periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
         doc.last_reviewed_at = now;
         doc.last_verified_at = now;

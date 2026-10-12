@@ -278,11 +278,13 @@ export const isActionableTask = (task, currentUser) => {
     const taskDept = task.department || task.assignee_department || task.target_department || task.payload?.department || '';
     const isQmr = currentUser?.role === 'QMR' || currentUser?.isQmr;
     const isDcc = currentUser?.role === 'DCC' || currentUser?.role === 'DC' || currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.isDcc;
-    const isDeptManager = Boolean(
+    const isSupervisor = ['SUPERVISOR', 'DEPT_SUPERVISOR', 'STAFF', 'OFFICER'].includes(currentUser?.role) || 
+                         String(currentUser?.position || '').toLowerCase().includes('supervisor');
+    const isDeptManager = !isSupervisor && Boolean(
       currentUser?.isDeptHead || 
       currentUser?.is_manager || 
-      ['HOD', 'MANAGER', 'APPROVER', 'DEPT_SUPERVISOR', 'DEPT_ADMIN'].includes(currentUser?.role) || 
-      userApprovalLevel >= 4
+      ['HOD', 'MANAGER', 'APPROVER'].includes(currentUser?.role) || 
+      userApprovalLevel >= 5
     );
     const hasDept = userMatchesDepartment(currentUser, taskDept) || userDepts.some(uDept => isSameDepartment(uDept, taskDept));
     return Boolean(isQmr || isDcc || (isDeptManager && hasDept));

@@ -46,6 +46,7 @@ import {
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import { generateQmsDownloadName } from '../../utils/documentNamingHelper';
 import { resolveFullDocumentHistory } from '../Documents/DocumentHistoryTab';
+import { PeriodicReviewHistoryTab } from './PeriodicReviewHistoryTab';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 import toast from 'react-hot-toast';
 
@@ -2689,21 +2690,13 @@ const DocumentDetailModal = ({
                        (doc?.title && s.documentNumber === doc.title) ||
                        (doc?.doc_code && s.documentNumber === doc.doc_code)
                 );
-                const reviewLogs = (matchingSchedule?.reviewLogs && matchingSchedule.reviewLogs.length > 0)
-                  ? matchingSchedule.reviewLogs
-                  : (doc?.review_history || []);
+                const reviewLogs = (doc?.periodic_reviews && doc.periodic_reviews.length > 0)
+                  ? doc.periodic_reviews
+                  : ((matchingSchedule?.reviewLogs && matchingSchedule.reviewLogs.length > 0)
+                      ? matchingSchedule.reviewLogs
+                      : (doc?.review_history || []));
                 const nextReviewDate = matchingSchedule?.nextReviewDate || matchingSchedule?.currentScheduledReviewDate || doc?.next_review_date;
                 const lastReviewedDate = matchingSchedule?.lastReviewedDate || doc?.last_reviewed_at || doc?.last_verified_at;
-
-                const outcomeLabel = (outcome) => {
-                  const map = {
-                    'CONFIRM_CONTINUE': { label: '\u2714\ufe0f \u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e43\u0e0a\u0e49\u0e07\u0e32\u0e19\u0e15\u0e48\u0e2d (No Change)', color: 'bg-emerald-100 text-emerald-800' },
-                    'NO_CHANGE':        { label: '\u2714\ufe0f \u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e43\u0e0a\u0e49\u0e07\u0e32\u0e19\u0e15\u0e48\u0e2d (No Change)', color: 'bg-emerald-100 text-emerald-800' },
-                    'REVISION_REQUIRED': { label: '\u270d\ufe0f \u0e40\u0e1b\u0e34\u0e14 DAR \u0e41\u0e01\u0e49\u0e44\u0e02', color: 'bg-amber-100 text-amber-800' },
-                    'OBSOLETE_REQUIRED': { label: '\u274c \u0e02\u0e2d\u0e22\u0e01\u0e40\u0e25\u0e34\u0e01', color: 'bg-red-100 text-red-800' },
-                  };
-                  return map[outcome] || { label: outcome || '-', color: 'bg-gray-100 text-gray-700' };
-                };
 
                 const formatDate = (dateStr) => {
                   return formatQmsDisplayDate(dateStr);
@@ -2715,9 +2708,9 @@ const DocumentDetailModal = ({
                   const now = new Date(); now.setHours(0,0,0,0);
                   const due = new Date(nextReviewDate); due.setHours(0,0,0,0);
                   const diff = Math.ceil((due - now) / 86400000);
-                  if (diff < 0) return { label: '\ud83d\udea8 \u0e40\u0e01\u0e34\u0e19\u0e01\u0e33\u0e2b\u0e19\u0e14', color: 'bg-red-100 text-red-700 border-red-200' };
-                  if (diff <= 30) return { label: '\u26a0\ufe0f \u0e43\u0e01\u0e25\u0e49\u0e04\u0e23\u0e1a\u0e01\u0e33\u0e2b\u0e19\u0e14', color: 'bg-amber-100 text-amber-700 border-amber-200' };
-                  return { label: '\u2705 \u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e16\u0e36\u0e07\u0e01\u0e33\u0e2b\u0e19\u0e14', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                  if (diff < 0) return { label: '🚨 เกินกำหนด', color: 'bg-red-100 text-red-700 border-red-200' };
+                  if (diff <= 30) return { label: '⚠️ ใกล้ครบกำหนด', color: 'bg-amber-100 text-amber-700 border-amber-200' };
+                  return { label: '✅ ยังไม่ถึงกำหนด', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                 })();
 
                 return (
@@ -2842,53 +2835,12 @@ const DocumentDetailModal = ({
                     )}
 
                     {/* Timeline */}
-                    {reviewLogs.length > 0 ? (
-                      <div className="relative">
-                        {/* Vertical line */}
-                        <div className="absolute left-[19px] top-5 bottom-5 w-0.5 bg-gradient-to-b from-[#0D99FF]/30 via-slate-200 to-transparent rounded-full" />
-                        <div className="space-y-3">
-                          {[...reviewLogs].reverse().map((log, i) => {
-                            const ol = outcomeLabel(log.outcome);
-                            return (
-                              <div key={log.id || i} className="flex gap-4 items-start">
-                                {/* Circle indicator */}
-                                <div className="w-10 h-10 rounded-full bg-white border-2 border-[#0D99FF]/40 flex items-center justify-center shrink-0 shadow-xs z-10">
-                                  <RotateCw size={14} className="text-[#0D99FF]" />
-                                </div>
-                                {/* Content card */}
-                                <div className="flex-1 bg-white border border-[#E5E5E5] rounded-xl p-4 shadow-xs min-w-0 overflow-hidden">
-                                  <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${ol.color}`}>
-                                      {ol.label}
-                                    </span>
-                                    <span className="text-xs text-[#666666] font-mono">{formatDate(log.reviewDate)}</span>
-                                  </div>
-                                  <p className="text-xs text-slate-700 leading-relaxed break-words break-all [overflow-wrap:anywhere] whitespace-pre-wrap">
-                                    {log.comment || <span className="italic text-slate-400">ไม่มีบันทึกความเห็น</span>}
-                                  </p>
-                                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-[#666666]">
-                                    <span>ผู้ทบทวน: <strong className="text-[#1E1E1E]">{log.reviewer || '-'}</strong></span>
-                                    {log.newNextReviewDate && (
-                                      <span>รอบถัดไป: <strong className="text-[#007BE5] font-mono">{formatDate(log.newNextReviewDate)}</strong></span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-10 bg-white border border-dashed border-[#E2E8F0] rounded-2xl text-center flex flex-col items-center gap-3">
-                        <RotateCw size={32} className="text-slate-300" />
-                        <p className="font-bold text-sm text-slate-600">ยังไม่มีประวัติการทบทวนตามรอบ</p>
-                        <p className="text-xs text-slate-400 max-w-xs">
-                          {matchingSchedule
-                            ? `กำหนดทบทวนครั้งแรก: ${formatDate(nextReviewDate)}`
-                            : 'เอกสารนี้ยังไม่ถูกบรรจุในแผนการทบทวนตามรอบ (Periodic Review Schedule)'}
-                        </p>
-                      </div>
-                    )}
+                    <PeriodicReviewHistoryTab 
+                      reviews={reviewLogs} 
+                      nextReviewDate={nextReviewDate} 
+                      matchingSchedule={matchingSchedule} 
+                      reversed 
+                    />
                   </div>
                 );
               })()}
