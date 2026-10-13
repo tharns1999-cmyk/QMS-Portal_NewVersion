@@ -103,7 +103,7 @@ export const isDccOperationalTask = (task) => {
 export const normalizeCanonicalDept = (dept) => {
   if (!dept) return '';
   if (typeof dept !== 'string') {
-    dept = dept.code || dept.id || dept.department || dept.dept || '';
+    dept = dept.code || dept.id || dept.department || dept.dept || dept.dept_code || '';
   }
   let str = String(dept).trim();
   if (!str) return '';
@@ -134,6 +134,8 @@ export const normalizeCanonicalDept = (dept) => {
   }
   return str.toUpperCase();
 };
+
+export const normalizeDept = normalizeCanonicalDept;
 
 /**
  * Compares two department identifiers with normalization and alias equivalence (QA <-> QA/QC <-> QC)
@@ -439,6 +441,8 @@ export default {
   isDccExclusiveTask,
   isDccUser,
   isDccOperationalTask,
+  normalizeCanonicalDept,
+  normalizeDept,
   isSameDepartment,
   userMatchesDepartment,
   getUserLevelNumber,

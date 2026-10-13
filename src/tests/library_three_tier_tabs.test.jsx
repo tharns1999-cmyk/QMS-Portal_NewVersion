@@ -142,6 +142,9 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
       </MemoryRouter>
     );
 
+    const generalBtn = screen.getByRole('button', { name: /เอกสารทั่วไป/i });
+    fireEvent.click(generalBtn);
+
     // Strict Separation: Should NOT show own PD GENERAL doc in General tab
     expect(screen.queryByText('SOP-PD-001')).not.toBeInTheDocument();
     // Should show QA GENERAL doc
@@ -154,21 +157,18 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     expect(screen.queryByText('SOP-QA-004')).not.toBeInTheDocument();
   });
 
-  it('3. Tab "เอกสารในแผนกฉัน" displays ALL PD tiers and hides other departments', () => {
+  it('3. Default Tab "เอกสารในแผนกฉัน" is selected automatically on initial load and displays ALL PD tiers while hiding other departments', () => {
     render(
       <MemoryRouter>
         <Library />
       </MemoryRouter>
     );
 
-    const myDeptBtn = screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i });
-    fireEvent.click(myDeptBtn);
-
-    // Shows PD General and PD Dept Only docs
+    // Without clicking any tab, "ในแผนกฉัน" is active by default and filters by currentUser.department (PD)
     expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
     expect(screen.getByText('WI-PD-002')).toBeInTheDocument();
 
-    // Hides QA documents
+    // Hides QA documents on initial load
     expect(screen.queryByText('SOP-QA-001')).not.toBeInTheDocument();
     expect(screen.queryByText('WI-QA-002')).not.toBeInTheDocument();
     expect(screen.queryByText('SD-QA-003')).not.toBeInTheDocument();

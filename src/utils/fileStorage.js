@@ -188,18 +188,55 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
       }
     }
 
-    // Check Candidate Keys across all master document dimensions
+    // Check Candidate Keys across all master & external document dimensions (edition/revision-specific keys before shared doc-code keys)
+    const docCodeForRev = (target.edCode || target.doc_code || target.docCode || target.document_code || target.docNo || target.code || target.title || '').trim();
+    const editionKey = String(target.edition || target.sourceVersion || target.ver_ed || target.version || target.originRev || '').trim();
+    const rawRevForKey = target.revision || target.rev || target.doc_version;
+    const cleanRevForKey = rawRevForKey !== undefined && rawRevForKey !== null ? String(rawRevForKey).replace(/^rev\.?/i, '').trim() : '';
+
     const candidateKeys = [
-      target.attachedFile?.fileId,
-      target.attachedFile?.id,
-      target.attachedFile?.key,
-      target.fileId,
-      target.file_id,
+      target.fileStorageKey,
+      target.attachedFile?.fileStorageKey,
+      // Edition-scoped candidate keys for External Documents (must precede shared edCode/doc_code keys)
+      docCodeForRev && editionKey ? `FILE_${docCodeForRev}_ED_${editionKey}` : null,
+      docCodeForRev && editionKey ? `DOC_${docCodeForRev}_ED_${editionKey}` : null,
+      docCodeForRev && editionKey ? `FILE_${docCodeForRev}_${editionKey}` : null,
+      docCodeForRev && editionKey ? `DOC_${docCodeForRev}_${editionKey}` : null,
+      // Revision-scoped candidate keys for Internal Documents (must precede shared doc_code keys)
+      docCodeForRev && cleanRevForKey ? `FILE_${docCodeForRev}_REV_${cleanRevForKey}` : null,
+      docCodeForRev && cleanRevForKey ? `DOC_${docCodeForRev}_REV_${cleanRevForKey}` : null,
+      docCodeForRev && cleanRevForKey ? `DOC_${docCodeForRev}_REV${cleanRevForKey}` : null,
+      docCodeForRev && cleanRevForKey ? `FILE_${docCodeForRev}_REV${cleanRevForKey}` : null,
+      docCodeForRev && cleanRevForKey ? `DOC_${docCodeForRev}_REV${cleanRevForKey.padStart(2, '0')}` : null,
+      docCodeForRev && cleanRevForKey ? `FILE_${docCodeForRev}_REV${cleanRevForKey.padStart(2, '0')}` : null,
+      docCodeForRev && cleanRevForKey ? `FILE_${docCodeForRev}_${cleanRevForKey}` : null,
+      // Explicit file blob identifiers
+      target.rawFileId && target.rawFileId !== docCodeForRev ? target.rawFileId : null,
+      target.attachedFile?.rawFileId && target.attachedFile?.rawFileId !== docCodeForRev ? target.attachedFile.rawFileId : null,
+      target.attachedFile?.fileId && target.attachedFile?.fileId !== docCodeForRev ? target.attachedFile.fileId : null,
+      target.attachedFile?.id && target.attachedFile?.id !== docCodeForRev ? target.attachedFile.id : null,
+      target.attachedFile?.key && target.attachedFile?.key !== docCodeForRev ? target.attachedFile.key : null,
+      target.fileId && target.fileId !== docCodeForRev ? target.fileId : null,
+      target.file_id && target.file_id !== docCodeForRev ? target.file_id : null,
       target.attachment?.fileId,
       target.attachment?.id,
       target.file?.fileId,
       target.file?.id,
-      typeof target.file === 'string' && !target.file.includes(' ') && target.file.length > 3 ? target.file : null,
+      typeof target.file === 'string' && !target.file.includes(' ') && target.file.length > 3 && target.file !== docCodeForRev ? target.file : null,
+      target.id && target.id !== docCodeForRev ? target.id : null,
+      // Request / DAR scoped keys
+      target.darId,
+      target.dar_id,
+      target.darNo,
+      target.dar_no,
+      target.darNumber,
+      target.requestId,
+      target.requestNo,
+      target.edrNumber,
+      // Shared document code fallbacks (only after version/edition/fileId keys)
+      docCodeForRev ? `FILE_${docCodeForRev}` : null,
+      target.rawFileId,
+      target.fileId,
       target.id,
       target.doc_code,
       target.docCode,
@@ -208,28 +245,7 @@ export const resolveFileBlob = async (target, fallbackKey = null) => {
       target.docNo,
       target.code,
       target.title,
-      target.darId,
-      target.dar_id,
-      target.darNo,
-      target.dar_no,
-      target.darNumber,
       target.edCode,
-      target.requestId,
-      target.requestNo,
-      target.edrNumber,
-      // Revision-scoped candidate keys
-      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
-        ? `DOC_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim()}`
-        : null,
-      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
-        ? `FILE_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim()}`
-        : null,
-      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
-        ? `DOC_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim().padStart(2, '0')}`
-        : null,
-      (target.code || target.document_code || target.doc_code || target.docNo || target.title) && (target.revision || target.rev || target.doc_version)
-        ? `FILE_${(target.code || target.document_code || target.doc_code || target.docNo || target.title).trim()}_REV${String(target.revision || target.rev || target.doc_version).replace(/^rev\.?/i, '').trim().padStart(2, '0')}`
-        : null,
       fallbackKey
     ].filter(Boolean);
 
@@ -325,6 +341,10 @@ export const getVersionFileFromStorage = async (docCode, revision) => {
   const cleanRev = String(revision).replace(/^rev\.?/i, '').trim();
   const padRev = cleanRev.padStart(2, '0');
   const candidateKeys = [
+    `FILE_${cleanCode}_ED_${cleanRev}`,
+    `DOC_${cleanCode}_ED_${cleanRev}`,
+    `FILE_${cleanCode}_${cleanRev}`,
+    `DOC_${cleanCode}_${cleanRev}`,
     `DOC_${cleanCode}_REV${cleanRev}`,
     `FILE_${cleanCode}_REV${cleanRev}`,
     `DOC_${cleanCode}_REV${padRev}`,
@@ -349,3 +369,5 @@ export const getVersionFileFromStorage = async (docCode, revision) => {
 
   return null;
 };
+
+export const storeFileBlob = saveFile;

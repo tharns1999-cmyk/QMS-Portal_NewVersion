@@ -26,8 +26,38 @@ import { getDueState, getReviewStatusLabel, getReviewOutcomeLabel } from '../../
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
-import { getDocumentReviewMetrics, isDocumentReviewedThisCycle, evaluateDocumentReviewStatus } from '../../utils/documentUtils';
+import { getDocumentReviewMetrics, isDocumentReviewedThisCycle, evaluateDocumentReviewStatus, getPeriodicReviewStatus } from '../../utils/documentUtils';
+import { isSameDepartment } from '../../utils/taskFilter';
+import { extractDeptCode } from '../../services/darService';
 import { PeriodicReviewAuditCard } from '../../components/workflow/PeriodicReviewHistoryTab';
+
+const formatPeriodicDocVersion = (record, targetDoc, isExternalTab = false) => {
+  const isExt = Boolean(
+    isExternalTab ||
+    record?.isExternal ||
+    record?.documentCategory === 'EXTERNAL' ||
+    targetDoc?.is_external ||
+    targetDoc?.external ||
+    targetDoc?.doc_type === 'EXTERNAL' ||
+    targetDoc?.edCode ||
+    String(record?.documentNumber || '').startsWith('ED-')
+  );
+  if (isExt) {
+    const editionVal =
+      targetDoc?.sourceVersion ||
+      targetDoc?.edition ||
+      record?.edition ||
+      record?.sourceVersion ||
+      (record?.rev && !/^(Rev\.?\s*)?\d+$/i.test(String(record.rev).trim()) ? record.rev : '') ||
+      '-';
+    const cleanEd = String(editionVal).trim().replace(/^Edition\s+/i, '');
+    return cleanEd && cleanEd !== '-' ? `Edition ${cleanEd}` : 'Edition -';
+  }
+  const rawRev = record?.rev || targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || '00';
+  const revStr = String(rawRev).trim();
+  if (!revStr) return '-';
+  return /^Rev\./i.test(revStr) ? revStr.replace(/^rev\./i, 'Rev.') : `Rev.${revStr}`;
+};
 
 const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick, active }) => (
   <div
@@ -58,7 +88,7 @@ const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick
   </div>
 );
 
-const getStatusBadgeConfig = (status, hasActiveTask, isPendingApproval, isReviewed) => {
+const getStatusBadgeConfig = (status, _hasActiveTask, isPendingApproval, isReviewed) => {
   if (isReviewed) {
     return {
       label: '✔️ ทบทวนแล้วเสร็จ',
@@ -77,7 +107,7 @@ const getStatusBadgeConfig = (status, hasActiveTask, isPendingApproval, isReview
       cls: 'bg-rose-50 text-rose-700 border-rose-200'
     };
   }
-  if (status === 'DUE_SOON' || status === 'DUE' || hasActiveTask) {
+  if (status === 'DUE_SOON' || status === 'DUE') {
     return {
       label: '⚠️ ใกล้ครบกำหนด',
       cls: 'bg-amber-50 text-amber-700 border-amber-200'
@@ -148,7 +178,7 @@ const ReviewHistoryModal = ({ isOpen, onClose, record, doc, effectiveToday, onNa
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5 font-medium">ฉบับปัจจุบัน</span>
-              <span className="font-bold text-slate-800 font-mono">Rev.{record.rev || '00'}</span>
+              <span className="font-bold text-slate-800 font-mono">{formatPeriodicDocVersion(record, doc)}</span>
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5 font-medium">วันครบกำหนดรอบนี้</span>
@@ -249,7 +279,7 @@ const UnifiedWorkspaceView = ({
   // History Modal State
   const [historyTarget, setHistoryTarget] = useState(null);
 
-  const getRecordDept = (r) => r.ownerDepartmentId || r.targetDoc?.department || r.targetDoc?.owner_dept || r.department;
+  const getRecordDept = (r) => r.ownerDepartmentId || r.targetDoc?.department || r.targetDoc?.owner_dept || r.department || extractDeptCode(r.documentNumber);
 
   // Scoped records based on viewScope and selectedDeptFilter
   const scopedRecords = useMemo(() => {
@@ -259,28 +289,26 @@ const UnifiedWorkspaceView = ({
       // Non-management: restricted to their department / managed departments
       if (!isManagementOrDcc) {
         const userDept = currentUser?.department || currentUser?.dept || currentUser?.primary_department;
-        const permitted = new Set([
+        const permitted = [
           userDept,
           ...(currentUser?.depts || []),
           ...(currentUser?.departments || []),
-          ...(currentUser?.affiliated_departments || [])
-        ].filter(Boolean));
+          ...(currentUser?.affiliated_departments || []),
+          ...(Array.isArray(currentUser?.managedDepartments) ? currentUser.managedDepartments.filter(d => d !== '*') : [])
+        ].filter(Boolean);
         if (currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc) return true;
-        if (Array.isArray(currentUser?.managedDepartments)) {
-          currentUser.managedDepartments.forEach(d => permitted.add(d));
-        }
-        return permitted.has(dept);
+        return permitted.some(p => isSameDepartment(dept, p));
       }
 
       // If user selected "MY_DEPT"
       if (viewScope === 'MY_DEPT') {
         const userDept = currentUser?.department || currentUser?.dept || currentUser?.primary_department;
-        return dept === userDept;
+        return isSameDepartment(dept, userDept);
       }
 
       // If user selected "ALL" but specified a department in the dropdown
       if (selectedDeptFilter !== 'ALL') {
-        return dept === selectedDeptFilter;
+        return isSameDepartment(dept, selectedDeptFilter);
       }
 
       // If user selected "ALL" and dropdown is "ALL"
@@ -329,19 +357,19 @@ const UnifiedWorkspaceView = ({
       result = result.filter(r => {
         const ev = evaluateDocumentReviewStatus(r, effectiveToday);
         const st = typeof ev === 'object' ? ev.status : ev;
-        return st === 'OVERDUE' || st === 'DUE_SOON' || r.hasActiveTask;
+        return st === 'OVERDUE' || st === 'DUE_SOON';
       });
     } else if (statusFilter === 'DUE_SOON') {
       result = result.filter(r => {
         const ev = evaluateDocumentReviewStatus(r, effectiveToday);
         const st = typeof ev === 'object' ? ev.status : ev;
-        return st === 'DUE_SOON' || ((['DUE_SOON', 'DUE'].includes(r.status) || r.hasActiveTask) && r.status !== 'OVERDUE');
+        return st === 'DUE_SOON';
       });
     } else if (statusFilter === 'UPCOMING') {
       result = result.filter(r => {
         const ev = evaluateDocumentReviewStatus(r, effectiveToday);
         const st = typeof ev === 'object' ? ev.status : ev;
-        return st === 'UP_TO_DATE' && !r.hasActiveTask;
+        return st === 'UP_TO_DATE' || st === 'NORMAL';
       });
     } else if (statusFilter === 'OVERDUE') {
       result = result.filter(r => {
@@ -612,17 +640,27 @@ const UnifiedWorkspaceView = ({
             <tbody className="divide-y divide-slate-100 bg-white">
               {pagination.paginatedData.map(record => {
                 const targetDoc = record.targetDoc || allDocs?.find(d => 
-                  (record.documentId && d.id === record.documentId) || 
-                  (record.externalDocumentId && d.id === record.externalDocumentId) ||
-                  (record.documentNumber && (d.documentNumber === record.documentNumber || d.code === record.documentNumber || d.doc_code === record.documentNumber))
+                  !d.is_superseded && !d.is_obsolete && d.status !== 'SUPERSEDED' && d.status !== 'OBSOLETE' && (
+                    (record.documentId && d.id === record.documentId) || 
+                    (record.externalDocumentId && d.id === record.externalDocumentId) ||
+                    (record.documentNumber && (d.edCode === record.documentNumber || d.documentNumber === record.documentNumber || d.code === record.documentNumber || d.doc_code === record.documentNumber))
+                  )
                 );
                 const isPendingApproval = record.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL';
-                const docToEvaluate = targetDoc ? { ...targetDoc, ...record } : record;
+                const docToEvaluate = targetDoc
+                  ? {
+                      ...targetDoc,
+                      ...record,
+                      nextReviewDate: record.nextReviewDate,
+                      next_review_date: record.next_review_date,
+                      isExternal: record.isExternal
+                    }
+                  : record;
                 const evaluation = evaluateDocumentReviewStatus(docToEvaluate, effectiveToday);
                 const calculatedStatus = typeof evaluation === 'object' ? evaluation.status : evaluation;
                 const isReviewed = calculatedStatus === 'COMPLETED';
-                const effectiveStatus = (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'COMPLETED')
-                  ? calculatedStatus
+                const effectiveStatus = (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'COMPLETED' || calculatedStatus === 'UP_TO_DATE')
+                  ? (record.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : calculatedStatus)
                   : (record.status === 'PENDING_APPROVAL' || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status);
                 const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed);
                 return (
@@ -637,7 +675,7 @@ const UnifiedWorkspaceView = ({
                       {record.ownerDepartmentId}
                     </td>
                     <td className="px-4 py-3 text-center font-mono text-slate-700 text-xs">
-                      Rev.{record.rev || '00'}
+                      {formatPeriodicDocVersion(record, targetDoc, categoryTab === 'EXTERNAL')}
                     </td>
                     <td className="px-4 py-3 text-center font-mono text-slate-600 text-xs whitespace-nowrap">
                       {formatQmsDisplayDate(record.nextReviewDate)}
@@ -729,6 +767,22 @@ const UnifiedWorkspaceView = ({
   );
 };
 
+const isInactiveDocumentRecord = (d) => {
+  if (!d) return true;
+  const st = String(d.status || '').toUpperCase();
+  return (
+    st === 'SUPERSEDED' ||
+    st === 'OBSOLETE' ||
+    st === 'SUPERSEDED_ARCHIVED' ||
+    st === 'OBSOLETE_ARCHIVED' ||
+    st === 'REJECTED' ||
+    st === 'DRAFT' ||
+    st === 'PENDING_EXT_REVIEW' ||
+    st === 'PENDING_EXT_APPROVAL' ||
+    Boolean(d.is_superseded || d.is_obsolete || d.isSuperseded || d.isObsolete)
+  );
+};
+
 const PeriodicReviewDashboard = () => {
   const { currentUser, periodicReviewSchedules, documents, externalDocuments, tasks, simulatedSystemDate, getEffectiveToday } = useStore();
 
@@ -756,35 +810,82 @@ const PeriodicReviewDashboard = () => {
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('ALL');
 
   const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
+  const activeDocs = useMemo(() => (allDocs || []).filter(d => !isInactiveDocumentRecord(d)), [allDocs]);
   const effectiveToday = useMemo(() => {
     return getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
   }, [simulatedSystemDate, getEffectiveToday]);
 
   const effectiveSchedules = useMemo(() => {
-    const existing = [...(periodicReviewSchedules || [])];
-    const registeredDocIds = new Set(
-      existing.map(s => String(s.documentId || s.externalDocumentId || s.documentNumber || '')).filter(Boolean)
-    );
+    const existing = [];
+    const registeredDocIds = new Set();
 
-    // If there are documents not yet in schedules, synthesize schedule representations
-    (allDocs || []).forEach(doc => {
+    (periodicReviewSchedules || []).forEach(s => {
+      if (s.isActive === false) return;
+      const schedDocId = String(s.documentId || s.externalDocumentId || '');
+      const schedCode = String(s.documentNumber || '').trim();
+      const matchedActive = activeDocs.find(d =>
+        (schedDocId && String(d.id) === schedDocId) ||
+        (schedCode && (
+          d.edCode === schedCode ||
+          d.doc_code === schedCode ||
+          d.code === schedCode ||
+          d.document_number === schedCode ||
+          d.docNo === schedCode ||
+          d.title === schedCode
+        ))
+      );
+      const matchedAny = (allDocs || []).find(d =>
+        (schedDocId && String(d.id) === schedDocId) ||
+        (schedCode && (
+          d.edCode === schedCode ||
+          d.doc_code === schedCode ||
+          d.code === schedCode ||
+          d.document_number === schedCode ||
+          d.docNo === schedCode ||
+          d.title === schedCode
+        ))
+      );
+      if (matchedAny && !matchedActive) return;
+
+      existing.push(matchedActive ? { ...s, documentId: matchedActive.id, targetDoc: matchedActive } : s);
+      if (schedDocId) registeredDocIds.add(schedDocId);
+      if (matchedActive?.id) registeredDocIds.add(String(matchedActive.id));
+      if (schedCode) registeredDocIds.add(schedCode);
+    });
+
+    // If there are active documents not yet in schedules, synthesize schedule representations
+    activeDocs.forEach(doc => {
       const docIdStr = String(doc.id || '');
-      const docCode = String(doc.doc_code || doc.code || doc.document_number || doc.title || doc.docNo || docIdStr);
+      const docCode = String(doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.title || doc.docNo || docIdStr).trim();
       if (registeredDocIds.has(docIdStr) || registeredDocIds.has(docCode)) return;
 
-      const statusUpper = (doc.status || '').toUpperCase();
-      if (statusUpper === 'SUPERSEDED' || statusUpper === 'OBSOLETE' || doc.is_superseded || doc.is_obsolete) return;
-
-      const isExternal = Boolean(doc.is_external || doc.external || doc.document_type === 'EXTERNAL');
-      const docDept = doc.department || doc.dept || doc.owner_dept || (isExternal ? 'DC' : 'QA');
-      const nextReviewDate = doc.next_review_date || doc.nextReviewDate || doc.effectiveDate || doc.effective_date;
+      const isExternal = Boolean(
+        doc.is_external ||
+        doc.external ||
+        doc.document_type === 'EXTERNAL' ||
+        doc.doc_type === 'EXTERNAL' ||
+        doc.edCode ||
+        String(docCode).startsWith('ED-') ||
+        (externalDocuments || []).some(ed => ed.id === doc.id)
+      );
+      const docDept = doc.department || doc.dept || doc.owner_dept || extractDeptCode(docCode) || (isExternal ? 'DC' : 'QA');
+      const nextReviewDate = isExternal
+        ? (doc.nextReviewDate || doc.next_review_date || doc.effectiveDate || doc.effective_date)
+        : (doc.next_review_date || doc.nextReviewDate || doc.effectiveDate || doc.effective_date);
       if (!nextReviewDate) return;
 
-      const activeTask = (tasks || []).find(t =>
-        (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW') &&
+      const dateStatus = getPeriodicReviewStatus(nextReviewDate, effectiveToday).status;
+      const isDateDue = dateStatus === 'OVERDUE' || dateStatus === 'DUE_SOON';
+
+      const activeTask = isDateDue ? (tasks || []).find(t =>
+        (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'EXTERNAL_VERIFICATION') &&
         t.status !== 'COMPLETED' &&
+        !t.is_completed &&
         (t.docId === doc.id || t.documentId === doc.id || t.docCode === docCode || t.documentNumber === docCode)
-      );
+      ) : null;
+
+      const rawRev = doc.revision || doc.rev || doc.revNo || '00';
+      const cleanRev = String(rawRev).trim().replace(/^Rev\.?\s*/i, '') || '00';
 
       existing.push({
         id: `PRS-AUTO-${doc.id}`,
@@ -798,8 +899,12 @@ const PeriodicReviewDashboard = () => {
         responsibleUserId: doc.ownerId || doc.owner_id || doc.owner || 'U002',
         currentScheduledReviewDate: nextReviewDate,
         nextReviewDate: nextReviewDate,
-        rev: doc.revision || doc.rev || doc.revNo || doc.edition || '00',
-        status: doc.review_status || (activeTask ? 'ACTION_REQUIRED' : 'UPCOMING'),
+        next_review_date: nextReviewDate,
+        rev: cleanRev,
+        edition: doc.sourceVersion || doc.edition || '',
+        sourceVersion: doc.sourceVersion || doc.edition || '',
+        isExternal,
+        status: isDateDue ? (doc.review_status || (activeTask ? 'ACTION_REQUIRED' : 'DUE_SOON')) : 'UP_TO_DATE',
         dueState: getDueState ? getDueState(nextReviewDate, effectiveToday) : 'UPCOMING',
         hasActiveTask: Boolean(activeTask),
         isActive: true,
@@ -816,38 +921,71 @@ const PeriodicReviewDashboard = () => {
     });
 
     return existing;
-  }, [periodicReviewSchedules, allDocs, tasks, effectiveToday]);
+  }, [periodicReviewSchedules, activeDocs, allDocs, externalDocuments, tasks, effectiveToday]);
 
   const visibleRecords = useMemo(
     () => {
       const records = isManagementOrDcc
         ? effectiveSchedules.map(s => normalizePeriodicReviewRecord(s, effectiveToday))
-        : getVisiblePeriodicReviews(currentUser, effectiveSchedules, allDocs, effectiveToday);
+        : getVisiblePeriodicReviews(currentUser, effectiveSchedules, activeDocs, effectiveToday);
 
       return records.map(r => {
-        const isExternal =
+        const targetDoc =
+          activeDocs.find(
+            d =>
+              (r.documentId && d.id === r.documentId) ||
+              (r.externalDocumentId && d.id === r.externalDocumentId)
+          ) ||
+          activeDocs.find(
+            d =>
+              r.documentNumber &&
+              (d.edCode === r.documentNumber ||
+                d.doc_code === r.documentNumber ||
+                d.code === r.documentNumber ||
+                d.document_number === r.documentNumber ||
+                d.docNo === r.documentNumber ||
+                d.title === r.documentNumber)
+          ) ||
+          r.targetDoc;
+
+        const isExternal = Boolean(
+          r.isExternal ||
           r.documentCategory === 'EXTERNAL' ||
-          Boolean(r.externalDocumentId) ||
+          r.externalDocumentId ||
+          targetDoc?.is_external ||
+          targetDoc?.external ||
+          targetDoc?.doc_type === 'EXTERNAL' ||
+          targetDoc?.edCode ||
+          String(r.documentNumber || '').startsWith('ED-') ||
           (externalDocuments || []).some(
-            ed => ed.id === r.documentId || ed.id === r.externalDocumentId || ed.document_number === r.documentNumber
-          );
-        const targetDoc = allDocs.find(
-          d =>
-            d.id === r.documentId ||
-            d.id === r.externalDocumentId ||
-            d.doc_code === r.documentNumber ||
-            d.document_number === r.documentNumber ||
-            d.title === r.documentNumber
+            ed =>
+              ed.id === r.documentId ||
+              ed.id === r.externalDocumentId ||
+              ed.edCode === r.documentNumber ||
+              ed.doc_code === r.documentNumber ||
+              ed.document_number === r.documentNumber
+          )
         );
+
+        const resolvedNextReviewDate = isExternal
+          ? (targetDoc?.nextReviewDate || targetDoc?.next_review_date || r.nextReviewDate || r.currentScheduledReviewDate)
+          : (targetDoc?.next_review_date || targetDoc?.nextReviewDate || r.nextReviewDate || r.currentScheduledReviewDate);
+
+        const rawRev = targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || r.rev || '00';
+        const cleanRev = String(rawRev).trim().replace(/^Rev\.?\s*/i, '') || '00';
+        const resolvedEdition = targetDoc?.sourceVersion || targetDoc?.edition || r.edition || r.sourceVersion || '';
+
         return {
           ...r,
           targetDoc,
           isExternal,
           documentCategory: isExternal ? 'EXTERNAL' : 'INTERNAL',
-          rev: r.rev || targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || targetDoc?.edition || '00',
-          nextReviewDate: targetDoc?.next_review_date || r.nextReviewDate || r.currentScheduledReviewDate,
-          currentScheduledReviewDate: targetDoc?.next_review_date || r.currentScheduledReviewDate || r.nextReviewDate,
-          next_review_date: targetDoc?.next_review_date || r.nextReviewDate || r.currentScheduledReviewDate,
+          rev: cleanRev,
+          edition: resolvedEdition,
+          sourceVersion: resolvedEdition,
+          nextReviewDate: resolvedNextReviewDate,
+          currentScheduledReviewDate: resolvedNextReviewDate,
+          next_review_date: resolvedNextReviewDate,
           lastReviewedDate: r.lastReviewedDate || targetDoc?.last_reviewed_at,
           last_reviewed_at: r.lastReviewedDate || targetDoc?.last_reviewed_at,
           periodic_reviews: targetDoc?.periodic_reviews || r.periodic_reviews,
@@ -855,7 +993,7 @@ const PeriodicReviewDashboard = () => {
         };
       });
     },
-    [currentUser, effectiveSchedules, allDocs, externalDocuments, effectiveToday, isManagementOrDcc]
+    [currentUser, effectiveSchedules, activeDocs, externalDocuments, effectiveToday, isManagementOrDcc]
   );
 
   const handleExportCsv = () => {

@@ -111,14 +111,27 @@ const ExternalDocHistoryModal = ({
     matched.forEach(d => uniqueMap.set(d.id, d));
     const list = Array.from(uniqueMap.values());
 
-    // Sort descending by revision number or date
+    // Sort descending: Active first, then reverse chronological by effective/superseded/created date or EDR/DAR request number
     return list.sort((a, b) => {
-      const revA = parseInt(String(a.rev || '0').replace(/\D/g, ''), 10) || 0;
-      const revB = parseInt(String(b.rev || '0').replace(/\D/g, ''), 10) || 0;
-      if (revB !== revA) return revB - revA;
-      const dateA = new Date(a.supersededAt || a.supersededDate || a.obsoleteDate || a.effectiveDate || 0);
-      const dateB = new Date(b.supersededAt || b.supersededDate || b.obsoleteDate || b.effectiveDate || 0);
-      return dateB - dateA;
+      const isActiveA = (a.status === 'ACTIVE' || a.status === 'EFFECTIVE') && !a.is_superseded && !a.is_obsolete && a.status !== 'SUPERSEDED' && a.status !== 'OBSOLETE';
+      const isActiveB = (b.status === 'ACTIVE' || b.status === 'EFFECTIVE') && !b.is_superseded && !b.is_obsolete && b.status !== 'SUPERSEDED' && b.status !== 'OBSOLETE';
+      if (isActiveA && !isActiveB) return -1;
+      if (!isActiveA && isActiveB) return 1;
+
+      if ((a.supersededByDocId && String(a.supersededByDocId) === String(b.id)) || (b.previousDocId && String(b.previousDocId) === String(a.id))) return 1;
+      if ((b.supersededByDocId && String(b.supersededByDocId) === String(a.id)) || (a.previousDocId && String(a.previousDocId) === String(b.id))) return -1;
+
+      const effA = new Date(a.effective_date || a.effectiveDate || a.issueDate || a.createdAt || a.supersededAt || a.supersededDate || a.obsoleteDate || 0).getTime() || 0;
+      const effB = new Date(b.effective_date || b.effectiveDate || b.issueDate || b.createdAt || b.supersededAt || b.supersededDate || b.obsoleteDate || 0).getTime() || 0;
+      if (effB !== effA) return effB - effA;
+
+      const supA = new Date(a.supersededAt || a.supersededDate || a.obsoleteDate || a.updatedAt || 0).getTime() || 0;
+      const supB = new Date(b.supersededAt || b.supersededDate || b.obsoleteDate || b.updatedAt || 0).getTime() || 0;
+      if (supB !== supA) return supB - supA;
+
+      const reqA = String(a.request_no || a.requestNo || a.edrNumber || a.requestId || a.dar_no || a.darNo || '');
+      const reqB = String(b.request_no || b.requestNo || b.edrNumber || b.requestId || b.dar_no || b.darNo || '');
+      return reqB.localeCompare(reqA, undefined, { numeric: true });
     });
   }, [externalDocuments, targetCode, doc]);
 

@@ -59,6 +59,29 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
       : (documentControlledCopies || []);
   }, [controlledCopyInstances, documentControlledCopies]);
 
+  const isExternal = Boolean(
+    doc?.is_external ||
+    doc?.isExternal ||
+    doc?.doc_type === 'EXTERNAL' ||
+    doc?.doc_type === 'ED' ||
+    doc?.docType === 'EXTERNAL' ||
+    doc?.docType === 'ED' ||
+    doc?.edCode ||
+    (doc?.code || doc?.doc_code || doc?.docCode || doc?.docNo || doc?.title || '')?.toString().trim().toUpperCase().startsWith('ED-')
+  );
+
+  const docCode = isExternal
+    ? (doc?.edCode || doc?.doc_code || doc?.code || doc?.docNo || doc?.docCode || doc?.documentCode || doc?.title || '')
+    : (doc?.doc_code || doc?.code || doc?.docNo || doc?.docCode || doc?.title || '');
+
+  const docDisplayTitle = isExternal
+    ? (doc?.name || (doc?.title && doc.title !== docCode ? doc.title : '') || doc?.doc_title || doc?.docTitle || doc?.title || '')
+    : (doc?.name || doc?.doc_title || doc?.docTitle || doc?.title || '');
+
+  const rawEdition = String(doc?.sourceVersion || doc?.edition || (isExternal ? doc?.rev : '') || '1.0')
+    .replace(/^(?:Edition|Ver|Version|Rev\.?)\s*/i, '')
+    .trim() || '1.0';
+
   // Existing deployed copies of this document (deduplicated & filtered to genuine active physical copies)
   const activeCopies = useMemo(() => {
     return getActivePhysicalCopies(allCopies, doc);
@@ -70,7 +93,12 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
   // Calculate highest existing copy number from active physical copies
   const maxExistingCopyNo = useMemo(() => {
     const copyNums = activeCopies.map(c => {
-      const raw = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? c.ccNumber.replace(/\D/g, '') : null);
+      if (typeof c.copy_number === 'number' && !isNaN(c.copy_number)) return c.copy_number;
+      if (typeof c.copyNumber === 'number' && !isNaN(c.copyNumber)) return c.copyNumber;
+      const codeStr = String(c.copyCode || c.copy_code || c.copy_no || c.copyNo || c.ccNumber || '');
+      const cMatch = codeStr.match(/-C(\d+)$/i) || codeStr.match(/^CC-(\d+)$/i) || codeStr.match(/^Copy\s*(\d+)$/i);
+      if (cMatch) return parseInt(cMatch[1], 10) || 0;
+      const raw = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? String(c.ccNumber).replace(/\D/g, '') : null);
       const parsed = parseInt(raw, 10);
       return isNaN(parsed) ? 0 : parsed;
     });
@@ -209,7 +237,41 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
 
     setIsSubmitting(true);
     try {
-      requestAdditionalControlledCopies(doc.id, selectedLocations, reason.trim());
+      const editionVal = doc?.sourceVersion || doc?.edition || (isExternal ? rawEdition : undefined);
+      const revVal = isExternal ? (doc?.sourceVersion || doc?.edition || '1.0') : (doc?.rev || '00');
+      const docTypeVal = isExternal ? 'EXTERNAL' : (doc?.doc_type || doc?.type || 'INTERNAL');
+      const titleVal = docDisplayTitle || doc?.title || doc?.doc_title || '';
+
+      const enrichedLocations = selectedLocations.map(loc => ({
+        ...loc,
+        documentId: doc.id,
+        docCode,
+        documentCode: docCode,
+        docTitle: titleVal,
+        documentTitle: titleVal,
+        edition: editionVal,
+        rev: revVal,
+        is_external: isExternal,
+        doc_type: docTypeVal
+      }));
+
+      const payload = {
+        documentId: doc.id,
+        docId: doc.id,
+        docCode,
+        documentCode: docCode,
+        docTitle: titleVal,
+        documentTitle: titleVal,
+        edition: editionVal,
+        rev: revVal,
+        is_external: isExternal,
+        doc_type: docTypeVal,
+        locations: enrichedLocations,
+        selectedLocations: enrichedLocations,
+        reason: reason.trim()
+      };
+
+      requestAdditionalControlledCopies(doc.id, enrichedLocations, reason.trim(), payload);
       toast.success(`ส่งคำขอออกสำเนาเพิ่มเติม ${selectedLocations.length} เล่ม สำเร็จ! ส่งต่อให้ DCC ดำเนินการ`);
       onClose();
     } catch (err) {
@@ -222,7 +284,7 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
         <motion.div
           initial={{ scale: 0.96, opacity: 0, y: 8 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -261,10 +323,10 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2.5 mb-2">
                   <span className="font-mono font-bold text-base sm:text-lg text-indigo-600 bg-white px-3.5 py-1 rounded-xl border border-indigo-100 shadow-2xs tracking-tight">
-                    {doc.title}
+                    {docCode}
                   </span>
                   <span className="px-2.5 py-1 rounded-full bg-slate-200/80 text-slate-700 font-bold font-mono text-xs">
-                    Rev.{doc.rev}
+                    {isExternal ? `Edition ${rawEdition}` : `Rev.${doc.rev || '00'}`}
                   </span>
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -272,7 +334,7 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                   </span>
                 </div>
                 <div className="text-sm sm:text-base font-semibold text-slate-800 break-words [overflow-wrap:anywhere]">
-                  {doc.name}
+                  {docDisplayTitle}
                 </div>
               </div>
 
@@ -303,7 +365,9 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
                 {activeCopies.length > 0 ? (
                   <div className="flex flex-wrap gap-2.5">
                     {activeCopies.map((copy) => {
-                      const rawNum = copy.copy_number ?? copy.copyNumber ?? copy.copy_no ?? copy.copyNo ?? (copy.ccNumber ? copy.ccNumber.replace(/\D/g, '') : '01');
+                      const codeStr = String(copy.copyCode || copy.copy_code || copy.copy_no || copy.copyNo || copy.ccNumber || '');
+                      const cMatch = codeStr.match(/-C(\d+)$/i) || codeStr.match(/^CC-(\d+)$/i) || codeStr.match(/^Copy\s*(\d+)$/i);
+                      const rawNum = cMatch ? cMatch[1] : (copy.copy_number ?? copy.copyNumber ?? copy.copy_no ?? copy.copyNo ?? (copy.ccNumber ? String(copy.ccNumber).replace(/\D/g, '') : '01'));
                       const parsed = parseInt(rawNum, 10);
                       const copyNoFormatted = isNaN(parsed) ? String(rawNum) : String(parsed).padStart(2, '0');
                       const locName = copy.location || copy.locationName || '-';

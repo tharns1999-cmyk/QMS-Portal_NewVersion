@@ -22,8 +22,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
-import { isActionableTask, isDccAdmin as checkDccAdmin } from '../../utils/taskFilter';
-import { evaluateDocumentReviewStatus } from '../../utils/documentUtils';
+import { isActionableTask, isDccAdmin as checkDccAdmin, isSameDepartment } from '../../utils/taskFilter';
+import { evaluateDocumentReviewStatus, getPeriodicReviewStatus } from '../../utils/documentUtils';
+import { extractDeptCode } from '../../services/darService';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -89,30 +90,83 @@ const Sidebar = () => {
   }).length;
 
   const periodicReviewCount = useMemo(() => {
-    // 1. นับจาก Task ประเภท PERIODIC_REVIEW หรือ EXTERNAL_VERIFICATION ที่ยังไม่เสร็จ และเข้าข่าย actionable (<= 30 วัน หรือเกินกำหนด)
-    const reviewTasksCount = (tasks || []).filter(t => 
-      (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'EXTERNAL_VERIFICATION') && 
-      t.status !== 'COMPLETED' &&
-      !t.is_completed &&
-      isActionableTask(t, currentUser, allDocs, effectiveToday)
-    ).length;
-
-    // 2. หรือนับจากเอกสารที่ OVERDUE / DUE_SOON ในความรับผิดชอบ
     const refDate = simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
-    const dueDocumentsCount = [...(documents || []), ...(externalDocuments || [])].filter(doc => {
-      const isDue = doc.review_status === 'OVERDUE' || doc.review_status === 'DUE_SOON' ||
-        (doc.next_review_date && ['OVERDUE', 'DUE_SOON'].includes(evaluateDocumentReviewStatus(doc.next_review_date, refDate))) ||
-        (doc.nextReviewDate && ['OVERDUE', 'DUE_SOON'].includes(evaluateDocumentReviewStatus(doc.nextReviewDate, refDate)));
-      const docDept = doc.department || doc.owner_dept || doc.dept;
-      const hasDeptAccess = currentUser?.managedDepartments?.includes('*') || 
-                            currentUser?.managedDepartments?.includes(docDept) ||
-                            (currentUser?.depts || []).includes(docDept) ||
-                            docDept === currentUser?.department;
-      return isDue && hasDeptAccess;
+    const activeDocs = [...(documents || []), ...(externalDocuments || [])].filter(doc => {
+      if (!doc) return false;
+      const statusUpper = String(doc.status || '').toUpperCase();
+      if (statusUpper !== 'ACTIVE' && statusUpper !== 'EFFECTIVE') return false;
+      if (doc.is_superseded || doc.is_obsolete || doc.isSuperseded || doc.isObsolete) return false;
+      return true;
+    });
+
+    const explicitManagedDepts = Array.isArray(currentUser?.managedDepartments)
+      ? currentUser.managedDepartments.filter(d => d && d !== '*')
+      : [];
+    const userDeptList = [
+      currentUser?.department,
+      currentUser?.dept,
+      currentUser?.primary_department,
+      ...(currentUser?.depts || []),
+      ...explicitManagedDepts
+    ].filter(Boolean);
+
+    const seenDocKeys = new Set();
+    const dueDocumentsCount = activeDocs.filter(doc => {
+      const docCode = String(doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.docNo || doc.id || '').trim();
+      if (docCode && seenDocKeys.has(docCode)) return false;
+
+      const evalResult = evaluateDocumentReviewStatus(doc, refDate);
+      const evalStatus = typeof evalResult === 'object' ? evalResult.status : evalResult;
+      if (evalStatus === 'COMPLETED') return false;
+
+      const isExt = Boolean(doc.is_external || doc.external || doc.doc_type === 'EXTERNAL' || doc.edCode || String(docCode).startsWith('ED-'));
+      const nextDate = isExt
+        ? (doc.nextReviewDate || doc.next_review_date || doc.currentScheduledReviewDate)
+        : (doc.next_review_date || doc.nextReviewDate || doc.currentScheduledReviewDate);
+
+      const reviewState = nextDate
+        ? getPeriodicReviewStatus(nextDate, refDate).status
+        : (doc.review_status === 'OVERDUE' || doc.review_status === 'DUE_SOON' ? doc.review_status : 'NORMAL');
+      const isDue = reviewState === 'OVERDUE' || reviewState === 'DUE_SOON';
+      if (!isDue) return false;
+
+      const docDept = doc.department || doc.owner_dept || doc.dept || extractDeptCode(docCode);
+      const hasDeptAccess = userDeptList.some(uDept => isSameDepartment(docDept, uDept));
+      if (!hasDeptAccess) return false;
+
+      if (docCode) seenDocKeys.add(docCode);
+      return true;
+    }).length;
+
+    const reviewTasksCount = (tasks || []).filter(t => {
+      if (t.type !== 'PERIODIC_REVIEW' && t.taskType !== 'PERIODIC_REVIEW' && t.type !== 'EXTERNAL_VERIFICATION' && t.taskType !== 'EXTERNAL_VERIFICATION') {
+        return false;
+      }
+      if (t.status === 'COMPLETED' || t.is_completed) return false;
+      if (!isActionableTask(t, currentUser, activeDocs, effectiveToday)) return false;
+
+      const taskDocCode = String(t.docCode || t.documentNumber || t.doc_code || '').trim();
+      const matchedActiveDoc = activeDocs.find(d =>
+        (t.docId && d.id === t.docId) ||
+        (t.documentId && d.id === t.documentId) ||
+        (t.referenceId && d.id === t.referenceId) ||
+        (taskDocCode && (d.edCode === taskDocCode || d.doc_code === taskDocCode || d.code === taskDocCode || d.document_number === taskDocCode))
+      );
+      if (!matchedActiveDoc) return false;
+
+      const isExt = Boolean(matchedActiveDoc.is_external || matchedActiveDoc.external || matchedActiveDoc.doc_type === 'EXTERNAL' || matchedActiveDoc.edCode);
+      const nextDate = isExt
+        ? (matchedActiveDoc.nextReviewDate || matchedActiveDoc.next_review_date)
+        : (matchedActiveDoc.next_review_date || matchedActiveDoc.nextReviewDate);
+      if (nextDate) {
+        const st = getPeriodicReviewStatus(nextDate, refDate).status;
+        if (st !== 'OVERDUE' && st !== 'DUE_SOON') return false;
+      }
+      return true;
     }).length;
 
     return Math.max(reviewTasksCount, dueDocumentsCount);
-  }, [tasks, documents, externalDocuments, currentUser, simulatedSystemDate]);
+  }, [tasks, documents, externalDocuments, currentUser, simulatedSystemDate, effectiveToday]);
 
   const myExternalReviseCount = useMemo(() => {
     const reviseDocIds = new Set();

@@ -886,13 +886,24 @@ const ExternalDocsList = () => {
 
   const handleRequestPhysicalCopy = (doc) => {
     setOpenMenuDocId(null);
+    const resolvedEdCode = getDocCode(doc);
+    const resolvedTitle = doc.title || doc.doc_title || doc.name || '';
+    const resolvedEdition = doc.sourceVersion || doc.edition || doc.rev || '01';
     setSelectedDocForCopy({
       ...doc,
       id: doc.id,
-      title: doc.edCode || doc.doc_code || doc.title,
-      name: doc.title,
-      rev: doc.rev || doc.sourceVersion || '01',
-      department: doc.department || uDept
+      edCode: resolvedEdCode,
+      doc_code: resolvedEdCode,
+      code: resolvedEdCode,
+      title: resolvedTitle,
+      doc_title: resolvedTitle,
+      name: resolvedTitle,
+      sourceVersion: resolvedEdition,
+      edition: resolvedEdition,
+      rev: resolvedEdition,
+      department: doc.department || uDept,
+      is_external: true,
+      doc_type: 'EXTERNAL'
     });
     setIsCopyModalOpen(true);
   };
@@ -959,7 +970,17 @@ const ExternalDocsList = () => {
 
   // Export CSV
   const handleExportCsv = () => {
-    const headers = ['ลำดับ', 'รหัสเอกสาร (DocNo)', 'ชื่อเอกสาร', 'ชื่อภาษาไทย', 'แหล่งที่มา', 'เวอร์ชันต้นทาง (Edition / Ver.)', 'แผนก', 'ระดับสิทธิ์', 'วันมีผลบังคับใช้ / วันปลดระวาง', 'สถานะเอกสาร'];
+    const csvHeaders = [
+      'ลำดับ',
+      'รหัสเอกสาร (ED Code)',
+      'ชื่อเอกสารทางการ (Title)',
+      'หน่วยงานผู้ออก/แหล่งที่มา (Issuing Org)',
+      'เวอร์ชันต้นทาง (Edition/Version)',
+      'แผนกผู้รับผิดชอบ (Responsible Dept)',
+      'ระดับสิทธิ์การเข้าถึง (Access Level)',
+      'วันที่มีผลบังคับใช้ (Effective Date)',
+      'สถานะเอกสาร (Status)'
+    ];
     const rows = [];
     let counter = 1;
     displayStacks.forEach(stack => {
@@ -977,19 +998,18 @@ const ExternalDocsList = () => {
         rows.push([
           counter++,
           escape(code),
-          escape(doc.title || stack.title),
-          escape(doc.titleTh || stack.titleTh || '-'),
-          escape(doc.issuer || stack.issuer || '-'),
+          escape(doc.title || stack.title || '-'),
+          escape(doc.issuer || doc.issuingOrg || doc.source || stack.issuer || '-'),
           escape(doc.sourceVersion || doc.edition || '-'),
           escape(doc.department || stack.department || '-'),
           escape(doc.accessScope || stack.accessScope || 'General'),
-          escape(doc.supersededAt ? String(doc.supersededAt).split('T')[0] : (doc.effectiveDate || '-')),
+          escape(doc.supersededAt ? String(doc.supersededAt).split('T')[0] : (doc.effectiveDate || doc.effective_date || '-')),
           escape(doc.status || '-')
         ].join(','));
       });
     });
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const csvContent = '\uFEFF' + [csvHeaders.join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1423,7 +1443,7 @@ const ExternalDocsList = () => {
             <tbody className="divide-y divide-[#F1F5F9]">
               {pagination.paginatedData.length > 0 ? (
                 pagination.paginatedData.map((stack, idx) => {
-                  const doc = stack.primaryDoc;
+                  const doc = statusFilter === 'SUPERSEDED' ? (stack.supersededEditions[0] || stack.primaryDoc) : stack.primaryDoc;
                   const validity = getValidityInfo(doc);
                   const isActive = doc.status === 'ACTIVE' || doc.status === 'EFFECTIVE';
                   const isMenuOpen = openMenuDocId === doc.id;

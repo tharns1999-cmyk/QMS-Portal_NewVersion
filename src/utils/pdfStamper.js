@@ -626,6 +626,7 @@ export const generateExternalDocStampImage = async (stampData) => {
     // Line 3: Effective Date - Compact Caption size
     ctx.font = `normal 38px ${FONT_FAMILY}`;
     const effectiveDate = stampData?.timestamp || '-';
+    ctx.fillText(`Effective Date: ${effectiveDate}`, width - paddingRight, 170);
     const dataUrl = canvas.toDataURL('image/png');
     try {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -681,6 +682,17 @@ export const stampExternalDocumentTopRight = async (pdfBytes, stampData) => {
       x = margin;
       y = height - stampHeight - margin;
     }
+
+    // Mask out any pre-existing top-right stamp so version stamps never overlap
+    page.drawRectangle({
+      x,
+      y,
+      width: stampWidth,
+      height: stampHeight,
+      color: rgb(1, 1, 1),
+      borderWidth: 0,
+      opacity: 1.0,
+    });
 
     page.drawImage(stampImage, {
       x,

@@ -45,7 +45,8 @@ export const getDueState = (dueDate, referenceDate = new Date()) => {
   return 'NOT_YET_DUE';
 };
 
-import { getReviewCycleYears, getReviewStatusFlag } from '../utils/documentUtils';
+import { getReviewCycleYears, getReviewStatusFlag, getPeriodicReviewStatus } from '../utils/documentUtils';
+export { getPeriodicReviewStatus };
 
 export const generateSchedules = (internalDocs, externalDocs, existingSchedules = []) => {
   const newSchedules = [...existingSchedules];

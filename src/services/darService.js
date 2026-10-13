@@ -206,6 +206,8 @@ export const transformDarToMasterDocument = (dar) => {
 
 export default {
   standardizeDepartmentCode,
+  extractDeptCode,
+  isDeptEquivalent,
   isMyDepartment,
   transformDarToMasterDocument
 };

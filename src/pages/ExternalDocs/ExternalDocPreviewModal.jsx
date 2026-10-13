@@ -34,7 +34,10 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
       return;
     }
 
-    const docKey = `${doc.id || ''}_${doc.edCode || doc.doc_code || doc.docNo || ''}_${doc.sourceVersion || doc.edition || ''}_${doc.attachedFile?.fileId || doc.fileId || ''}`;
+    const editionKey = String(doc.edition || doc.sourceVersion || doc.ver_ed || doc.version || '').trim();
+    const rawFileId = doc.rawFileId || doc.attachedFile?.rawFileId || doc.attachedFile?.fileId || doc.fileId;
+    const fileStorageKey = doc.fileStorageKey || doc.attachedFile?.fileStorageKey || (docCode && editionKey ? `FILE_${docCode}_ED_${editionKey}` : null);
+    const docKey = `${doc.id || ''}_${doc.edCode || doc.doc_code || doc.docNo || ''}_${editionKey}_${fileStorageKey || ''}_${rawFileId || ''}`;
 
     // Skip re-processing if already stamped and loaded for the exact same document
     if (currentDocKeyRef.current === docKey && blobUrlRef.current && pdfBlobUrl) {
@@ -42,9 +45,25 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
     }
 
     setLoadingPdf(true);
-    const fallbackKey = doc.edCode || doc.doc_code || doc.docNo || doc.id;
+    const isSupersededOrObsolete = Boolean(
+      doc.status === 'SUPERSEDED' ||
+      doc.status === 'SUPERSEDED_ARCHIVED' ||
+      doc.is_superseded ||
+      doc.status === 'OBSOLETE' ||
+      doc.status === 'OBSOLETE_ARCHIVED' ||
+      doc.is_obsolete
+    );
+    const fallbackKey = isSupersededOrObsolete
+      ? (fileStorageKey || rawFileId || doc.id)
+      : (fileStorageKey || rawFileId || doc.edCode || doc.doc_code || doc.docNo || doc.id);
+    const sourceDoc = {
+      ...doc,
+      edition: editionKey || doc.edition,
+      ...(fileStorageKey ? { fileStorageKey } : {}),
+      ...(rawFileId ? { rawFileId, fileId: rawFileId, attachedFile: { ...(doc.attachedFile || {}), rawFileId, fileId: rawFileId } } : {})
+    };
 
-    resolveFileBlob(doc, fallbackKey).then(async (fileBlob) => {
+    resolveFileBlob(sourceDoc, fallbackKey).then(async (fileBlob) => {
       if (isCancelled) return;
       if (!fileBlob) {
         if (blobUrlRef.current) {
@@ -359,11 +378,13 @@ const ExternalDocPreviewModal = ({ isOpen, onClose, document: doc }) => {
                 <strong className="text-slate-800 font-mono font-medium">{doc.effectiveDate || '-'}</strong>
               </span>
             </div>
-            <div className="inline-flex items-center gap-1.5">
-              <span>สิทธิ์การเข้าถึง:</span>
-              <span className="font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px] shadow-2xs">
-                {doc.accessScope || 'General'}
-              </span>
+            <div className="flex flex-col items-end gap-1">
+              <div className="inline-flex items-center gap-1.5">
+                <span>สิทธิ์การเข้าถึง:</span>
+                <span className="font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px] shadow-2xs">
+                  {doc.accessScope || 'General'}
+                </span>
+              </div>
             </div>
           </div>
 

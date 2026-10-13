@@ -350,8 +350,38 @@ export function getCycleDisplayText(doc) {
 }
 
 /**
+ * Pure date-based periodic review status calculator.
+ * - diffDays < 0 => OVERDUE
+ * - 0 <= diffDays <= 30 => DUE_SOON
+ * - diffDays > 30 => NORMAL (ยังไม่ถึงกำหนด)
+ */
+export const getPeriodicReviewStatus = (nextReviewDate, referenceDate = new Date()) => {
+  if (!nextReviewDate) return { status: 'NORMAL', label: 'ยังไม่ถึงกำหนด', color: 'green', days: null };
+
+  const now = new Date(referenceDate);
+  now.setHours(0, 0, 0, 0);
+
+  const target = new Date(nextReviewDate);
+  if (isNaN(target.getTime())) {
+    return { status: 'NORMAL', label: 'ยังไม่ถึงกำหนด', color: 'green', days: null };
+  }
+  target.setHours(0, 0, 0, 0);
+
+  const diffTime = target.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return { status: 'OVERDUE', label: 'เกินกำหนด', color: 'red', days: Math.abs(diffDays) };
+  }
+  if (diffDays >= 0 && diffDays <= 30) {
+    return { status: 'DUE_SOON', label: 'ใกล้ครบกำหนด', color: 'amber', days: diffDays };
+  }
+  return { status: 'NORMAL', label: 'ยังไม่ถึงกำหนด', color: 'green', days: diffDays };
+};
+
+/**
  * Evaluates document periodic review status against reference date with strict priority order.
- * Priority 1: OVERDUE (diffDays < 0) or DUE_SOON (diffDays <= 30) -> canReview: true
+ * Priority 1: OVERDUE (diffDays < 0) or DUE_SOON (0 <= diffDays <= 30) -> canReview: true
  * Priority 2: COMPLETED (recent approval within 60 days when diffDays > 30) -> canReview: false
  * Priority 3: UP_TO_DATE -> canReview: false
  *
@@ -361,8 +391,19 @@ export function getCycleDisplayText(doc) {
  */
 export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date()) {
   const isDocObject = docOrDate && typeof docOrDate === 'object' && !(docOrDate instanceof Date);
+  const isExternalDoc = isDocObject && Boolean(
+    docOrDate.isExternal ||
+    docOrDate.is_external ||
+    docOrDate.documentCategory === 'EXTERNAL' ||
+    docOrDate.doc_type === 'EXTERNAL' ||
+    docOrDate.edCode ||
+    docOrDate.targetDoc?.edCode ||
+    docOrDate.targetDoc?.is_external
+  );
   const nextDateStr = isDocObject
-    ? (docOrDate.next_review_date || docOrDate.nextReviewDate || docOrDate.currentScheduledReviewDate || docOrDate.targetDoc?.next_review_date || docOrDate.targetDoc?.nextReviewDate)
+    ? (isExternalDoc
+        ? (docOrDate.nextReviewDate || docOrDate.next_review_date || docOrDate.currentScheduledReviewDate || docOrDate.targetDoc?.nextReviewDate || docOrDate.targetDoc?.next_review_date)
+        : (docOrDate.next_review_date || docOrDate.nextReviewDate || docOrDate.currentScheduledReviewDate || docOrDate.targetDoc?.next_review_date || docOrDate.targetDoc?.nextReviewDate))
     : docOrDate;
 
   const today = new Date(referenceDate);
@@ -410,7 +451,7 @@ export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date
   if (diffDays < 0) {
     return isDocObject ? { status: 'OVERDUE', diffDays, canReview: true } : 'OVERDUE';
   }
-  if (diffDays <= 30) {
+  if (diffDays >= 0 && diffDays <= 30) {
     return isDocObject ? { status: 'DUE_SOON', diffDays, canReview: true } : 'DUE_SOON';
   }
 

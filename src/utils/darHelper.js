@@ -1,3 +1,5 @@
+import { normalizeCanonicalDept } from './taskFilter';
+
 const REASON_MAP = {
   'PROCESS_IMPROVEMENT': 'ปรับปรุงกระบวนการทำงานให้ดีขึ้น',
   'AUDIT_FINDING': 'แก้ไข/ยกเลิกตามข้อเสนอแนะจากการตรวจติดตาม (Audit Finding)',
@@ -295,14 +297,7 @@ export const canViewDar = (dar, currentUser) => {
   return true;
 };
 
-/**
- * Extract raw uppercase department code without QA/QC remapping
- */
-export const normalizeDept = (d) => {
-  if (!d) return '';
-  const val = typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d;
-  return typeof val === 'string' ? val.trim().toUpperCase() : '';
-};
+export const normalizeDept = normalizeCanonicalDept;
 
 /**
  * Standardize Department Codes (e.g. QA, QA/QC, QAQC -> QA/QC)

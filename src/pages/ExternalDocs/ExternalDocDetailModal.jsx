@@ -47,6 +47,7 @@ const ExternalDocDetailModal = ({
     currentUser, 
     controlledCopyInstances, 
     documentControlledCopies,
+    controlledCopies,
     logExternalDownload
   } = useStore();
 
@@ -57,6 +58,7 @@ const ExternalDocDetailModal = ({
   const [selectedCopiesForDisposition, setSelectedCopiesForDisposition] = useState([]);
   const [isDownloading, setIsDownloading] = useState(false);
   const [previewEditionDoc, setPreviewEditionDoc] = useState(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Sync internal document state when initialDoc changes
   useEffect(() => {
@@ -78,6 +80,7 @@ const ExternalDocDetailModal = ({
       }
     }
     setPreviewEditionDoc(null);
+    setIsExpanded(false);
   }, [initialDoc, externalDocuments]);
 
   // Reset tab to general on new open
@@ -85,15 +88,18 @@ const ExternalDocDetailModal = ({
     if (isOpen) {
       setActiveTab('general');
       setPreviewEditionDoc(null);
+      setIsExpanded(false);
     }
   }, [isOpen, initialDoc?.id]);
 
   // Synchronized controlled copies list
   const allCopies = useMemo(() => {
-    return (controlledCopyInstances && controlledCopyInstances.length > 0)
-      ? controlledCopyInstances
-      : (documentControlledCopies || []);
-  }, [controlledCopyInstances, documentControlledCopies]);
+    return [
+      ...(controlledCopyInstances || []),
+      ...(documentControlledCopies || []),
+      ...(controlledCopies || [])
+    ];
+  }, [controlledCopyInstances, documentControlledCopies, controlledCopies]);
 
   const edCode = currentDoc?.edCode || currentDoc?.doc_code || currentDoc?.docNo || currentDoc?.id || 'ED-DOC-001';
   const sourceEdition = currentDoc?.sourceVersion || currentDoc?.edition || '-';
@@ -121,7 +127,7 @@ const ExternalDocDetailModal = ({
     const s2 = String(typeof d2 === 'object' ? (d2.id || d2.code || d2.dept || d2.department || '') : d2).trim().toUpperCase();
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
-    if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC')) return true;
+    if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC' || s1 === 'QC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC' || s2 === 'QC')) return true;
     return false;
   };
 
@@ -129,9 +135,12 @@ const ExternalDocDetailModal = ({
   const isDccAdmin = Boolean(
     currentUser?.role === 'DCC' || 
     currentUser?.role === 'DCC_ADMIN' || 
+    currentUser?.role === 'SUPER_ADMIN' ||
     currentUser?.isDccAdmin || 
     currentUser?.isDcc || 
-    currentUser?.role === 'ADMIN'
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.department === 'DC' ||
+    currentUser?.department === 'DCC'
   );
 
   // Status flags
@@ -157,7 +166,7 @@ const ExternalDocDetailModal = ({
   );
 
   const canManageDoc = (isOwnerDept || isDccAdmin) && isActive;
-  const canRequestCopy = (isOwnerDept || isDccAdmin) && (currentDoc?.status === 'ACTIVE' || currentDoc?.status === 'EFFECTIVE');
+  const canRequestCopy = isActive;
 
   // Canonical code and base ID resolution
   const canonicalDocCode = useMemo(() => {
@@ -175,11 +184,48 @@ const ExternalDocDetailModal = ({
     return s || '1.0';
   };
 
-  // Version number parser for descending sort (e.g. "Edition 1.6" -> 1.6, "Rev.02" -> 2)
-  const parseVersion = (val) => {
-    if (!val) return 0;
-    const m = String(val).match(/(\d+(?:\.\d+)?)/);
-    return m ? parseFloat(m[1]) : 0;
+  // Reverse Chronological Comparator for External Document Editions
+  const compareEditionsNewestFirst = (a, b) => {
+    // 1. Active status always on top
+    const isActiveA = (a.status === 'ACTIVE' || a.status === 'EFFECTIVE') && !a.is_superseded && !a.is_obsolete && a.status !== 'SUPERSEDED' && a.status !== 'OBSOLETE';
+    const isActiveB = (b.status === 'ACTIVE' || b.status === 'EFFECTIVE') && !b.is_superseded && !b.is_obsolete && b.status !== 'SUPERSEDED' && b.status !== 'OBSOLETE';
+    if (isActiveA && !isActiveB) return -1;
+    if (!isActiveA && isActiveB) return 1;
+
+    // 2. Direct replacement lineage link (if B replaced A, B is newer than A)
+    const edA = cleanVersion(a.sourceVersion || a.edition || a.ver_ed || a.rev);
+    const edB = cleanVersion(b.sourceVersion || b.edition || b.ver_ed || b.rev);
+    if (
+      (a.supersededByDocId && String(a.supersededByDocId) === String(b.id)) ||
+      (b.previousDocId && String(b.previousDocId) === String(a.id)) ||
+      (a.supersededByEdition && cleanVersion(a.supersededByEdition) === edB)
+    ) {
+      return 1;
+    }
+    if (
+      (b.supersededByDocId && String(b.supersededByDocId) === String(a.id)) ||
+      (a.previousDocId && String(a.previousDocId) === String(b.id)) ||
+      (b.supersededByEdition && cleanVersion(b.supersededByEdition) === edA)
+    ) {
+      return -1;
+    }
+
+    // 3. Compare effective date / creation / superseded timestamp descending
+    const effA = new Date(a.effective_date || a.effectiveDate || a.issueDate || a.createdAt || a.superseded_at || a.supersededAt || a.supersededDate || 0).getTime() || 0;
+    const effB = new Date(b.effective_date || b.effectiveDate || b.issueDate || b.createdAt || b.superseded_at || b.supersededAt || b.supersededDate || 0).getTime() || 0;
+    if (effB !== effA) return effB - effA;
+
+    const supA = new Date(a.superseded_at || a.supersededAt || a.supersededDate || a.obsoletedAt || a.obsoleteDate || a.updatedAt || 0).getTime() || 0;
+    const supB = new Date(b.superseded_at || b.supersededAt || b.supersededDate || b.obsoletedAt || b.obsoleteDate || b.updatedAt || 0).getTime() || 0;
+    if (supB !== supA) return supB - supA;
+
+    // 4. Fallback: compare EDR / DAR request number descending
+    const reqA = String(a.request_no || a.requestNo || a.edrNumber || a.requestId || a.dar_no || a.darNo || '');
+    const reqB = String(b.request_no || b.requestNo || b.edrNumber || b.requestId || b.dar_no || b.darNo || '');
+    if (reqA !== reqB) {
+      return reqB.localeCompare(reqA, undefined, { numeric: true });
+    }
+    return 0;
   };
 
   // Find all related editions in external documents lineage (ISO 9001:2015 Clause 7.5.3.2)
@@ -191,7 +237,11 @@ const ExternalDocDetailModal = ({
 
     const pool = (documentFamily && Array.isArray(documentFamily) && documentFamily.length > 0)
       ? documentFamily
-      : (externalDocuments || []);
+      : [
+          ...(externalDocuments || []),
+          ...(Array.isArray(currentDoc.supersededEditions) ? currentDoc.supersededEditions : []),
+          ...(Array.isArray(currentDoc.versionHistory) ? currentDoc.versionHistory : [])
+        ];
 
     const matched = pool.filter(d => {
       if (!d) return false;
@@ -212,46 +262,69 @@ const ExternalDocDetailModal = ({
     uniqueMap.set(currentDoc.id, currentDoc);
 
     const list = Array.from(uniqueMap.values());
-
-    return list.sort((a, b) => {
-      // 1. Version descending (1.6 > 1.5 > 1.0)
-      const verA = parseVersion(a.sourceVersion || a.edition || a.rev || a.version);
-      const verB = parseVersion(b.sourceVersion || b.edition || b.rev || b.version);
-      if (verB !== verA) return verB - verA;
-
-      // 2. Active status priority
-      const isActiveA = (a.status === 'ACTIVE' || a.status === 'EFFECTIVE') && !a.is_superseded && !a.is_obsolete;
-      const isActiveB = (b.status === 'ACTIVE' || b.status === 'EFFECTIVE') && !b.is_superseded && !b.is_obsolete;
-      if (isActiveA && !isActiveB) return -1;
-      if (!isActiveA && isActiveB) return 1;
-
-      // 3. Issue / effective / superseded / obsolete date descending
-      const dateA = new Date(a.obsoletedAt || a.obsoleteDate || a.supersededAt || a.supersededDate || a.issueDate || a.effectiveDate || a.createdAt || 0).getTime() || 0;
-      const dateB = new Date(b.obsoletedAt || b.obsoleteDate || b.supersededAt || b.supersededDate || b.issueDate || b.effectiveDate || b.createdAt || 0).getTime() || 0;
-      return dateB - dateA;
-    });
+    return list.sort(compareEditionsNewestFirst);
   }, [currentDoc, canonicalDocCode, docTitle, documentFamily, externalDocuments]);
 
   // Backward-compatible alias
   const allEditions = familyEditions;
 
+  // Separate Active Version vs Superseded/Historical List sorted newest -> oldest
+  const sortedHistory = useMemo(() => {
+    const activeVersion = familyEditions.find(d =>
+      (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') &&
+      !d.is_superseded &&
+      !d.is_obsolete &&
+      d.status !== 'SUPERSEDED' &&
+      d.status !== 'OBSOLETE'
+    ) || null;
+
+    const rawSuperseded = familyEditions.filter(d => !activeVersion || d.id !== activeVersion.id);
+    const supersededList = [...rawSuperseded].sort(compareEditionsNewestFirst);
+
+    return { activeVersion, supersededList };
+  }, [familyEditions]);
+
   // Find latest active/effective edition if current document is superseded
   const latestActiveEdition = useMemo(() => {
     if (!currentDoc) return null;
-    return allEditions.find(d => d.status === 'ACTIVE' || d.status === 'EFFECTIVE') || allEditions[0];
-  }, [allEditions, currentDoc]);
+    return sortedHistory.activeVersion || allEditions[0];
+  }, [sortedHistory, allEditions, currentDoc]);
 
   // Physical controlled copies matched to this external document
   const ccInstances = useMemo(() => {
     if (!currentDoc) return [];
-    const targetId = String(currentDoc.id);
-    const targetCode = String(edCode).trim().toUpperCase();
+    const targetId = String(currentDoc.id || '').trim();
+    const targetCode = String(edCode || '').trim().toUpperCase();
 
-    return allCopies.filter(c => {
-      const matchId = String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id) === targetId;
-      const copyDocCode = String(c.doc_code || c.docCode || c.docTitle || '').trim().toUpperCase();
+    const matchedStoreCopies = allCopies.filter(c => {
+      if (!c) return false;
+      const cDocId = String(c.documentId || c.externalDocId || c.external_doc_id || c.docId || c.doc_id || '').trim();
+      const matchId = Boolean(targetId && cDocId === targetId);
+      const copyDocCode = String(c.doc_code || c.docCode || c.documentCode || c.document_code || c.edCode || c.docTitle || '').trim().toUpperCase();
       const matchCode = Boolean(targetCode && copyDocCode === targetCode);
       return matchId || matchCode;
+    });
+
+    const embeddedCopies = [
+      ...(Array.isArray(currentDoc.distributionList) ? currentDoc.distributionList : []),
+      ...(Array.isArray(currentDoc.distribution) ? currentDoc.distribution : []),
+      ...(Array.isArray(currentDoc.controlledCopies) ? currentDoc.controlledCopies : [])
+    ];
+
+    const combined = [...matchedStoreCopies, ...embeddedCopies];
+    const seen = new Set();
+
+    return combined.filter((c, idx) => {
+      if (!c) return false;
+      const codeStr = String(c.copyCode || c.copy_code || '').trim().toUpperCase();
+      const cMatch = codeStr.match(/-C(\d+)$/i);
+      const rawNo = cMatch ? cMatch[1] : (c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? String(c.ccNumber).replace(/\D/g, '') : ''));
+      const num = parseInt(rawNo, 10);
+      const canonicalCopyCode = codeStr || (!isNaN(num) && num > 0 && targetCode ? `${targetCode}-C${String(num).padStart(2, '0')}` : '');
+      const dedupKey = canonicalCopyCode || String(c.id || `idx-${idx}`).trim().toUpperCase();
+      if (seen.has(dedupKey)) return false;
+      seen.add(dedupKey);
+      return true;
     });
   }, [currentDoc, edCode, allCopies]);
 
@@ -713,8 +786,8 @@ const ExternalDocDetailModal = ({
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[11px] tracking-wider border-b border-slate-200">
                         <tr>
-                          <th className="py-2.5 px-3 text-center w-28">หมายเลขสำเนา (Copy No.)</th>
-                          <th className="py-2.5 px-3 w-32">แผนกผู้รับ</th>
+                          <th className="py-2.5 px-3 text-center w-36">รหัสสำเนา (Copy Code)</th>
+                          <th className="py-2.5 px-3 w-40">แผนก / ผู้ถือครอง</th>
                           <th className="py-2.5 px-3">จุดติดตั้ง / จุดใช้งาน</th>
                           <th className="py-2.5 px-3 text-center w-36">สถานะเล่ม (Status)</th>
                           <th className="py-2.5 px-3 text-center w-48">วันที่และผู้ดำเนินการ</th>
@@ -724,25 +797,34 @@ const ExternalDocDetailModal = ({
                       <tbody className="divide-y divide-slate-100">
                         {ccInstances.length > 0 ? (
                           ccInstances.map((inst, index) => {
-                            const copyNoStr = inst.copy_no || inst.ccNumber || `Copy ${String(index + 1).padStart(2, '0')}`;
+                            const rawNo = inst.copyNumber || inst.copy_no || inst.ccNumber || String(index + 1);
+                            const numMatch = String(rawNo).match(/(\d+)\s*$/);
+                            const paddedNo = numMatch ? String(parseInt(numMatch[1], 10)).padStart(2, '0') : String(index + 1).padStart(2, '0');
+                            const copyCodeStr = inst.copyCode || inst.copy_code || (String(rawNo).includes('-C') ? String(rawNo) : `${edCode}-C${paddedNo}`);
                             const deptName = inst.department || inst.target_department || inst.holder_dept || '-';
+                            const holderName = inst.holder || inst.custodian || inst.holder_name || inst.recipient || inst.received_by || '';
                             const locationName = inst.location || inst.locationName || inst.station_name || 'จุดใช้งานหลัก';
-                            const receiptDate = inst.receipt_confirmed_at || inst.received_at || inst.dateIssued || '-';
+                            const receiptDate = inst.receipt_confirmed_at || inst.received_at || inst.receivedDate || inst.dateIssued || inst.issued_at || inst.created_at || '-';
                             const isPending = inst.status === 'PENDING_RECALL' || inst.status === 'SUPERSEDED_PENDING_RECALL' || inst.status === 'OBSOLETE_PENDING_RECALL';
                             const isDestroyed = inst.status === 'DESTROYED' || inst.status === 'RECALLED_DESTROYED';
                             const isRecalled = inst.status === 'RECALLED' || inst.status === 'ARCHIVED_OBSOLETE';
 
                             return (
-                              <tr key={inst.id || index} className="hover:bg-slate-50/80 transition-colors">
-                                <td className="py-3 px-3 text-center font-mono font-bold text-[#0D99FF]">
-                                  {copyNoStr}
+                              <tr key={inst.copyCode || inst.id || index} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-3 px-3 text-center font-mono font-bold text-[#0D99FF] whitespace-nowrap">
+                                  {copyCodeStr}
                                 </td>
-                                <td className="py-3 px-3 font-bold text-slate-700">
-                                  {deptName}
+                                <td className="py-3 px-3">
+                                  <div className="font-bold text-slate-700">{deptName}</div>
+                                  {holderName && (
+                                    <div className="text-[11px] text-slate-500">{holderName}</div>
+                                  )}
                                 </td>
-                                <td className="py-3 px-3 text-slate-600 flex items-center gap-1.5">
-                                  <MapPin size={13} className="text-slate-400 shrink-0" />
-                                  <span>{locationName}</span>
+                                <td className="py-3 px-3 text-slate-600">
+                                  <div className="flex items-center gap-1.5">
+                                    <MapPin size={13} className="text-slate-400 shrink-0" />
+                                    <span>{locationName}</span>
+                                  </div>
                                 </td>
                                 <td className="py-3 px-3 text-center whitespace-nowrap">
                                   {isPending ? (
@@ -776,7 +858,7 @@ const ExternalDocDetailModal = ({
                                     </div>
                                   ) : (
                                     <div>
-                                      <div>{receiptDate ? receiptDate.split('T')[0] : '-'}</div>
+                                      <div>{receiptDate && receiptDate !== '-' ? String(receiptDate).split('T')[0] : '-'}</div>
                                       <div className="text-[10px] text-slate-400 font-sans">ตรวจรับเข้าจุดใช้งาน</div>
                                     </div>
                                   )}
@@ -821,150 +903,169 @@ const ExternalDocDetailModal = ({
               </div>
             )}
 
-            {/* Tab 2: Version & Edition Lineage (Linear / Minimalist SaaS Timeline) */}
+            {/* Tab 2: Version & Edition Lineage (Pinned Active Card + Compact Collapsible Timeline) */}
             {activeTab === 'lineage' && (
-              <div className="py-2">
+              <div className="py-1 space-y-5">
                 {familyEditions.length > 0 ? (
-                  <div className="border-l-2 border-slate-200/80 ml-4 pl-6 space-y-4 relative">
-                    {familyEditions.map((ed, idx) => {
-                      const isFirst = idx === 0;
-                      const isDocObs = Boolean(
-                        ed.status === 'OBSOLETE' || 
-                        ed.status === 'OBSOLETE_ARCHIVED' || 
-                        ed.is_obsolete
-                      );
-                      const isDocSup = Boolean(
-                        !isDocObs && (
-                          ed.status === 'SUPERSEDED' || 
-                          ed.status === 'SUPERSEDED_ARCHIVED' || 
-                          ed.is_superseded
-                        )
-                      );
-                      const isDocActive = Boolean(
-                        !isDocObs && !isDocSup && (
-                          ed.status === 'ACTIVE' || 
-                          ed.status === 'EFFECTIVE'
-                        )
-                      );
-
-                      const vStr = cleanVersion(ed.sourceVersion || ed.edition || ed.rev);
-                      const reqRef = ed.edrNumber || ed.requestNo || ed.requestId || ed.darNo || ed.obsoletedByRequestId || ed.registeredByRequestId;
-                      const reasonText = ed.reason || ed.changeDetails || ed.obsoleteReason || ed.archivedReason || ed.description;
-                      const startDate = ed.effectiveDate || ed.issueDate || ed.createdAt ? fmtDate(ed.effectiveDate || ed.issueDate || ed.createdAt) : '-';
-                      const endDate = isDocObs 
-                        ? (ed.obsoletedAt || ed.obsoleteDate ? fmtDate(ed.obsoletedAt || ed.obsoleteDate) : 'สิ้นสุดการใช้งาน')
-                        : isDocSup 
-                          ? (ed.supersededAt || ed.supersededDate ? fmtDate(ed.supersededAt || ed.supersededDate) : 'ตกรุ่น')
-                          : 'ปัจจุบัน (Present)';
+                  <>
+                    {/* 1. การ์ดฉบับปัจจุบัน (Pinned Active Card) */}
+                    {sortedHistory.activeVersion && (() => {
+                      const activeVer = sortedHistory.activeVersion;
+                      const activeVerStr = cleanVersion(activeVer.sourceVersion || activeVer.edition || activeVer.ver_ed || activeVer.rev);
+                      const activeReqRef = activeVer.edrNumber || activeVer.requestNo || activeVer.request_no || activeVer.requestId || activeVer.darNo || activeVer.dar_no || activeVer.registeredByRequestId || '-';
+                      const activeStartDate = activeVer.effectiveDate || activeVer.effective_date || activeVer.issueDate || activeVer.createdAt
+                        ? fmtDate(activeVer.effectiveDate || activeVer.effective_date || activeVer.issueDate || activeVer.createdAt)
+                        : '-';
+                      const activeSource = activeVer.issuer || activeVer.officialIssuer || activeVer.source || currentDoc.source || activeVer.department || currentDoc.department || '-';
+                      const activeReason = activeVer.changeReason || activeVer.reason || activeVer.changeDetails || activeVer.remarks || activeVer.description;
 
                       return (
-                        <div key={ed.id || idx} className="relative">
-                          {/* Node on spine */}
-                          <div
-                            className={`absolute -left-[31px] top-5 w-3.5 h-3.5 rounded-full transition-transform ${
-                              isFirst
-                                ? isDocObs
-                                  ? 'ring-4 ring-rose-50 bg-rose-500'
-                                  : isDocActive
-                                    ? 'ring-4 ring-emerald-50 bg-emerald-600'
-                                    : 'ring-4 ring-slate-100 bg-slate-800'
-                                : 'ring-4 ring-slate-100 bg-slate-400'
-                            }`}
-                          />
-
-                          {/* Edition Card */}
-                          <div className="bg-white rounded-xl border border-slate-200/80 hover:border-slate-300 p-4 transition-all duration-150 shadow-xs hover:shadow-sm">
-                            {/* Header Row */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {/* Edition Pill */}
-                                <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 border border-slate-200/70 px-2.5 py-1 rounded-lg">
-                                  Edition {vStr}
-                                </span>
-
-                                {/* Status Pill */}
-                                {isDocObs ? (
-                                  <span className="bg-rose-50 text-rose-700 border border-rose-200/70 text-[11px] font-medium px-2 py-0.5 rounded-md">
-                                    ยกเลิกถาวร
-                                  </span>
-                                ) : isDocSup ? (
-                                  <span className="bg-slate-100 text-slate-600 border border-slate-200/70 text-[11px] font-medium px-2 py-0.5 rounded-md">
-                                    ตกรุ่น (Superseded)
-                                  </span>
-                                ) : (
-                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[11px] font-medium px-2 py-0.5 rounded-md">
-                                    ใช้งานปัจจุบัน
-                                  </span>
-                                )}
-
-                                {isFirst && (
-                                  <span className="text-[10px] text-slate-400 font-mono">
-                                    (ล่าสุด)
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Action Group */}
-                              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewEditionDoc(ed)}
-                                  className="text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                                  title="เปิดดูตัวอย่างเอกสารฉบับนี้"
-                                >
-                                  <Eye size={13} className="text-slate-500" />
-                                  <span>ดูเอกสาร</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  disabled={isDownloading}
-                                  onClick={() => handleDownloadEditionPdf(ed)}
-                                  className="bg-slate-900 text-white hover:bg-slate-800 rounded-lg px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                                  title="ดาวน์โหลด PDF ฉบับนี้พร้อมประทับลายน้ำตามสถานะ"
-                                >
-                                  <Download size={13} />
-                                  <span>ดาวน์โหลด</span>
-                                </button>
-                              </div>
+                        <div className="mb-5 p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-semibold text-slate-800 text-sm">
+                                Edition {activeVerStr}
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                ใช้งานปัจจุบัน
+                              </span>
                             </div>
-
-                            {/* Metadata Grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
-                              <div>
-                                <span className="text-[11px] text-slate-500 block mb-0.5">ช่วงเวลาที่มีผลบังคับใช้</span>
-                                <span className="text-xs text-slate-800 font-medium font-mono">
-                                  {startDate} <span className="text-slate-400">→</span> {endDate}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[11px] text-slate-500 block mb-0.5">เลขอ้างอิงคำร้อง</span>
-                                <span className="text-xs text-slate-800 font-medium font-mono">
-                                  {reqRef || '-'}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[11px] text-slate-500 block mb-0.5">แผนก / แหล่งที่มา</span>
-                                <span className="text-xs text-slate-800 font-medium">
-                                  {ed.department || currentDoc.department || 'QA'} • {ed.source || currentDoc.source || '-'}
-                                </span>
-                              </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewEditionDoc(activeVer)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+                                title="เปิดดูตัวอย่างเอกสารฉบับปัจจุบัน"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                <span>ดูเอกสาร</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isDownloading}
+                                onClick={() => handleDownloadEditionPdf(activeVer)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-800 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer disabled:opacity-50"
+                                title="ดาวน์โหลด PDF ฉบับปัจจุบัน"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>ดาวน์โหลด</span>
+                              </button>
                             </div>
-
-                            {/* Optional Reason/Remark Quote */}
-                            {reasonText && (
-                              <div className="bg-slate-50 rounded-md px-2.5 py-1.5 text-xs text-slate-600 mt-2.5 border border-slate-100 break-words">
-                                <span className="text-slate-400 font-normal">หมายเหตุ: </span>
-                                <span>{reasonText}</span>
-                              </div>
-                            )}
                           </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-600 mt-3 pt-3 border-t border-emerald-100">
+                            <div>
+                              <span className="text-slate-400">ช่วงเวลา: </span>
+                              <span className="font-mono font-medium text-slate-800">{activeStartDate} → ปัจจุบัน</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400">เลขอ้างอิง: </span>
+                              <span className="font-mono font-medium text-slate-800">{activeReqRef}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400">แหล่งที่มา: </span>
+                              <span className="font-medium text-slate-800">{activeSource}</span>
+                            </div>
+                          </div>
+                          {activeReason && activeReason !== '-' && (
+                            <div className="mt-2.5 pt-2 border-t border-emerald-100/70 text-[11px] text-slate-600">
+                              <span className="text-slate-400">หมายเหตุ: </span>
+                              <span>{activeReason}</span>
+                            </div>
+                          )}
                         </div>
                       );
-                    })}
-                  </div>
+                    })()}
+
+                    {/* 2. รายการฉบับตกรุ่น (Compact Superseded List พร้อม Toggle) */}
+                    {sortedHistory.supersededList.length > 0 && (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between text-xs font-medium text-slate-500 px-1">
+                          <span>ประวัติฉบับตกรุ่น ({sortedHistory.supersededList.length} รายการ)</span>
+                        </div>
+
+                        {sortedHistory.supersededList
+                          .slice(0, isExpanded ? undefined : 3)
+                          .map((item, idx) => {
+                            const isDocObs = Boolean(
+                              item.status === 'OBSOLETE' ||
+                              item.status === 'OBSOLETE_ARCHIVED' ||
+                              item.is_obsolete
+                            );
+                            const vStr = cleanVersion(item.sourceVersion || item.edition || item.ver_ed || item.rev);
+                            const reqRef = item.edrNumber || item.requestNo || item.request_no || item.requestId || item.darNo || item.dar_no || item.obsoletedByRequestId || item.registeredByRequestId || '-';
+                            const reasonText = item.changeReason || item.reason || item.changeDetails || item.obsoleteReason || item.archivedReason || item.remarks || item.description;
+                            const startDate = item.effectiveDate || item.effective_date || item.issueDate || item.createdAt
+                              ? fmtDate(item.effectiveDate || item.effective_date || item.issueDate || item.createdAt)
+                              : '-';
+                            const endDate = isDocObs
+                              ? (item.obsoletedAt || item.obsoleteDate ? fmtDate(item.obsoletedAt || item.obsoleteDate) : 'สิ้นสุดการใช้งาน')
+                              : (item.supersededAt || item.superseded_at || item.supersededDate ? fmtDate(item.supersededAt || item.superseded_at || item.supersededDate) : 'ตกรุ่น');
+                            const itemSource = item.issuer || item.officialIssuer || item.source || currentDoc.source || item.department || currentDoc.department || '-';
+
+                            return (
+                              <div
+                                key={item.id || idx}
+                                className="p-3 bg-white rounded-xl border border-slate-200 text-xs hover:border-slate-300 transition-colors"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-semibold text-slate-700">
+                                      Edition {vStr}
+                                    </span>
+                                    {isDocObs ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                                        ยกเลิกถาวร (Obsolete)
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200/80">
+                                        ตกรุ่น (Superseded)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewEditionDoc(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 rounded-lg transition-colors cursor-pointer"
+                                      title="ดูเอกสารฉบับตกรุ่น"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>ดูเอกสาร</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={isDownloading}
+                                      onClick={() => handleDownloadEditionPdf(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                      title="ดาวน์โหลดเอกสารฉบับตกรุ่น"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      <span>ดาวน์โหลด</span>
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="mt-2 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+                                  <span>บังคับใช้: <strong className="font-mono font-medium text-slate-700">{startDate} → {endDate}</strong></span>
+                                  <span>เลขอ้างอิง: <strong className="font-mono font-medium text-slate-700">{reqRef}</strong></span>
+                                  <span>แหล่งที่มา: <strong className="font-medium text-slate-700">{itemSource}</strong></span>
+                                  {reasonText && reasonText !== '-' && <span>หมายเหตุ: {reasonText}</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                        {sortedHistory.supersededList.length > 3 && (
+                          <button
+                            type="button"
+                            onClick={() => setIsExpanded(!isExpanded)}
+                            className="w-full py-2 text-center text-xs font-medium text-sky-600 hover:bg-sky-50 rounded-lg border border-dashed border-sky-200 transition-colors cursor-pointer"
+                          >
+                            {isExpanded ? '▲ ซ่อนประวัติเก่า' : `▼ ดูประวัติฉบับตกรุ่นเพิ่มเติม (${sortedHistory.supersededList.length - 3} รายการ)`}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="p-8 text-center text-slate-400 text-xs">
                     ไม่พบประวัติเวอร์ชันอื่นในระบบสำหรับเอกสารนี้
@@ -995,10 +1096,18 @@ const ExternalDocDetailModal = ({
           document={{
             ...currentDoc,
             id: currentDoc.id,
-            title: edCode,
-            name: currentDoc.title,
-            rev: currentDoc.rev || currentDoc.sourceVersion || '01',
-            department: currentDoc.department || uDept
+            edCode,
+            doc_code: edCode,
+            code: edCode,
+            title: docTitle,
+            doc_title: docTitle,
+            name: docTitle,
+            sourceVersion: currentDoc.sourceVersion || currentDoc.edition || versionNum || '01',
+            edition: currentDoc.edition || currentDoc.sourceVersion || versionNum || '01',
+            rev: currentDoc.rev || currentDoc.sourceVersion || versionNum || '01',
+            department: currentDoc.department || uDept,
+            is_external: true,
+            doc_type: 'EXTERNAL'
           }}
         />
       )}

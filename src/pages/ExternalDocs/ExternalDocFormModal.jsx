@@ -480,13 +480,17 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     }
 
     let attachedFile = null;
+    const editionKey = String(payloadToSubmit.sourceVersion || payloadToSubmit.edition || '1.0').trim();
     if (fileBlob) {
       const safeName = (fileName || 'external_document.pdf').replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileId = `file_${Date.now()}_${safeName}`;
+      const fileStorageKey = payloadToSubmit.edCode ? `FILE_${payloadToSubmit.edCode}_ED_${editionKey}` : fileId;
       try {
         await saveFile(fileId, fileBlob);
         attachedFile = {
           fileId: fileId,
+          rawFileId: fileId,
+          fileStorageKey,
           id: fileId,
           name: fileName || 'external_document.pdf',
           fileName: fileName || 'external_document.pdf',
@@ -494,9 +498,14 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
           type: fileBlob.type || 'application/pdf',
           uploadedAt: new Date().toISOString()
         };
-        // Register aliases for preview/download pipeline resilience
+        // Register edition-scoped aliases so each Edition retains its own isolated PDF blob
         if (payloadToSubmit.edCode) {
-          await saveFile(payloadToSubmit.edCode, fileBlob).catch(() => {});
+          await saveFile(fileStorageKey, fileBlob).catch(() => {});
+          await saveFile(`DOC_${payloadToSubmit.edCode}_ED_${editionKey}`, fileBlob).catch(() => {});
+          await saveFile(`FILE_${payloadToSubmit.edCode}_${editionKey}`, fileBlob).catch(() => {});
+          if (!documentToEdit) {
+            await saveFile(payloadToSubmit.edCode, fileBlob).catch(() => {});
+          }
         }
         if (payloadToSubmit.requestNo || payloadToSubmit.requestId) {
           await saveFile(payloadToSubmit.requestNo || payloadToSubmit.requestId, fileBlob).catch(() => {});
@@ -512,6 +521,8 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
 
     const activeFile = attachedFile || (isResubmit && documentToEdit?.attachedFile ? documentToEdit.attachedFile : null);
     const activeFileId = activeFile?.fileId || activeFile?.id || (isResubmit ? documentToEdit?.fileId : null) || null;
+    const activeRawFileId = activeFile?.rawFileId || activeFileId;
+    const activeStorageKey = activeFile?.fileStorageKey || (payloadToSubmit.edCode && editionKey ? `FILE_${payloadToSubmit.edCode}_ED_${editionKey}` : activeFileId);
     const activeFileName = activeFile?.name || activeFile?.fileName || (isResubmit ? (fileName || documentToEdit?.fileName) : fileName) || '';
 
     const submittedPayload = {
@@ -519,6 +530,8 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
       ...(activeFile ? {
         attachedFile: activeFile,
         fileId: activeFileId,
+        rawFileId: activeRawFileId,
+        fileStorageKey: activeStorageKey,
         fileName: activeFileName,
         file: activeFile,
         attachment: activeFile

@@ -20,7 +20,7 @@ const Viewer = () => {
   const [_loadingPdf, setLoadingPdf] = useState(false);
   const [zoomMode, setZoomMode] = useState('FitH'); // 'FitH' | '100' | '125' | '150' | '75'
   
-  const doc = (documents || []).find(d => 
+  const matchesDocIdentifier = (d) => (
     String(d.id) === String(docId) ||
     String(d.document_code) === String(docId) ||
     String(d.doc_code) === String(docId) ||
@@ -29,6 +29,13 @@ const Viewer = () => {
     String(d.docNo) === String(docId) ||
     String(d.title) === String(docId)
   );
+  const normRevParam = rev ? String(rev).replace(/^Rev\.?\s*/i, '').trim().padStart(2, '0') : '';
+  const doc = (documents || []).find(d => {
+    if (!matchesDocIdentifier(d)) return false;
+    if (!normRevParam) return true;
+    const dRev = String(d.rev ?? d.revision ?? d.doc_version ?? '').replace(/^Rev\.?\s*/i, '').trim().padStart(2, '0');
+    return dRev === normRevParam;
+  }) || (documents || []).find(matchesDocIdentifier);
 
   useEffect(() => {
     let activeUrl = null;
@@ -56,15 +63,23 @@ const Viewer = () => {
       }
 
       setLoadingPdf(true);
-      resolveFileBlob(doc, doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
+      resolveFileBlob(doc, doc.rawFileId || doc.fileId || doc.id || doc.docCode || doc.title || doc.darId)
         .then(async (blob) => {
           if (!isCancelled && blob) {
             let displayBlob = blob;
             const status = (doc.status || (isArchive ? 'OBSOLETE' : '')).toUpperCase();
-            const isMasterDoc = status === 'ACTIVE' || status === 'EFFECTIVE' || status === 'APPROVED' || isArchive;
+            const isSupersededOrObsolete = Boolean(
+              doc.is_superseded ||
+              status === 'SUPERSEDED' ||
+              status === 'SUPERSEDED_ARCHIVED' ||
+              doc.is_obsolete ||
+              status === 'OBSOLETE' ||
+              status === 'OBSOLETE_ARCHIVED'
+            );
+            const isMasterDoc = !isSupersededOrObsolete && (status === 'ACTIVE' || status === 'EFFECTIVE' || status === 'APPROVED');
             const isInternal = !doc.isExternal && doc.docType !== 'ED' && !String(doc.title || doc.docCode || '').startsWith('ED-') && !String(doc.title || doc.docCode || '').startsWith('EXT-');
 
-            // Only run JIT stamping if the document has NOT been stamped yet
+            // Only run JIT stamping if the document is an active Master Doc and has NOT been stamped yet
             if (isMasterDoc && isInternal && !isAlreadyStamped) {
               try {
                 const store = useStore.getState();

@@ -99,7 +99,7 @@ const Library = () => {
     currentUser?.role === 'DCC_STAFF'
   );
 
-  const [activeTab, setActiveTab] = useState(TAB_GENERAL);
+  const [activeTab, setActiveTab] = useState(TAB_MY_DEPT);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [filterType, setFilterType] = useState('');

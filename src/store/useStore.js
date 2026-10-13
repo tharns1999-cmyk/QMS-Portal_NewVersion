@@ -1818,7 +1818,9 @@ export const createReceiptTask = (copy, relatedDoc = null, relatedDar = null, ma
       copy.is_external ||
       copy.isExternal ||
       copy.doc_type === 'ED' ||
+      copy.doc_type === 'EXTERNAL' ||
       copy.docType === 'ED' ||
+      copy.docType === 'EXTERNAL' ||
       String(docCode).startsWith('ED-') ||
       Boolean(copy.external_doc_id || copy.externalDocId)
     ) ? 'EXTERNAL' : 'INTERNAL',
@@ -1848,13 +1850,14 @@ export const getUserTaskBadgeCount = (tasks = [], user = null, documents = [], r
 export const getActivePhysicalCopies = (copies = [], doc = null) => {
   if (!doc) return [];
   const docId = String(doc.id || '');
-  const docCode = String(doc.edCode || doc.doc_code || doc.title || '');
+  const docCode = String(doc.code || doc.edCode || doc.doc_code || doc.docCode || doc.docNo || doc.document_code || doc.title || '');
   const docTitle = String(doc.title || '');
 
-  // 1. Raw matches by doc id or title/code
-  const rawMatches = (copies || []).filter(c => {
-    const cDocId = String(c.doc_id || c.docId || c.external_doc_id || c.externalDocId || '');
-    const cDocCode = String(c.doc_code || c.docCode || '');
+  // 1. Raw matches by doc id or title/code, plus embedded distributionList/controlledCopies on external docs
+  const instanceMatches = (copies || []).filter(c => {
+    if (!c) return false;
+    const cDocId = String(c.doc_id || c.docId || c.documentId || c.external_doc_id || c.externalDocId || '');
+    const cDocCode = String(c.doc_code || c.docCode || c.document_code || c.documentCode || c.edCode || '');
     const cDocTitle = String(c.doc_title || c.docTitle || '');
     return (
       (docId && cDocId === docId) ||
@@ -1862,6 +1865,13 @@ export const getActivePhysicalCopies = (copies = [], doc = null) => {
       (docTitle && (cDocCode === docTitle || cDocTitle === docTitle))
     );
   });
+
+  const embeddedList = [
+    ...(Array.isArray(doc.distributionList) ? doc.distributionList : []),
+    ...(Array.isArray(doc.controlledCopies) ? doc.controlledCopies : [])
+  ].filter(c => c && (c.copyCode || c.copy_no || c.copyNo || c.ccNumber || c.copy_number || c.copyNumber));
+
+  const rawMatches = [...instanceMatches, ...embeddedList];
 
   // 2. Filter out non-physical or decommissioned copies
   const inactiveStatuses = new Set([
@@ -1878,9 +1888,14 @@ export const getActivePhysicalCopies = (copies = [], doc = null) => {
     return !inactiveStatuses.has(status);
   });
 
-  // Helper to extract numeric copy number
+  // Helper to extract numeric copy number (handles -C01, CC-001, Copy 01, and numeric strings)
   const getCopyNumberInt = (c) => {
-    const raw = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? c.ccNumber.replace(/\D/g, '') : null) ?? c.copy_id;
+    if (typeof c.copy_number === 'number' && !isNaN(c.copy_number)) return c.copy_number;
+    if (typeof c.copyNumber === 'number' && !isNaN(c.copyNumber)) return c.copyNumber;
+    const codeStr = String(c.copyCode || c.copy_code || c.copy_no || c.copyNo || c.ccNumber || '');
+    const cMatch = codeStr.match(/-C(\d+)$/i) || codeStr.match(/^CC-(\d+)$/i) || codeStr.match(/^Copy\s*(\d+)$/i);
+    if (cMatch) return parseInt(cMatch[1], 10) || 0;
+    const raw = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? String(c.ccNumber).replace(/\D/g, '') : null) ?? c.copy_id;
     const parsed = parseInt(raw, 10);
     return isNaN(parsed) ? 0 : parsed;
   };
@@ -1897,7 +1912,7 @@ export const getActivePhysicalCopies = (copies = [], doc = null) => {
       const isCurrentActive = current.status === 'ISSUED_ACTIVE' || current.status === 'ACTIVE';
       const isExistingActive = existing.status === 'ISSUED_ACTIVE' || existing.status === 'ACTIVE';
       if (isCurrentActive && !isExistingActive) {
-        acc[existingIndex] = current;
+        acc[existingIndex] = { ...existing, ...current };
       }
     }
     return acc;
@@ -4031,16 +4046,21 @@ const useStore = create(persist((set, get) => ({
 
     const requestId = doc.requestNo || doc.requestId || doc.edrNumber || generateNextEdrNumber(state.externalRequests || []);
 
+    const editionKey = String(doc.sourceVersion || doc.edition || originRev || '1.0').trim();
     const activeAttachedFile = doc.attachedFile || null;
     const activeFileId = doc.fileId || activeAttachedFile?.fileId || null;
+    const activeRawFileId = doc.rawFileId || activeAttachedFile?.rawFileId || activeFileId;
+    const activeStorageKey = doc.fileStorageKey || activeAttachedFile?.fileStorageKey || (edCode && editionKey ? `FILE_${edCode}_ED_${editionKey}` : (activeFileId || newId));
     const activeFileName = doc.fileName || activeAttachedFile?.name || '';
     const filePayload = activeAttachedFile ? {
-      attachedFile: activeAttachedFile,
+      attachedFile: { ...activeAttachedFile, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey },
       fileId: activeFileId,
+      rawFileId: activeRawFileId,
+      fileStorageKey: activeStorageKey,
       fileName: activeFileName,
       file: activeAttachedFile,
       attachment: activeAttachedFile
-    } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+    } : (activeFileId ? { fileId: activeFileId, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey, fileName: activeFileName } : { fileStorageKey: activeStorageKey });
 
     if (activeFileId) {
       getFile(activeFileId).then(blob => {
@@ -4048,6 +4068,11 @@ const useStore = create(persist((set, get) => ({
           saveFile(newId, blob).catch(() => {});
           saveFile(edCode, blob).catch(() => {});
           saveFile(requestId, blob).catch(() => {});
+          if (edCode && editionKey) {
+            saveFile(`FILE_${edCode}_ED_${editionKey}`, blob).catch(() => {});
+            saveFile(`DOC_${edCode}_ED_${editionKey}`, blob).catch(() => {});
+            saveFile(`FILE_${edCode}_${editionKey}`, blob).catch(() => {});
+          }
         }
       }).catch(() => {});
     }
@@ -4160,19 +4185,26 @@ const useStore = create(persist((set, get) => ({
     if (initialStatus === 'ACTIVE' && stations.length > 0) {
       const nowIso = new Date().toISOString();
       const todayStr = nowIso.split('T')[0];
+      const docEdition = doc.edition || doc.sourceVersion || originRev;
       newCreatedCopies = stations.map((station, index) => {
         const copyNoStr = String(index + 1).padStart(2, '0');
         const ccNumStr = `CC-${String(index + 1).padStart(3, '0')}`;
-        const holderDept = station.departmentId || station.dept_code || station.dept || dept;
+        const copyCode = `${edCode}-C${copyNoStr}`;
+        const holderDept = station.departmentId || station.dept_code || station.dept || station.department || dept;
         const locName = station.locationName || station.station_name || station.name || station.location || `${holderDept} Head Office`;
         const locId = station.locationId || station.station_id || station.id || `${holderDept}-LOC-${index + 1}`;
+        const holderName = station.holder || station.custodianName || `${holderDept} (${locName})`;
         return {
           id: `cc-ext-${newId}-${copyNoStr}`,
+          copyCode,
+          copy_code: copyCode,
           doc_id: newId,
           docId: newId,
+          documentId: newId,
           external_doc_id: newId,
           externalDocId: newId,
           document_code: edCode,
+          documentCode: edCode,
           doc_code: edCode,
           docCode: edCode,
           document_title: doc.title,
@@ -4181,20 +4213,28 @@ const useStore = create(persist((set, get) => ({
           doc_type: 'ED',
           docType: 'ED',
           docName: doc.title,
+          edition: docEdition,
           doc_version: originRev,
           rev: originRev,
           copy_no: copyNoStr,
           copyNo: copyNoStr,
+          copy_number: index + 1,
+          copyNumber: index + 1,
           ccNumber: ccNumStr,
           issue_no: '01',
           issueNumber: 'I01',
           holder_dept: holderDept,
           department: holderDept,
+          targetDepartment: holderDept,
+          target_department: holderDept,
           departmentId: holderDept,
           dept_code: holderDept,
-          holder_name: `${holderDept} (${locName})`,
+          holder: holderName,
+          custodianName: holderName,
+          holder_name: holderName,
           location: locName,
           locationName: locName,
+          workstationLocation: locName,
           locationId: locId,
           station_id: locId,
           station_name: locName,
@@ -4205,6 +4245,8 @@ const useStore = create(persist((set, get) => ({
           isExternal: true,
           requested_by: state.currentUser?.name || 'Owner Department',
           requested_at: nowIso,
+          createdAt: nowIso,
+          distributedDate: todayStr,
           dateIssued: todayStr
         };
       });
@@ -4222,6 +4264,9 @@ const useStore = create(persist((set, get) => ({
         externalDocId: newId,
         doc_code: edCode,
         docCode: edCode,
+        is_external: true,
+        doc_type: 'EXTERNAL',
+        edition: doc.edition || doc.sourceVersion || originRev,
         docTitle: doc.title,
         docName: doc.title,
         department: 'DC',
@@ -4243,6 +4288,7 @@ const useStore = create(persist((set, get) => ({
     const newExternalDoc = {
       ...doc,
       id: newId,
+      code: edCode,
       doc_code: edCode,
       docNo: edCode,
       edCode,
@@ -4255,9 +4301,17 @@ const useStore = create(persist((set, get) => ({
       officialIssuer: issuerValue,
       distributions: stations,
       physical_distribution: stations,
+      distributionList: Array.isArray(doc.distributionList) && doc.distributionList.length > 0 ? doc.distributionList : newCreatedCopies,
+      controlledCopies: Array.isArray(doc.controlledCopies) && doc.controlledCopies.length > 0 ? doc.controlledCopies : newCreatedCopies,
       is_physical_copy: Boolean(doc.is_physical_copy || doc.isPhysicalCopy || stations.length > 0),
       reviewCycleMonths,
       nextReviewDate,
+      next_review_date: nextReviewDate,
+      review_status: 'UP_TO_DATE',
+      is_reviewed_this_cycle: false,
+      pending_periodic_review: false,
+      is_external: true,
+      doc_type: 'EXTERNAL',
       requestId,
       edrNumber: requestId,
       changeReason: doc.reason || doc.changeReason || 'ขึ้นทะเบียนเอกสารภายนอกใหม่',
@@ -4419,24 +4473,36 @@ const useStore = create(persist((set, get) => ({
     const requestId = updates.requestNo || updates.requestId || updates.edrNumber || generateNextEdrNumber(state.externalRequests || []);
 
     const newEditionValue = updates.sourceVersion || updates.edition || oldDoc.sourceVersion || oldDoc.edition || '';
+    const editionKey = String(newEditionValue || '1.0').trim();
+    const hasNewFile = Boolean(updates.attachedFile || updates.fileId);
 
     const activeAttachedFile = updates.attachedFile || oldDoc.attachedFile || null;
     const activeFileId = updates.fileId || activeAttachedFile?.fileId || oldDoc.fileId || null;
+    const activeRawFileId = hasNewFile
+      ? (updates.rawFileId || updates.attachedFile?.rawFileId || updates.fileId || updates.attachedFile?.fileId || activeFileId)
+      : (oldDoc.rawFileId || oldDoc.attachedFile?.rawFileId || activeFileId);
+    const activeStorageKey = updates.fileStorageKey || updates.attachedFile?.fileStorageKey || (edCode && editionKey ? `FILE_${edCode}_ED_${editionKey}` : (activeFileId || newId));
     const activeFileName = updates.fileName || activeAttachedFile?.name || oldDoc.fileName || '';
     const filePayload = activeAttachedFile ? {
-      attachedFile: activeAttachedFile,
+      attachedFile: { ...activeAttachedFile, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey },
       fileId: activeFileId,
+      rawFileId: activeRawFileId,
+      fileStorageKey: activeStorageKey,
       fileName: activeFileName,
       file: activeAttachedFile,
       attachment: activeAttachedFile
-    } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+    } : (activeFileId ? { fileId: activeFileId, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey, fileName: activeFileName } : { fileStorageKey: activeStorageKey });
 
     if (activeFileId) {
       getFile(activeFileId).then(blob => {
         if (blob) {
           saveFile(newId, blob).catch(() => {});
-          saveFile(edCode, blob).catch(() => {});
           saveFile(requestId, blob).catch(() => {});
+          if (edCode && editionKey) {
+            saveFile(`FILE_${edCode}_ED_${editionKey}`, blob).catch(() => {});
+            saveFile(`DOC_${edCode}_ED_${editionKey}`, blob).catch(() => {});
+            saveFile(`FILE_${edCode}_${editionKey}`, blob).catch(() => {});
+          }
         }
       }).catch(() => {});
     }
@@ -4457,6 +4523,12 @@ const useStore = create(persist((set, get) => ({
       previousDocId: oldDoc.id,
       reviewCycleMonths,
       nextReviewDate,
+      next_review_date: nextReviewDate,
+      review_status: 'UP_TO_DATE',
+      is_reviewed_this_cycle: false,
+      pending_periodic_review: false,
+      is_external: true,
+      doc_type: 'EXTERNAL',
       requestId,
       edrNumber: requestId,
       changeReason: updates.reason || updates.changeReason || '-',
@@ -4920,14 +4992,15 @@ const useStore = create(persist((set, get) => ({
       : (state.documentControlledCopies || []);
 
     const isMatchCopy = (c) => {
-      const matchDoc = String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id) === targetDocIdStr ||
-                       (targetDoc && String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id) === String(targetDoc.id)) ||
-                       (targetDocCode && (String(c.doc_code || c.docCode || '').trim().toUpperCase() === targetDocCode.toUpperCase()));
+      const matchDoc = String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id || c.documentId) === targetDocIdStr ||
+                       (targetDoc && String(c.externalDocId || c.external_doc_id || c.docId || c.doc_id || c.documentId) === String(targetDoc.id)) ||
+                       (targetDocCode && (String(c.doc_code || c.docCode || c.documentCode || '').trim().toUpperCase() === targetDocCode.toUpperCase()));
       if (!matchDoc) return false;
 
       if (targetCopiesList.includes('ALL')) return true;
 
-      const cId = String(c.id);
+      const cId = String(c.id || c.copyId || '');
+      const cCode = String(c.copyCode || c.copy_code || '');
       const cNo = String(c.copy_no || c.copyNo || c.ccNumber || '');
       const cNoClean = cNo.replace(/\D/g, '');
       const cNum = String(c.copyNumber || '');
@@ -4936,6 +5009,7 @@ const useStore = create(persist((set, get) => ({
         const tStr = String(target).trim();
         const tClean = tStr.replace(/\D/g, '');
         return cId === tStr || 
+               cCode === tStr ||
                cNo === tStr || 
                (tClean && cNoClean === tClean) || 
                cNum === tStr ||
@@ -4973,30 +5047,33 @@ const useStore = create(persist((set, get) => ({
       return c;
     });
 
+    const mapCopyStatus = (c) => {
+      if (isMatchCopy(c)) {
+        return {
+          ...c,
+          status: finalStatus,
+          disposition_method: dispositionAction,
+          recalled_at: recalledAt,
+          recalled_by: recalledBy,
+          notes: notes || c.notes,
+          ...(dispositionAction === 'SHREDDED' ? {
+            destroyed_at: recalledAt,
+            dateDestroyed: recalledAt.split('T')[0]
+          } : {})
+        };
+      }
+      return c;
+    };
+
     const updatedDocs = (state.externalDocuments || []).map(d => {
       const isTargetDoc = String(d.id) === targetDocIdStr || 
                           (targetDoc && String(d.id) === String(targetDoc.id)) ||
-                          (targetDocCode && (String(d.edCode || d.doc_code || '').toUpperCase() === targetDocCode.toUpperCase()));
-      if (isTargetDoc && Array.isArray(d.controlledCopies)) {
+                          (targetDocCode && (String(d.edCode || d.doc_code || d.code || '').toUpperCase() === targetDocCode.toUpperCase()));
+      if (isTargetDoc && (Array.isArray(d.controlledCopies) || Array.isArray(d.distributionList))) {
         return {
           ...d,
-          controlledCopies: d.controlledCopies.map(c => {
-            if (isMatchCopy(c)) {
-              return {
-                ...c,
-                status: finalStatus,
-                disposition_method: dispositionAction,
-                recalled_at: recalledAt,
-                recalled_by: recalledBy,
-                notes: notes || c.notes,
-                ...(dispositionAction === 'SHREDDED' ? {
-                  destroyed_at: recalledAt,
-                  dateDestroyed: recalledAt.split('T')[0]
-                } : {})
-              };
-            }
-            return c;
-          })
+          ...(Array.isArray(d.controlledCopies) ? { controlledCopies: d.controlledCopies.map(mapCopyStatus) } : {}),
+          ...(Array.isArray(d.distributionList) ? { distributionList: d.distributionList.map(mapCopyStatus) } : {})
         };
       }
       return d;
@@ -5158,12 +5235,16 @@ const useStore = create(persist((set, get) => ({
     // Lossless Binary Persistence: Ensure doc retains attachedFile from matchingReq or task
     const candidateFile = matchingReq?.attachedFile || task.attachedFile || doc.attachedFile;
     const candidateFileId = matchingReq?.fileId || task.fileId || candidateFile?.fileId || doc.fileId;
+    const candidateRawFileId = matchingReq?.rawFileId || task.rawFileId || candidateFile?.rawFileId || doc.rawFileId || candidateFileId;
+    const candidateStorageKey = matchingReq?.fileStorageKey || task.fileStorageKey || candidateFile?.fileStorageKey || doc.fileStorageKey;
     const candidateFileName = matchingReq?.fileName || task.fileName || candidateFile?.name || doc.fileName;
     if (candidateFile || candidateFileId) {
       doc = {
         ...doc,
         ...(candidateFile ? { attachedFile: candidateFile, file: candidateFile, attachment: candidateFile } : {}),
         ...(candidateFileId ? { fileId: candidateFileId } : {}),
+        ...(candidateRawFileId ? { rawFileId: candidateRawFileId } : {}),
+        ...(candidateStorageKey ? { fileStorageKey: candidateStorageKey } : {}),
         ...(candidateFileName ? { fileName: candidateFileName } : {})
       };
     }
@@ -5229,7 +5310,12 @@ const useStore = create(persist((set, get) => ({
             department: doc.department,
             origin: 'EXTERNAL',
             status: 'PENDING',
-            extAction: task.extAction
+            extAction: task.extAction,
+            ...(doc.attachedFile ? { attachedFile: doc.attachedFile, file: doc.attachedFile, attachment: doc.attachedFile } : {}),
+            ...(doc.fileId ? { fileId: doc.fileId } : {}),
+            ...(doc.rawFileId ? { rawFileId: doc.rawFileId } : {}),
+            ...(doc.fileStorageKey ? { fileStorageKey: doc.fileStorageKey } : {}),
+            ...(doc.fileName ? { fileName: doc.fileName } : {})
           });
           // Phase 1 Point 2: Notify Approver (safe dispatch)
           safeNotify({
@@ -5309,9 +5395,22 @@ const useStore = create(persist((set, get) => ({
         let snapshotId = null;
         if (priorDoc && !alreadyHasActiveEdition) {
           snapshotId = `${priorDoc.id}-SUPERSEDED-${Date.now()}`;
+          const priorEdKey = String(priorDoc.edition || priorDoc.sourceVersion || priorDoc.rev || '1.0').trim();
+          const priorRawFileId = priorDoc.rawFileId || priorDoc.attachedFile?.rawFileId || priorDoc.attachedFile?.fileId || priorDoc.fileId || priorDoc.id;
+          const priorStorageKey = priorDoc.fileStorageKey || priorDoc.attachedFile?.fileStorageKey || (targetDocNo && priorEdKey ? `FILE_${targetDocNo}_ED_${priorEdKey}` : snapshotId);
           const supersededSnapshot = {
             ...priorDoc,
             id: snapshotId,
+            rawFileId: priorRawFileId,
+            fileId: priorDoc.fileId || priorRawFileId,
+            fileStorageKey: priorStorageKey,
+            ...(priorDoc.attachedFile ? {
+              attachedFile: {
+                ...priorDoc.attachedFile,
+                rawFileId: priorRawFileId,
+                fileStorageKey: priorStorageKey
+              }
+            } : {}),
             status: 'SUPERSEDED',
             is_superseded: true,
             supersededAt,
@@ -5322,6 +5421,18 @@ const useStore = create(persist((set, get) => ({
             supersededByRequestId: matchingReq?.id || matchingReq?.requestId || task.referenceId,
             supersededByEdrNumber: matchingReq?.requestNo || matchingReq?.edrNumber || reqNo
           };
+
+          resolveFileBlob(priorDoc, priorRawFileId).then(b => {
+            if (b) {
+              saveFile(snapshotId, b).catch(() => {});
+              if (priorStorageKey) saveFile(priorStorageKey, b).catch(() => {});
+              if (targetDocNo && priorEdKey) {
+                saveFile(`FILE_${targetDocNo}_ED_${priorEdKey}`, b).catch(() => {});
+                saveFile(`DOC_${targetDocNo}_ED_${priorEdKey}`, b).catch(() => {});
+                saveFile(`FILE_${targetDocNo}_${priorEdKey}`, b).catch(() => {});
+              }
+            }
+          }).catch(() => {});
 
           // In updatedDocs, replace priorDoc with supersededSnapshot
           const priorIdx = updatedDocs.findIndex(d => String(d.id) === String(priorDoc.id));
@@ -5503,6 +5614,7 @@ const useStore = create(persist((set, get) => ({
 
         const stations = doc.distributions || doc.physical_distribution || [];
         const docVer = doc.rev || doc.sourceVersion || '01';
+        const docEd = doc.edition || doc.sourceVersion || docVer;
         const nowIso = new Date().toISOString();
         const todayStr = nowIso.split('T')[0];
 
@@ -5510,16 +5622,22 @@ const useStore = create(persist((set, get) => ({
           newCreatedCopies = stations.map((station, index) => {
             const copyNoStr = String(index + 1).padStart(2, '0');
             const ccNumStr = `CC-${String(index + 1).padStart(3, '0')}`;
-            const holderDept = station.departmentId || station.dept_code || station.dept || doc.department;
+            const copyCode = `${docCode}-C${copyNoStr}`;
+            const holderDept = station.departmentId || station.dept_code || station.dept || station.department || doc.department;
             const locName = station.locationName || station.station_name || station.name || station.location || `${holderDept} Head Office`;
             const locId = station.locationId || station.station_id || station.id || `${holderDept}-LOC-${index + 1}`;
+            const holderName = station.holder || station.custodianName || `${holderDept} (${locName})`;
             return {
               id: `cc-ext-${doc.id || docCode}-${copyNoStr}`,
+              copyCode,
+              copy_code: copyCode,
               doc_id: doc.id,
               docId: doc.id,
+              documentId: doc.id,
               external_doc_id: doc.id,
               externalDocId: doc.id,
               document_code: docCode,
+              documentCode: docCode,
               doc_code: docCode,
               docCode: docCode,
               document_title: doc.title,
@@ -5528,20 +5646,28 @@ const useStore = create(persist((set, get) => ({
               doc_type: 'ED',
               docType: 'ED',
               docName: doc.title,
+              edition: docEd,
               doc_version: docVer,
               rev: docVer,
               copy_no: copyNoStr,
               copyNo: copyNoStr,
+              copy_number: index + 1,
+              copyNumber: index + 1,
               ccNumber: ccNumStr,
               issue_no: '01',
               issueNumber: 'I01',
               holder_dept: holderDept,
               department: holderDept,
+              targetDepartment: holderDept,
+              target_department: holderDept,
               departmentId: holderDept,
               dept_code: holderDept,
-              holder_name: `${holderDept} (${locName})`,
+              holder: holderName,
+              custodianName: holderName,
+              holder_name: holderName,
               location: locName,
               locationName: locName,
+              workstationLocation: locName,
               locationId: locId,
               station_id: locId,
               station_name: locName,
@@ -5552,6 +5678,8 @@ const useStore = create(persist((set, get) => ({
               isExternal: true,
               requested_by: doc.ownerName || state.currentUser?.name || 'Owner Department',
               requested_at: nowIso,
+              createdAt: nowIso,
+              distributedDate: todayStr,
               dateIssued: todayStr
             };
           });
@@ -5569,6 +5697,9 @@ const useStore = create(persist((set, get) => ({
             externalDocId: doc.id,
             doc_code: docCode,
             docCode: docCode,
+            is_external: true,
+            doc_type: 'EXTERNAL',
+            edition: docEd,
             docTitle: doc.title || docCode,
             docName: doc.title || docCode,
             department: 'DC',
@@ -5758,6 +5889,12 @@ const useStore = create(persist((set, get) => ({
         const resolvedAccessUsers = doc.accessUsers || resolvedRequest?.accessUsers || [];
         const resolvedReviewCycle = Number(doc.reviewCycleMonths || resolvedRequest?.reviewCycleMonths || 12);
         const resolvedDept = doc.department || resolvedRequest?.department || 'QA';
+        const effDateForReview = new Date(resolvedEffectiveDate);
+        if (!isNaN(effDateForReview.getTime())) {
+          effDateForReview.setMonth(effDateForReview.getMonth() + resolvedReviewCycle);
+        }
+        const computedNextReviewDate = !isNaN(effDateForReview.getTime()) ? effDateForReview.toISOString().split('T')[0] : '';
+        const resolvedNextReviewDate = resolvedRequest?.nextReviewDate || doc.nextReviewDate || computedNextReviewDate;
 
         if (isRevision) {
           // REVISION: create or update the distinct new ACTIVE record
@@ -5792,22 +5929,36 @@ const useStore = create(persist((set, get) => ({
           const reqReviewer = resolvedRequest?.reviewerName || resolvedRequest?.reviewer?.name || doc.reviewerName || '-';
           const reqApprover = state.currentUser?.fullName || state.currentUser?.name || doc.approverName || 'Approver';
 
+          const hasReqOrDocFile = Boolean(resolvedRequest?.attachedFile || resolvedRequest?.fileId || doc.attachedFile || doc.fileId);
           const activeAttachedFile = resolvedRequest?.attachedFile || doc.attachedFile || priorDoc?.attachedFile || null;
           const activeFileId = resolvedRequest?.fileId || activeAttachedFile?.fileId || doc.fileId || priorDoc?.fileId || null;
+          const activeRawFileId = hasReqOrDocFile
+            ? (resolvedRequest?.rawFileId || resolvedRequest?.attachedFile?.rawFileId || resolvedRequest?.fileId || resolvedRequest?.attachedFile?.fileId || doc.rawFileId || doc.attachedFile?.rawFileId || doc.fileId || activeFileId)
+            : (priorDoc?.rawFileId || activeFileId);
+          const activeStorageKey = targetDocNo && newEdition ? `FILE_${targetDocNo}_ED_${newEdition}` : (resolvedRequest?.fileStorageKey || doc.fileStorageKey || activeFileId || newDocRecordId);
           const activeFileName = resolvedRequest?.fileName || activeAttachedFile?.name || doc.fileName || priorDoc?.fileName || '';
           const filePayload = activeAttachedFile ? {
-            attachedFile: activeAttachedFile,
+            attachedFile: { ...activeAttachedFile, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey },
             fileId: activeFileId,
+            rawFileId: activeRawFileId,
+            fileStorageKey: activeStorageKey,
             fileName: activeFileName,
             file: activeAttachedFile,
             attachment: activeAttachedFile
-          } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+          } : (activeFileId ? { fileId: activeFileId, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey, fileName: activeFileName } : { fileStorageKey: activeStorageKey });
 
           if (activeFileId) {
             getFile(activeFileId).then(blob => {
               if (blob) {
                 saveFile(newDocRecordId, blob).catch(() => {});
-                if (targetDocNo) saveFile(targetDocNo, blob).catch(() => {});
+                if (targetDocNo) {
+                  saveFile(targetDocNo, blob).catch(() => {});
+                  if (newEdition) {
+                    saveFile(`FILE_${targetDocNo}_ED_${newEdition}`, blob).catch(() => {});
+                    saveFile(`DOC_${targetDocNo}_ED_${newEdition}`, blob).catch(() => {});
+                    saveFile(`FILE_${targetDocNo}_${newEdition}`, blob).catch(() => {});
+                  }
+                }
               }
             }).catch(() => {});
           }
@@ -5816,6 +5967,7 @@ const useStore = create(persist((set, get) => ({
             ...(priorDoc || {}),
             ...doc,
             id: newDocRecordId,
+            code: targetDocNo,
             edCode: targetDocNo,
             doc_code: targetDocNo,
             docNo: targetDocNo,
@@ -5823,6 +5975,8 @@ const useStore = create(persist((set, get) => ({
             status: 'ACTIVE',
             is_superseded: false,
             is_obsolete: false,
+            is_external: true,
+            doc_type: 'EXTERNAL',
             edition: newEdition,
             sourceVersion: newEdition,
             previousDocId: snapshotId || finalPrevDocId,
@@ -5834,7 +5988,16 @@ const useStore = create(persist((set, get) => ({
             accessDepartments: resolvedAccessDepts,
             accessUsers: resolvedAccessUsers,
             reviewCycleMonths: resolvedReviewCycle,
+            nextReviewDate: resolvedNextReviewDate,
+            next_review_date: resolvedNextReviewDate,
+            review_status: 'UP_TO_DATE',
+            is_reviewed_this_cycle: false,
+            pending_periodic_review: false,
             department: resolvedDept,
+            ...(newCreatedCopies.length > 0 ? {
+              distributionList: newCreatedCopies,
+              controlledCopies: newCreatedCopies
+            } : {}),
             // ผูกความสัมพันธ์กับคำร้องใบนี้โดยตรง
             requestId: reqId,
             edrNumber: edrNumber,
@@ -5875,31 +6038,48 @@ const useStore = create(persist((set, get) => ({
           const reqRequester = resolvedRequest?.requesterName || resolvedRequest?.requester?.name || doc.requesterName || doc.ownerName || 'User';
           const reqReviewer = resolvedRequest?.reviewerName || resolvedRequest?.reviewer?.name || doc.reviewerName || '-';
           const reqApprover = state.currentUser?.fullName || state.currentUser?.name || doc.approverName || 'Approver';
+          const initCode = doc.edCode || doc.doc_code || doc.docNo || '';
+          const initEd = String(resolvedRequest?.sourceVersion || resolvedRequest?.edition || doc.sourceVersion || doc.edition || '1.0').trim();
 
           const activeAttachedFile = resolvedRequest?.attachedFile || doc.attachedFile || null;
           const activeFileId = resolvedRequest?.fileId || activeAttachedFile?.fileId || doc.fileId || null;
+          const activeRawFileId = resolvedRequest?.rawFileId || activeAttachedFile?.rawFileId || doc.rawFileId || activeFileId;
+          const activeStorageKey = initCode && initEd ? `FILE_${initCode}_ED_${initEd}` : (resolvedRequest?.fileStorageKey || doc.fileStorageKey || activeFileId || doc.id);
           const activeFileName = resolvedRequest?.fileName || activeAttachedFile?.name || doc.fileName || '';
           const filePayload = activeAttachedFile ? {
-            attachedFile: activeAttachedFile,
+            attachedFile: { ...activeAttachedFile, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey },
             fileId: activeFileId,
+            rawFileId: activeRawFileId,
+            fileStorageKey: activeStorageKey,
             fileName: activeFileName,
             file: activeAttachedFile,
             attachment: activeAttachedFile
-          } : (activeFileId ? { fileId: activeFileId, fileName: activeFileName } : {});
+          } : (activeFileId ? { fileId: activeFileId, rawFileId: activeRawFileId, fileStorageKey: activeStorageKey, fileName: activeFileName } : { fileStorageKey: activeStorageKey });
 
           if (activeFileId) {
             getFile(activeFileId).then(blob => {
               if (blob) {
                 saveFile(doc.id, blob).catch(() => {});
-                const code = doc.edCode || doc.doc_code || doc.docNo;
-                if (code) saveFile(code, blob).catch(() => {});
+                if (initCode) {
+                  saveFile(initCode, blob).catch(() => {});
+                  if (initEd) {
+                    saveFile(`FILE_${initCode}_ED_${initEd}`, blob).catch(() => {});
+                    saveFile(`DOC_${initCode}_ED_${initEd}`, blob).catch(() => {});
+                    saveFile(`FILE_${initCode}_${initEd}`, blob).catch(() => {});
+                  }
+                }
               }
             }).catch(() => {});
           }
 
           const approvedDoc = {
             ...doc,
+            code: initCode || doc.code,
             status: 'ACTIVE',
+            is_superseded: false,
+            is_obsolete: false,
+            is_external: true,
+            doc_type: 'EXTERNAL',
             approvedAt: new Date().toISOString(),
             approverId: state.currentUser?.id || doc.approverId,
             effectiveDate: resolvedEffectiveDate,
@@ -5910,7 +6090,16 @@ const useStore = create(persist((set, get) => ({
             accessDepartments: resolvedAccessDepts,
             accessUsers: resolvedAccessUsers,
             reviewCycleMonths: resolvedReviewCycle,
+            nextReviewDate: resolvedNextReviewDate,
+            next_review_date: resolvedNextReviewDate,
+            review_status: 'UP_TO_DATE',
+            is_reviewed_this_cycle: false,
+            pending_periodic_review: false,
             department: resolvedDept,
+            ...(newCreatedCopies.length > 0 ? {
+              distributionList: newCreatedCopies,
+              controlledCopies: newCreatedCopies
+            } : {}),
             requestId: reqId,
             edrNumber: edrNumber,
             changeReason: reqChangeReason,
@@ -7248,19 +7437,30 @@ const useStore = create(persist((set, get) => ({
 
   stampFinalExternalApprovalPdf: async (docId) => {
     const state = get();
-    const doc = (state.externalDocuments || []).find(d => 
-      String(d.id) === String(docId) || 
-      String(d.edCode) === String(docId) || 
-      String(d.doc_code) === String(docId)
-    ) || (state.externalRequests || []).find(r => 
-      String(r.id) === String(docId) || 
-      String(r.requestId) === String(docId) || 
-      String(r.docId) === String(docId)
-    );
+    const extDocs = state.externalDocuments || [];
+    const doc = extDocs.find(d => String(d.id) === String(docId)) ||
+      extDocs.find(d =>
+        (String(d.edCode) === String(docId) || String(d.doc_code) === String(docId)) &&
+        !d.is_superseded &&
+        d.status !== 'SUPERSEDED' &&
+        !d.is_obsolete &&
+        d.status !== 'OBSOLETE'
+      ) ||
+      extDocs.find(d =>
+        String(d.edCode) === String(docId) ||
+        String(d.doc_code) === String(docId)
+      ) ||
+      (state.externalRequests || []).find(r =>
+        String(r.id) === String(docId) ||
+        String(r.requestId) === String(docId) ||
+        String(r.docId) === String(docId)
+      );
     if (!doc) return;
 
     try {
-      const fileBlob = await resolveFileBlob(doc, docId);
+      const rawFileId = doc.rawFileId || doc.attachedFile?.rawFileId || doc.attachedFile?.fileId || doc.fileId;
+      const sourceDoc = rawFileId ? { ...doc, fileId: rawFileId, attachedFile: { ...(doc.attachedFile || {}), fileId: rawFileId } } : doc;
+      const fileBlob = await resolveFileBlob(sourceDoc, rawFileId || doc.id || docId);
       if (!fileBlob) return;
       const arrayBuffer = await fileBlob.arrayBuffer();
       
@@ -7283,19 +7483,33 @@ const useStore = create(persist((set, get) => ({
       if (edCode) await saveFile(`${edCode}_stamped`, stampedBlob).catch(() => {});
 
       set(s => ({
-        externalDocuments: (s.externalDocuments || []).map(d => (d.id === doc.id || (edCode && (d.edCode === edCode || d.doc_code === edCode))) ? { 
-          ...d, 
-          attachedFile: { 
-            ...(d.attachedFile || {}), 
-            fileId: newFileId, 
-            name: rawFileName,
-            size: stampedBlob.size, 
-            type: 'application/pdf',
-            isStamped: true 
-          },
-          fileId: newFileId,
-          fileName: rawFileName
-        } : d)
+        externalDocuments: (s.externalDocuments || []).map(d => {
+          const isTargetActive = d.id === doc.id || (
+            edCode &&
+            (d.edCode === edCode || d.doc_code === edCode) &&
+            !d.is_superseded &&
+            d.status !== 'SUPERSEDED' &&
+            !d.is_obsolete &&
+            d.status !== 'OBSOLETE'
+          );
+          if (!isTargetActive) return d;
+          const preservedRawFileId = d.rawFileId || d.attachedFile?.rawFileId || d.attachedFile?.fileId || d.fileId;
+          return {
+            ...d,
+            rawFileId: preservedRawFileId,
+            attachedFile: {
+              ...(d.attachedFile || {}),
+              rawFileId: preservedRawFileId,
+              fileId: newFileId,
+              name: rawFileName,
+              size: stampedBlob.size,
+              type: 'application/pdf',
+              isStamped: true
+            },
+            fileId: newFileId,
+            fileName: rawFileName
+          };
+        })
       }));
     } catch (err) {
       console.error('Failed to stamp external PDF:', err);
@@ -8972,20 +9186,21 @@ const useStore = create(persist((set, get) => ({
     return useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch);
   },
   dispatchControlledCopy: (copyId) => set((state) => {
-    const targetId = String(copyId);
+    const targetId = String(typeof copyId === 'object' ? (copyId?.copyId || copyId?.id || '') : copyId);
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
       : (state.documentControlledCopies && state.documentControlledCopies.length > 0 ? state.documentControlledCopies : (state.controlledCopyInstances || []));
-    const copy = copies.find(c => String(c.id) === targetId);
+    const copy = copies.find(c => String(c.id) === targetId || (c.copyCode && String(c.copyCode) === targetId));
     if (!copy) return state;
+    const resolvedCopyId = String(copy.id);
 
     const dispatchedAt = new Date().toISOString();
     const dispatchedBy = state.currentUser ? state.currentUser.name : 'DCC Admin';
 
-    // 1. Resolve DAR & Doc details
+    // 1. Resolve DAR & Doc details (Internal & External)
     const allDars = [...(state.dars || []), ...(state.darRequests || [])];
-    const copyDocCode = copy.doc_code || copy.docTitle || copy.title;
-    const copyDocId = String(copy.doc_id || copy.docId || copy.dar_id || copy.darId || '');
+    const copyDocCode = copy.doc_code || copy.docCode || copy.documentCode || copy.docTitle || copy.title;
+    const copyDocId = String(copy.doc_id || copy.docId || copy.documentId || copy.external_doc_id || copy.externalDocId || copy.dar_id || copy.darId || '');
 
     const relatedDar = allDars.find(d => 
       (copyDocId && String(d.id) === copyDocId) ||
@@ -8993,8 +9208,26 @@ const useStore = create(persist((set, get) => ({
       (copy.dar_id && String(d.id) === String(copy.dar_id))
     );
 
-    const relatedDoc = (state.documents || []).find(d => 
-      String(d.id) === copyDocId || (copyDocCode && d.title === copyDocCode)
+    const relatedInternalDoc = (state.documents || []).find(d => 
+      String(d.id) === copyDocId || (copyDocCode && (d.title === copyDocCode || d.code === copyDocCode || d.doc_code === copyDocCode))
+    );
+    const relatedExternalDoc = (state.externalDocuments || []).find(d =>
+      (String(d.id) === copyDocId || (copyDocCode && (d.code === copyDocCode || d.edCode === copyDocCode || d.doc_code === copyDocCode || d.docNo === copyDocCode || d.title === copyDocCode))) &&
+      (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded
+    ) || (state.externalDocuments || []).find(d =>
+      String(d.id) === copyDocId || (copyDocCode && (d.code === copyDocCode || d.edCode === copyDocCode || d.doc_code === copyDocCode || d.docNo === copyDocCode || d.title === copyDocCode))
+    );
+    const relatedDoc = relatedInternalDoc || relatedExternalDoc;
+    const isExternalCopy = Boolean(
+      copy.is_external ||
+      copy.isExternal ||
+      copy.doc_type === 'EXTERNAL' ||
+      copy.doc_type === 'ED' ||
+      copy.docType === 'ED' ||
+      copy.external_doc_id ||
+      copy.externalDocId ||
+      relatedExternalDoc ||
+      String(copyDocCode || '').startsWith('ED-')
     );
 
     // 2. Resolve Target Department (Recipient department MUST ALWAYS take precedence over docOwnerDept)
@@ -9045,8 +9278,15 @@ const useStore = create(persist((set, get) => ({
       }
     }
 
+    const copyNoStr = String(copy.copy_no || copy.copyNo || '01').padStart(2, '0');
+    const ensuredCopyCode = copy.copyCode || (copyDocCode ? `${copyDocCode}-C${copyNoStr}` : `CC-${copyNoStr}`);
+    const todayStr = dispatchedAt.split('T')[0];
+    const holderLabel = copy.holder || copy.custodianName || copy.holder_name || requesterName || `${destinationDept} (${copy.location || copy.locationName || destinationDept})`;
+
     const updatedCopy = {
       ...copy,
+      copyCode: ensuredCopyCode,
+      copy_code: ensuredCopyCode,
       status: 'DISPATCHED_PENDING_RECEIPT',
       dispatched_at: dispatchedAt,
       dispatched_by: dispatchedBy,
@@ -9058,13 +9298,16 @@ const useStore = create(persist((set, get) => ({
       targetDepartment: destinationDept,
       recipientDepartment: destinationDept,
       recipient_department: destinationDept,
+      holder: holderLabel,
+      custodianName: holderLabel,
       requester_id: requesterId,
       requester_name: requesterName,
-      dateIssued: dispatchedAt.split('T')[0]
+      distributedDate: todayStr,
+      dateIssued: todayStr
     };
 
     const newCopies = copies.map(c => {
-      if (String(c.id) === targetId) {
+      if (String(c.id) === resolvedCopyId) {
         return updatedCopy;
       }
       if (copy.is_replacement && copy.replaced_copy_id && String(c.id) === String(copy.replaced_copy_id)) {
@@ -9083,10 +9326,71 @@ const useStore = create(persist((set, get) => ({
       return c;
     });
 
+    // Sync externalDocuments distributionList & controlledCopies if this is an External Document copy
+    let updatedExternalDocs = state.externalDocuments;
+    if (isExternalCopy && Array.isArray(state.externalDocuments)) {
+      updatedExternalDocs = state.externalDocuments.map(d => {
+        const isTargetExtDoc = (copyDocId && String(d.id) === copyDocId) ||
+          (copyDocCode && (d.code === copyDocCode || d.edCode === copyDocCode || d.doc_code === copyDocCode || d.docNo === copyDocCode) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded);
+        if (!isTargetExtDoc) return d;
+
+        const syncList = (list = []) => {
+          let found = false;
+          const mapped = list.map(item => {
+            if (
+              String(item.id || item.copyId || '') === resolvedCopyId ||
+              (item.copyCode && item.copyCode === ensuredCopyCode) ||
+              (item.copy_no && String(item.copy_no) === String(copy.copy_no))
+            ) {
+              found = true;
+              return {
+                ...item,
+                copyCode: ensuredCopyCode,
+                status: 'DISPATCHED_PENDING_RECEIPT',
+                distributedDate: todayStr,
+                dateIssued: todayStr,
+                dispatched_at: dispatchedAt,
+                dispatched_by: dispatchedBy
+              };
+            }
+            return item;
+          });
+          if (!found) {
+            mapped.push({
+              id: updatedCopy.id,
+              copyId: updatedCopy.id,
+              copyCode: ensuredCopyCode,
+              copy_no: copyNoStr,
+              copyNo: copyNoStr,
+              department: destinationDept,
+              targetDepartment: destinationDept,
+              holder: holderLabel,
+              custodianName: holderLabel,
+              location: updatedCopy.location || updatedCopy.locationName || destinationDept,
+              workstationLocation: updatedCopy.location || updatedCopy.locationName || destinationDept,
+              distributedDate: todayStr,
+              dateIssued: todayStr,
+              status: 'DISPATCHED_PENDING_RECEIPT',
+              is_external: true,
+              doc_type: 'EXTERNAL',
+              edition: updatedCopy.edition || d.edition || d.sourceVersion || updatedCopy.rev || '01'
+            });
+          }
+          return mapped;
+        };
+
+        return {
+          ...d,
+          distributionList: syncList(d.distributionList || []),
+          controlledCopies: syncList(d.controlledCopies || [])
+        };
+      });
+    }
+
     // Create DEPT_CONFIRM_HARDCOPY_RECEIPT Task strictly targeted to destination department and assignee
-    const newTaskId = `task-receipt-${targetId}-${Date.now()}`;
-    const docOfficialTitle = copy.docName || copy.name || copy.documentName || relatedDoc?.name || relatedDoc?.document_name || relatedDar?.name || copy.doc_code || copy.docTitle || 'เอกสารควบคุม';
-    const docCode = copy.doc_code || copy.docTitle || copy.title || relatedDoc?.title || '';
+    const newTaskId = `task-receipt-${resolvedCopyId}-${Date.now()}`;
+    const docOfficialTitle = copy.docName || copy.name || copy.documentName || relatedDoc?.name || relatedDoc?.document_name || relatedDoc?.title || relatedDar?.name || copy.doc_code || copy.docTitle || 'เอกสารควบคุม';
+    const docCode = copy.doc_code || copy.docCode || copy.docTitle || copy.title || relatedDoc?.edCode || relatedDoc?.doc_code || relatedDoc?.title || '';
     const newTask = {
       id: newTaskId,
       type: 'DEPT_CONFIRM_HARDCOPY_RECEIPT',
@@ -9095,13 +9399,19 @@ const useStore = create(persist((set, get) => ({
       category: 'RECEIPT',
       title: `ตรวจรับเอกสารควบคุมฉบับพิมพ์: ${docCode || docOfficialTitle} (Copy ${copy.copy_no || copy.ccNumber || '01'})`,
       description: `กรุณาตรวจสอบเอกสารฉบับพิมพ์จริงที่จุดใช้งาน ${copy.location || copy.locationName || destinationDept} (${destinationDept}) และยืนยันการรับเอกสาร`,
-      copy_id: targetId,
-      copyId: targetId,
-      instanceId: targetId,
+      copy_id: resolvedCopyId,
+      copyId: resolvedCopyId,
+      copyCode: ensuredCopyCode,
+      instanceId: resolvedCopyId,
       doc_id: copyDocId,
+      docId: copyDocId,
+      externalDocId: isExternalCopy ? (relatedExternalDoc?.id || copyDocId) : null,
       darId: relatedDar ? String(relatedDar.id) : copyDocId,
       doc_code: docCode,
       docCode: docCode,
+      is_external: isExternalCopy,
+      doc_type: isExternalCopy ? 'EXTERNAL' : (copy.doc_type || 'SOP'),
+      edition: copy.edition || relatedExternalDoc?.edition || relatedExternalDoc?.sourceVersion || copy.doc_version || copy.rev || '01',
       docTitle: docOfficialTitle,
       docName: docOfficialTitle,
       doc_version: copy.doc_version || copy.rev || '01',
@@ -9129,6 +9439,7 @@ const useStore = create(persist((set, get) => ({
       assignee_dept: destinationDept,
       assignedToDept: destinationDept,
       assignedToRole: 'DEPARTMENT_CONTROLLER',
+      origin: isExternalCopy ? 'EXTERNAL' : 'INTERNAL',
       status: 'PENDING',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       createdAt: dispatchedAt,
@@ -9143,6 +9454,7 @@ const useStore = create(persist((set, get) => ({
       docTitle: copy.doc_code || copy.docTitle,
       docRev: copy.doc_version || copy.rev,
       ccNumber: copy.copy_no || copy.ccNumber,
+      copyCode: ensuredCopyCode,
       oldStatus: copy.status,
       newStatus: 'DISPATCHED_PENDING_RECEIPT',
       remarks: `Dispatched controlled copy to ${destinationDept} (${copy.location || copy.locationName}) - Assigned to recipient ${requesterName || destinationDept} (${requesterId || 'Dept Pool'})`
@@ -9159,13 +9471,13 @@ const useStore = create(persist((set, get) => ({
     };
 
     // Check remaining pending copies for this document in newCopies
-    const relatedDocId = String(copyDocId || copy.doc_id || copy.docId || '');
-    const relatedDocCode = copy.doc_code || copy.docTitle || copy.title || '';
+    const relatedDocId = String(copyDocId || copy.doc_id || copy.docId || copy.external_doc_id || copy.externalDocId || '');
+    const relatedDocCode = copy.doc_code || copy.docCode || copy.docTitle || copy.title || '';
     const relatedDarId = relatedDar ? String(relatedDar.id) : (copy.dar_id ? String(copy.dar_id) : '');
 
     const docCopies = newCopies.filter(c => {
-      return (relatedDocId && String(c.doc_id || c.docId) === relatedDocId) ||
-             (relatedDocCode && (c.doc_code === relatedDocCode || c.docTitle === relatedDocCode));
+      return (relatedDocId && String(c.doc_id || c.docId || c.documentId || c.external_doc_id || c.externalDocId) === relatedDocId) ||
+             (relatedDocCode && (c.doc_code === relatedDocCode || c.docCode === relatedDocCode || c.docTitle === relatedDocCode));
     });
 
     const pendingDocCopies = docCopies.filter(c => 
@@ -9203,7 +9515,7 @@ const useStore = create(persist((set, get) => ({
       // For replacement copy tasks tied specifically to this dispatched copy
       if (t.copyId || t.copy_id || t.instanceId) {
         const taskCopyId = String(t.copyId || t.copy_id || t.instanceId);
-        if (taskCopyId === targetId) {
+        if (taskCopyId === resolvedCopyId) {
           return {
             ...t,
             status: 'COMPLETED',
@@ -9224,8 +9536,8 @@ const useStore = create(persist((set, get) => ({
       }
 
       const isMatch = (relatedDarId && String(t.darId) === relatedDarId) ||
-                      (relatedDocId && (String(t.docId) === relatedDocId || String(t.doc_id) === relatedDocId)) ||
-                      (relatedDocCode && (t.doc_code === relatedDocCode || t.docTitle === relatedDocCode || t.title?.includes(relatedDocCode)));
+                      (relatedDocId && (String(t.docId) === relatedDocId || String(t.doc_id) === relatedDocId || String(t.externalDocId) === relatedDocId)) ||
+                      (relatedDocCode && (t.doc_code === relatedDocCode || t.docCode === relatedDocCode || t.docTitle === relatedDocCode || t.title?.includes(relatedDocCode)));
       if (!isMatch) return t;
 
       if (isAllDispatched) {
@@ -9254,6 +9566,7 @@ const useStore = create(persist((set, get) => ({
     });
 
     return {
+      externalDocuments: updatedExternalDocs,
       documentControlledCopies: newCopies,
       controlledCopyInstances: newCopies,
       tasks: [newTask, ...updatedTasks.filter(t => t.id !== newTaskId)],
@@ -9263,7 +9576,7 @@ const useStore = create(persist((set, get) => ({
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         actionType: 'CC_DISPATCH',
         actor: dispatchedBy,
-        details: `Dispatched controlled copy ${targetId} to ${destinationDept}`,
+        details: `Dispatched controlled copy ${resolvedCopyId} to ${destinationDept}`,
         timestamp: dispatchedAt
       }, ...(state.actionLog || [])]
     };
@@ -9273,26 +9586,40 @@ const useStore = create(persist((set, get) => ({
   dispatchControlledCopies: (docIdOrCopyIds, copiesToDispatch) => {
     if (Array.isArray(docIdOrCopyIds)) {
       docIdOrCopyIds.forEach(id => {
-        useStore.getState().dispatchControlledCopy(id);
+        useStore.getState().dispatchControlledCopy(typeof id === 'object' ? (id.id || id.copyId) : id);
       });
       return;
     }
     if (Array.isArray(copiesToDispatch)) {
       copiesToDispatch.forEach(copy => {
-        useStore.getState().dispatchControlledCopy(copy.id || copy);
+        useStore.getState().dispatchControlledCopy(copy.id || copy.copyId || copy);
       });
       return;
     }
     if (typeof docIdOrCopyIds === 'string') {
       const state = useStore.getState();
-      const copies = (state.controlledCopyInstances || state.documentControlledCopies || []).filter(c => 
-        (c.doc_id === docIdOrCopyIds || c.docId === docIdOrCopyIds || c.doc_code === docIdOrCopyIds || c.docTitle === docIdOrCopyIds) && 
+      const allCopies = state.controlledCopyInstances || state.documentControlledCopies || [];
+      // Check if it's a single copy ID / copyCode first
+      const exactCopy = allCopies.find(c => String(c.id) === docIdOrCopyIds || c.copyCode === docIdOrCopyIds);
+      if (exactCopy) {
+        useStore.getState().dispatchControlledCopy(exactCopy.id);
+        return;
+      }
+      // Check if it's a task ID
+      const matchedTask = (state.tasks || []).find(t => String(t.id) === docIdOrCopyIds);
+      const targetKey = matchedTask ? (matchedTask.docId || matchedTask.externalDocId || matchedTask.doc_code || matchedTask.docCode) : docIdOrCopyIds;
+      const copies = allCopies.filter(c => 
+        (c.doc_id === targetKey || c.docId === targetKey || c.documentId === targetKey || c.external_doc_id === targetKey || c.externalDocId === targetKey || c.doc_code === targetKey || c.docCode === targetKey || c.docTitle === targetKey) && 
         (c.status === 'PENDING_ISSUE' || c.status === 'PENDING_PRINT' || c.status === 'PENDING_DISPATCH')
       );
       copies.forEach(c => {
         useStore.getState().dispatchControlledCopy(c.id);
       });
     }
+  },
+
+  fulfillControlledCopyRequest: (copyIdOrTaskId, copiesToDispatch) => {
+    return useStore.getState().dispatchControlledCopies(copyIdOrTaskId, copiesToDispatch);
   },
 
   getUserActionableTasks: (user) => {
@@ -9310,13 +9637,14 @@ const useStore = create(persist((set, get) => ({
 
   confirmHardcopyReceipt: (copyId, taskId, recipientData = {}) => set((state) => {
     // Strict Type Coercion to prevent comparison bugs
-    const targetCopyId = String(copyId);
+    const targetCopyId = String(typeof copyId === 'object' ? (copyId?.copyId || copyId?.id || '') : copyId);
     const targetTaskId = taskId ? String(taskId) : null;
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
       : (state.documentControlledCopies && state.documentControlledCopies.length > 0 ? state.documentControlledCopies : (state.controlledCopyInstances || []));
-    const copy = copies.find(c => String(c.id) === targetCopyId);
+    const copy = copies.find(c => String(c.id) === targetCopyId || (c.copyCode && String(c.copyCode) === targetCopyId));
     if (!copy) return state;
+    const resolvedCopyId = String(copy.id);
 
     const user = state.currentUser;
     const isWildcard = user?.isDcc || user?.role === 'DCC_ADMIN' || user?.role === 'QMR' || user?.isQmr;
@@ -9326,7 +9654,7 @@ const useStore = create(persist((set, get) => ({
     
     // 🛡️ Strict Authorization Guard with DCC Admin / QMR Wildcard Bypass:
     if (!isWildcard && targetDept && !userMatchesDepartment(user, targetDept)) {
-      console.warn(`[Guard] Unauthorized confirmHardcopyReceipt: User ${user?.name} (${user?.primary_department || user?.department}) cannot confirm receipt for copy ${targetCopyId} (${targetDept})`);
+      console.warn(`[Guard] Unauthorized confirmHardcopyReceipt: User ${user?.name} (${user?.primary_department || user?.department}) cannot confirm receipt for copy ${resolvedCopyId} (${targetDept})`);
       return state;
     }
 
@@ -9337,12 +9665,16 @@ const useStore = create(persist((set, get) => ({
     const clientIp = recipientData.client_ip || '127.0.0.1';
     const sessionId = recipientData.session_id || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-    const docId = copy.doc_code || copy.docTitle || copy.document_id || recipientData.document_id || 'UNKNOWN_DOC';
+    const docId = copy.doc_code || copy.docCode || copy.docTitle || copy.document_id || recipientData.document_id || 'UNKNOWN_DOC';
     const revision = copy.doc_version || copy.rev || recipientData.revision || '01';
-    const copyIdentifier = copy.copy_no ? `Copy ${copy.copy_no}` : (copy.ccNumber || `Copy ${targetCopyId}`);
+    const copyIdentifier = copy.copy_no ? `Copy ${copy.copy_no}` : (copy.ccNumber || `Copy ${resolvedCopyId}`);
+    const copyNoStr = String(copy.copy_no || copy.copyNo || '01').padStart(2, '0');
+    const ensuredCopyCode = copy.copyCode || (docId !== 'UNKNOWN_DOC' ? `${docId}-C${copyNoStr}` : `CC-${copyNoStr}`);
 
     const updatedCopy = {
       ...copy,
+      copyCode: ensuredCopyCode,
+      copy_code: ensuredCopyCode,
       status: 'ISSUED_ACTIVE',
       copy_status: 'ACTIVE',
       display_status: 'ACTIVE',
@@ -9353,6 +9685,8 @@ const useStore = create(persist((set, get) => ({
       received_by_id: actorUserId,
       received_by_name: confirmedBy,
       received_at: confirmedAt,
+      holder: confirmedBy,
+      custodianName: confirmedBy,
       holder_id: actorUserId,
       holderId: actorUserId,
       holder_name: confirmedBy,
@@ -9364,7 +9698,7 @@ const useStore = create(persist((set, get) => ({
     };
 
     const newCopies = copies.map(c => {
-      if (String(c.id) === targetCopyId) {
+      if (String(c.id) === resolvedCopyId) {
         return updatedCopy;
       }
       if (copy.is_replacement && copy.replaced_copy_id && String(c.id) === String(copy.replaced_copy_id)) {
@@ -9379,12 +9713,61 @@ const useStore = create(persist((set, get) => ({
       return c;
     });
 
+    // Sync externalDocuments distributionList & controlledCopies when confirming receipt for an External Document copy
+    const copyDocId = String(copy.doc_id || copy.docId || copy.documentId || copy.external_doc_id || copy.externalDocId || '');
+    const isExternalCopy = Boolean(
+      copy.is_external ||
+      copy.isExternal ||
+      copy.doc_type === 'EXTERNAL' ||
+      copy.doc_type === 'ED' ||
+      copy.docType === 'ED' ||
+      copy.external_doc_id ||
+      copy.externalDocId ||
+      String(docId || '').startsWith('ED-')
+    );
+    let updatedExternalDocs = state.externalDocuments;
+    if (isExternalCopy && Array.isArray(state.externalDocuments)) {
+      updatedExternalDocs = state.externalDocuments.map(d => {
+        const isTargetExtDoc = (copyDocId && String(d.id) === copyDocId) ||
+          (docId && (d.code === docId || d.edCode === docId || d.doc_code === docId || d.docNo === docId) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded);
+        if (!isTargetExtDoc) return d;
+
+        const syncList = (list = []) => list.map(item => {
+          if (
+            String(item.id || item.copyId || '') === resolvedCopyId ||
+            (item.copyCode && item.copyCode === ensuredCopyCode) ||
+            (item.copy_no && String(item.copy_no) === String(copy.copy_no))
+          ) {
+            return {
+              ...item,
+              copyCode: ensuredCopyCode,
+              status: 'ACTIVE',
+              copy_status: 'ISSUED_ACTIVE',
+              holder: confirmedBy,
+              custodianName: confirmedBy,
+              received_by: confirmedBy,
+              received_at: confirmedAt,
+              receipt_confirmed_at: confirmedAt,
+              receipt_confirmed_by: confirmedBy
+            };
+          }
+          return item;
+        });
+
+        return {
+          ...d,
+          distributionList: syncList(d.distributionList || []),
+          controlledCopies: syncList(d.controlledCopies || [])
+        };
+      });
+    }
+
     // Department-Pooled Task Dismissal: Immediately remove task for ALL users in the target department
     const updatedTasks = state.tasks.filter(t => {
       if (targetTaskId && String(t.id) === targetTaskId) return false;
       if (
         (t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' || t.task_type === 'CONFIRM_RECEIPT' || t.type === 'CONFIRM_RECEIPT' || t.category === 'RECEIPT') &&
-        (String(t.copy_id) === targetCopyId || String(t.copyId) === targetCopyId || String(t.instanceId) === targetCopyId)
+        (String(t.copy_id) === resolvedCopyId || String(t.copyId) === resolvedCopyId || String(t.instanceId) === resolvedCopyId)
       ) {
         return false;
       }
@@ -9395,7 +9778,8 @@ const useStore = create(persist((set, get) => ({
     const auditLog = {
       id: `audit-${Date.now()}`,
       log_id: `LOG-REC-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      copy_id: targetCopyId,
+      copy_id: resolvedCopyId,
+      copyCode: ensuredCopyCode,
       document_id: docId,
       revision: revision,
       copy_identifier: copyIdentifier,
@@ -9430,14 +9814,14 @@ const useStore = create(persist((set, get) => ({
 
     // If all copies of this document are now active/confirmed, mark tracking distribution task complete
     const remainingUnconfirmedCopies = newCopies.filter(c => {
-      const isSameDoc = (docId && (c.doc_code === docId || c.docTitle === docId || String(c.doc_id || c.docId) === String(copy.doc_id || copy.docId)));
+      const isSameDoc = (docId && (c.doc_code === docId || c.docCode === docId || c.docTitle === docId || String(c.doc_id || c.docId || c.documentId) === String(copy.doc_id || copy.docId || copy.documentId)));
       return isSameDoc && c.status !== 'ISSUED_ACTIVE' && c.status !== 'ACTIVE' && c.status !== 'VOID' && c.status !== 'REPLACED_VOID';
     });
     const isAllConfirmed = remainingUnconfirmedCopies.length === 0;
 
     const finalTasks = updatedTasks.map(t => {
       if (t.delivery_status === 'DISPATCHED_TRACKING' && isAllConfirmed) {
-        const isMatch = (copy.doc_code && (t.doc_code === copy.doc_code || t.title?.includes(copy.doc_code)));
+        const isMatch = (copy.doc_code && (t.doc_code === copy.doc_code || t.docCode === copy.doc_code || t.title?.includes(copy.doc_code)));
         if (isMatch) {
           return {
             ...t,
@@ -9454,9 +9838,10 @@ const useStore = create(persist((set, get) => ({
     });
 
     return {
+      externalDocuments: updatedExternalDocs,
       documentControlledCopies: newCopies,
       controlledCopyInstances: newCopies,
-      tasks: cleanupDccTasks(finalTasks, newCopies, state.documents),
+      tasks: cleanupDccTasks(finalTasks, newCopies, [...(state.documents || []), ...(updatedExternalDocs || [])]),
       controlledCopyAuditTrail: [auditLog, ...(state.controlledCopyAuditTrail || [])],
       physicalCopyAuditLogs: [auditLog, ...(state.physicalCopyAuditLogs || [])],
       notifications: [notif, ...state.notifications],
@@ -9465,14 +9850,17 @@ const useStore = create(persist((set, get) => ({
         actionType: 'PHYSICAL_COPY_RECEIVED',
         actor: confirmedBy,
         actorUserId: actorUserId,
-        details: `Confirmed physical hardcopy receipt for copy ${targetCopyId} (${docId}) by dept ${targetDept}`,
+        details: `Confirmed physical hardcopy receipt for copy ${resolvedCopyId} (${docId}) by dept ${targetDept}`,
         timestamp: confirmedAt
       }, ...(state.actionLog || [])]
     };
   }),
 
-  // Backward compatibility alias for confirmCcReceipt
+  // Backward compatibility aliases for confirmCcReceipt / acknowledgeCopyReceipt
   confirmCcReceipt: (instId, taskId, recipientData) => {
+    return useStore.getState().confirmHardcopyReceipt(instId, taskId, recipientData);
+  },
+  acknowledgeCopyReceipt: (instId, taskId, recipientData) => {
     return useStore.getState().confirmHardcopyReceipt(instId, taskId, recipientData);
   },
 
@@ -11473,52 +11861,80 @@ const useStore = create(persist((set, get) => ({
   }),
 
   issueControlledCopy: (docTitle, dept, location = null, locationId = null) => set((state) => {
-    const doc = state.documents.find(d => d.title === docTitle && d.status === 'EFFECTIVE');
+    const doc = (state.documents || []).find(d => (d.title === docTitle || String(d.id) === String(docTitle) || d.code === docTitle) && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE'))
+      || (state.externalDocuments || []).find(d => (String(d.id) === String(docTitle) || d.code === docTitle || d.edCode === docTitle || d.doc_code === docTitle || d.docNo === docTitle || d.title === docTitle) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded);
     if (!doc) return state;
 
-    const copies = state.documentControlledCopies || state.controlledCopyInstances || [];
-    const existingCopies = copies.filter(c => (c.doc_code || c.docTitle) === docTitle);
-    const nextCcNum = `CC-${String(existingCopies.length + 1).padStart(3, '0')}`;
-    const copyNo = String(existingCopies.length + 1).padStart(2, '0');
-    const locName = location || `${dept} Head Office`;
-    const locId = locationId || `${dept}-LOC-${existingCopies.length + 1}`;
+    const isExternal = !(state.documents || []).some(d => d.id === doc.id);
+    const docCode = doc.code || doc.edCode || doc.document_code || doc.doc_code || doc.docNo || doc.title;
+    const docOfficialTitle = doc.document_title || doc.doc_title || doc.docName || doc.name || doc.title || docCode;
+    const docEdition = doc.edition || doc.sourceVersion || doc.rev || '01';
 
-    const docCode = doc.document_code || doc.code || doc.doc_code || doc.docNo || doc.title;
-    const docOfficialTitle = doc.document_title || doc.doc_title || doc.docName || doc.name || docCode;
+    const copies = state.documentControlledCopies || state.controlledCopyInstances || [];
+    const activeCopies = getActivePhysicalCopies(copies, doc);
+    const nextNum = activeCopies.length + 1;
+    const nextCcNum = `CC-${String(nextNum).padStart(3, '0')}`;
+    const copyNo = String(nextNum).padStart(2, '0');
+    const copyCode = `${docCode}-C${copyNo}`;
+    const locName = location || `${dept} Head Office`;
+    const locId = locationId || `${dept}-LOC-${nextNum}`;
+    const nowIso = new Date().toISOString();
+    const todayStr = nowIso.split('T')[0];
+    const holderName = `${dept} (${locName})`;
 
     const newInst = {
       id: `inst-${Date.now()}`,
+      copyCode,
+      copy_code: copyCode,
       doc_id: doc.id,
       docId: doc.id,
+      documentId: doc.id,
+      external_doc_id: isExternal ? doc.id : null,
+      externalDocId: isExternal ? doc.id : null,
       document_code: docCode,
+      documentCode: docCode,
       doc_code: docCode,
       docCode: docCode,
       document_title: docOfficialTitle,
       doc_title: docOfficialTitle,
       docName: docOfficialTitle,
-      docTitle: docCode,
-      doc_version: doc.rev,
-      rev: doc.rev,
+      docTitle: isExternal ? docOfficialTitle : docCode,
+      doc_type: isExternal ? 'EXTERNAL' : (doc.type || 'SOP'),
+      docType: isExternal ? 'ED' : (doc.type || 'SOP'),
+      edition: docEdition,
+      doc_version: doc.rev || docEdition,
+      rev: doc.rev || docEdition,
       copy_no: copyNo,
       copyNo: copyNo,
+      copy_number: nextNum,
+      copyNumber: nextNum,
       ccNumber: nextCcNum,
       issue_no: '01',
       issueNumber: 'I01',
       holder_dept: dept,
       department: dept,
+      targetDepartment: dept,
+      target_department: dept,
       departmentId: dept,
       dept_code: dept,
-      holder_name: `${dept} (${locName})`,
+      holder: holderName,
+      custodianName: holderName,
+      holder_name: holderName,
       location: locName,
       locationName: locName,
+      workstationLocation: locName,
       locationId: locId,
       station_id: locId,
       station_name: locName,
       status: 'PENDING_ISSUE',
       is_replacement: false,
+      is_external: isExternal,
+      isExternal: isExternal,
       dispatched_at: null,
       dispatched_by: null,
-      dateIssued: new Date().toISOString().split('T')[0],
+      createdAt: nowIso,
+      distributedDate: todayStr,
+      dateIssued: todayStr,
       receipt_confirmed_at: null,
       receipt_confirmed_by: null,
       receipt_remarks: null,
@@ -11527,43 +11943,90 @@ const useStore = create(persist((set, get) => ({
 
     const auditLog = {
       id: `audit-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      user: state.currentUser.name,
+      timestamp: nowIso,
+      user: state.currentUser?.name || 'DCC Admin',
       action: 'ISSUE_COPY',
-      docTitle: newInst.docTitle,
+      docTitle: docCode,
       docRev: newInst.rev,
       ccNumber: newInst.ccNumber,
+      copyCode,
       oldStatus: '-',
       newStatus: newInst.status,
       remarks: `Issued new controlled copy to ${dept} (${locName})`
     };
 
     const finalCopies = [...copies, newInst];
+    const updatedExternalDocs = isExternal
+      ? (state.externalDocuments || []).map(d => d.id === doc.id ? {
+          ...d,
+          distributionList: [...(d.distributionList || []), newInst],
+          controlledCopies: [...(d.controlledCopies || []), newInst]
+        } : d)
+      : state.externalDocuments;
+
     return {
+      externalDocuments: updatedExternalDocs,
       documentControlledCopies: finalCopies,
       controlledCopyInstances: finalCopies,
       controlledCopyAuditTrail: [auditLog, ...state.controlledCopyAuditTrail],
       actionLog: [{
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         actionType: 'CC_ISSUE',
-        actor: state.currentUser.name,
-        details: `Issued controlled copy for ${docTitle} at ${locName}`,
-        timestamp: new Date().toISOString()
+        actor: state.currentUser?.name || 'DCC Admin',
+        details: `Issued controlled copy for ${docCode} at ${locName}`,
+        timestamp: nowIso
       }, ...(state.actionLog || [])]
     };
   }),
 
   requestAdditionalControlledCopies: (docId, newLocationsList = [], reason = '') => set((state) => {
-    const isInternal = state.documents.some(d => String(d.id) === String(docId) || d.title === docId);
-    const doc = state.documents.find(d => String(d.id) === String(docId) || d.title === docId)
-      || (state.externalDocuments || []).find(d => String(d.id) === String(docId) || d.edCode === docId || d.title === docId);
+    // Support both positional (docId, newLocationsList, reason) and object payload ({ documentId, docCode, locations, ... })
+    let targetId = docId;
+    let targetCode = typeof docId === 'string' ? docId : '';
+    let locationsList = newLocationsList;
+    let requestReason = reason;
+
+    if (docId && typeof docId === 'object' && !Array.isArray(docId)) {
+      targetId = docId.documentId || docId.docId || docId.externalDocId || docId.id || '';
+      targetCode = docId.docCode || docId.edCode || docId.doc_code || docId.code || docId.docNo || docId.title || '';
+      if (!Array.isArray(locationsList) || locationsList.length === 0) {
+        if (Array.isArray(docId.locations)) locationsList = docId.locations;
+        else if (Array.isArray(docId.newLocationsList)) locationsList = docId.newLocationsList;
+        else if (Array.isArray(docId.copies)) locationsList = docId.copies;
+        else if (docId.department || docId.departmentId || docId.location || docId.locationName) locationsList = [docId];
+      }
+      if (!requestReason && (docId.reason || docId.requestReason)) {
+        requestReason = docId.reason || docId.requestReason;
+      }
+    }
+
+    if (!Array.isArray(locationsList)) {
+      locationsList = locationsList ? [locationsList] : [];
+    }
+
+    const matchDoc = (d) => {
+      if (!d) return false;
+      const idMatch = targetId && String(d.id) === String(targetId);
+      const dCodes = [d.code, d.edCode, d.doc_code, d.docCode, d.docNo, d.document_code, d.title].filter(Boolean).map(v => String(v).trim());
+      const codeMatch = (targetCode && dCodes.includes(String(targetCode).trim())) || (targetId && dCodes.includes(String(targetId).trim()));
+      return Boolean(idMatch || codeMatch);
+    };
+
+    const internalDoc = (state.documents || []).find(d => matchDoc(d) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded)
+      || (state.documents || []).find(matchDoc);
+    const externalDoc = (state.externalDocuments || []).find(d => matchDoc(d) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded && !d.is_obsolete)
+      || (state.externalDocuments || []).find(matchDoc);
+
+    const doc = internalDoc || externalDoc;
     if (!doc) return state;
 
+    const isInternal = Boolean(internalDoc);
     const isExternal = !isInternal;
-    const docCode = doc.edCode || doc.doc_code || doc.title;
+    const docCode = doc.code || doc.edCode || doc.doc_code || doc.docCode || doc.docNo || doc.document_code || doc.title;
     const docTitle = doc.title;
     const docName = doc.name || doc.title;
-    const docVersion = doc.rev || doc.sourceVersion || '01';
+    const docEdition = doc.edition || doc.sourceVersion || doc.rev || '01';
+    const docVersion = doc.rev || doc.sourceVersion || doc.edition || '01';
 
     const copies = (state.controlledCopyInstances && state.controlledCopyInstances.length > 0)
       ? state.controlledCopyInstances
@@ -11572,13 +12035,32 @@ const useStore = create(persist((set, get) => ({
     // Deduplicate & filter active physical copies using getActivePhysicalCopies
     const activeDocCopies = getActivePhysicalCopies(copies, doc);
 
-    // Calculate maximum sequential copy number from pure physical active copies
-    const copyNumbers = activeDocCopies.map(c => {
-      const rawNum = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? c.ccNumber.replace(/\D/g, '') : null);
+    // Helper to extract sequence number from -C01, CC-001, Copy 01, or numeric fields
+    const extractCopySeq = (c) => {
+      if (!c) return 0;
+      if (typeof c.copy_number === 'number' && !isNaN(c.copy_number)) return c.copy_number;
+      if (typeof c.copyNumber === 'number' && !isNaN(c.copyNumber)) return c.copyNumber;
+      const codeStr = String(c.copyCode || c.copy_code || c.copy_no || c.copyNo || c.ccNumber || '');
+      const cMatch = codeStr.match(/-C(\d+)$/i) || codeStr.match(/^CC-(\d+)$/i) || codeStr.match(/^Copy\s*(\d+)$/i);
+      if (cMatch) return parseInt(cMatch[1], 10) || 0;
+      const rawNum = c.copy_number ?? c.copyNumber ?? c.copy_no ?? c.copyNo ?? (c.ccNumber ? String(c.ccNumber).replace(/\D/g, '') : null);
       const parsed = parseInt(rawNum, 10);
       return isNaN(parsed) ? 0 : parsed;
-    });
-    let maxCopyNo = copyNumbers.length > 0 ? Math.max(...copyNumbers, 0) : 0;
+    };
+
+    // Scan activeDocCopies AND doc.distributionList / doc.controlledCopies / doc.distributions for this docCode
+    const copyPoolForSeq = [
+      ...activeDocCopies,
+      ...(Array.isArray(doc.distributionList) ? doc.distributionList : []),
+      ...(Array.isArray(doc.controlledCopies) ? doc.controlledCopies : []),
+      ...(Array.isArray(doc.distributions) ? doc.distributions : []),
+      ...(Array.isArray(doc.distribution) ? doc.distribution : [])
+    ];
+    const copyNumbers = copyPoolForSeq.map(extractCopySeq);
+    const distListLength = Array.isArray(doc.distributionList)
+      ? doc.distributionList.filter(d => d && d.status !== 'RETIRED' && d.status !== 'DESTROYED' && d.status !== 'VOID').length
+      : 0;
+    let maxCopyNo = Math.max(...copyNumbers, distListLength, 0);
 
     const requesterName = state.currentUser ? state.currentUser.name : 'Owner Department';
     const requesterDept = state.currentUser ? (state.currentUser.department || state.currentUser.dept) : (doc.department || 'PD');
@@ -11586,38 +12068,47 @@ const useStore = create(persist((set, get) => ({
     const todayStr = nowIso.split('T')[0];
 
     const newCreatedCopies = [];
+    const newDistributionListEntries = [];
     const newAuditLogs = [];
     const newTargetDepts = new Set((doc.distributions || []).map(d => d.departmentId || d.dept));
     if (doc.department) newTargetDepts.add(doc.department);
 
-    newLocationsList.forEach((loc, idx) => {
+    locationsList.forEach((loc, idx) => {
       maxCopyNo += 1;
       const copyNoStr = String(maxCopyNo).padStart(2, '0');
       const ccNumStr = `CC-${String(maxCopyNo).padStart(3, '0')}`;
+      const copyCode = `${docCode}-C${copyNoStr}`;
       
       // Target Department of this station: MUST be strictly preserved, NEVER falling back to doc.department
       const targetDept = loc.target_department || loc.targetDepartment || loc.departmentId || loc.department || loc.dept || loc.dept_code;
       const dept = targetDept || (loc.locationId && state.distributionLocations?.find(s => s.id === loc.locationId)?.departmentId) || requesterDept;
       newTargetDepts.add(dept);
 
-      const locName = loc.station_name || loc.locationName || loc.location_name || loc.name || loc.location || `${dept} Head Office`;
+      const locName = loc.workstationLocation || loc.station_name || loc.locationName || loc.location_name || loc.name || loc.location || `${dept} Head Office`;
       const locId = loc.station_id || loc.location_id || loc.locationId || loc.id || `${dept}-LOC-${idx + 1}`;
+      const holderName = loc.holder || loc.custodianName || loc.holder_name || loc.holderName || `${dept} (${locName})`;
 
       const newCopy = {
         id: `cc-adhoc-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+        copyCode,
+        copy_code: copyCode,
         doc_id: doc.id,
         docId: doc.id,
+        documentId: doc.id,
         external_doc_id: isExternal ? doc.id : null,
         externalDocId: isExternal ? doc.id : null,
         document_code: docCode,
+        documentCode: docCode,
         doc_code: docCode,
         docCode: docCode,
         document_title: docName,
         doc_title: docName,
         docTitle: docTitle,
-        doc_type: isExternal ? 'ED' : (doc.type || 'SOP'),
+        doc_type: isExternal ? 'EXTERNAL' : (doc.type || 'SOP'),
         docType: isExternal ? 'ED' : (doc.type || 'SOP'),
         docName: docName,
+        edition: docEdition,
+        sourceVersion: docEdition,
         doc_version: docVersion,
         rev: docVersion,
         copy_no: copyNoStr,
@@ -11636,22 +12127,28 @@ const useStore = create(persist((set, get) => ({
         department: dept,
         departmentId: dept,
         dept_code: dept,
-        holder_name: `${dept} (${locName})`,
+        holder: holderName,
+        custodianName: holderName,
+        holder_name: holderName,
+        holderName: holderName,
         location: locName,
         locationName: locName,
         location_name: locName,
+        workstationLocation: locName,
         locationId: locId,
         location_id: locId,
         station_id: locId,
         station_name: locName,
-        status: 'PENDING_ISSUE',
+        status: loc.status || 'PENDING_ISSUE',
         is_replacement: false,
         is_adhoc: true,
         is_external: isExternal,
         isExternal: isExternal,
-        request_reason: reason,
+        request_reason: requestReason,
         requested_by: requesterName,
         requested_at: nowIso,
+        createdAt: nowIso,
+        distributedDate: todayStr,
         dispatched_at: null,
         dispatched_by: null,
         receipt_confirmed_at: null,
@@ -11662,6 +12159,46 @@ const useStore = create(persist((set, get) => ({
       };
 
       newCreatedCopies.push(newCopy);
+      newDistributionListEntries.push({
+        id: newCopy.id,
+        copyId: newCopy.id,
+        copyCode,
+        copy_no: copyNoStr,
+        copyNo: copyNoStr,
+        copy_number: maxCopyNo,
+        copyNumber: maxCopyNo,
+        ccNumber: ccNumStr,
+        documentId: doc.id,
+        docId: doc.id,
+        externalDocId: isExternal ? doc.id : null,
+        docCode: docCode,
+        doc_code: docCode,
+        documentCode: docCode,
+        department: dept,
+        targetDepartment: dept,
+        target_department: dept,
+        holder_dept: dept,
+        departmentId: dept,
+        holder: holderName,
+        custodianName: holderName,
+        holder_name: holderName,
+        location: locName,
+        locationName: locName,
+        workstationLocation: locName,
+        locationId: locId,
+        station_id: locId,
+        station_name: locName,
+        distributedDate: todayStr,
+        dateIssued: todayStr,
+        createdAt: nowIso,
+        status: newCopy.status,
+        is_external: isExternal,
+        isExternal: isExternal,
+        doc_type: isExternal ? 'EXTERNAL' : (doc.type || 'SOP'),
+        docType: isExternal ? 'ED' : (doc.type || 'SOP'),
+        edition: docEdition,
+        rev: docVersion
+      });
 
       newAuditLogs.push({
         id: `audit-adhoc-${Date.now()}-${idx}`,
@@ -11671,17 +12208,18 @@ const useStore = create(persist((set, get) => ({
         docTitle: docCode,
         docRev: docVersion,
         ccNumber: ccNumStr,
+        copyCode,
         oldStatus: '-',
         newStatus: 'PENDING_ISSUE',
-        remarks: `Requested ad-hoc copy for ${dept} (${locName}). Reason: ${reason}`
+        remarks: `Requested ad-hoc copy for ${dept} (${locName}). Reason: ${requestReason}`
       });
     });
 
     // Update Document distributions
     const updatedDistributions = [...(doc.distributions || [])];
-    newLocationsList.forEach(loc => {
-      const dept = loc.departmentId || loc.dept || loc.dept_code || requesterDept;
-      const locName = loc.station_name || loc.locationName || loc.name || loc.location || `${dept} Head Office`;
+    locationsList.forEach(loc => {
+      const dept = loc.target_department || loc.targetDepartment || loc.departmentId || loc.department || loc.dept || loc.dept_code || requesterDept;
+      const locName = loc.workstationLocation || loc.station_name || loc.locationName || loc.name || loc.location || `${dept} Head Office`;
       const locId = loc.station_id || loc.locationId || loc.id;
       if (!updatedDistributions.some(d => (d.departmentId === dept || d.dept === dept || d.dept_code === dept) && (d.locationId === locId || d.station_id === locId))) {
         updatedDistributions.push({
@@ -11704,7 +12242,17 @@ const useStore = create(persist((set, get) => ({
       : state.documents;
 
     const updatedExternalDocs = isExternal
-      ? (state.externalDocuments || []).map(d => d.id === doc.id ? { ...d, distributions: updatedDistributions } : d)
+      ? (state.externalDocuments || []).map(d => {
+          const isTargetExt = String(d.id) === String(doc.id) ||
+            ((d.code === docCode || d.edCode === docCode || d.doc_code === docCode || d.docNo === docCode) && (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded);
+          if (!isTargetExt) return d;
+          return {
+            ...d,
+            distributions: updatedDistributions,
+            distributionList: [...(d.distributionList || []), ...newDistributionListEntries],
+            controlledCopies: [...(d.controlledCopies || []), ...newDistributionListEntries]
+          };
+        })
       : state.externalDocuments;
 
     // Create DCC task for issuing copies
@@ -11712,17 +12260,26 @@ const useStore = create(persist((set, get) => ({
     const docOfficialTitle = doc.name || doc.document_name || doc.docName || doc.title || docCode;
     const dccTask = {
       id: taskId,
+      referenceType: isExternal ? 'EXTERNAL_DOC' : 'INTERNAL_DOC',
       type: 'DCC_DISTRIBUTE',
-            assignee_department: 'DC',
-        document_department: 'QC',
+      assignee_department: 'DC',
+      document_department: doc.department || 'QC',
       taskType: 'DCC_ISSUE_CONTROLLED_COPIES',
-      title: `ขอออกสำเนาควบคุมเพิ่มเติม: ${docOfficialTitle} (${docCode}) (${newLocationsList.length} จุด)`,
-      description: `แผนก ${requesterDept} โดยคุณ ${requesterName} ขอรับสำเนาควบคุมเพิ่มเติมสำหรับ ${docCode} (${docOfficialTitle}) (Rev.${docVersion}) จำนวน ${newLocationsList.length} เล่ม เหตุผล: ${reason}`,
+      title: `ขอออกสำเนาควบคุมเพิ่มเติม: ${docOfficialTitle} (${docCode}) (${locationsList.length} จุด)`,
+      description: `แผนก ${requesterDept} โดยคุณ ${requesterName} ขอรับสำเนาควบคุมเพิ่มเติมสำหรับ ${docCode} (${docOfficialTitle}) (Rev.${docVersion}) จำนวน ${locationsList.length} เล่ม เหตุผล: ${requestReason}`,
       docId: doc.id,
+      documentId: doc.id,
       darId: isInternal ? doc.id : null,
       externalDocId: isExternal ? doc.id : null,
       doc_code: docCode,
       docCode: docCode,
+      documentCode: docCode,
+      is_external: isExternal,
+      isExternal: isExternal,
+      doc_type: isExternal ? 'EXTERNAL' : (doc.type || 'SOP'),
+      docType: isExternal ? 'ED' : (doc.type || 'SOP'),
+      edition: docEdition,
+      copyCodes: newCreatedCopies.map(c => c.copyCode),
       docTitle: docOfficialTitle,
       docName: docOfficialTitle,
       doc_version: docVersion,
@@ -11733,6 +12290,7 @@ const useStore = create(persist((set, get) => ({
       department: 'DC',
       target_department: 'DC',
       targetDepartment: 'DC',
+      origin: isExternal ? 'EXTERNAL' : 'INTERNAL',
       status: 'PENDING',
       priority: 'HIGH',
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -11752,7 +12310,7 @@ const useStore = create(persist((set, get) => ({
         id: `notif-adhoc-${Date.now()}`,
         userId: resolveDccAdminUserId(state.masterUsers),
         title: 'มีคำขอออกสำเนาควบคุมเพิ่มเติม',
-        message: `แผนก ${requesterDept} ขอรับสำเนาควบคุมสำหรับ ${docCode} เพิ่มเติม ${newLocationsList.length} จุด`,
+        message: `แผนก ${requesterDept} ขอรับสำเนาควบคุมสำหรับ ${docCode} เพิ่มเติม ${locationsList.length} จุด`,
         isRead: false,
         link: '/controlled-copy?tab=PENDING_ISSUE',
         timestamp: nowIso
@@ -11761,7 +12319,7 @@ const useStore = create(persist((set, get) => ({
         id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         actionType: 'REQUEST_ADDITIONAL_COPIES',
         actor: requesterName,
-        details: `Requested ${newLocationsList.length} additional copies for ${docCode}`,
+        details: `Requested ${locationsList.length} additional copies for ${docCode}`,
         timestamp: nowIso
       }, ...(state.actionLog || [])]
     };
