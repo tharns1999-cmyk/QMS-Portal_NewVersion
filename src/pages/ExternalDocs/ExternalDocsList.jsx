@@ -41,6 +41,8 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { getDeptBadgeStyle } from '../../utils/departmentColors';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { normalizeDept } from '../../utils/darHelper';
+import { extractDeptCode } from '../../services/darService';
 
 // Safe date formatter with robust fallback (EC-2)
 export const fmtDate = (d) => {
@@ -327,12 +329,6 @@ const ExternalDocsList = () => {
   };
 
   // Department normalization & matching helpers
-  const normalizeDept = (d) => {
-    if (!d) return '';
-    const val = typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d;
-    return typeof val === 'string' ? val.trim().toUpperCase() : '';
-  };
-
   const getUserDepartments = (user) => {
     if (!user) return [];
     const depts = [];
@@ -355,7 +351,7 @@ const ExternalDocsList = () => {
     const s2 = normalizeDept(d2);
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
-    if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC')) return true;
+    if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC' || s1 === 'QC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC' || s2 === 'QC')) return true;
     return false;
   };
 
@@ -374,7 +370,7 @@ const ExternalDocsList = () => {
 
   const isOwnerDept = (doc) => {
     if (!doc) return false;
-    const docDept = doc.department || doc.dept || doc.owner_dept;
+    const docDept = doc.department || doc.dept || doc.owner_dept || extractDeptCode(getDocCode(doc));
     return userDepts.includes(docDept) || userDepts.some(ud => deptMatches(ud, docDept));
   };
 

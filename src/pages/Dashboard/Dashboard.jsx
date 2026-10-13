@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { isActionableTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';
-import { isDarDraft, isDarRequester, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
+import { isDarDraft, isDarRequester, formatDarDocumentDisplay } from '../../utils/darHelper';
+import { DarStatusBadge } from '../../components/ui/StatusBadge';
 import DashboardHeader from './components/DashboardHeader';
 import { isMyDepartment } from '../../services/darService';
 
@@ -339,11 +340,6 @@ const Dashboard = () => {
         <Eye size={18} />
       </button>
     );
-  };
-
-  const getStatusBadge = (status) => {
-    const meta = getDarStatusBadgeMeta(status);
-    return <span className={meta.className}>{meta.label}</span>;
   };
 
   return (
@@ -876,7 +872,7 @@ const Dashboard = () => {
                       </td>
                     )}
                     <td className="py-3 px-4 whitespace-nowrap">
-                      {getStatusBadge(dar.status)}
+                      <DarStatusBadge status={dar.status} />
                     </td>
                     <td className="py-3 px-4 text-slate-600 whitespace-nowrap min-w-0 truncate text-[13px] font-medium">
                       {dar.isTask ? 'ผู้จัดการแผนก' : getCurrentHandler(dar)}

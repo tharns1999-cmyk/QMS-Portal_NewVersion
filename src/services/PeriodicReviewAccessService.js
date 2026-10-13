@@ -1,8 +1,15 @@
+import { isSameDepartment } from '../utils/taskFilter';
+import { extractDeptCode } from './darService';
+
 export const resolveReviewOwnerDepartmentId = (review, schedule, document) => {
   if (review && review.ownerDepartmentId) return review.ownerDepartmentId;
   if (schedule && schedule.ownerDepartmentId) return schedule.ownerDepartmentId;
   if (document && document.ownerDepartmentId) return document.ownerDepartmentId;
   if (document && document.department) return document.department; // Legacy fallback
+  const extracted = extractDeptCode(
+    document?.code || document?.doc_code || document?.docNo || review?.documentCode || review?.docCode
+  );
+  if (extracted) return extracted;
   return null;
 };
 
@@ -12,7 +19,7 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
 
   // 1. Check departmentMemberships array if it exists (Multi-department position authority)
   if (user.departmentMemberships && Array.isArray(user.departmentMemberships)) {
-    const membership = user.departmentMemberships.find(m => m.departmentId === ownerDepartmentId);
+    const membership = user.departmentMemberships.find(m => isSameDepartment(m.departmentId, ownerDepartmentId));
     if (membership && membership.isActive) {
       return membership;
     }
@@ -25,7 +32,7 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
   }
 
   // 2. Compatibility fallback for current mock model
-  if (user.depts && user.depts.includes(ownerDepartmentId)) {
+  if (user.depts && user.depts.some(d => isSameDepartment(d, ownerDepartmentId))) {
     return {
       departmentId: ownerDepartmentId,
       positionLevel: user.level || 0,
@@ -35,7 +42,7 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
 
   // 3. Managed departments (wildcard or specific department authority)
   if (Array.isArray(user.managedDepartments)) {
-    if (user.managedDepartments.includes('*') || user.managedDepartments.includes(ownerDepartmentId)) {
+    if (user.managedDepartments.some(d => d === '*' || isSameDepartment(d, ownerDepartmentId))) {
       return {
         departmentId: ownerDepartmentId,
         positionLevel: user.level || 4,
@@ -45,7 +52,11 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
   }
 
   // 4. Primary or direct department
-  if (user.department === ownerDepartmentId || user.dept === ownerDepartmentId || user.primary_department === ownerDepartmentId) {
+  if (
+    isSameDepartment(user.department, ownerDepartmentId) ||
+    isSameDepartment(user.dept, ownerDepartmentId) ||
+    isSameDepartment(user.primary_department, ownerDepartmentId)
+  ) {
     return {
       departmentId: ownerDepartmentId,
       positionLevel: user.level || 0,
@@ -89,12 +100,16 @@ export const canViewPeriodicReview = (user, review, document) => {
   if (!ownerDept) return true;
 
   if (Array.isArray(user?.managedDepartments)) {
-    if (user.managedDepartments.includes('*') || user.managedDepartments.includes(ownerDept)) {
+    if (user.managedDepartments.some(d => d === '*' || isSameDepartment(d, ownerDept))) {
       return true;
     }
   }
 
-  if (user?.department === ownerDept || user?.dept === ownerDept || user?.primary_department === ownerDept) {
+  if (
+    isSameDepartment(user?.department, ownerDept) ||
+    isSameDepartment(user?.dept, ownerDept) ||
+    isSameDepartment(user?.primary_department, ownerDept)
+  ) {
     return true;
   }
 
@@ -119,7 +134,7 @@ export const canPerformPeriodicReview = (user, review, document) => {
   if (user.isDcc || user.role === 'DCC' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'QMR') {
     return true;
   }
-  if (Array.isArray(user.managedDepartments) && (user.managedDepartments.includes('*') || (ownerDept && user.managedDepartments.includes(ownerDept)))) {
+  if (Array.isArray(user.managedDepartments) && user.managedDepartments.some(d => d === '*' || (ownerDept && isSameDepartment(d, ownerDept)))) {
     return true;
   }
   

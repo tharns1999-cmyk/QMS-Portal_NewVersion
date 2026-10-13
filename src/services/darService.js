@@ -12,14 +12,17 @@ export const standardizeDepartmentCode = (dept) => {
   if (!dept) return 'QC';
   const raw = String(dept).trim();
   const clean = raw.replace(/[^a-zA-Z]/g, '').toUpperCase();
-  if (clean === 'QA' || clean === 'QC' || clean === 'QAQC') {
+  if (clean === 'QA' || clean === 'QC' || clean === 'QAQC' || clean === 'QASUPER') {
     return 'QC';
   }
   return raw.toUpperCase();
 };
 
+const KNOWN_DEPT_CODES = ['PD', 'WH', 'EN', 'PC', 'HSE', 'MKT', 'ST', 'FIN', 'DC', 'HR&GA'];
+const DOC_TYPE_PREFIXES = ['QM', 'QP', 'SOP', 'WI', 'SD', 'FM', 'ED', 'EXT', 'DAR', 'DOC', 'JD'];
+
 /**
- * Extract clean department code from string or object (e.g. 'SOP-QC-01' -> 'QC', 'Staff (QC)' -> 'QC', 'QC - ฝ่ายประกัน...' -> 'QC')
+ * Extract clean department code from string or object (e.g. 'SOP-QC-01' -> 'QC', 'QC-SOP-01' -> 'QC', 'Staff (QC)' -> 'QC', 'QC - ฝ่ายประกัน...' -> 'QC')
  */
 export const extractDeptCode = (val) => {
   if (!val) return '';
@@ -29,13 +32,26 @@ export const extractDeptCode = (val) => {
   const trimmed = String(val).trim();
   if (!trimmed) return '';
 
-  // Extract from doc code like SOP-QC-01 or WI-PD-02
+  // Extract from doc code like SOP-QC-01, WI-PD-02, or QC-SOP-01 / QC-01-01
   if (trimmed.includes('-')) {
-    const parts = trimmed.split('-');
-    if (parts.length >= 2 && parts[1].length <= 5 && /^[a-zA-Z/]+$/.test(parts[1])) {
-      const p = parts[1].toUpperCase();
-      if (p === 'QA' || p === 'QC' || p === 'QAQC' || p === 'QA/QC') return 'QC';
-      return p;
+    const parts = trimmed.split('-').map(s => s.trim());
+    const p0 = (parts[0] || '').toUpperCase();
+    const p1 = (parts[1] || '').toUpperCase();
+
+    // a) {Dept}-{Type}-{##} / QC-XX-XX format
+    if ((p0 === 'QC' || p0 === 'QA' || p0 === 'QAQC' || p0 === 'QA/QC' || p0 === 'QA SUPER' || p0 === 'QASUPER') && !DOC_TYPE_PREFIXES.includes(p0)) {
+      return 'QC';
+    }
+    if (KNOWN_DEPT_CODES.includes(p0) && (DOC_TYPE_PREFIXES.includes(p1) || /^\d+$/.test(p1))) {
+      return p0;
+    }
+
+    // b) {Type}-{Dept}-{##} format (e.g., SOP-QC-01, WI-QC-01, ED-QA-01)
+    if (p1 === 'QA' || p1 === 'QC' || p1 === 'QAQC' || p1 === 'QA/QC') {
+      return 'QC';
+    }
+    if (parts.length >= 2 && p1.length <= 5 && /^[A-Z/]+$/.test(p1)) {
+      return p1;
     }
   }
 
@@ -47,10 +63,10 @@ export const extractDeptCode = (val) => {
     return inside.replace(/[^A-Z]/g, '');
   }
 
-  // Extract from formatted "QC - ฝ่ายประกัน..." or "QA/QC - ฝ่ายประกัน..."
-  if (/^QA[\s/_-]?QC/i.test(trimmed)) return 'QC';
+  // Extract from formatted "QC - ฝ่ายประกัน..." or "QA/QC - ฝ่ายประกัน..." or "QA SUPER"
+  if (/^QA[\s/_-]?(QC|SUPER)/i.test(trimmed)) return 'QC';
   const firstWord = trimmed.split(/[\s-]+/)[0].replace(/[^a-zA-Z]/g, '').toUpperCase();
-  if (firstWord === 'QA' || firstWord === 'QC' || firstWord === 'QAQC') return 'QC';
+  if (firstWord === 'QA' || firstWord === 'QC' || firstWord === 'QAQC' || firstWord === 'QASUPER') return 'QC';
 
   return firstWord || trimmed.toUpperCase();
 };
@@ -63,8 +79,8 @@ export const isDeptEquivalent = (d1, d2) => {
   const c1 = d1.toUpperCase();
   const c2 = d2.toUpperCase();
   if (c1 === c2) return true;
-  const isQaQc1 = c1 === 'QC' || c1 === 'QA' || c1 === 'QA/QC' || c1 === 'QAQC';
-  const isQaQc2 = c2 === 'QC' || c2 === 'QA' || c2 === 'QA/QC' || c2 === 'QAQC';
+  const isQaQc1 = c1 === 'QC' || c1 === 'QA' || c1 === 'QA/QC' || c1 === 'QAQC' || c1 === 'QA SUPER' || c1 === 'QASUPER';
+  const isQaQc2 = c2 === 'QC' || c2 === 'QA' || c2 === 'QA/QC' || c2 === 'QAQC' || c2 === 'QA SUPER' || c2 === 'QASUPER';
   return Boolean(isQaQc1 && isQaQc2);
 };
 

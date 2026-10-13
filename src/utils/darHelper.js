@@ -296,6 +296,15 @@ export const canViewDar = (dar, currentUser) => {
 };
 
 /**
+ * Extract raw uppercase department code without QA/QC remapping
+ */
+export const normalizeDept = (d) => {
+  if (!d) return '';
+  const val = typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d;
+  return typeof val === 'string' ? val.trim().toUpperCase() : '';
+};
+
+/**
  * Standardize Department Codes (e.g. QA, QA/QC, QAQC -> QA/QC)
  */
 export const normalizeDeptCode = (d) => {

@@ -1336,7 +1336,7 @@ export const resolveReceiptTaskDepartment = (copyOrTask, matchedCopy = null) => 
   // 3. Check document code or title prefix
   const code = copyOrTask.doc_code || copyOrTask.docCode || copyOrTask.code || copyOrTask.title || matchedCopy?.doc_code || matchedCopy?.docCode || '';
   if (typeof code === 'string') {
-    if (code.includes('-QA-') || code.startsWith('WI-QA') || code.startsWith('SOP-QA')) return 'QA';
+    if (code.includes('-QA-') || code.startsWith('WI-QA') || code.startsWith('SOP-QA')) return 'QC';
     if (code.includes('-QC-') || code.startsWith('WI-QC') || code.startsWith('SOP-QC')) return 'QC';
     if (code.includes('-PD-') || code.startsWith('SOP-PD') || code.startsWith('WI-PD')) return 'PD';
     if (code.includes('-WH-') || code.startsWith('SOP-WH') || code.startsWith('WI-WH')) return 'WH';
@@ -2735,11 +2735,16 @@ const useStore = create(persist((set, get) => ({
           // 1. Dynamic Approver Resolution: ค้นหาผู้มีอำนาจอนุมัติในแผนกเดียวกันจาก Store
           const allUsers = (state.users && state.users.length > 0) ? state.users : (state.masterUsers || masterUsers);
           const departmentApprover = allUsers.find(u => {
-            const isSameDept = u.department === docDept || 
-                               u.dept === docDept || 
-                               u.primary_department === docDept ||
-                               u.depts?.includes(docDept) ||
-                               u.departments?.includes(docDept);
+            const isSameDept = Boolean(
+              docDept && (
+                userMatchesDepartment(u, docDept) ||
+                isSameDepartment(u.department, docDept) || 
+                isSameDepartment(u.dept, docDept) || 
+                isSameDepartment(u.primary_department, docDept) ||
+                u.depts?.some(d => isSameDepartment(d, docDept)) ||
+                u.departments?.some(d => isSameDepartment(d, docDept))
+              )
+            );
             const hasApprovalRole = u.is_hod || 
                                     u.is_manager || 
                                     u.isDeptHead ||
@@ -2747,7 +2752,7 @@ const useStore = create(persist((set, get) => ({
                                     Number(u.approval_level) >= 5 ||
                                     u.role === 'HOD' ||
                                     u.permissions?.includes('APPROVE_PERIODIC_REVIEW') ||
-                                    u.managedDepartments?.includes(docDept);
+                                    u.managedDepartments?.some(d => isSameDepartment(d, docDept));
             return isSameDept && hasApprovalRole;
           });
 
@@ -4653,12 +4658,6 @@ const useStore = create(persist((set, get) => ({
       }, ...state.externalAuditTrail]
     };
   }),
-
-  // Handle immediate withdraw/delete (deprecated, keeping empty to avoid crash if called)
-  withdrawExternalDoc: (_id, _reason) => set(state => state),
-
-  // Handle immediate revise (replaced by updateExternalDoc above)
-  reviseExternalDoc: (_id, _updates) => set(state => state),
 
   // Triggered when requesting to Obsolete a document
   obsoleteExternalDoc: (id, payload) => set((state) => {
@@ -6575,10 +6574,6 @@ const useStore = create(persist((set, get) => ({
     return { tasks: newTasks };
   }),
 
-  createDar: (dar) => {
-    return get().addDar(dar);
-  },
-
   addDar: (dar) => {
     const docCodeToCheck = dar?.document_code || dar?.doc_code || dar?.docCode || dar?.docNo || (dar?.type !== 'NEW' && dar?.type !== 'NEW_DOCUMENT' ? (dar?.title || dar?.docIdInput) : null);
     if (docCodeToCheck) {
@@ -6959,10 +6954,6 @@ const useStore = create(persist((set, get) => ({
     get().addDar(finalDar);
     const addedDar = get().dars.find(d => (fileId && d.fileId === fileId) || (finalDar.id && d.id === finalDar.id)) || get().dars[get().dars.length - 1] || finalDar;
     return addedDar;
-  },
-
-  submitDarRequest: async (formData, rawFile) => {
-    return get().submitDar(formData, rawFile);
   },
 
   // Universal DAR Draft Save & Upsert Action
@@ -7896,16 +7887,6 @@ const useStore = create(persist((set, get) => ({
     if (exists) return state;
     return { masterDocuments: [newMasterDoc, ...(state.masterDocuments || [])] };
   }),
-
-  // Complete task alias forwarding to processWorkflow
-  completeTask: (taskId, action, comment) => {
-    return get().processWorkflow(taskId, action, comment);
-  },
-
-  // Advance workflow stage alias forwarding to processWorkflow
-  advanceWorkflowStage: (taskId, action, comment) => {
-    return get().processWorkflow(taskId, action, comment);
-  },
 
   // Generic createTask helper enforcing Task Department Scoping (Document/DAR Owner Authority)
   createTask: (taskInput) => set((state) => {
@@ -9314,8 +9295,6 @@ const useStore = create(persist((set, get) => ({
     }
   },
 
-  dispatchCopy: (copyId) => useStore.getState().dispatchControlledCopy(copyId),
-  dispatchAllCopies: (docIdOrCopyIds, copiesToDispatch) => useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch),
   getUserActionableTasks: (user) => {
     const s = useStore.getState();
     const effectiveToday = s.getEffectiveToday ? s.getEffectiveToday() : (s.simulatedSystemDate ? new Date(s.simulatedSystemDate) : new Date());
@@ -10817,15 +10796,6 @@ const useStore = create(persist((set, get) => ({
     }
   },
 
-  finalApproveDar: (darId, userOrComment = 'Approved', optionalComment = '') => {
-    return get().approveDar(darId, userOrComment, optionalComment);
-  },
-
-  approveTask: (taskId, userOrComment = 'Approved', optionalComment = '') => {
-    const comment = typeof userOrComment === 'string' ? userOrComment : (optionalComment || 'Approved');
-    return get().processWorkflow(taskId, 'APPROVE', comment);
-  },
-
   checkScheduledEffectiveDocs: () => set((state) => {
     const today = new Date();
     today.setDate(today.getDate() + (state.mockDateOffset || 0));
@@ -12138,23 +12108,6 @@ const useStore = create(persist((set, get) => ({
     };
   }),
 
-  // Backward compatibility & RBAC aliases
-  reportCopyDamaged: ({ copyId, reason, requestReplacement: _requestReplacement, type = 'DAMAGED' } = {}) => {
-    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
-  },
-  reportDamagedCopy: (copyId, reason, type = 'DAMAGED') => {
-    if (typeof copyId === 'object' && copyId !== null) {
-      return useStore.getState().reportCcDamagedLost(copyId.copyId || copyId.id, copyId.type || 'DAMAGED', copyId.reason);
-    }
-    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
-  },
-  requestCopyReplacement: (copyId, reason, type = 'DAMAGED') => {
-    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
-  },
-  reportCopyIssue: (copyId, type = 'DAMAGED', reason = '') => {
-    return useStore.getState().reportCcDamagedLost(copyId, type, reason);
-  },
-
   // Record physical receipt of recalled copy by DCC
   recordCopyRecalled: (copyId, notes = '') => set((state) => {
     const targetId = String(copyId);
@@ -12207,9 +12160,6 @@ const useStore = create(persist((set, get) => ({
       }, ...(state.actionLog || [])]
     };
   }),
-
-  markCopyRecalled: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
-  receiveRecallCopy: (copyId, notes) => useStore.getState().recordCopyRecalled(copyId, notes),
 
   // ─────────────────────────────────────────────────────────────────────────────
   // ISO 9001 Clause 7.5.3 – Controlled Copy Custody Workflow
@@ -13107,8 +13057,6 @@ const useStore = create(persist((set, get) => ({
       }, ...(state.actionLog || [])]
     };
   }),
-
-  recordCopyDestroyed: (copyId, method, notes, witnessName, referenceNo) => useStore.getState().destroyControlledCopy(copyId, method, notes, witnessName, referenceNo),
 
   approveCcReplacement: (taskId) => set((state) => {
     const task = state.tasks.find(t => String(t.id) === String(taskId));

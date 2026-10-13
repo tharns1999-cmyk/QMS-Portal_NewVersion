@@ -24,7 +24,7 @@ import {
   XCircle,
   Eye
 } from 'lucide-react';
-import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode } from '../../utils/darHelper';
+import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode, normalizeDept } from '../../utils/darHelper';
 import { hasDocumentAccess } from '../../utils/accessControl';
 import { resolveDocCode, getReviewStatus, evaluateDocumentReviewStatus, addYears, getReviewCycleYears } from '../../utils/documentUtils';
 import ReplacementModal from './ReplacementModal';
@@ -36,6 +36,7 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { getDeptBadgeStyle } from '../../utils/departmentColors';
+import { extractDeptCode } from '../../services/darService';
 
 // Tab Constants
 export const TAB_GENERAL = 'GENERAL';
@@ -165,12 +166,6 @@ const Library = () => {
 
 
   // Department normalization & multi-department resolver
-  const normalizeDept = (d) => {
-    if (!d) return '';
-    const val = typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d;
-    return typeof val === 'string' ? val.trim().toUpperCase() : '';
-  };
-
   const deptMatches = (d1, d2) => {
     const s1 = normalizeDept(d1);
     const s2 = normalizeDept(d2);
@@ -256,7 +251,7 @@ const Library = () => {
   };
 
   const isOwnerDept = useCallback((doc) => {
-    const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept || (doc.code?.includes('-QC-') ? 'QC' : (doc.docNo?.includes('-QC-') ? 'QC' : ''));
+    const docDept = doc.owner_dept || doc.department || doc.dept_code || doc.dept || extractDeptCode(doc.code || doc.docNo || doc.doc_code || doc.document_code);
     return isSameDept(userDistinctDepts, docDept);
   }, [userDistinctDepts]);
 

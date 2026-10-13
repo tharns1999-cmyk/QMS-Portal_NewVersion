@@ -124,7 +124,7 @@ describe('Enforce Strict Document Lock (Prevent Duplicate In-Flight DARs)', () =
     }).toThrow(/ไม่สามารถสร้างคำร้องได้ เนื่องจากเอกสาร SOP-QC-01 มีคำร้อง DAR-2026-004 อยู่ระหว่างดำเนินการ/);
 
     expect(() => {
-      useStore.getState().createDar({
+      useStore.getState().addDar({
         doc_code: 'SOP-QC-01',
         type: 'OBSOLETE',
         title: 'Obsolete SOP-QC-01',

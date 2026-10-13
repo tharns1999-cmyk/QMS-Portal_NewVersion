@@ -1,4 +1,5 @@
 import React from 'react';
+import { getDarStatusBadgeMeta } from '../../utils/darHelper';
 
 const VARIANTS = {
   active: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
@@ -22,6 +23,11 @@ const VARIANTS = {
 export const getStatusBadgeStyles = (status) => {
   const normalized = (status || 'active').toLowerCase();
   return VARIANTS[normalized] || VARIANTS.active;
+};
+
+export const DarStatusBadge = ({ status }) => {
+  const meta = getDarStatusBadgeMeta(status);
+  return <span className={meta.className}>{meta.label}</span>;
 };
 
 const StatusBadge = ({ 

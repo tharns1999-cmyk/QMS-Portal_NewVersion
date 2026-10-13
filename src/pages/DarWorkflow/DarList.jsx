@@ -4,7 +4,8 @@ import useStore from '../../store/useStore';
 import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isDarDraft, isDarRequester, formatDarDocumentDisplay, getDarStatusBadgeMeta } from '../../utils/darHelper';
+import { isDarDraft, isDarRequester, formatDarDocumentDisplay } from '../../utils/darHelper';
+import { DarStatusBadge } from '../../components/ui/StatusBadge';
 
 const DarList = () => {
   const navigate = useNavigate();
@@ -200,11 +201,6 @@ const DarList = () => {
     );
   };
 
-  const getStatusBadge = (status) => {
-    const meta = getDarStatusBadgeMeta(status);
-    return <span className={meta.className}>{meta.label}</span>;
-  };
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-4 w-full max-w-full overflow-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -380,7 +376,7 @@ const DarList = () => {
                     </td>
                   )}
                   <td className="px-3.5 py-3 whitespace-nowrap">
-                    {getStatusBadge(dar.status)}
+                    <DarStatusBadge status={dar.status} />
                   </td>
                   <td className="px-3.5 py-3 text-slate-700 whitespace-nowrap min-w-0 truncate text-xs sm:text-sm">
                     {getCurrentHandler(dar)}

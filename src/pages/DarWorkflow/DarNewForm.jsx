@@ -31,6 +31,7 @@ import {
 import { ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
 import { saveFile } from '../../utils/fileStorage';
+import { standardizeDepartmentCode } from '../../services/darService';
 
 const DarNewForm = () => {
   const navigate = useNavigate();
@@ -95,7 +96,7 @@ const DarNewForm = () => {
     docIdInput: '',
     docCode: '',
     title: '',
-    department: currentUser?.department || 'PD',
+    department: standardizeDepartmentCode(currentUser?.department || 'PD'),
     date: new Date().toISOString().split('T')[0],
     requestDetail: '',
     requestReason: '',
@@ -154,7 +155,7 @@ const DarNewForm = () => {
 
   // Auto-calculated Workflow Participants for Auto-Whitelisting
   const workflowParticipants = useMemo(() => {
-    const targetDept = formData.department || currentUser?.department || 'PD';
+    const targetDept = standardizeDepartmentCode(formData.department || currentUser?.department || 'PD');
     const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
     if (dynamicSteps && dynamicSteps.length > 0) {
       return dynamicSteps.map(step => ({
@@ -171,7 +172,7 @@ const DarNewForm = () => {
 
   const getPreviewCode = () => {
     if (!formData?.docType) return '[กรุณาเลือกชนิดเอกสารเพื่อสร้างรหัส]';
-    const dept = formData?.department || currentUser?.department || 'PD';
+    const dept = standardizeDepartmentCode(formData?.department || currentUser?.department || 'PD');
     const selectedTypeObj = (documentTypes || []).find(t => t && (t.code || t.id) === formData.docType);
     const pattern = selectedTypeObj?.namingPattern || `${formData.docType}-{Dept}-{###}`;
     const allDocs = [...(documents || []), ...(masterDocuments || [])];
@@ -253,7 +254,7 @@ const DarNewForm = () => {
       requesterId: currentUser?.id,
       requester_id: currentUser?.id,
       requester_name: currentUser?.name,
-      department: currentUser?.department || formData.department,
+      department: standardizeDepartmentCode(currentUser?.department || formData.department || 'PD'),
       date: formData.date || new Date().toISOString().split('T')[0],
       docType: formData.docType,
       docIdInput: formData.docIdInput || getPreviewCode(),
@@ -342,7 +343,7 @@ const DarNewForm = () => {
       console.warn('saveFile error fallback:', err);
     }
 
-    const targetDept = formData.department || currentUser?.department || 'PD';
+    const targetDept = standardizeDepartmentCode(formData.department || currentUser?.department || 'PD');
     const dynamicSteps = generateDynamicWorkflow(currentUser, targetDept, masterUsers || []);
 
     const newDar = {

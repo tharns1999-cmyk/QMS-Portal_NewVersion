@@ -54,9 +54,9 @@ describe('DAR File Ingestion, No Synthetic Blank Fallback & 3x3 Stamping Tests',
     });
   });
 
-  it('1. submitDarRequest saves real PDF file into inMemoryBlobRegistry under fileId, darId, and docCode', async () => {
+  it('1. submitDar saves real PDF file into inMemoryBlobRegistry under fileId, darId, and docCode', async () => {
     const realFile = await createTestPdf(2);
-    const { submitDarRequest } = useStore.getState();
+    const { submitDar } = useStore.getState();
 
     const darPayload = {
       title: 'ขั้นตอนการปฏิบัติงานทดสอบจริง',
@@ -67,7 +67,7 @@ describe('DAR File Ingestion, No Synthetic Blank Fallback & 3x3 Stamping Tests',
       effectiveDate: '2026-10-01'
     };
 
-    const newDar = await submitDarRequest(darPayload, realFile);
+    const newDar = await submitDar(darPayload, realFile);
 
     expect(newDar).toBeDefined();
     expect(newDar.id).toMatch(/^DAR-\d{4}-\d{3}$/);
@@ -91,7 +91,7 @@ describe('DAR File Ingestion, No Synthetic Blank Fallback & 3x3 Stamping Tests',
 
   it('2. TaskReview resolves the real PDF and loads preview with non-blocking lifecycle', async () => {
     const realFile = await createTestPdf(2);
-    const { submitDarRequest } = useStore.getState();
+    const { submitDar } = useStore.getState();
 
     const darPayload = {
       title: 'ขั้นตอนการปฏิบัติงานทดสอบจริง',
@@ -102,7 +102,7 @@ describe('DAR File Ingestion, No Synthetic Blank Fallback & 3x3 Stamping Tests',
       effectiveDate: '2026-10-01'
     };
 
-    const newDar = await submitDarRequest(darPayload, realFile);
+    const newDar = await submitDar(darPayload, realFile);
     const state = useStore.getState();
     const reviewTask = state.tasks.find(t => t.darId === newDar.id);
 

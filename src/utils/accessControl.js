@@ -8,6 +8,8 @@
  * - RESTRICTED: Confidential to specific users or minimum position level.
  */
 
+import { extractDeptCode } from '../services/darService';
+
 export const ACCESS_SCOPES = {
   GENERAL: 'GENERAL',
   DEPT_ONLY: 'DEPT_ONLY',
@@ -151,14 +153,20 @@ export const hasDocumentAccess = (doc, user) => {
     ...(Array.isArray(user.depts) ? user.depts : [])
   ];
   const userDepts = Array.from(new Set(rawUserDepts.map(d => (typeof d === 'object' ? (d.id || d.code || d.dept || d.department) : d)?.toString().trim().toUpperCase()).filter(Boolean)));
-  const docDept = (doc.owner_dept || doc.department || doc.dept || '').toString().trim().toUpperCase();
+  const docDept = (
+    doc.owner_dept ||
+    doc.department ||
+    doc.dept ||
+    extractDeptCode(doc.code || doc.doc_code || doc.document_code || doc.docNo || doc.title) ||
+    ''
+  ).toString().trim().toUpperCase();
   const isSameDept = (dept) => {
     if (!dept) return false;
     const cleanDept = String(dept).trim().toUpperCase();
     return userDepts.some(
       (u) =>
         u === cleanDept ||
-        ((u === 'QA' || u === 'QA/QC' || u === 'QAQC') && (cleanDept === 'QA' || cleanDept === 'QA/QC' || cleanDept === 'QAQC'))
+        ((u === 'QA' || u === 'QA/QC' || u === 'QAQC' || u === 'QC') && (cleanDept === 'QA' || cleanDept === 'QA/QC' || cleanDept === 'QAQC' || cleanDept === 'QC'))
     );
   };
 

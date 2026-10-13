@@ -168,7 +168,7 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
 
   it('2. Post-dispatch state transition: Tab 1 drops to 0, Tab 2 increases to 3 with destination department badges', () => {
     // DCC triggers Dispatch All via store action
-    useStore.getState().dispatchAllCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
+    useStore.getState().dispatchControlledCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
 
     const state = useStore.getState();
     const copies = state.controlledCopyInstances;
@@ -195,7 +195,7 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
 
   it('3. DCC Task Inbox reflects post-dispatch tracking and clears urgent actionRequired count', () => {
     // DCC dispatches all copies
-    useStore.getState().dispatchAllCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
+    useStore.getState().dispatchControlledCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
 
     const tasks = useStore.getState().tasks;
     const distTask = tasks.find(t => t.id === dccDistributionTask.id);
@@ -218,7 +218,7 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
   });
 
   it('4. Receipt tasks are generated and isolated for recipient departments (PD & QA/QC)', () => {
-    useStore.getState().dispatchAllCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
+    useStore.getState().dispatchControlledCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
 
     const tasks = useStore.getState().tasks;
     const receiptTasks = tasks.filter(t => t.type === 'DEPT_CONFIRM_HARDCOPY_RECEIPT');
@@ -233,7 +233,7 @@ describe('Post-Dispatch Delivery Tracking & DCC Task Lifecycle Sync Tests', () =
   });
 
   it('5. Confirming all receipts resolves the distribution tracking task to ALL_RECEIPTS_CONFIRMED', () => {
-    useStore.getState().dispatchAllCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
+    useStore.getState().dispatchControlledCopies([copy01_PD.id, copy02_PD.id, copy03_QA.id]);
 
     const tasks = useStore.getState().tasks;
     const task01 = tasks.find(t => t.copy_id === copy01_PD.id);

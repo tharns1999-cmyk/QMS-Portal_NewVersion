@@ -5,6 +5,8 @@
  * Enforces dynamic, department-aware routing without hardcoded fallback names.
  */
 
+import { isSameDepartment } from './taskFilter';
+
 export const generateDynamicWorkflow = (requesterUser, docDepartment, allUsers = []) => {
   if (!requesterUser || !docDepartment) return [];
 
@@ -13,11 +15,11 @@ export const generateDynamicWorkflow = (requesterUser, docDepartment, allUsers =
     if (!u || !dept) return false;
     const targetDept = String(dept).toUpperCase().trim();
     const uDept = String(u.department || u.dept || u.primaryDepartment || u.primary_department || '').toUpperCase().trim();
-    if (uDept === targetDept) return true;
-    if (Array.isArray(u.secondaryDepartments) && u.secondaryDepartments.some(d => String(d).toUpperCase().trim() === targetDept)) return true;
-    if (Array.isArray(u.departments) && u.departments.some(d => String(d).toUpperCase().trim() === targetDept)) return true;
-    if (Array.isArray(u.depts) && u.depts.some(d => String(d).toUpperCase().trim() === targetDept)) return true;
-    if (Array.isArray(u.affiliated_departments) && u.affiliated_departments.some(d => String(d).toUpperCase().trim() === targetDept)) return true;
+    if (isSameDepartment(uDept, targetDept)) return true;
+    if (Array.isArray(u.secondaryDepartments) && u.secondaryDepartments.some(d => isSameDepartment(d, targetDept))) return true;
+    if (Array.isArray(u.departments) && u.departments.some(d => isSameDepartment(d, targetDept))) return true;
+    if (Array.isArray(u.depts) && u.depts.some(d => isSameDepartment(d, targetDept))) return true;
+    if (Array.isArray(u.affiliated_departments) && u.affiliated_departments.some(d => isSameDepartment(d, targetDept))) return true;
     return false;
   };
 

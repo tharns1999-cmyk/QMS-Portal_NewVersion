@@ -111,14 +111,22 @@ export const normalizeCanonicalDept = (dept) => {
   // Extract leading acronym if combined e.g. "QA/QC - ฝ่ายประกัน..." -> "QA/QC", "QC - ฝ่าย..." -> "QC"
   if (str.includes('-')) {
     const firstPart = str.split('-')[0].trim();
-    if (firstPart && firstPart.length <= 6) {
+    if (firstPart && firstPart.length <= 10) {
       str = firstPart;
     }
   }
 
   const clean = str.replace(/[^a-zA-Z0-9&]/g, '').toUpperCase();
   if (clean === 'DCC' || clean === 'DC') return 'DC';
-  if (clean === 'QA' || clean === 'QAQC' || clean === 'QC' || clean === 'QASUPER' || clean.startsWith('QAQC') || clean.startsWith('QC')) {
+  if (
+    clean === 'QA' ||
+    clean === 'QAQC' ||
+    clean === 'QC' ||
+    clean === 'QASUPER' ||
+    clean.startsWith('QAQC') ||
+    clean.startsWith('QC') ||
+    clean.startsWith('QASUPER')
+  ) {
     return 'QC';
   }
   if (clean === 'HR' || clean === 'GA' || clean === 'HRGA') {

@@ -156,7 +156,7 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     const qcUser = { id: 'U005', name: 'บีม QC', department: 'QC', isDcc: false, role: 'GENERAL_USER' };
     useStore.setState({ currentUser: qcUser });
 
-    const { reportCcDamagedLost, reportCopyDamaged, requestCcRelocation, requestCcReturn } = useStore.getState();
+    const { reportCcDamagedLost, requestCcRelocation, requestCcReturn } = useStore.getState();
 
     // Relocation rejection on PD copy by QC user
     expect(() => {
@@ -174,7 +174,7 @@ describe('Enterprise Security & RBAC Guard: Controlled Copy Custodianship Isolat
     }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
 
     expect(() => {
-      reportCopyDamaged({ copyId: 'inst-pd-02', reason: 'สูญหาย', type: 'LOST' });
+      reportCcDamagedLost('inst-pd-02', 'LOST', 'สูญหาย');
     }).toThrow(/ปฏิเสธการทำรายการ: คุณไม่มีสิทธิ์จัดการสำเนาควบคุม/i);
 
     // QC user reporting on QA/QC copy succeeds
