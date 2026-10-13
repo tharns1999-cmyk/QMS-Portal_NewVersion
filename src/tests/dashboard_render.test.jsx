@@ -1,10 +1,12 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard/Dashboard';
 import ExternalDocDetailModal from '../pages/ExternalDocs/ExternalDocDetailModal';
+import ExternalDocsList from '../pages/ExternalDocs/ExternalDocsList';
 import PeriodicReviewDashboard from '../pages/PeriodicReviews/PeriodicReviewDashboard';
+import PeriodicReviewDetail from '../pages/PeriodicReviews/PeriodicReviewDetail';
 import Sidebar from '../components/layout/Sidebar';
 import useStore from '../store/useStore';
 import { normalizeDept, getDarStatusBadgeMeta } from '../utils/darHelper';
@@ -580,5 +582,323 @@ describe('QA/QC Canonical Normalization, RBAC & Document Prefix Extraction', () 
     expect(metrics.dueSoon).toBe(0);
     expect(metrics.upToDate).toBe(1);
   });
+
+  it('Criterion 8: End-to-End External Document Periodic Review workflow', () => {
+    const qcManager = {
+      id: 'U-QC-MGR',
+      name: 'QC Manager',
+      department: 'QC',
+      level: 5,
+      role: 'MANAGER',
+      status: 'ACTIVE'
+    };
+
+    const extDoc = {
+      id: 'ED-QC-01-ACTIVE-2',
+      edCode: 'ED-QC-01',
+      doc_code: 'ED-QC-01',
+      code: 'ED-QC-01',
+      title: 'ISO 9001:2015 Standard',
+      edition: 'Issue8.02',
+      sourceVersion: 'Issue8.02',
+      issuer: 'ISO Organization',
+      department: 'QC',
+      status: 'ACTIVE',
+      is_external: true,
+      nextReviewDate: '2026-10-20'
+    };
+
+    useStore.setState({
+      currentUser: qcManager,
+      simulatedSystemDate: '2026-10-13T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: [],
+      tasks: []
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews/PRS-AUTO-ED-QC-01-ACTIVE-2?docId=ED-QC-01-ACTIVE-2&docCode=ED-QC-01&isExternal=true']}>
+        <Routes>
+          <Route path="/dcc/periodic-reviews/:id" element={<PeriodicReviewDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByText(/ไม่พบเอกสารนี้/i)).toBeNull();
+    expect(screen.queryByText(/Not Found/i)).toBeNull();
+    expect(screen.getByText('ED-QC-01')).toBeTruthy();
+    expect(screen.getByText('Edition Issue8.02')).toBeTruthy();
+    expect(screen.getByText('หน่วยงานผู้ออกเอกสาร')).toBeTruthy();
+    expect(screen.getByText('ISO Organization')).toBeTruthy();
+
+    const res = useStore.getState().submitPeriodicReview({
+      scheduleId: 'PRS-AUTO-ED-QC-01-ACTIVE-2',
+      docId: 'ED-QC-01-ACTIVE-2',
+      docCode: 'ED-QC-01',
+      isExternal: true,
+      outcome: 'NO_CHANGE',
+      currentUser: qcManager,
+      reviewDetails: { reason: 'Verified active ISO standard' }
+    });
+
+    expect(res?.fastTrack).toBe(true);
+    expect(res?.status).toBe('COMPLETED');
+
+    const updatedExtDoc = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-01-ACTIVE-2');
+    expect(updatedExtDoc.is_reviewed_this_cycle).toBe(true);
+    expect(updatedExtDoc.review_status).toBe('COMPLETED');
+    expect(updatedExtDoc.nextReviewDate).toBe('2027-10-13');
+    expect(updatedExtDoc.periodic_reviews.length).toBe(1);
+  });
 });
+
+describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Approval Workflow', () => {
+  it('Case 1 (Live Recalculation & 2027 Due Date): displays ✅ ยังไม่ถึงกำหนด (green), does NOT display ⚠️ ใกล้ครบกำหนด, and KPI card ใกล้ครบกำหนดใน 30 วัน is 0', () => {
+    const qcUser = {
+      id: 'U-QC-01',
+      name: 'QC Officer',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF',
+      managedDepartments: ['*']
+    };
+
+    const extDoc = {
+      id: 'ED-QC-01',
+      edCode: 'ED-QC-01',
+      doc_code: 'ED-QC-01',
+      code: 'ED-QC-01',
+      title: 'ISO 17025 Chemical Testing Standard',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      effectiveDate: '2026-10-13',
+      nextReviewDate: '2027-10-13',
+      is_external: true
+    };
+
+    useStore.setState({
+      currentUser: qcUser,
+      simulatedSystemDate: '2026-10-13T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [],
+      tasks: []
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
+        <PeriodicReviewDashboard />
+      </MemoryRouter>
+    );
+
+    // Switch to External Documents tab
+    const extTabBtn = screen.getByRole('button', { name: /เอกสารภายนอก/i });
+    fireEvent.click(extTabBtn);
+
+    // Assert that the KPI card "ใกล้ครบกำหนดใน 30 วัน" is 0
+    const dueSoonCard = screen.getByText('ใกล้ครบกำหนดใน 30 วัน').closest('.card-surface');
+    expect(dueSoonCard.querySelector('h3').textContent).toBe('0');
+
+    // Assert table row displays ✅ ยังไม่ถึงกำหนด with green styling and does NOT display ⚠️ ใกล้ครบกำหนด
+    expect(screen.getByText('✅ ยังไม่ถึงกำหนด')).toBeTruthy();
+    expect(screen.queryByText('⚠️ ใกล้ครบกำหนด')).toBeNull();
+  });
+
+  it('Case 2 (Action Handoff & Deep-Link Update): renders Next Steps Action Box with Update Edition button and deep-links to ExternalDocsList auto-opening revision modal', () => {
+    const qcUser = {
+      id: 'U-QC-01',
+      name: 'QC Officer',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF',
+      managedDepartments: ['*']
+    };
+
+    const extDoc = {
+      id: 'ED-QC-01',
+      edCode: 'ED-QC-01',
+      doc_code: 'ED-QC-01',
+      code: 'ED-QC-01',
+      title: 'ISO 17025 Chemical Testing Standard',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      is_external: true,
+      review_status: 'AWAITING_ACTION',
+      periodic_reviews: [
+        {
+          round: 1,
+          outcome: 'REVISION_REQUIRED',
+          result: 'REVISION_REQUIRED',
+          reason: 'International standard updated'
+        }
+      ]
+    };
+
+    const schedule = {
+      id: 'PRS-EXT-ED-QC-01',
+      documentId: 'ED-QC-01',
+      externalDocumentId: 'ED-QC-01',
+      documentNumber: 'ED-QC-01',
+      documentName: 'ISO 17025 Chemical Testing Standard',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'AWAITING_ACTION',
+      outcome: 'REVISION_REQUIRED',
+      reason: 'International standard updated'
+    };
+
+    useStore.setState({
+      currentUser: qcUser,
+      simulatedSystemDate: '2026-10-13T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      tasks: []
+    });
+
+    // 1. Render PeriodicReviewDetail for ED-QC-01
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews/PRS-EXT-ED-QC-01?docId=ED-QC-01&docCode=ED-QC-01&isExternal=true']}>
+        <Routes>
+          <Route path="/dcc/periodic-reviews/:id" element={<PeriodicReviewDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // 2. Assert Next Steps Action Box renders with title and button
+    expect(screen.getByText(/ขั้นตอนถัดไป: จัดทำเอกสารภายนอกฉบับใหม่ \(Edition Update Required\)/i)).toBeTruthy();
+    const actionBtn = screen.getByRole('button', { name: /ดำเนินการอัปเดตฉบับใหม่ \(Update Edition\)/i });
+    expect(actionBtn).toBeTruthy();
+
+    unmount();
+
+    // 3. Render ExternalDocsList with searchParams / route state { openDocCode: 'ED-QC-01', autoOpenUpdate: true }
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/dcc/external-docs', search: '?docCode=ED-QC-01&autoOpenUpdate=true', state: { openDocCode: 'ED-QC-01', autoOpenUpdate: true } }]}>
+        <Routes>
+          <Route path="/dcc/external-docs" element={<ExternalDocsList />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // 4. Assert that the revision modal (ExternalDocFormModal) is opened automatically
+    expect(screen.getByText(/อัปเดตเอกสารภายนอก \(Update External Document\)/i)).toBeTruthy();
+    expect(screen.getAllByText('ED-QC-01').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Case 3 (Staff Submission -> Pending Approval -> L4+ Approval -> +1 Year): Staff submits NO_CHANGE -> PENDING_APPROVAL, L4 Supervisor approves -> advances nextReviewDate to 2028-10-13, COMPLETED', () => {
+    const staffUser = {
+      id: 'U-QC-STAFF',
+      name: 'QC Staff',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    const supervisorUser = {
+      id: 'U-QC-SUP',
+      name: 'QC Supervisor',
+      department: 'QC',
+      level: 4,
+      role: 'SUPERVISOR'
+    };
+
+    const extDoc = {
+      id: 'ED-QC-01',
+      edCode: 'ED-QC-01',
+      doc_code: 'ED-QC-01',
+      code: 'ED-QC-01',
+      title: 'ISO 17025 Chemical Testing Standard',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      is_external: true,
+      effectiveDate: '2026-10-13',
+      nextReviewDate: '2027-10-13',
+      next_review_date: '2027-10-13',
+      review_status: 'DUE_SOON',
+      reviewCycleMonths: 12
+    };
+
+    const schedule = {
+      id: 'PRS-EXT-ED-QC-01',
+      documentId: 'ED-QC-01',
+      externalDocumentId: 'ED-QC-01',
+      documentNumber: 'ED-QC-01',
+      documentName: 'ISO 17025 Chemical Testing Standard',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'ACTION_REQUIRED',
+      nextReviewDate: '2027-10-13',
+      next_review_date: '2027-10-13'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser, supervisorUser],
+      masterUsers: [staffUser, supervisorUser],
+      simulatedSystemDate: '2027-10-13T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    // 1. Staff submits "NO_CHANGE"
+    const submitRes = useStore.getState().submitPeriodicReview({
+      scheduleId: 'PRS-EXT-ED-QC-01',
+      docId: 'ED-QC-01',
+      docCode: 'ED-QC-01',
+      isExternal: true,
+      outcome: 'NO_CHANGE',
+      currentUser: staffUser,
+      reviewDetails: { reason: 'Annual verification: standard is currently active and unchanged' }
+    });
+
+    expect(submitRes?.fastTrack).toBe(false);
+    expect(submitRes?.status).toBe('PENDING_APPROVAL');
+
+    const docPending = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-01');
+    expect(docPending.review_status).toBe('PENDING_APPROVAL');
+    expect(docPending.pending_periodic_review).toBeTruthy();
+
+    const approvalTask = useStore.getState().tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+    expect(approvalTask).toBeTruthy();
+    expect(approvalTask.assignee_id).toBe('U-QC-SUP');
+
+    // 2. Staff L2 cannot approve (RBAC check)
+    const unauthorizedRes = useStore.getState().approveExternalPeriodicReview('ED-QC-01', staffUser, 'Unauthorized approve attempt');
+    expect(unauthorizedRes.success).toBe(false);
+    expect(unauthorizedRes.error).toBe('UNAUTHORIZED');
+
+    // 3. L4 Supervisor approves via approveExternalPeriodicReview
+    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-01', supervisorUser, 'Supervisor verified and approved');
+    expect(approveRes.success).toBe(true);
+
+    // 4. Assert nextReviewDate advanced to 2028-10-13 (+1 year), COMPLETED, is_reviewed_this_cycle
+    const docApproved = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-01');
+    expect(docApproved.nextReviewDate).toBe('2028-10-13');
+    expect(docApproved.review_status).toBe('COMPLETED');
+    expect(docApproved.is_reviewed_this_cycle).toBe(true);
+    expect(docApproved.pending_periodic_review).toBe(false);
+
+    const scheduleApproved = useStore.getState().periodicReviewSchedules.find(s => s.id === 'PRS-EXT-ED-QC-01');
+    expect(scheduleApproved.status).toBe('COMPLETED');
+    expect(scheduleApproved.is_reviewed_this_cycle).toBe(true);
+  });
+});
+
+
 

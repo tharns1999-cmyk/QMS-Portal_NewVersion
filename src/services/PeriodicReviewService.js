@@ -45,8 +45,8 @@ export const getDueState = (dueDate, referenceDate = new Date()) => {
   return 'NOT_YET_DUE';
 };
 
-import { getReviewCycleYears, getReviewStatusFlag, getPeriodicReviewStatus } from '../utils/documentUtils';
-export { getPeriodicReviewStatus };
+import { getReviewCycleYears, getReviewStatusFlag, getPeriodicReviewStatus, evaluateDocumentReviewStatus } from '../utils/documentUtils';
+export { getPeriodicReviewStatus, evaluateDocumentReviewStatus };
 
 export const generateSchedules = (internalDocs, externalDocs, existingSchedules = []) => {
   const newSchedules = [...existingSchedules];
@@ -81,8 +81,10 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
 
     // The anchor is the effective date of the document
     const anchor = doc.last_reviewed_at || doc.lastReviewedDate || doc.effectiveDate || doc.effective_date || todayStr;
-    const nextReviewDate = calculateNextReviewDate(anchor, frequencyMonths, null);
+    const nextReviewDate = doc.next_review_date || doc.nextReviewDate || calculateNextReviewDate(anchor, frequencyMonths, null);
     const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
+    const rawIntRev = doc.revision || doc.rev || doc.revNo || '00';
+    const cleanIntRev = String(rawIntRev).trim().replace(/^(Rev\.?\s*)+/i, '') || '00';
     
     newSchedules.push({
       id: `PRS-INT-${doc.id}-${Date.now()}`,
@@ -90,6 +92,7 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
       documentId: doc.id,
       documentNumber: doc.title || doc.doc_code || doc.doc_number || doc.id, // e.g., WI-IT-001
       documentName: doc.name || doc.doc_name || doc.title,
+      rev: cleanIntRev,
       ownerUserId: doc.ownerId || doc.owner_id || 'U002', 
       ownerDepartmentId: doc.department || doc.dept || 'QA',
       responsibleUserId: doc.ownerId || doc.owner_id || 'U002',
@@ -128,35 +131,50 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
     const exists = newSchedules.find(s => s.externalDocumentId === doc.id && s.documentCategory === 'EXTERNAL' && s.isActive);
     if (exists) return;
 
-    // Verification frequency: from verification_frequency field or defaults to 1 year
+    // Verification frequency: from verification_frequency / reviewCycleMonths field or defaults to 1 year
     let extYears = 1;
     if (doc.verification_frequency !== undefined && doc.verification_frequency !== null) {
       extYears = Number(doc.verification_frequency);
     } else if (doc.verificationFrequency !== undefined && doc.verificationFrequency !== null) {
       extYears = Number(doc.verificationFrequency);
+    } else if (doc.reviewCycleMonths) {
+      extYears = Number(doc.reviewCycleMonths) / 12;
     } else if (doc.frequencyMonths) {
       extYears = Number(doc.frequencyMonths) / 12;
     }
     const frequencyMonths = extYears * 12;
 
-    const anchor = doc.last_reviewed_at || doc.last_verified_at || doc.receivedDate || doc.received_date || doc.effectiveDate || todayStr;
-    const nextReviewDate = calculateNextReviewDate(anchor, frequencyMonths, null);
+    const anchor = doc.last_reviewed_at || doc.lastReviewedDate || doc.last_verified_at || doc.receivedDate || doc.received_date || doc.effectiveDate || todayStr;
+    const nextReviewDate = doc.nextReviewDate || doc.next_review_date || calculateNextReviewDate(anchor, frequencyMonths, null);
     const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
+    const rawExtRev = doc.revision || doc.rev || doc.revNo || '00';
+    const cleanExtRev = String(rawExtRev).trim().replace(/^(Rev\.?\s*)+/i, '') || '00';
+    const editionVal = doc.sourceVersion || doc.edition || '';
 
     newSchedules.push({
       id: `PRS-EXT-${doc.id}-${Date.now()}`,
       documentCategory: 'EXTERNAL',
+      isExternal: true,
+      documentId: doc.id,
       externalDocumentId: doc.id,
-      documentNumber: doc.edCode || doc.doc_code || doc.id, 
+      documentNumber: doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.id, 
       documentName: doc.title || doc.name,
+      rev: cleanExtRev,
+      edition: editionVal,
+      sourceVersion: editionVal,
       ownerUserId: doc.ownerId || 'U002',
-      ownerDepartmentId: 'DC', // External verification routed to DCC / QA
+      ownerDepartmentId: doc.department || doc.dept || 'DC', // External verification routed to owner dept or DCC / QA
       responsibleUserId: doc.ownerId || 'U002',
       frequencyMonths: frequencyMonths,
       cycleYears: extYears,
       originalReviewAnchorDate: anchor,
       currentScheduledReviewDate: nextReviewDate,
       nextReviewDate: nextReviewDate,
+      next_review_date: nextReviewDate,
+      lastReviewedDate: doc.lastReviewedDate || doc.last_reviewed_at || null,
+      last_reviewed_at: doc.last_reviewed_at || doc.lastReviewedDate || null,
+      is_reviewed_this_cycle: Boolean(doc.is_reviewed_this_cycle),
+      periodic_reviews: doc.periodic_reviews || [],
       status: 'NOT_YET_DUE',
       dueState: getDueState(nextReviewDate),
       reviewStatusFlag: reviewStatusFlag,
@@ -190,6 +208,11 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
       existingTask.reviewStatusFlag = getReviewStatusFlag(existingTask.dueDate, referenceDate);
       existingTask.statusFlag = existingTask.reviewStatusFlag;
       if (existingTask.dueState === 'ESCALATED') existingTask.escalationLevel = 1;
+      return;
+    }
+
+    // If schedule is already completed, pending approval, or awaiting action, do not generate action task
+    if (schedule.status === 'COMPLETED' || schedule.status === 'PENDING_APPROVAL' || schedule.status === 'AWAITING_ACTION' || schedule.is_reviewed_this_cycle) {
       return;
     }
 
@@ -266,10 +289,12 @@ export const getReviewStatusLabel = (status) => {
   const map = {
     // New Normalized Statuses
     'UPCOMING': { label: 'ยังไม่ถึงกำหนด', color: 'bg-gray-100 text-gray-700' },
+    'UP_TO_DATE': { label: 'ยังไม่ถึงกำหนด', color: 'bg-gray-100 text-gray-700' },
     'DUE_SOON': { label: 'ใกล้ครบกำหนด', color: 'bg-yellow-100 text-yellow-800' },
     'DUE': { label: 'ถึงกำหนดทบทวน', color: 'bg-orange-100 text-orange-800' },
     'IN_PROGRESS': { label: 'อยู่ระหว่างทบทวน', color: 'bg-blue-100 text-blue-800' },
     'PENDING_APPROVAL': { label: '⏳ รออนุมัติผล', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+    'AWAITING_ACTION': { label: 'รอดำเนินการ (แก้ไข/ยกเลิก)', color: 'bg-amber-100 text-amber-800' },
     'OVERDUE': { label: 'เกินกำหนด', color: 'bg-red-100 text-red-800' },
     'COMPLETED': { label: 'ทบทวนเสร็จแล้ว', color: 'bg-green-100 text-green-800' },
 

@@ -18,10 +18,12 @@ import {
   Download,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  FileEdit,
+  Ban
 } from 'lucide-react';
 import useStore from '../../store/useStore';
-import { getVisiblePeriodicReviews, normalizePeriodicReviewRecord, canExportPeriodicReviews } from '../../services/PeriodicReviewAccessService';
+import { getVisiblePeriodicReviews, normalizePeriodicReviewRecord, canExportPeriodicReviews, getPositionLevelForDepartment } from '../../services/PeriodicReviewAccessService';
 import { getDueState, getReviewStatusLabel, getReviewOutcomeLabel } from '../../services/PeriodicReviewService';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
@@ -30,12 +32,14 @@ import { getDocumentReviewMetrics, isDocumentReviewedThisCycle, evaluateDocument
 import { isSameDepartment } from '../../utils/taskFilter';
 import { extractDeptCode } from '../../services/darService';
 import { PeriodicReviewAuditCard } from '../../components/workflow/PeriodicReviewHistoryTab';
+import PeriodicReviewApprovalModal from '../Tasks/PeriodicReviewApprovalModal';
 
 const formatPeriodicDocVersion = (record, targetDoc, isExternalTab = false) => {
   const isExt = Boolean(
     isExternalTab ||
     record?.isExternal ||
     record?.documentCategory === 'EXTERNAL' ||
+    record?.externalDocumentId ||
     targetDoc?.is_external ||
     targetDoc?.external ||
     targetDoc?.doc_type === 'EXTERNAL' ||
@@ -45,18 +49,22 @@ const formatPeriodicDocVersion = (record, targetDoc, isExternalTab = false) => {
   if (isExt) {
     const editionVal =
       targetDoc?.sourceVersion ||
+      targetDoc?.source_version ||
       targetDoc?.edition ||
+      targetDoc?.version ||
       record?.edition ||
       record?.sourceVersion ||
-      (record?.rev && !/^(Rev\.?\s*)?\d+$/i.test(String(record.rev).trim()) ? record.rev : '') ||
+      record?.source_version ||
+      record?.version ||
+      (record?.rev && !/^(Rev\.?\s*)?0*$/i.test(String(record.rev).trim()) ? record.rev : '') ||
       '-';
-    const cleanEd = String(editionVal).trim().replace(/^Edition\s+/i, '');
+    const cleanEd = String(editionVal).trim().replace(/^(Edition|Rev\.?)\s*/i, '');
     return cleanEd && cleanEd !== '-' ? `Edition ${cleanEd}` : 'Edition -';
   }
   const rawRev = record?.rev || targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || '00';
-  const revStr = String(rawRev).trim();
-  if (!revStr) return '-';
-  return /^Rev\./i.test(revStr) ? revStr.replace(/^rev\./i, 'Rev.') : `Rev.${revStr}`;
+  const cleanRev = String(rawRev).trim().replace(/^(Rev\.?\s*)+/i, '');
+  if (!cleanRev) return '-';
+  return `Rev.${cleanRev}`;
 };
 
 const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick, active }) => (
@@ -233,7 +241,7 @@ const ReviewHistoryModal = ({ isOpen, onClose, record, doc, effectiveToday, onNa
               type="button"
               onClick={() => {
                 onClose();
-                onNavigateRecord(record);
+                onNavigateRecord(doc ? { ...record, targetDoc: doc } : record);
               }}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0D99FF] hover:bg-[#007BE5] text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
             >
@@ -258,9 +266,10 @@ const UnifiedWorkspaceView = ({
   isManagementOrDcc = false
 }) => {
   const navigate = useNavigate();
-  const { currentUser, simulatedSystemDate, getEffectiveToday } = useStore();
+  const { currentUser, simulatedSystemDate, getEffectiveToday, tasks } = useStore();
   const effectiveToday = propEffectiveToday || (getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date()));
 
+  const [approvalTaskTarget, setApprovalTaskTarget] = useState(null);
   const [categoryTab, setCategoryTab] = useState('INTERNAL'); // 'INTERNAL' | 'EXTERNAL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTION_REQUIRED' | 'DUE_SOON' | 'UPCOMING' | 'OVERDUE' | 'COMPLETED'
   const [searchTerm, setSearchTerm] = useState('');
@@ -430,20 +439,146 @@ const UnifiedWorkspaceView = ({
   const pagination = useTablePagination(sortedDocuments, 10);
 
   const handleNavigateRecord = (record) => {
-    const docCode = record.documentNumber || record.id;
-    navigate(`/periodic-review/record/${encodeURIComponent(docCode)}`);
+    if (!record) return;
+    const docId = record.documentId || record.externalDocumentId || record.targetDoc?.id || '';
+    const docCode = record.documentNumber || record.targetDoc?.edCode || record.targetDoc?.doc_code || record.targetDoc?.code || record.id || '';
+    const isExternal = Boolean(
+      record.isExternal ||
+      record.documentCategory === 'EXTERNAL' ||
+      categoryTab === 'EXTERNAL' ||
+      record.externalDocumentId ||
+      record.targetDoc?.is_external ||
+      record.targetDoc?.edCode ||
+      String(docCode).startsWith('ED-')
+    );
+    const scheduleId = (record.id && !String(record.id).startsWith('PRS-AUTO-'))
+      ? record.id
+      : (docId || docCode || record.id);
+    const params = new URLSearchParams();
+    if (docId) params.set('docId', String(docId));
+    if (docCode) params.set('docCode', String(docCode));
+    if (isExternal) params.set('isExternal', 'true');
+    const queryString = params.toString();
+    navigate(
+      `/dcc/periodic-reviews/${encodeURIComponent(scheduleId)}${queryString ? `?${queryString}` : ''}`,
+      {
+        state: {
+          record,
+          docId,
+          docCode,
+          isExternal
+        }
+      }
+    );
   };
 
   const handleOpenHistory = (record) => {
-    const targetDoc = allDocs.find(
+    const targetDoc = record.targetDoc || allDocs.find(
       d =>
         d.id === record.documentId ||
         d.id === record.externalDocumentId ||
+        d.edCode === record.documentNumber ||
         d.doc_code === record.documentNumber ||
         d.document_number === record.documentNumber ||
         d.title === record.documentNumber
     );
-    setHistoryTarget({ record, doc: targetDoc });
+    setHistoryTarget({ record: targetDoc ? { ...record, targetDoc } : record, doc: targetDoc });
+  };
+
+  const canUserApprove = (rec, doc) => {
+    if (!currentUser) return false;
+    if (
+      currentUser.isDcc ||
+      currentUser.is_dcc ||
+      currentUser.role === 'DCC' ||
+      currentUser.role === 'DCC_ADMIN' ||
+      currentUser.role === 'DCC_STAFF' ||
+      currentUser.role === 'QMR' ||
+      currentUser.role === 'ADMIN' ||
+      currentUser.role === 'SUPER_ADMIN'
+    ) {
+      return true;
+    }
+
+    const docDept = rec?.ownerDepartmentId || doc?.department || doc?.owner_dept || doc?.dept || extractDeptCode(rec?.documentNumber);
+    if (Array.isArray(currentUser.managedDepartments) && currentUser.managedDepartments.includes('*')) {
+      return true;
+    }
+
+    const deptLevel = getPositionLevelForDepartment(currentUser, docDept);
+    const userLevel = Number(currentUser.level || currentUser.approval_level || 0);
+    const effectiveLevel = Math.max(deptLevel, userLevel);
+    const isSupervisorOrManager = effectiveLevel >= 4 || currentUser.is_hod || currentUser.is_manager;
+
+    const userDeptList = [
+      currentUser.department,
+      currentUser.dept,
+      currentUser.primary_department,
+      ...(currentUser.depts || []),
+      ...(Array.isArray(currentUser.managedDepartments) ? currentUser.managedDepartments : [])
+    ].filter(Boolean);
+
+    const isMatchingDept = userDeptList.some(d => isSameDepartment(d, docDept));
+    return isSupervisorOrManager && isMatchingDept;
+  };
+
+  const handleApproveClick = (record, targetDoc) => {
+    const docId = record.documentId || targetDoc?.id || record.externalDocumentId;
+    const docCode = record.documentNumber || targetDoc?.edCode || targetDoc?.doc_code;
+
+    const storeState = useStore.getState();
+    if (typeof storeState.approveExternalPeriodicReview === 'function') {
+      try {
+        storeState.approveExternalPeriodicReview(docId || docCode || record.id);
+        return;
+      } catch {
+        // fallback to modal
+      }
+    }
+
+    const existingTask = (tasks || []).find(t =>
+      (t.type === 'PERIODIC_REVIEW_APPROVAL' || t.taskType === 'PERIODIC_REVIEW_APPROVAL') &&
+      t.status !== 'COMPLETED' &&
+      (
+        (docId && (t.docId === docId || t.documentId === docId)) ||
+        (docCode && (t.docCode === docCode || t.document_code === docCode || t.documentNumber === docCode)) ||
+        (record.id && t.scheduleId === record.id)
+      )
+    );
+
+    if (existingTask) {
+      setApprovalTaskTarget(existingTask);
+      return;
+    }
+
+    // Synthesize task for PeriodicReviewApprovalModal
+    const synthTask = {
+      id: targetDoc?.pending_review_task_id || record.pendingApprovalTaskId || `TASK-APPR-${record.id || Date.now()}`,
+      type: 'PERIODIC_REVIEW_APPROVAL',
+      title: `อนุมัติผลการทบทวนเอกสาร: ${record.documentNumber || record.documentName} (ไม่มีการเปลี่ยนแปลง)`,
+      document_code: record.documentNumber,
+      document_title: record.documentName,
+      docId: docId,
+      docCode: record.documentNumber,
+      scheduleId: record.id,
+      status: 'PENDING',
+      created_at: new Date().toISOString(),
+      payload: targetDoc?.pending_periodic_review || record.pendingReview || {
+        doc_id: docId,
+        doc_code: record.documentNumber,
+        scheduleId: record.id,
+        is_external: record.isExternal,
+        reviewer_id: record.ownerUserId || 'Staff',
+        details: { comment: 'ทบทวนเอกสารตามรอบ (ไม่มีการเปลี่ยนแปลง)' }
+      }
+    };
+
+    const currentTasks = storeState.tasks || [];
+    if (!currentTasks.some(t => t.id === synthTask.id)) {
+      useStore.setState({ tasks: [synthTask, ...currentTasks] });
+    }
+
+    setApprovalTaskTarget(synthTask);
   };
 
   return (
@@ -658,11 +793,43 @@ const UnifiedWorkspaceView = ({
                   : record;
                 const evaluation = evaluateDocumentReviewStatus(docToEvaluate, effectiveToday);
                 const calculatedStatus = typeof evaluation === 'object' ? evaluation.status : evaluation;
+                const diffDays = typeof evaluation === 'object' ? evaluation.diffDays : null;
                 const isReviewed = calculatedStatus === 'COMPLETED';
                 const effectiveStatus = (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'COMPLETED' || calculatedStatus === 'UP_TO_DATE')
-                  ? (record.status === 'PENDING_APPROVAL' ? 'PENDING_APPROVAL' : calculatedStatus)
-                  : (record.status === 'PENDING_APPROVAL' || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status);
-                const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed);
+                  ? (isPendingApproval ? 'PENDING_APPROVAL' : calculatedStatus)
+                  : (isPendingApproval || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status);
+                const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed, diffDays);
+
+                // Check review outcomes for contextual action buttons
+                const reviews = targetDoc?.periodic_reviews || targetDoc?.review_history || record.periodic_reviews || record.reviewLogs;
+                const latestReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
+                const rawOutcome =
+                  record.outcome ||
+                  record.reviewOutcome ||
+                  targetDoc?.review_outcome ||
+                  targetDoc?.reviewOutcome ||
+                  latestReview?.outcome ||
+                  latestReview?.result ||
+                  '';
+
+                const isRevisionRequired =
+                  rawOutcome === 'REVISION_REQUIRED' ||
+                  rawOutcome === 'AWAITING_ACTION' ||
+                  rawOutcome === 'INTERNAL_REVISION_REQUIRED' ||
+                  rawOutcome === 'EXTERNAL_NEW_VERSION' ||
+                  record.status === 'REVISION_REQUIRED' ||
+                  record.status === 'AWAITING_ACTION' ||
+                  targetDoc?.review_status === 'REVISION_REQUIRED' ||
+                  targetDoc?.review_status === 'AWAITING_ACTION';
+
+                const isObsoleteRequired =
+                  rawOutcome === 'OBSOLETE_REQUIRED' ||
+                  rawOutcome === 'INTERNAL_OBSOLETE_REQUIRED' ||
+                  rawOutcome === 'EXTERNAL_NO_LONGER_APPLICABLE' ||
+                  record.status === 'OBSOLETE_REQUIRED' ||
+                  targetDoc?.review_status === 'OBSOLETE_REQUIRED';
+
+                const userCanApprove = canUserApprove(record, targetDoc);
                 return (
                   <tr key={record.id} className="hover:bg-[#F5F5F5]/70 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-xs sm:text-sm whitespace-nowrap">
@@ -694,7 +861,58 @@ const UnifiedWorkspaceView = ({
                     </td>
                     <td className="px-4 py-2.5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
-                        {isReviewed ? (
+                        {isPendingApproval ? (
+                          userCanApprove ? (
+                            <button
+                              type="button"
+                              onClick={() => handleApproveClick(record, targetDoc)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                              title="พิจารณาอนุมัติผลการทบทวนเอกสาร"
+                            >
+                              <CheckCircle2 size={13} />
+                              <span>อนุมัติผล</span>
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-not-allowed opacity-80"
+                              title="อยู่ระหว่างรอหัวหน้าแผนกอนุมัติผล"
+                            >
+                              <Clock size={13} />
+                              <span>รออนุมัติ</span>
+                            </button>
+                          )
+                        ) : isRevisionRequired ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigate(
+                                `/dcc/external-docs?openDocCode=${encodeURIComponent(record.documentNumber)}&autoOpenUpdate=true`,
+                                { state: { openDocCode: record.documentNumber, autoOpenUpdate: true } }
+                              );
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-2xs transition-colors cursor-pointer"
+                            title="ไปที่คลังเอกสารภายนอกเพื่ออัปเดตฉบับใหม่"
+                          >
+                            <FileEdit size={13} />
+                            <span>อัปเดตฉบับใหม่</span>
+                          </button>
+                        ) : isObsoleteRequired ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigate(
+                                `/dcc/external-docs?openDocCode=${encodeURIComponent(record.documentNumber)}&autoOpenObsolete=true`,
+                                { state: { openDocCode: record.documentNumber, autoOpenObsolete: true } }
+                              );
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-2xs transition-colors cursor-pointer"
+                            title="ไปที่คลังเอกสารภายนอกเพื่อขอยกเลิกเอกสาร"
+                          >
+                            <Ban size={13} />
+                            <span>ขอยกเลิกเอกสาร</span>
+                          </button>
+                        ) : isReviewed ? (
                           <button
                             disabled
                             className="px-2.5 py-1 text-xs text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed inline-flex items-center gap-1"
@@ -706,14 +924,9 @@ const UnifiedWorkspaceView = ({
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleNavigateRecord(record)}
-                            disabled={isPendingApproval}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-2xs ${
-                              isPendingApproval
-                                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                                : 'bg-[#0D99FF] hover:bg-[#007BE5] text-white cursor-pointer'
-                            }`}
-                            title={isPendingApproval ? 'อยู่ระหว่างรอหัวหน้าแผนกอนุมัติผล' : 'บันทึกผลการทบทวน'}
+                            onClick={() => handleNavigateRecord(targetDoc ? { ...record, targetDoc } : record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-2xs transition-colors cursor-pointer"
+                            title="บันทึกผลการทบทวน"
                           >
                             <RotateCw size={13} />
                             <span>บันทึกผล</span>
@@ -762,6 +975,13 @@ const UnifiedWorkspaceView = ({
         doc={historyTarget?.doc}
         effectiveToday={effectiveToday}
         onNavigateRecord={handleNavigateRecord}
+      />
+
+      {/* Periodic Review Approval Modal */}
+      <PeriodicReviewApprovalModal
+        isOpen={Boolean(approvalTaskTarget)}
+        onClose={() => setApprovalTaskTarget(null)}
+        task={approvalTaskTarget}
       />
     </div>
   );
@@ -847,7 +1067,37 @@ const PeriodicReviewDashboard = () => {
       );
       if (matchedAny && !matchedActive) return;
 
-      existing.push(matchedActive ? { ...s, documentId: matchedActive.id, targetDoc: matchedActive } : s);
+      const isExt = Boolean(
+        s.documentCategory === 'EXTERNAL' ||
+        s.isExternal ||
+        s.externalDocumentId ||
+        matchedActive?.is_external ||
+        matchedActive?.external ||
+        matchedActive?.doc_type === 'EXTERNAL' ||
+        matchedActive?.edCode ||
+        String(schedCode).startsWith('ED-')
+      );
+      const resolvedNext = isExt
+        ? (matchedActive?.nextReviewDate || matchedActive?.next_review_date || s.nextReviewDate || s.next_review_date || s.currentScheduledReviewDate)
+        : (matchedActive?.next_review_date || matchedActive?.nextReviewDate || s.nextReviewDate || s.next_review_date || s.currentScheduledReviewDate);
+
+      existing.push(matchedActive ? {
+        ...s,
+        documentId: matchedActive.id,
+        targetDoc: matchedActive,
+        isExternal: isExt,
+        documentCategory: isExt ? 'EXTERNAL' : 'INTERNAL',
+        nextReviewDate: resolvedNext,
+        next_review_date: resolvedNext,
+        currentScheduledReviewDate: resolvedNext
+      } : {
+        ...s,
+        isExternal: isExt,
+        documentCategory: isExt ? 'EXTERNAL' : 'INTERNAL',
+        nextReviewDate: resolvedNext,
+        next_review_date: resolvedNext,
+        currentScheduledReviewDate: resolvedNext
+      });
       if (schedDocId) registeredDocIds.add(schedDocId);
       if (matchedActive?.id) registeredDocIds.add(String(matchedActive.id));
       if (schedCode) registeredDocIds.add(schedCode);
@@ -975,6 +1225,24 @@ const PeriodicReviewDashboard = () => {
         const cleanRev = String(rawRev).trim().replace(/^Rev\.?\s*/i, '') || '00';
         const resolvedEdition = targetDoc?.sourceVersion || targetDoc?.edition || r.edition || r.sourceVersion || '';
 
+        const docToEval = targetDoc ? {
+          ...targetDoc,
+          ...r,
+          nextReviewDate: resolvedNextReviewDate,
+          next_review_date: resolvedNextReviewDate,
+          currentScheduledReviewDate: resolvedNextReviewDate,
+          isExternal
+        } : {
+          ...r,
+          nextReviewDate: resolvedNextReviewDate,
+          next_review_date: resolvedNextReviewDate,
+          currentScheduledReviewDate: resolvedNextReviewDate,
+          isExternal
+        };
+        const evaluation = evaluateDocumentReviewStatus(docToEval, effectiveToday);
+        const dynamicStatus = typeof evaluation === 'object' ? evaluation.status : evaluation;
+        const isPendingApproval = r.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL';
+
         return {
           ...r,
           targetDoc,
@@ -986,6 +1254,8 @@ const PeriodicReviewDashboard = () => {
           nextReviewDate: resolvedNextReviewDate,
           currentScheduledReviewDate: resolvedNextReviewDate,
           next_review_date: resolvedNextReviewDate,
+          status: isPendingApproval ? 'PENDING_APPROVAL' : dynamicStatus,
+          dueState: typeof evaluation === 'object' && evaluation.diffDays > 30 ? 'UPCOMING' : (evaluation?.status || 'UPCOMING'),
           lastReviewedDate: r.lastReviewedDate || targetDoc?.last_reviewed_at,
           last_reviewed_at: r.lastReviewedDate || targetDoc?.last_reviewed_at,
           periodic_reviews: targetDoc?.periodic_reviews || r.periodic_reviews,

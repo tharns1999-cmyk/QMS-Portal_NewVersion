@@ -132,7 +132,7 @@ export const resolveDocVersion = (primary, secondary = null) => {
   const p = primary || {};
   const s = secondary || {};
   const v = p.doc_version || p.rev || p.revision || s.rev || s.revision || s.doc_version || '01';
-  const str = String(v).replace(/^Rev\.?\s*/i, '');
+  const str = String(v).replace(/^(Rev\.?\s*)+/i, '');
   return str ? `Rev.${str}` : 'Rev.01';
 };
 
@@ -409,7 +409,47 @@ export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date
   const today = new Date(referenceDate);
   today.setHours(0, 0, 0, 0);
 
-  if (!nextDateStr) {
+  // String status checks if docOrDate itself is a status string
+  if (!isDocObject && typeof docOrDate === 'string') {
+    if (docOrDate === 'PENDING_APPROVAL') return 'PENDING_APPROVAL';
+    if (docOrDate === 'AWAITING_ACTION') return 'AWAITING_ACTION';
+  }
+
+  // Pre-calculate diffDays if nextDateStr is valid
+  let diffDays = null;
+  if (nextDateStr) {
+    const target = new Date(nextDateStr);
+    if (!isNaN(target.getTime())) {
+      target.setHours(0, 0, 0, 0);
+      diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+
+  // Handle PENDING_APPROVAL and AWAITING_ACTION cleanly for document objects
+  if (isDocObject) {
+    const rawReviewStatus = String(docOrDate.review_status || docOrDate.status || docOrDate.targetDoc?.review_status || docOrDate.targetDoc?.status || '').toUpperCase();
+    const isPendingApproval = rawReviewStatus === 'PENDING_APPROVAL' ||
+      docOrDate.dueState === 'PENDING_APPROVAL' ||
+      Boolean(docOrDate.pending_periodic_review) ||
+      Boolean(docOrDate.targetDoc?.pending_periodic_review);
+
+    if (isPendingApproval) {
+      return { status: 'PENDING_APPROVAL', diffDays: diffDays ?? 0, canReview: false };
+    }
+
+    const isAwaitingAction = rawReviewStatus === 'AWAITING_ACTION' ||
+      docOrDate.dueState === 'AWAITING_ACTION' ||
+      docOrDate.periodic_review_outcome === 'REVISION_REQUIRED' ||
+      docOrDate.periodic_review_outcome === 'OBSOLETE_REQUIRED' ||
+      docOrDate.targetDoc?.periodic_review_outcome === 'REVISION_REQUIRED' ||
+      docOrDate.targetDoc?.periodic_review_outcome === 'OBSOLETE_REQUIRED';
+
+    if (isAwaitingAction) {
+      return { status: 'AWAITING_ACTION', diffDays: diffDays ?? 0, canReview: false };
+    }
+  }
+
+  if (!nextDateStr || diffDays === null) {
     if (isDocObject && docOrDate.status === 'OVERDUE') {
       return isDocObject ? { status: 'OVERDUE', diffDays: -999, canReview: true } : 'OVERDUE';
     }
@@ -417,35 +457,34 @@ export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date
       return isDocObject ? { status: 'DUE_SOON', diffDays: 0, canReview: true } : 'DUE_SOON';
     }
     if (isDocObject) {
-      const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
-      const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
-      const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
+      const isExplicitlyFreshCycle = docOrDate.targetDoc
+        ? (docOrDate.targetDoc.is_reviewed_this_cycle === false && docOrDate.targetDoc.review_status === 'UP_TO_DATE' && docOrDate.review_status !== 'COMPLETED')
+        : (docOrDate.is_reviewed_this_cycle === false && docOrDate.review_status === 'UP_TO_DATE');
 
-      const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
+      if (!isExplicitlyFreshCycle) {
+        const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
+        const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
+        const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
 
-      if (lastReviewedAt) {
-        const reviewDate = new Date(lastReviewedAt);
-        if (!isNaN(reviewDate.getTime())) {
-          const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
-          const sameYear = reviewDate.getFullYear() === today.getFullYear();
-          if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
-            return { status: 'COMPLETED', diffDays: 999, canReview: false };
+        const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
+
+        if (lastReviewedAt) {
+          const reviewDate = new Date(lastReviewedAt);
+          if (!isNaN(reviewDate.getTime())) {
+            reviewDate.setHours(0, 0, 0, 0);
+            const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
+            const sameYear = reviewDate.getFullYear() === today.getFullYear();
+            if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
+              return { status: 'COMPLETED', diffDays: 999, canReview: false };
+            }
           }
+        } else if (hasRecentApproval || docOrDate.status === 'COMPLETED' || docOrDate.review_status === 'COMPLETED' || docOrDate.is_reviewed_this_cycle) {
+          return { status: 'COMPLETED', diffDays: 999, canReview: false };
         }
-      } else if (hasRecentApproval || docOrDate.status === 'COMPLETED' || docOrDate.review_status === 'COMPLETED' || docOrDate.is_reviewed_this_cycle) {
-        return { status: 'COMPLETED', diffDays: 999, canReview: false };
       }
     }
     return isDocObject ? { status: 'UP_TO_DATE', diffDays: 999, canReview: false } : 'UP_TO_DATE';
   }
-
-  const target = new Date(nextDateStr);
-  if (isNaN(target.getTime())) {
-    return isDocObject ? { status: 'UP_TO_DATE', diffDays: 999, canReview: false } : 'UP_TO_DATE';
-  }
-  target.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   // 1. ตรวจสอบสถานะด่วนก่อนเสมอ (Priority 1)
   if (diffDays < 0) {
@@ -457,33 +496,40 @@ export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date
 
   // 2. ถ้าเหลือเวลามากกว่า 30 วัน: ตรวจสอบว่าเพิ่งได้รับการอนุมัติทบทวนมาหมาด ๆ หรือไม่ (Priority 2)
   if (isDocObject) {
-    const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
-    const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
-    const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
+    const isExplicitlyFreshCycle = docOrDate.targetDoc
+      ? (docOrDate.targetDoc.is_reviewed_this_cycle === false && docOrDate.targetDoc.review_status === 'UP_TO_DATE' && docOrDate.review_status !== 'COMPLETED')
+      : (docOrDate.is_reviewed_this_cycle === false && docOrDate.review_status === 'UP_TO_DATE');
 
-    const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
+    if (!isExplicitlyFreshCycle) {
+      const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
+      const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
+      const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
 
-    const isMarkedCompleted = hasRecentApproval ||
-      docOrDate.status === 'COMPLETED' ||
-      docOrDate.review_status === 'COMPLETED' ||
-      docOrDate.is_reviewed_this_cycle ||
-      docOrDate.targetDoc?.review_status === 'COMPLETED' ||
-      docOrDate.targetDoc?.is_reviewed_this_cycle;
+      const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
 
-    if (isMarkedCompleted) {
-      if (lastReviewedAt) {
-        const reviewDate = new Date(lastReviewedAt);
-        if (!isNaN(reviewDate.getTime())) {
-          const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
-          const sameYear = reviewDate.getFullYear() === today.getFullYear();
-          // หากเพิ่งทบทวนเสร็จไม่เกินระยะปลอดภัย (เช่น 60 วัน) หรืออยู่ในรอบปีเดียวกัน ให้แสดงเป็น "ทบทวนแล้วเสร็จ"
-          if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
-            return { status: 'COMPLETED', diffDays, canReview: false };
+      const isMarkedCompleted = hasRecentApproval ||
+        docOrDate.status === 'COMPLETED' ||
+        docOrDate.review_status === 'COMPLETED' ||
+        docOrDate.is_reviewed_this_cycle ||
+        docOrDate.targetDoc?.review_status === 'COMPLETED' ||
+        docOrDate.targetDoc?.is_reviewed_this_cycle;
+
+      if (isMarkedCompleted) {
+        if (lastReviewedAt) {
+          const reviewDate = new Date(lastReviewedAt);
+          if (!isNaN(reviewDate.getTime())) {
+            reviewDate.setHours(0, 0, 0, 0);
+            const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
+            const sameYear = reviewDate.getFullYear() === today.getFullYear();
+            // หากเพิ่งทบทวนเสร็จไม่เกินระยะปลอดภัย (เช่น 60 วัน) หรืออยู่ในรอบปีเดียวกัน ให้แสดงเป็น "ทบทวนแล้วเสร็จ"
+            if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
+              return { status: 'COMPLETED', diffDays, canReview: false };
+            }
+            // หากข้ามปีและพ้นระยะ 60 วันแล้ว ให้ถือว่าสิ้นสุดรอบเสร็จสิ้นเดิม -> จะปรับเป็น UP_TO_DATE
           }
-          // หากข้ามปีและพ้นระยะ 60 วันแล้ว ให้ถือว่าสิ้นสุดรอบเสร็จสิ้นเดิม -> จะปรับเป็น UP_TO_DATE
+        } else {
+          return { status: 'COMPLETED', diffDays, canReview: false };
         }
-      } else {
-        return { status: 'COMPLETED', diffDays, canReview: false };
       }
     }
   }

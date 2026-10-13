@@ -31,10 +31,10 @@ const Sidebar = () => {
   const location = useLocation();
   const { 
     currentUser, requestUsers, reviewUsers, approveUsers, tasks, controlledCopyInstances, documents, 
-    externalDocuments,
+    externalDocuments, periodicReviewSchedules,
     masterUsers, setCurrentUser, switchUser, notifications,
     resetTransactionDataToCleanSlate, manualSeedData, externalRequests,
-    simulatedSystemDate, setSimulatedDate, fastForwardSystemDate, resetSimulatedDate
+    simulatedSystemDate, setSimulatedDate, fastForwardSystemDate, resetSimulatedDate, getEffectiveToday
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -76,7 +76,7 @@ const Sidebar = () => {
   const isDccAdmin = checkDccAdmin(currentUser);
   const isAdmin = isDccAdmin;
 
-  const effectiveToday = simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
+  const effectiveToday = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
   const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
 
   // Task Counts Calculations
@@ -90,7 +90,7 @@ const Sidebar = () => {
   }).length;
 
   const periodicReviewCount = useMemo(() => {
-    const refDate = simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
+    const refDate = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
     const activeDocs = [...(documents || []), ...(externalDocuments || [])].filter(doc => {
       if (!doc) return false;
       const statusUpper = String(doc.status || '').toUpperCase();
@@ -111,62 +111,68 @@ const Sidebar = () => {
     ].filter(Boolean);
 
     const seenDocKeys = new Set();
-    const dueDocumentsCount = activeDocs.filter(doc => {
-      const docCode = String(doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.docNo || doc.id || '').trim();
+    return activeDocs.filter(doc => {
+      const docCode = String(doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.docNo || doc.title || doc.id || '').trim();
+      const matchedSchedule = (periodicReviewSchedules || []).find(s =>
+        s.isActive !== false && (
+          (doc.id && (s.documentId === doc.id || s.externalDocumentId === doc.id)) ||
+          (docCode && s.documentNumber === docCode)
+        )
+      );
+
+      const docDept = doc.department || doc.owner_dept || doc.dept || matchedSchedule?.ownerDepartmentId || extractDeptCode(docCode);
+      const hasDeptAccess = userDeptList.some(uDept => isSameDepartment(docDept, uDept));
+      if (!hasDeptAccess) return false;
+
       if (docCode && seenDocKeys.has(docCode)) return false;
 
-      const evalResult = evaluateDocumentReviewStatus(doc, refDate);
-      const evalStatus = typeof evalResult === 'object' ? evalResult.status : evalResult;
-      if (evalStatus === 'COMPLETED') return false;
+      // 1. ตรวจสอบว่าอยู่ระหว่างรออนุมัติหรือไม่ (ไม่นับเป็นงานต้องทำ)
+      const isPending =
+        doc.review_status === 'PENDING_APPROVAL' ||
+        doc.status === 'PENDING_APPROVAL' ||
+        matchedSchedule?.status === 'PENDING_APPROVAL' ||
+        Boolean(doc.pending_periodic_review);
+      if (isPending) return false;
+
+      // 2. ตรวจสอบว่าดำเนินการเสร็จสิ้นในรอบนี้แล้วหรือไม่
+      const isCompleted =
+        doc.review_status === 'COMPLETED' ||
+        matchedSchedule?.status === 'COMPLETED' ||
+        doc.is_reviewed_this_cycle ||
+        matchedSchedule?.is_reviewed_this_cycle;
+      if (isCompleted) return false;
 
       const isExt = Boolean(doc.is_external || doc.external || doc.doc_type === 'EXTERNAL' || doc.edCode || String(docCode).startsWith('ED-'));
       const nextDate = isExt
-        ? (doc.nextReviewDate || doc.next_review_date || doc.currentScheduledReviewDate)
-        : (doc.next_review_date || doc.nextReviewDate || doc.currentScheduledReviewDate);
+        ? (doc.nextReviewDate || doc.next_review_date || matchedSchedule?.nextReviewDate || matchedSchedule?.next_review_date || matchedSchedule?.currentScheduledReviewDate)
+        : (doc.next_review_date || doc.nextReviewDate || matchedSchedule?.next_review_date || matchedSchedule?.nextReviewDate || matchedSchedule?.currentScheduledReviewDate);
+      if (!nextDate) return false;
 
-      const reviewState = nextDate
-        ? getPeriodicReviewStatus(nextDate, refDate).status
-        : (doc.review_status === 'OVERDUE' || doc.review_status === 'DUE_SOON' ? doc.review_status : 'NORMAL');
-      const isDue = reviewState === 'OVERDUE' || reviewState === 'DUE_SOON';
-      if (!isDue) return false;
+      const docToEval = {
+        ...doc,
+        ...(matchedSchedule || {}),
+        nextReviewDate: nextDate,
+        next_review_date: nextDate
+      };
+      const evalResult = evaluateDocumentReviewStatus(docToEval, refDate);
+      const evalStatus = typeof evalResult === 'object' ? evalResult.status : evalResult;
+      if (evalStatus === 'COMPLETED') return false;
 
-      const docDept = doc.department || doc.owner_dept || doc.dept || extractDeptCode(docCode);
-      const hasDeptAccess = userDeptList.some(uDept => isSameDepartment(docDept, uDept));
-      if (!hasDeptAccess) return false;
+      const targetDate = new Date(nextDate);
+      if (isNaN(targetDate.getTime())) return false;
+      targetDate.setHours(0, 0, 0, 0);
+      const today0 = new Date(refDate);
+      today0.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((targetDate.getTime() - today0.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Strictly DUE_SOON (0 <= diffDays <= 30) or OVERDUE (diffDays < 0)
+      if (diffDays > 30) return false;
+      if (evalStatus !== 'OVERDUE' && evalStatus !== 'DUE_SOON') return false;
 
       if (docCode) seenDocKeys.add(docCode);
       return true;
     }).length;
-
-    const reviewTasksCount = (tasks || []).filter(t => {
-      if (t.type !== 'PERIODIC_REVIEW' && t.taskType !== 'PERIODIC_REVIEW' && t.type !== 'EXTERNAL_VERIFICATION' && t.taskType !== 'EXTERNAL_VERIFICATION') {
-        return false;
-      }
-      if (t.status === 'COMPLETED' || t.is_completed) return false;
-      if (!isActionableTask(t, currentUser, activeDocs, effectiveToday)) return false;
-
-      const taskDocCode = String(t.docCode || t.documentNumber || t.doc_code || '').trim();
-      const matchedActiveDoc = activeDocs.find(d =>
-        (t.docId && d.id === t.docId) ||
-        (t.documentId && d.id === t.documentId) ||
-        (t.referenceId && d.id === t.referenceId) ||
-        (taskDocCode && (d.edCode === taskDocCode || d.doc_code === taskDocCode || d.code === taskDocCode || d.document_number === taskDocCode))
-      );
-      if (!matchedActiveDoc) return false;
-
-      const isExt = Boolean(matchedActiveDoc.is_external || matchedActiveDoc.external || matchedActiveDoc.doc_type === 'EXTERNAL' || matchedActiveDoc.edCode);
-      const nextDate = isExt
-        ? (matchedActiveDoc.nextReviewDate || matchedActiveDoc.next_review_date)
-        : (matchedActiveDoc.next_review_date || matchedActiveDoc.nextReviewDate);
-      if (nextDate) {
-        const st = getPeriodicReviewStatus(nextDate, refDate).status;
-        if (st !== 'OVERDUE' && st !== 'DUE_SOON') return false;
-      }
-      return true;
-    }).length;
-
-    return Math.max(reviewTasksCount, dueDocumentsCount);
-  }, [tasks, documents, externalDocuments, currentUser, simulatedSystemDate, effectiveToday]);
+  }, [documents, externalDocuments, periodicReviewSchedules, currentUser, simulatedSystemDate, getEffectiveToday]);
 
   const myExternalReviseCount = useMemo(() => {
     const reviseDocIds = new Set();

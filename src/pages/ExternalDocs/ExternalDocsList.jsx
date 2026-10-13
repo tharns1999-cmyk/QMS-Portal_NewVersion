@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
@@ -204,21 +204,10 @@ const ExternalDocsList = () => {
   // Deep-linking from notifications or external triggers
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('code') || location.state?.openDocCode;
-  const deepLinkDocId = searchParams.get('docId') || searchParams.get('id') || location.state?.openDocId;
-
-  useEffect(() => {
-    if ((deepLinkDocCode || deepLinkDocId) && (externalDocuments || []).length > 0) {
-      const found = externalDocuments.find(d => 
-        (deepLinkDocId && String(d.id) === String(deepLinkDocId)) ||
-        (deepLinkDocCode && (d.doc_code === deepLinkDocCode || d.document_code === deepLinkDocCode || d.code === deepLinkDocCode || d.docCode === deepLinkDocCode))
-      );
-      if (found) {
-        setDocToDetail(found);
-        setIsDetailOpen(true);
-      }
-    }
-  }, [deepLinkDocCode, deepLinkDocId, externalDocuments]);
+  const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('openDocCode') || searchParams.get('code') || location.state?.openDocCode;
+  const deepLinkDocId = searchParams.get('docId') || searchParams.get('openDocId') || searchParams.get('id') || location.state?.openDocId;
+  const autoOpenUpdate = searchParams.get('autoOpenUpdate') === 'true' || location.state?.autoOpenUpdate === true;
+  const autoOpenObsolete = searchParams.get('autoOpenObsolete') === 'true' || location.state?.autoOpenObsolete === true;
 
   const isDccAdmin = Boolean(
     currentUser?.role === 'DCC' || 
@@ -874,6 +863,39 @@ const ExternalDocsList = () => {
     setDocToObsolete({ ...doc });
     setIsObsoleteModalOpen(true);
   };
+
+  // Deep-linking auto-open effects (Update / Obsolete / Detail)
+  const handledDeepLinkKeyRef = useRef('');
+  useEffect(() => {
+    const currentKey = `${deepLinkDocCode || ''}_${deepLinkDocId || ''}_${autoOpenUpdate}_${autoOpenObsolete}`;
+    if (!deepLinkDocCode && !deepLinkDocId) return;
+    if (handledDeepLinkKeyRef.current === currentKey) return;
+
+    if ((externalDocuments || []).length > 0) {
+      const targetCode = String(deepLinkDocCode || '').trim().toLowerCase();
+      const matchingDocs = (externalDocuments || []).filter(d => {
+        if (deepLinkDocId && String(d.id) === String(deepLinkDocId)) return true;
+        if (!targetCode) return false;
+        const candidates = [d.edCode, d.doc_code, d.document_code, d.code, d.docCode, d.docNo, d.id, d.documentNumber]
+          .filter(Boolean)
+          .map(c => String(c).trim().toLowerCase());
+        return candidates.includes(targetCode);
+      });
+
+      const found = matchingDocs.find(d => (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && !d.is_superseded && !d.is_obsolete) || matchingDocs[0] || null;
+
+      if (found) {
+        handledDeepLinkKeyRef.current = currentKey;
+        if (autoOpenUpdate) {
+          handleRevise(found);
+        } else if (autoOpenObsolete) {
+          handleObsolete(found);
+        } else {
+          handleOpenDetail(found);
+        }
+      }
+    }
+  }, [deepLinkDocCode, deepLinkDocId, autoOpenUpdate, autoOpenObsolete, externalDocuments]);
 
   const handleHistory = (doc) => {
     setOpenMenuDocId(null);
