@@ -12,7 +12,8 @@ import {
   Eye,
   History,
   Send,
-  Zap
+  Zap,
+  Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useStore, { canFastTrackReview } from '../../store/useStore';
@@ -360,7 +361,27 @@ const PeriodicReviewDetail = () => {
 
         {/* Right Column (Review Action Form / Completed Status: 7 cols / ~60%) */}
         <div className="lg:col-span-7">
-          {schedule.status === 'COMPLETED' || schedule.status === 'IN_PROGRESS' ? (
+          {schedule.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL' ? (
+            <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">
+                <Clock className="w-14 h-14 text-amber-500 mx-auto mb-3" />
+                <h2 className="text-xl font-bold text-amber-800 mb-1">อยู่ระหว่างรอหัวหน้าแผนกพิจารณาอนุมัติ</h2>
+                <p className="text-amber-700 mb-1 text-sm">
+                  ผลการทบทวน: <span className="font-semibold">ไม่มีการเปลี่ยนแปลง (ส่งขออนุมัติแล้ว)</span>
+                </p>
+                <p className="text-amber-600 text-xs mt-2">
+                  เอกสารถูกล็อคเพื่อป้องกันการยื่นผลซ้ำซ้อนจนกว่าหัวหน้าแผนก (HOD) จะพิจารณาอนุมัติหรือตีกลับ
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate(taskId ? '/tasks' : '/dcc/periodic-reviews')}
+                  className="mt-6 px-4 py-2 bg-white text-amber-800 font-medium text-xs rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs"
+                >
+                  {taskId ? 'กลับสู่กล่องงาน' : 'กลับสู่ภาพรวมการทบทวน'}
+                </button>
+              </div>
+            </div>
+          ) : schedule.status === 'COMPLETED' || schedule.status === 'IN_PROGRESS' ? (
             <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-8 text-center">
                 <CheckCircle className="w-14 h-14 text-emerald-500 mx-auto mb-3" />

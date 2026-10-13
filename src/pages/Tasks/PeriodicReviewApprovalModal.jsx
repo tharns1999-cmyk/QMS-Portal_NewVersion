@@ -13,9 +13,10 @@ import {
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
+import { getCycleDisplayText } from '../../utils/documentUtils';
 
 export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
-  const { currentUser, approvePeriodicReview, rejectPeriodicReview } = useStore();
+  const { currentUser, approvePeriodicReview, rejectPeriodicReview, documents, externalDocuments, periodicReviewSchedules } = useStore();
   const [remarks, setRemarks] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -23,6 +24,22 @@ export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
 
   const payload = task.payload || {};
   const details = payload.details || {};
+
+  const allDocs = [...(documents || []), ...(externalDocuments || [])];
+  const targetDoc = allDocs.find(d => 
+    (payload.doc_id && d.id === payload.doc_id) ||
+    (payload.doc_code && (d.doc_code === payload.doc_code || d.code === payload.doc_code || d.document_number === payload.doc_code || d.title === payload.doc_code)) ||
+    (task.docId && d.id === task.docId) ||
+    (task.document_code && (d.doc_code === task.document_code || d.code === task.document_code || d.document_number === task.document_code))
+  );
+  const targetSchedule = (periodicReviewSchedules || []).find(s =>
+    (payload.scheduleId && s.id === payload.scheduleId) ||
+    (task.scheduleId && s.id === task.scheduleId) ||
+    (payload.doc_id && (s.documentId === payload.doc_id || s.externalDocumentId === payload.doc_id)) ||
+    (payload.doc_code && s.documentNumber === payload.doc_code)
+  );
+  const docInfo = targetDoc || targetSchedule || payload;
+  const cycleText = getCycleDisplayText(docInfo);
 
   const handleApprove = () => {
     setIsSubmitting(true);
@@ -32,7 +49,7 @@ export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
         approverUser: currentUser,
         remarks: remarks.trim()
       });
-      toast.success('อนุมัติผลการทบทวนเอกสารเรียบร้อยแล้ว (ขยายรอบ 1 ปี)');
+      toast.success(`อนุมัติผลการทบทวนเอกสารเรียบร้อยแล้ว (ขยายรอบ ${cycleText})`);
       onClose();
     } catch (err) {
       toast.error(err.message || 'เกิดข้อผิดพลาดในการอนุมัติ');
@@ -106,8 +123,15 @@ export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
               <span className="font-semibold text-slate-800">{payload.department || task.department || '-'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[11px] mb-0.5">ผู้ส่งผลทบทวน</span>
-              <span className="font-semibold text-slate-800">{payload.reviewer_name || 'Staff'} ({payload.reviewer_role || 'Staff'})</span>
+              <span className="text-xs text-slate-500">ผู้ส่งผลทบทวน</span>
+              <p className="text-sm font-medium text-slate-800">
+                {payload.reviewer_name || '-'}
+                {payload.reviewer_position ? (
+                  <span className="text-xs text-slate-500 ml-1.5 font-normal">
+                    ({payload.reviewer_position})
+                  </span>
+                ) : null}
+              </p>
             </div>
           </div>
 
@@ -122,8 +146,8 @@ export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
                 </p>
               </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white text-emerald-700 border border-emerald-200 shrink-0 shadow-2xs">
-              + ขยายรอบ 1 ปี
+            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200 shrink-0">
+              + ขยายรอบ {cycleText}
             </span>
           </div>
 

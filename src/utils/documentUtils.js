@@ -313,25 +313,162 @@ export const getReviewStatusFlag = (nextReviewDueDate, today = new Date()) => {
  * @param {Date|string} [referenceDate=new Date()] - effective today reference date
  * @returns {'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'}
  */
-export function evaluateDocumentReviewStatus(nextReviewDate, referenceDate = new Date()) {
-  if (!nextReviewDate) return 'UP_TO_DATE';
+/**
+ * Computes dynamic cycle display text for a document or task payload.
+ *
+ * @param {Object} doc - Document or schedule or task payload object
+ * @returns {string} e.g. "1 ปี", "2 ปี", "6 เดือน"
+ */
+export function getCycleDisplayText(doc) {
+  if (!doc) return '1 ปี';
+  if (doc.review_cycle_months) {
+    const months = Number(doc.review_cycle_months);
+    if (months >= 12 && months % 12 === 0) {
+      return `${months / 12} ปี`;
+    }
+    return `${months} เดือน`;
+  }
+  if (doc.review_cycle_years) {
+    return `${doc.review_cycle_years} ปี`;
+  }
+  if (doc.cycleYears) {
+    return `${doc.cycleYears} ปี`;
+  }
+  if (doc.frequencyMonths) {
+    const months = Number(doc.frequencyMonths);
+    if (months >= 12 && months % 12 === 0) {
+      return `${months / 12} ปี`;
+    }
+    return `${months} เดือน`;
+  }
+  const code = doc.doc_code || doc.document_code || doc.documentNumber || doc.code || doc.document_number || doc.title || '';
+  if (code) {
+    const years = getReviewCycleYears(code);
+    return `${years} ปี`;
+  }
+  return '1 ปี';
+}
 
-  const target = new Date(nextReviewDate);
+/**
+ * Evaluates document periodic review status against reference date with strict priority order.
+ * Priority 1: OVERDUE (diffDays < 0) or DUE_SOON (diffDays <= 30) -> canReview: true
+ * Priority 2: COMPLETED (recent approval within 60 days when diffDays > 30) -> canReview: false
+ * Priority 3: UP_TO_DATE -> canReview: false
+ *
+ * @param {Object|string} docOrDate - Document object or nextReviewDate string
+ * @param {Date|string} [referenceDate=new Date()] - effective today reference date
+ * @returns {{ status: string, diffDays: number, canReview: boolean } | 'OVERDUE' | 'DUE_SOON' | 'UP_TO_DATE'}
+ */
+export function evaluateDocumentReviewStatus(docOrDate, referenceDate = new Date()) {
+  const isDocObject = docOrDate && typeof docOrDate === 'object' && !(docOrDate instanceof Date);
+  const nextDateStr = isDocObject
+    ? (docOrDate.next_review_date || docOrDate.nextReviewDate || docOrDate.currentScheduledReviewDate || docOrDate.targetDoc?.next_review_date || docOrDate.targetDoc?.nextReviewDate)
+    : docOrDate;
+
   const today = new Date(referenceDate);
   today.setHours(0, 0, 0, 0);
+
+  if (!nextDateStr) {
+    if (isDocObject && docOrDate.status === 'OVERDUE') {
+      return isDocObject ? { status: 'OVERDUE', diffDays: -999, canReview: true } : 'OVERDUE';
+    }
+    if (isDocObject && (docOrDate.status === 'DUE_SOON' || docOrDate.status === 'DUE')) {
+      return isDocObject ? { status: 'DUE_SOON', diffDays: 0, canReview: true } : 'DUE_SOON';
+    }
+    if (isDocObject) {
+      const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
+      const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
+      const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
+
+      const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
+
+      if (lastReviewedAt) {
+        const reviewDate = new Date(lastReviewedAt);
+        if (!isNaN(reviewDate.getTime())) {
+          const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
+          const sameYear = reviewDate.getFullYear() === today.getFullYear();
+          if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
+            return { status: 'COMPLETED', diffDays: 999, canReview: false };
+          }
+        }
+      } else if (hasRecentApproval || docOrDate.status === 'COMPLETED' || docOrDate.review_status === 'COMPLETED' || docOrDate.is_reviewed_this_cycle) {
+        return { status: 'COMPLETED', diffDays: 999, canReview: false };
+      }
+    }
+    return isDocObject ? { status: 'UP_TO_DATE', diffDays: 999, canReview: false } : 'UP_TO_DATE';
+  }
+
+  const target = new Date(nextDateStr);
+  if (isNaN(target.getTime())) {
+    return isDocObject ? { status: 'UP_TO_DATE', diffDays: 999, canReview: false } : 'UP_TO_DATE';
+  }
   target.setHours(0, 0, 0, 0);
 
-  const diffTime = target.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays < 0) return 'OVERDUE';       // เลยกำหนด (แดง)
-  if (diffDays <= 30) return 'DUE_SOON';    // ใกล้ถึงกำหนดใน 30 วัน (ส้ม/เหลือง)
-  return 'UP_TO_DATE';                      // ปกติ (เขียว)
+  // 1. ตรวจสอบสถานะด่วนก่อนเสมอ (Priority 1)
+  if (diffDays < 0) {
+    return isDocObject ? { status: 'OVERDUE', diffDays, canReview: true } : 'OVERDUE';
+  }
+  if (diffDays <= 30) {
+    return isDocObject ? { status: 'DUE_SOON', diffDays, canReview: true } : 'DUE_SOON';
+  }
+
+  // 2. ถ้าเหลือเวลามากกว่า 30 วัน: ตรวจสอบว่าเพิ่งได้รับการอนุมัติทบทวนมาหมาด ๆ หรือไม่ (Priority 2)
+  if (isDocObject) {
+    const reviews = docOrDate.periodic_reviews || docOrDate.reviewLogs || docOrDate.review_history || docOrDate.targetDoc?.periodic_reviews || docOrDate.targetDoc?.review_history;
+    const lastReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
+    const hasRecentApproval = lastReview && (lastReview.approval_status === 'APPROVED' || lastReview.result === 'NO_CHANGE' || lastReview.outcome === 'CONFIRM_CONTINUE' || lastReview.outcome === 'NO_CHANGE');
+
+    const lastReviewedAt = docOrDate.last_reviewed_at || docOrDate.lastReviewedDate || docOrDate.targetDoc?.last_reviewed_at || docOrDate.targetDoc?.lastReviewedDate || lastReview?.approved_at || lastReview?.reviewed_at || lastReview?.reviewed_date || lastReview?.reviewDate;
+
+    const isMarkedCompleted = hasRecentApproval ||
+      docOrDate.status === 'COMPLETED' ||
+      docOrDate.review_status === 'COMPLETED' ||
+      docOrDate.is_reviewed_this_cycle ||
+      docOrDate.targetDoc?.review_status === 'COMPLETED' ||
+      docOrDate.targetDoc?.is_reviewed_this_cycle;
+
+    if (isMarkedCompleted) {
+      if (lastReviewedAt) {
+        const reviewDate = new Date(lastReviewedAt);
+        if (!isNaN(reviewDate.getTime())) {
+          const daysSinceReview = Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24));
+          const sameYear = reviewDate.getFullYear() === today.getFullYear();
+          // หากเพิ่งทบทวนเสร็จไม่เกินระยะปลอดภัย (เช่น 60 วัน) หรืออยู่ในรอบปีเดียวกัน ให้แสดงเป็น "ทบทวนแล้วเสร็จ"
+          if ((daysSinceReview >= 0 && daysSinceReview < 60) || sameYear) {
+            return { status: 'COMPLETED', diffDays, canReview: false };
+          }
+          // หากข้ามปีและพ้นระยะ 60 วันแล้ว ให้ถือว่าสิ้นสุดรอบเสร็จสิ้นเดิม -> จะปรับเป็น UP_TO_DATE
+        }
+      } else {
+        return { status: 'COMPLETED', diffDays, canReview: false };
+      }
+    }
+  }
+
+  // 3. นอกนั้นถือเป็นสถานะปกติ ยังไม่ถึงกำหนด (Priority 3)
+  return isDocObject ? { status: 'UP_TO_DATE', diffDays, canReview: false } : 'UP_TO_DATE';
+}
+
+/**
+ * Checks whether a document or schedule record has completed its periodic review in the current cycle.
+ * Delegates to evaluateDocumentReviewStatus to adhere strictly to priority order.
+ *
+ * @param {Object} doc - Document or schedule object
+ * @param {Date|string} [referenceDate=new Date()] - Reference date (effective today)
+ * @returns {boolean}
+ */
+export function isDocumentReviewedThisCycle(doc, referenceDate = new Date()) {
+  if (!doc) return false;
+  const result = evaluateDocumentReviewStatus(doc, referenceDate);
+  const status = typeof result === 'object' ? result.status : result;
+  return status === 'COMPLETED';
 }
 
 /**
  * Calculates mutually exclusive (MECE) periodic review metrics for documents or review records.
- * Eliminates double-counting of overdue documents in the due-soon bucket.
+ * Uses evaluateDocumentReviewStatus to eliminate race conditions and prioritize urgent due dates.
  *
  * @param {Array} docs - List of documents or review schedule records
  * @param {Date|string} [referenceDate=new Date()] - Reference date (effective today)
@@ -350,40 +487,17 @@ export function getDocumentReviewMetrics(docs = [], referenceDate = new Date()) 
   docs.forEach(doc => {
     if (!doc) return;
 
-    // หากทบทวนแล้วเสร็จในรอบปัจจุบัน
-    if (doc.is_reviewed_this_cycle || doc.review_status === 'COMPLETED' || doc.status === 'COMPLETED') {
+    const evaluation = evaluateDocumentReviewStatus(doc, referenceDate);
+    const status = typeof evaluation === 'object' ? evaluation.status : evaluation;
+
+    if (status === 'OVERDUE') {
+      overdue++;
+    } else if (status === 'DUE_SOON') {
+      dueSoon++;
+    } else if (status === 'COMPLETED') {
       completed++;
-      return;
-    }
-
-    const reviewDate = doc.next_review_date || doc.nextReviewDate || doc.currentScheduledReviewDate;
-    if (!reviewDate) {
-      if (doc.status === 'OVERDUE') {
-        overdue++;
-      } else if (doc.status === 'DUE_SOON' || doc.status === 'DUE') {
-        dueSoon++;
-      } else {
-        upToDate++;
-      }
-      return;
-    }
-
-    const target = new Date(reviewDate);
-    if (isNaN(target.getTime())) {
-      upToDate++;
-      return;
-    }
-
-    target.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    // แยกเงื่อนไขเด็ดขาด ไม่ให้ทับซ้อนกัน:
-    if (diffDays < 0) {
-      overdue++; // เกินกำหนด (ติดลบ)
-    } else if (diffDays <= 30) {
-      dueSoon++; // ใกล้ครบกำหนด (0 ถึง 30 วัน)
     } else {
-      upToDate++; // ยังไม่ถึงกำหนด (> 30 วัน)
+      upToDate++;
     }
   });
 

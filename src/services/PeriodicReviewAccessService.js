@@ -68,7 +68,18 @@ export const getPositionLevelForDepartment = (user, ownerDepartmentId) => {
 
 export const canViewAllPeriodicReviews = (user) => {
   if (!user) return false;
-  return user.isDcc === true || user.role === 'DCC_ADMIN' || (Array.isArray(user.managedDepartments) && user.managedDepartments.includes('*'));
+  return user.isDcc === true || 
+         user.role === 'DCC_ADMIN' || 
+         user.role === 'DCC' ||
+         user.is_dcc === true ||
+         Number(user.level) >= 5 || 
+         Number(user.approval_level) >= 5 ||
+         user.is_hod === true || 
+         user.is_manager === true ||
+         user.role === 'ADMIN' ||
+         user.role === 'SUPER_ADMIN' ||
+         user.role === 'QMR' ||
+         (Array.isArray(user.managedDepartments) && user.managedDepartments.includes('*'));
 };
 
 export const canViewPeriodicReview = (user, review, document) => {
@@ -154,6 +165,8 @@ export const normalizePeriodicReviewRecord = (record, currentDate = new Date()) 
     } else if (oldStatus === 'COMPLETED_WITH_OBSOLETE' || oldStatus === 'COMPLETED_NO_LONGER_APPLICABLE') {
       normalized.outcome = 'OBSOLETE_REQUIRED';
     }
+  } else if (oldStatus === 'PENDING_APPROVAL' || record.dueState === 'PENDING_APPROVAL') {
+    normalized.status = 'PENDING_APPROVAL';
   } else if (oldStatus === 'ACTION_IN_PROGRESS' || oldStatus === 'IN_PROGRESS') {
     normalized.status = 'IN_PROGRESS';
   } else {

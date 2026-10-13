@@ -182,6 +182,9 @@ export const generateTasksForSchedules = (schedules, existingTasks = [], referen
     
     // Update due state of existing task if it exists
     if (existingTask) {
+      if (schedule.currentScheduledReviewDate) {
+        existingTask.dueDate = schedule.currentScheduledReviewDate;
+      }
       existingTask.dueState = getDueState(existingTask.dueDate, referenceDate);
       existingTask.reviewStatusFlag = getReviewStatusFlag(existingTask.dueDate, referenceDate);
       existingTask.statusFlag = existingTask.reviewStatusFlag;
@@ -265,6 +268,7 @@ export const getReviewStatusLabel = (status) => {
     'DUE_SOON': { label: 'ใกล้ครบกำหนด', color: 'bg-yellow-100 text-yellow-800' },
     'DUE': { label: 'ถึงกำหนดทบทวน', color: 'bg-orange-100 text-orange-800' },
     'IN_PROGRESS': { label: 'อยู่ระหว่างทบทวน', color: 'bg-blue-100 text-blue-800' },
+    'PENDING_APPROVAL': { label: '⏳ รออนุมัติผล', color: 'bg-amber-100 text-amber-800 border-amber-200' },
     'OVERDUE': { label: 'เกินกำหนด', color: 'bg-red-100 text-red-800' },
     'COMPLETED': { label: 'ทบทวนเสร็จแล้ว', color: 'bg-green-100 text-green-800' },
 

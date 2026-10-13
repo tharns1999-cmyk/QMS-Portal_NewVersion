@@ -1496,6 +1496,17 @@ const Library = () => {
                               reviewDue = addYears(eff, cycleYears);
                             }
                             if (!reviewDue) return null;
+                            const isPendingApproval = primaryDoc.review_status === 'PENDING_APPROVAL' || sch?.status === 'PENDING_APPROVAL';
+                            if (isPendingApproval) {
+                              return (
+                                <span
+                                  className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-amber-50 text-amber-800 border-amber-200"
+                                  title="อยู่ระหว่างรอหัวหน้าแผนกพิจารณาอนุมัติผลการทบทวน"
+                                >
+                                  ⏳ รออนุมัติผล
+                                </span>
+                              );
+                            }
                             const todayRef = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
                             const st = evaluateDocumentReviewStatus(reviewDue, todayRef);
                             if (st === 'UP_TO_DATE') return null; // silent when not due soon
@@ -1912,9 +1923,9 @@ const Library = () => {
             })}
             {paginatedData.length === 0 && (
               <tr>
-                <td colSpan={filterStatus === 'OBSOLETE' || filterStatus === 'SUPERSEDED' ? 5 : 6} className="px-6 py-14 text-center text-[#888888]">
-                  <BookOpen size={36} className="mx-auto mb-2 text-[#CCCCCC]" strokeWidth={1.5} />
-                  <p className="font-medium text-xs text-[#888888]">ไม่พบเอกสารในหมวดหมู่นี้</p>
+                <td colSpan={filterStatus === 'OBSOLETE' || filterStatus === 'SUPERSEDED' ? 5 : 6} className="py-12 text-center">
+                  <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
+                  <p className="text-sm text-slate-500 font-medium">ไม่พบเอกสารในหมวดหมู่นี้</p>
                 </td>
               </tr>
             )}
@@ -1940,9 +1951,14 @@ const Library = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <BookOpen className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              คลังเอกสารแม่บท
-            </h1>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                คลังเอกสารแม่บท
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                ทะเบียนควบคุมเอกสารคุณภาพและระเบียบปฏิบัติงานภายในตามระบบบริหารคุณภาพ
+              </p>
+            </div>
           </div>
 
           {/* 3 Scope Tabs: Minimal Segmented Pills */}
@@ -2019,7 +2035,7 @@ const Library = () => {
         {/* 2. Unified Filter Toolbar (Directly part of canvas) */}
         <div className="p-4 space-y-2 border-b border-slate-100 bg-white shrink-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-2.5 w-full">
-            {/* Search Input: Compact (h-8.5 / py-2) */}
+            {/* Search Input: Compact (h-10 / text-sm) */}
             <div className="relative flex-1 min-w-[200px] sm:min-w-[240px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
               <input
@@ -2027,7 +2043,7 @@ const Library = () => {
                 placeholder="ค้นหารหัส หรือชื่อเอกสาร..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-7 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-xs"
+                className="w-full h-10 pl-9 pr-7 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none transition-all shadow-xs"
               />
               {searchTerm && (
                 <button
@@ -2046,7 +2062,7 @@ const Library = () => {
               <select
                 value={filterDept || 'ALL'}
                 onChange={(e) => setFilterDept(e.target.value)}
-                className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+                className="w-auto sm:w-[130px] xl:w-[140px] h-10 py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm text-slate-700 focus:outline-none transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกแผนก (All)</option>
                 {availableDepts.map(d => (
@@ -2058,7 +2074,7 @@ const Library = () => {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="w-auto sm:w-[130px] xl:w-[140px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+                className="w-auto sm:w-[130px] xl:w-[140px] h-10 py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm text-slate-700 focus:outline-none transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกประเภท (Types)</option>
                 {availableTypes.map(t => {
@@ -2072,7 +2088,7 @@ const Library = () => {
               <select
                 value={filterStandard || 'ALL'}
                 onChange={(e) => setFilterStandard(e.target.value)}
-                className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+                className="w-auto sm:w-[125px] xl:w-[135px] h-10 py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm text-slate-700 focus:outline-none transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกมาตรฐาน</option>
                 {availableStandards.map(s => (
@@ -2084,7 +2100,7 @@ const Library = () => {
               <select
                 value={filterAccessScope || 'ALL'}
                 onChange={(e) => setFilterAccessScope(e.target.value)}
-                className="w-auto sm:w-[125px] xl:w-[135px] py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs truncate"
+                className="w-auto sm:w-[125px] xl:w-[135px] h-10 py-2 px-2.5 bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm text-slate-700 focus:outline-none transition-all cursor-pointer shadow-xs truncate"
               >
                 <option value="ALL">ทุกระดับความลับ</option>
                 <option value="GENERAL">ทั่วไป (General)</option>
@@ -2107,7 +2123,7 @@ const Library = () => {
               <button
                 type="button"
                 onClick={handleExport}
-                className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl whitespace-nowrap cursor-pointer transition-all shadow-xs ml-auto sm:ml-0"
+                className="shrink-0 inline-flex items-center justify-center gap-1.5 h-10 px-3 text-sm font-semibold bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg whitespace-nowrap cursor-pointer transition-all shadow-xs ml-auto sm:ml-0"
               >
                 <Download className="text-slate-500 shrink-0" size={13} />
                 <span>{isDccUser ? 'ส่งออกแม่บท' : 'ส่งออกแผนก'}</span>
@@ -2122,33 +2138,28 @@ const Library = () => {
             <div className="pt-2.5 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs">
               {/* Responsive Scrollable & Wrap Capsule Pill Container */}
               <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide py-0.5">
-                <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
+                <div className="inline-flex p-1 bg-slate-100/80 rounded-xl gap-1 shrink-0 whitespace-nowrap">
                   {[
                     { id: 'ACTIVE', label: 'มีผลบังคับใช้ (Active)', count: tabCounts.active, ariaLabel: 'มีผลบังคับใช้ (Active)' },
-                    { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: tabCounts.superseded, ariaLabel: 'ฉบับตกรุ่น (Superseded) ฉบับเดิมตกรุ่น' },
+                    { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: tabCounts.superseded, ariaLabel: 'ฉบับตกรุ่น (Superseded) ฉบับเดิมตกรุ่น ตกรุ่น' },
                     { id: 'OBSOLETE', label: 'ยกเลิกถาวร (Obsolete)', count: tabCounts.obsolete, ariaLabel: 'ยกเลิกถาวร (Obsolete) ยกเลิกการใช้งาน' },
+                    { id: 'ALL', label: 'ทั้งหมด (All Records)', count: tabCounts.all, ariaLabel: 'ทั้งหมด (All Records)' },
                   ].map((tab) => {
-                    const isSelected = (filterStatus === tab.id) || (tab.id === 'ACTIVE' && filterStatus === 'EFFECTIVE');
+                    const isSelected = (filterStatus === tab.id) || (tab.id === 'ACTIVE' && filterStatus === 'EFFECTIVE') || (tab.id === 'ALL' && (filterStatus === '' || filterStatus === 'ALL'));
                     return (
                       <button
                         key={tab.id}
                         type="button"
                         aria-label={tab.ariaLabel || tab.label}
-                        onClick={() => setFilterStatus(tab.id === 'ACTIVE' ? 'EFFECTIVE' : tab.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                        onClick={() => setFilterStatus(tab.id === 'ALL' ? '' : (tab.id === 'ACTIVE' ? 'EFFECTIVE' : tab.id))}
+                        className={`cursor-pointer flex items-center whitespace-nowrap shrink-0 transition-colors ${
                           isSelected
-                            ? 'bg-white text-[#0D99FF] shadow-2xs font-bold border border-slate-200/70'
-                            : 'text-[#64748B] hover:text-[#1E293B] hover:bg-white/60 border border-transparent'
+                            ? 'bg-white text-slate-900 shadow-xs font-medium rounded-lg px-3 py-1.5 text-xs'
+                            : 'text-slate-500 hover:text-slate-800 rounded-lg px-3 py-1.5 text-xs'
                         }`}
                       >
                         <span>{tab.label}</span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold leading-none ${
-                            isSelected
-                              ? 'bg-[#E5F4FF] text-[#0D99FF]'
-                              : 'bg-[#CBD5E1]/60 text-[#475569]'
-                          }`}
-                        >
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[11px] bg-slate-200/70 text-slate-700 font-mono">
                           {tab.count}
                         </span>
                       </button>

@@ -1829,14 +1829,14 @@ export const createReceiptTask = (copy, relatedDoc = null, relatedDar = null, ma
   };
 };
 
-export const getUserActionableTasks = (tasks = [], user = null) => {
+export const getUserActionableTasks = (tasks = [], user = null, documents = [], referenceDate = new Date()) => {
   if (!user) return [];
-  return (tasks || []).filter(t => isActionableTask(t, user));
+  return (tasks || []).filter(t => isActionableTask(t, user, documents, referenceDate));
 };
 
-export const getUserTaskBadgeCount = (tasks = [], user = null) => {
+export const getUserTaskBadgeCount = (tasks = [], user = null, documents = [], referenceDate = new Date()) => {
   if (!user) return 0;
-  const actionable = getUserActionableTasks(tasks, user);
+  const actionable = getUserActionableTasks(tasks, user, documents, referenceDate);
   return actionable.filter(t => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED').length;
 };
 
@@ -2732,6 +2732,38 @@ const useStore = create(persist((set, get) => ({
           schedule.status = 'PENDING_APPROVAL';
           schedule.dueState = 'PENDING_APPROVAL';
 
+          // 1. Dynamic Approver Resolution: ค้นหาผู้มีอำนาจอนุมัติในแผนกเดียวกันจาก Store
+          const allUsers = (state.users && state.users.length > 0) ? state.users : (state.masterUsers || masterUsers);
+          const departmentApprover = allUsers.find(u => {
+            const isSameDept = u.department === docDept || 
+                               u.dept === docDept || 
+                               u.primary_department === docDept ||
+                               u.depts?.includes(docDept) ||
+                               u.departments?.includes(docDept);
+            const hasApprovalRole = u.is_hod || 
+                                    u.is_manager || 
+                                    u.isDeptHead ||
+                                    Number(u.level) >= 5 || 
+                                    Number(u.approval_level) >= 5 ||
+                                    u.role === 'HOD' ||
+                                    u.permissions?.includes('APPROVE_PERIODIC_REVIEW') ||
+                                    u.managedDepartments?.includes(docDept);
+            return isSameDept && hasApprovalRole;
+          });
+
+          // 2. Dynamic Fallback: หากไม่พบผู้อนุมัติในแผนก ให้ค้นหาผู้ใช้ที่เป็น DCC จาก Store
+          const dccApprover = allUsers.find(u => 
+            u.is_dcc || 
+            u.isDcc ||
+            u.role === 'DCC' || 
+            u.role === 'DCC_ADMIN' ||
+            u.managedDepartments?.includes('*')
+          );
+
+          // เลือกรหัสผู้รับงานจากข้อมูลที่ค้นพบจริง (Zero Hardcoding)
+          const targetAssigneeId = departmentApprover?.id || dccApprover?.id || null;
+          const targetAssigneeName = departmentApprover?.name || dccApprover?.name || null;
+
           const pendingReviewPayload = {
             id: `REV-REQ-${Date.now()}`,
             doc_id: schedule.documentId || schedule.externalDocumentId || docIdParam,
@@ -2745,6 +2777,8 @@ const useStore = create(persist((set, get) => ({
             reviewer_id: activeUser?.id,
             reviewer_name: activeUser?.name,
             reviewer_role: activeUser?.role || 'Staff',
+            reviewer_position: activeUser?.position || activeUser?.role_name || (activeUser?.role !== 'DEPT_ADMIN' ? activeUser?.role : 'ผู้จัดทำ') || 'Staff',
+            reviewer_department: activeUser?.department || activeUser?.dept || activeUser?.primary_department || docDept,
             submitted_at: new Date().toISOString(),
             details: reviewDetails || { comment }
           };
@@ -2761,7 +2795,10 @@ const useStore = create(persist((set, get) => ({
             revision: schedule.rev || '00',
             department: docDept,
             target_role: 'HOD',
-            target_level: 5,
+            target_level: departmentApprover?.level || 5,
+            assignee_id: targetAssigneeId,
+            assigned_to: targetAssigneeId,
+            assignee_name: targetAssigneeName,
             assignee_department: docDept,
             status: 'PENDING',
             payload: pendingReviewPayload,
@@ -2781,6 +2818,7 @@ const useStore = create(persist((set, get) => ({
             if (docIdx !== -1) {
               const doc = { ...state.documents[docIdx] };
               doc.review_status = 'PENDING_APPROVAL';
+              doc.pending_review_task_id = approvalTask.id;
               doc.pending_periodic_review = pendingReviewPayload;
               updatedDocs = [...state.documents];
               updatedDocs[docIdx] = doc;
@@ -2793,6 +2831,7 @@ const useStore = create(persist((set, get) => ({
             if (docIdx !== -1) {
               const doc = { ...state.externalDocuments[docIdx] };
               doc.review_status = 'PENDING_APPROVAL';
+              doc.pending_review_task_id = approvalTask.id;
               doc.pending_periodic_review = pendingReviewPayload;
               updatedExtDocs = [...state.externalDocuments];
               updatedExtDocs[docIdx] = doc;
@@ -3081,6 +3120,7 @@ const useStore = create(persist((set, get) => ({
       schedule.currentScheduledReviewDate = nextDate;
       schedule.status = 'UPCOMING';
       schedule.dueState = 'NOT_YET_DUE';
+      schedule.is_reviewed_this_cycle = true;
     }
 
     schedule.reviewLogs = [...(schedule.reviewLogs || []), logEntry];
@@ -3137,6 +3177,7 @@ const useStore = create(persist((set, get) => ({
         if (isNoChange) {
           doc.next_review_date = nextDate;
           doc.review_status = 'UP_TO_DATE';
+          doc.is_reviewed_this_cycle = true;
           delete doc.pending_periodic_review;
           doc.review_history = [...(doc.review_history || []), {
             id: logEntry.id,
@@ -3171,6 +3212,7 @@ const useStore = create(persist((set, get) => ({
           doc.last_verified_at = now;
           doc.next_review_date = nextDate;
           doc.review_status = 'UP_TO_DATE';
+          doc.is_reviewed_this_cycle = true;
           delete doc.pending_periodic_review;
           if (verificationChannel) doc.verification_channel = verificationChannel;
           doc.review_history = [...(doc.review_history || []), {
@@ -3308,7 +3350,9 @@ const useStore = create(persist((set, get) => ({
         doc.last_reviewed_at = now;
         doc.next_review_date = nextDate;
         doc.review_status = 'UP_TO_DATE';
+        doc.is_reviewed_this_cycle = true;
         delete doc.pending_periodic_review;
+        delete doc.pending_review_task_id;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
         doc.review_history = [...(doc.review_history || []), {
           id: `PRH-${Date.now()}`,
@@ -3338,7 +3382,9 @@ const useStore = create(persist((set, get) => ({
         doc.last_verified_at = now;
         doc.next_review_date = nextDate;
         doc.review_status = 'UP_TO_DATE';
+        doc.is_reviewed_this_cycle = true;
         delete doc.pending_periodic_review;
+        delete doc.pending_review_task_id;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
         doc.review_history = [...(doc.review_history || []), {
           id: `PRH-${Date.now()}`,
@@ -3367,6 +3413,7 @@ const useStore = create(persist((set, get) => ({
           lastReviewedDate: now,
           nextReviewDate: nextDate,
           currentScheduledReviewDate: nextDate,
+          is_reviewed_this_cycle: true,
           pendingApprovalTaskId: null,
           pendingReview: null,
           updatedAt: new Date().toISOString()
@@ -3376,22 +3423,51 @@ const useStore = create(persist((set, get) => ({
     });
 
     const updatedTasks = (state.tasks || []).map(t => {
-      if (t.id === taskId) {
+      const isTargetApprovalTask = t.id === taskId;
+      const isRelatedReviewTask = (
+        t.type === 'PERIODIC_REVIEW' || 
+        t.taskType === 'PERIODIC_REVIEW' ||
+        t.type === 'EXTERNAL_VERIFICATION' ||
+        t.taskType === 'EXTERNAL_VERIFICATION' ||
+        t.type === 'PERIODIC_REVIEW_APPROVAL' ||
+        t.taskType === 'PERIODIC_REVIEW_APPROVAL'
+      ) && (
+        (scheduleId && t.scheduleId === scheduleId) ||
+        (doc_id && (t.docId === doc_id || t.documentId === doc_id || t.doc_id === doc_id)) ||
+        (doc_code && (t.docCode === doc_code || t.documentNumber === doc_code || t.document_code === doc_code || t.doc_code === doc_code))
+      );
+
+      if (isTargetApprovalTask || isRelatedReviewTask) {
         return { 
           ...t, 
           status: 'COMPLETED', 
           is_completed: true, 
           actionRequired: false, 
+          completed_at: new Date().toISOString(),
           approvedBy: approver?.name, 
-          approvedAt: new Date().toISOString() 
+          approvedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
       }
       return t;
     });
 
     const updatedPeriodicReviewTasks = (state.periodicReviewTasks || []).map(t => {
-      if (t.id === taskId || t.scheduleId === scheduleId) {
-        return { ...t, status: 'COMPLETED', is_completed: true, actionRequired: false, updatedAt: new Date().toISOString() };
+      const isTargetApprovalTask = t.id === taskId;
+      const isRelatedReviewTask = (
+        (scheduleId && t.scheduleId === scheduleId) ||
+        (doc_id && (t.docId === doc_id || t.documentId === doc_id || t.doc_id === doc_id)) ||
+        (doc_code && (t.docCode === doc_code || t.documentNumber === doc_code || t.document_code === doc_code || t.doc_code === doc_code))
+      );
+      if (isTargetApprovalTask || isRelatedReviewTask) {
+        return { 
+          ...t, 
+          status: 'COMPLETED', 
+          is_completed: true, 
+          actionRequired: false, 
+          completed_at: new Date().toISOString(),
+          updatedAt: new Date().toISOString() 
+        };
       }
       return t;
     });
@@ -3444,6 +3520,7 @@ const useStore = create(persist((set, get) => ({
         const doc = { ...state.documents[docIdx] };
         doc.review_status = 'ACTION_REQUIRED';
         delete doc.pending_periodic_review;
+        delete doc.pending_review_task_id;
         doc.rejection_remarks = remarks;
         updatedDocs = [...state.documents];
         updatedDocs[docIdx] = doc;
@@ -3457,6 +3534,7 @@ const useStore = create(persist((set, get) => ({
         const doc = { ...state.externalDocuments[docIdx] };
         doc.review_status = 'ACTION_REQUIRED';
         delete doc.pending_periodic_review;
+        delete doc.pending_review_task_id;
         doc.rejection_remarks = remarks;
         updatedExtDocs = [...state.externalDocuments];
         updatedExtDocs[docIdx] = doc;
@@ -3490,11 +3568,29 @@ const useStore = create(persist((set, get) => ({
       return t;
     });
 
+    // 🛡️ Create Notification for Reviewer
+    const newNotifications = [...(state.notifications || [])];
+    const reviewerId = task.payload?.reviewer_id;
+    if (reviewerId) {
+      newNotifications.unshift({
+        id: `notif-rev-reject-${Date.now()}`,
+        userId: reviewerId,
+        user_id: reviewerId,
+        title: `ผลการทบทวนเอกสาร ${task.document_code || task.payload?.doc_code || ''} ถูกตีกลับแก้ไข`,
+        message: `หัวหน้าแผนก (${approver?.name || 'HOD'}) ตีกลับผลการทบทวน: ${remarks || '-'}`,
+        isRead: false,
+        read: false,
+        type: 'PERIODIC_REVIEW_REJECTED',
+        createdAt: new Date().toISOString()
+      });
+    }
+
     return {
       documents: updatedDocs,
       externalDocuments: updatedExtDocs,
       periodicReviewSchedules: schedules,
       tasks: updatedTasks,
+      notifications: newNotifications,
       actionLog: [{
         id: `LOG-${Date.now()}`,
         actionType: 'PERIODIC_REVIEW_REJECTED',
@@ -9220,8 +9316,18 @@ const useStore = create(persist((set, get) => ({
 
   dispatchCopy: (copyId) => useStore.getState().dispatchControlledCopy(copyId),
   dispatchAllCopies: (docIdOrCopyIds, copiesToDispatch) => useStore.getState().dispatchControlledCopies(docIdOrCopyIds, copiesToDispatch),
-  getUserActionableTasks: (user) => getUserActionableTasks(useStore.getState().tasks, user || useStore.getState().currentUser),
-  getUserTaskBadgeCount: (user) => getUserTaskBadgeCount(useStore.getState().tasks, user || useStore.getState().currentUser),
+  getUserActionableTasks: (user) => {
+    const s = useStore.getState();
+    const effectiveToday = s.getEffectiveToday ? s.getEffectiveToday() : (s.simulatedSystemDate ? new Date(s.simulatedSystemDate) : new Date());
+    const allDocs = [...(s.documents || []), ...(s.externalDocuments || [])];
+    return getUserActionableTasks(s.tasks, user || s.currentUser, allDocs, effectiveToday);
+  },
+  getUserTaskBadgeCount: (user) => {
+    const s = useStore.getState();
+    const effectiveToday = s.getEffectiveToday ? s.getEffectiveToday() : (s.simulatedSystemDate ? new Date(s.simulatedSystemDate) : new Date());
+    const allDocs = [...(s.documents || []), ...(s.externalDocuments || [])];
+    return getUserTaskBadgeCount(s.tasks, user || s.currentUser, allDocs, effectiveToday);
+  },
 
   confirmHardcopyReceipt: (copyId, taskId, recipientData = {}) => set((state) => {
     // Strict Type Coercion to prevent comparison bugs

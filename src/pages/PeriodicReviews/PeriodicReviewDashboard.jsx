@@ -5,6 +5,8 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle,
+  CheckCircle2,
+  Check,
   FileText,
   Search,
   Filter,
@@ -12,16 +14,19 @@ import {
   Eye,
   History,
   X,
-  ExternalLink
+  ExternalLink,
+  Download,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import useStore from '../../store/useStore';
-import { canViewAllPeriodicReviews, getVisiblePeriodicReviews } from '../../services/PeriodicReviewAccessService';
-import PeriodicReviewControlBoard from './PeriodicReviewControlBoard';
-import { getDueState } from '../../services/PeriodicReviewService';
+import { getVisiblePeriodicReviews, normalizePeriodicReviewRecord, canExportPeriodicReviews } from '../../services/PeriodicReviewAccessService';
+import { getDueState, getReviewStatusLabel, getReviewOutcomeLabel } from '../../services/PeriodicReviewService';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
-import { getDocumentReviewMetrics } from '../../utils/documentUtils';
+import { getDocumentReviewMetrics, isDocumentReviewedThisCycle, evaluateDocumentReviewStatus } from '../../utils/documentUtils';
 import { PeriodicReviewAuditCard } from '../../components/workflow/PeriodicReviewHistoryTab';
 
 const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick, active }) => (
@@ -53,7 +58,19 @@ const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick
   </div>
 );
 
-const getStatusBadgeConfig = (status, hasActiveTask) => {
+const getStatusBadgeConfig = (status, hasActiveTask, isPendingApproval, isReviewed) => {
+  if (isReviewed) {
+    return {
+      label: '✔️ ทบทวนแล้วเสร็จ',
+      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    };
+  }
+  if (status === 'PENDING_APPROVAL' || isPendingApproval) {
+    return {
+      label: '⏳ รออนุมัติผล',
+      cls: 'bg-amber-50 text-amber-800 border-amber-200'
+    };
+  }
   if (status === 'OVERDUE') {
     return {
       label: '🚨 เกินกำหนด',
@@ -78,7 +95,8 @@ const getStatusBadgeConfig = (status, hasActiveTask) => {
   };
 };
 
-const ReviewHistoryModal = ({ isOpen, onClose, record, doc, onNavigateRecord }) => {
+const ReviewHistoryModal = ({ isOpen, onClose, record, doc, effectiveToday, onNavigateRecord }) => {
+  const isReviewedThisCycle = isDocumentReviewedThisCycle(record, effectiveToday) || (doc && isDocumentReviewedThisCycle(doc, effectiveToday));
   const reviewHistory = useMemo(() => {
     const list = [];
     if (doc?.periodic_reviews && Array.isArray(doc.periodic_reviews) && doc.periodic_reviews.length > 0) {
@@ -171,24 +189,44 @@ const ReviewHistoryModal = ({ isOpen, onClose, record, doc, onNavigateRecord }) 
           >
             ปิด
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onNavigateRecord(record);
-            }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0D99FF] hover:bg-[#007BE5] text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
-          >
-            <RotateCw size={13} />
-            บันทึกผลการทบทวนรอบนี้
-          </button>
+          {isReviewedThisCycle ? (
+            <button
+              disabled
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-400 text-xs font-semibold rounded-xl cursor-not-allowed"
+              title="เอกสารผ่านการทบทวนรอบปีนี้เรียบร้อยแล้ว"
+            >
+              <Check size={13} className="text-emerald-500" />
+              <span>ทบทวนแล้ว</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onNavigateRecord(record);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0D99FF] hover:bg-[#007BE5] text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
+            >
+              <RotateCw size={13} />
+              <span>บันทึกผลการทบทวนรอบนี้</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEffectiveToday }) => {
+const UnifiedWorkspaceView = ({ 
+  visibleRecords = [], 
+  allDocs = [], 
+  effectiveToday: propEffectiveToday,
+  viewScope = 'MY_DEPT',
+  setViewScope,
+  selectedDeptFilter = 'ALL',
+  setSelectedDeptFilter,
+  isManagementOrDcc = false
+}) => {
   const navigate = useNavigate();
   const { currentUser, simulatedSystemDate, getEffectiveToday } = useStore();
   const effectiveToday = propEffectiveToday || (getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date()));
@@ -196,20 +234,69 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
   const [categoryTab, setCategoryTab] = useState('INTERNAL'); // 'INTERNAL' | 'EXTERNAL'
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTION_REQUIRED' | 'DUE_SOON' | 'UPCOMING' | 'OVERDUE' | 'COMPLETED'
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDept, setSelectedDept] = useState('ALL');
+  const [sortConfig, setSortConfig] = useState({
+    key: 'next_review_date',
+    direction: 'asc' // ค่าเริ่มต้น: ใกล้สุดขึ้นก่อน
+  });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
 
   // History Modal State
   const [historyTarget, setHistoryTarget] = useState(null);
 
-  // Split visible records into Internal & External categories
+  const getRecordDept = (r) => r.ownerDepartmentId || r.targetDoc?.department || r.targetDoc?.owner_dept || r.department;
+
+  // Scoped records based on viewScope and selectedDeptFilter
+  const scopedRecords = useMemo(() => {
+    return visibleRecords.filter(r => {
+      const dept = getRecordDept(r);
+
+      // Non-management: restricted to their department / managed departments
+      if (!isManagementOrDcc) {
+        const userDept = currentUser?.department || currentUser?.dept || currentUser?.primary_department;
+        const permitted = new Set([
+          userDept,
+          ...(currentUser?.depts || []),
+          ...(currentUser?.departments || []),
+          ...(currentUser?.affiliated_departments || [])
+        ].filter(Boolean));
+        if (currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc) return true;
+        if (Array.isArray(currentUser?.managedDepartments)) {
+          currentUser.managedDepartments.forEach(d => permitted.add(d));
+        }
+        return permitted.has(dept);
+      }
+
+      // If user selected "MY_DEPT"
+      if (viewScope === 'MY_DEPT') {
+        const userDept = currentUser?.department || currentUser?.dept || currentUser?.primary_department;
+        return dept === userDept;
+      }
+
+      // If user selected "ALL" but specified a department in the dropdown
+      if (selectedDeptFilter !== 'ALL') {
+        return dept === selectedDeptFilter;
+      }
+
+      // If user selected "ALL" and dropdown is "ALL"
+      return true;
+    });
+  }, [visibleRecords, isManagementOrDcc, viewScope, selectedDeptFilter, currentUser]);
+
+  // Split scoped records into Internal & External categories
   const internalRecords = useMemo(
-    () => visibleRecords.filter(r => !r.isExternal),
-    [visibleRecords]
+    () => scopedRecords.filter(r => !r.isExternal),
+    [scopedRecords]
   );
 
   const externalRecords = useMemo(
-    () => visibleRecords.filter(r => r.isExternal),
-    [visibleRecords]
+    () => scopedRecords.filter(r => r.isExternal),
+    [scopedRecords]
   );
 
   const currentCategoryList = useMemo(
@@ -217,26 +304,16 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
     [categoryTab, internalRecords, externalRecords]
   );
 
-  // Available departments for the user
+  // Available departments for the user/dropdown
   const availableDepts = useMemo(() => {
     const depts = new Set();
+    visibleRecords.forEach(r => {
+      const d = getRecordDept(r);
+      if (d) depts.add(d);
+    });
     if (currentUser?.department) depts.add(currentUser.department);
-    if (currentUser?.dept) depts.add(currentUser.dept);
-    if (currentUser?.primary_department) depts.add(currentUser.primary_department);
-    (currentUser?.depts || []).forEach(d => depts.add(d));
-    (currentUser?.affiliated_departments || []).forEach(d => depts.add(d));
-    if (Array.isArray(currentUser?.managedDepartments)) {
-      currentUser.managedDepartments.forEach(d => {
-        if (d !== '*') depts.add(d);
-      });
-    }
-    if (currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN') {
-      visibleRecords.forEach(r => {
-        if (r.ownerDepartmentId) depts.add(r.ownerDepartmentId);
-      });
-    }
     return Array.from(depts).filter(Boolean).sort();
-  }, [currentUser, visibleRecords]);
+  }, [visibleRecords, currentUser]);
 
   // KPI Metrics computed for the currently selected Category Tab using MECE helper
   const stats = useMemo(() => {
@@ -249,26 +326,35 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
 
     // Status filter
     if (statusFilter === 'ACTION_REQUIRED') {
-      result = result.filter(
-        r => ['DUE_SOON', 'DUE', 'IN_PROGRESS', 'ACTION_REQUIRED', 'OVERDUE'].includes(r.status) || r.hasActiveTask
-      );
+      result = result.filter(r => {
+        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
+        const st = typeof ev === 'object' ? ev.status : ev;
+        return st === 'OVERDUE' || st === 'DUE_SOON' || r.hasActiveTask;
+      });
     } else if (statusFilter === 'DUE_SOON') {
-      result = result.filter(
-        r => (['DUE_SOON', 'DUE'].includes(r.status) || r.hasActiveTask) && r.status !== 'OVERDUE'
-      );
+      result = result.filter(r => {
+        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
+        const st = typeof ev === 'object' ? ev.status : ev;
+        return st === 'DUE_SOON' || ((['DUE_SOON', 'DUE'].includes(r.status) || r.hasActiveTask) && r.status !== 'OVERDUE');
+      });
     } else if (statusFilter === 'UPCOMING') {
-      result = result.filter(
-        r => ['UP_TO_DATE', 'ON_SCHEDULE', 'NORMAL', 'UPCOMING'].includes(r.status) && !r.hasActiveTask
-      );
+      result = result.filter(r => {
+        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
+        const st = typeof ev === 'object' ? ev.status : ev;
+        return st === 'UP_TO_DATE' && !r.hasActiveTask;
+      });
     } else if (statusFilter === 'OVERDUE') {
-      result = result.filter(r => r.status === 'OVERDUE');
+      result = result.filter(r => {
+        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
+        const st = typeof ev === 'object' ? ev.status : ev;
+        return st === 'OVERDUE';
+      });
     } else if (statusFilter === 'COMPLETED') {
-      result = result.filter(r => r.status === 'COMPLETED');
-    }
-
-    // Department filter
-    if (selectedDept !== 'ALL') {
-      result = result.filter(r => r.ownerDepartmentId === selectedDept);
+      result = result.filter(r => {
+        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
+        const st = typeof ev === 'object' ? ev.status : ev;
+        return st === 'COMPLETED';
+      });
     }
 
     // Search filter
@@ -283,9 +369,37 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
     }
 
     return result;
-  }, [currentCategoryList, statusFilter, selectedDept, searchTerm]);
+  }, [currentCategoryList, statusFilter, searchTerm, effectiveToday]);
 
-  const pagination = useTablePagination(filteredRecords, 10);
+  const sortedDocuments = useMemo(() => {
+    const list = [...filteredRecords];
+
+    list.sort((a, b) => {
+      if (sortConfig.key === 'next_review_date') {
+        const dateA = a.nextReviewDate || a.next_review_date || a.currentScheduledReviewDate;
+        const dateB = b.nextReviewDate || b.next_review_date || b.currentScheduledReviewDate;
+        const timeA = dateA ? new Date(dateA).getTime() : null;
+        const timeB = dateB ? new Date(dateB).getTime() : null;
+
+        const validTimeA = timeA && !isNaN(timeA) ? timeA : null;
+        const validTimeB = timeB && !isNaN(timeB) ? timeB : null;
+
+        // เอกสารที่ไม่มีวันครบกำหนดจะถูกจัดไปอยู่ท้ายสุดของตารางเสมอ
+        if (validTimeA === null && validTimeB === null) return 0;
+        if (validTimeA === null) return 1;
+        if (validTimeB === null) return -1;
+        if (validTimeA === validTimeB) return 0;
+
+        return sortConfig.direction === 'asc' ? validTimeA - validTimeB : validTimeB - validTimeA;
+      }
+
+      return 0;
+    });
+
+    return list;
+  }, [filteredRecords, sortConfig]);
+
+  const pagination = useTablePagination(sortedDocuments, 10);
 
   const handleNavigateRecord = (record) => {
     const docCode = record.documentNumber || record.id;
@@ -356,7 +470,7 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
                 type="button"
                 onClick={() => {
                   setCategoryTab('INTERNAL');
-                  setSelectedDept('ALL');
+                  if (setSelectedDeptFilter) setSelectedDeptFilter('ALL');
                 }}
                 className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   categoryTab === 'INTERNAL'
@@ -379,7 +493,7 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
                 type="button"
                 onClick={() => {
                   setCategoryTab('EXTERNAL');
-                  setSelectedDept('ALL');
+                  if (setSelectedDeptFilter) setSelectedDeptFilter('ALL');
                 }}
                 className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   categoryTab === 'EXTERNAL'
@@ -439,9 +553,20 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
           <div className="flex gap-2 w-full sm:w-auto items-center">
             <Filter size={15} className="text-slate-400 hidden sm:block" />
             <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="border border-[#E5E5E5] rounded-xl text-xs px-3 py-2 w-full sm:w-48 bg-[#F5F5F5] focus:bg-white focus:outline-none focus:border-[#0D99FF] font-medium"
+              aria-label="กรองตามแผนก"
+              value={selectedDeptFilter}
+              onChange={(e) => {
+                const newDept = e.target.value;
+                if (setSelectedDeptFilter) {
+                  setSelectedDeptFilter(newDept);
+                }
+                if (newDept === 'ALL' && setViewScope) {
+                  setViewScope('ALL');
+                } else if (newDept !== currentUser?.department && setViewScope) {
+                  setViewScope('ALL');
+                }
+              }}
+              className="border border-[#E5E5E5] rounded-xl text-xs px-3 py-2 w-full sm:w-48 bg-[#F5F5F5] focus:bg-white focus:outline-none focus:border-[#0D99FF] font-medium cursor-pointer"
             >
               <option value="ALL">ทุกแผนก</option>
               {availableDepts.map(dept => (
@@ -460,14 +585,46 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
                 <th className="px-4 py-3 bg-[#F8FAFC]">ชื่อเอกสาร</th>
                 <th className="px-4 py-3 w-24 text-center bg-[#F8FAFC]">แผนก</th>
                 <th className="px-4 py-3 w-24 text-center font-mono bg-[#F8FAFC]">ฉบับ (Rev)</th>
-                <th className="px-4 py-3 w-32 text-center font-mono bg-[#F8FAFC]">ครบกำหนด</th>
+                <th
+                  scope="col"
+                  onClick={() => handleSort('next_review_date')}
+                  className="px-4 py-3 w-32 text-center font-mono bg-[#F8FAFC] cursor-pointer select-none hover:bg-slate-100 transition-colors group"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>ครบกำหนด</span>
+                    <span className="text-slate-400 group-hover:text-slate-700">
+                      {sortConfig.key === 'next_review_date' ? (
+                        sortConfig.direction === 'asc' ? (
+                          <ArrowUp className="w-3.5 h-3.5 text-sky-600" />
+                        ) : (
+                          <ArrowDown className="w-3.5 h-3.5 text-sky-600" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="w-3.5 h-3.5 opacity-50" />
+                      )}
+                    </span>
+                  </div>
+                </th>
                 <th className="px-4 py-3 w-36 text-center bg-[#F8FAFC]">สถานะรอบ</th>
                 <th className="px-4 py-3 w-48 text-center bg-[#F8FAFC]">จัดการ (Actions)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {pagination.paginatedData.map(record => {
-                const badge = getStatusBadgeConfig(record.status, record.hasActiveTask);
+                const targetDoc = record.targetDoc || allDocs?.find(d => 
+                  (record.documentId && d.id === record.documentId) || 
+                  (record.externalDocumentId && d.id === record.externalDocumentId) ||
+                  (record.documentNumber && (d.documentNumber === record.documentNumber || d.code === record.documentNumber || d.doc_code === record.documentNumber))
+                );
+                const isPendingApproval = record.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL';
+                const docToEvaluate = targetDoc ? { ...targetDoc, ...record } : record;
+                const evaluation = evaluateDocumentReviewStatus(docToEvaluate, effectiveToday);
+                const calculatedStatus = typeof evaluation === 'object' ? evaluation.status : evaluation;
+                const isReviewed = calculatedStatus === 'COMPLETED';
+                const effectiveStatus = (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'COMPLETED')
+                  ? calculatedStatus
+                  : (record.status === 'PENDING_APPROVAL' || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status);
+                const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed);
                 return (
                   <tr key={record.id} className="hover:bg-[#F5F5F5]/70 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-xs sm:text-sm whitespace-nowrap">
@@ -486,21 +643,44 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
                       {formatQmsDisplayDate(record.nextReviewDate)}
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.cls}`}>
-                        {badge.label}
-                      </span>
+                      {isReviewed ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>ทบทวนแล้วเสร็จ</span>
+                        </span>
+                      ) : (
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleNavigateRecord(record)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#0D99FF] hover:bg-[#007BE5] text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
-                          title="บันทึกผลการทบทวน"
-                        >
-                          <RotateCw size={13} />
-                          <span>บันทึกผล</span>
-                        </button>
+                        {isReviewed ? (
+                          <button
+                            disabled
+                            className="px-2.5 py-1 text-xs text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed inline-flex items-center gap-1"
+                            title="เอกสารผ่านการทบทวนรอบปีนี้เรียบร้อยแล้ว"
+                          >
+                            <Check className="w-3 h-3 text-emerald-500" />
+                            <span>ทบทวนแล้ว</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateRecord(record)}
+                            disabled={isPendingApproval}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-2xs ${
+                              isPendingApproval
+                                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                                : 'bg-[#0D99FF] hover:bg-[#007BE5] text-white cursor-pointer'
+                            }`}
+                            title={isPendingApproval ? 'อยู่ระหว่างรอหัวหน้าแผนกอนุมัติผล' : 'บันทึกผลการทบทวน'}
+                          >
+                            <RotateCw size={13} />
+                            <span>บันทึกผล</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleOpenHistory(record)}
@@ -542,6 +722,7 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
         onClose={() => setHistoryTarget(null)}
         record={historyTarget?.record}
         doc={historyTarget?.doc}
+        effectiveToday={effectiveToday}
         onNavigateRecord={handleNavigateRecord}
       />
     </div>
@@ -550,8 +731,29 @@ const UnifiedWorkspaceView = ({ visibleRecords, allDocs, effectiveToday: propEff
 
 const PeriodicReviewDashboard = () => {
   const { currentUser, periodicReviewSchedules, documents, externalDocuments, tasks, simulatedSystemDate, getEffectiveToday } = useStore();
-  const canSeeAll = canViewAllPeriodicReviews(currentUser);
-  const [view, setView] = useState(canSeeAll ? 'CONTROL_BOARD' : 'OWNER_DEPT');
+
+  const isDccUser = Boolean(
+    currentUser?.role === 'DCC' ||
+    currentUser?.role === 'DCC_ADMIN' ||
+    currentUser?.isDcc ||
+    currentUser?.is_dcc
+  );
+
+  const isManagementOrDcc = Boolean(
+    isDccUser ||
+    Number(currentUser?.level) >= 5 || 
+    Number(currentUser?.approval_level) >= 5 ||
+    currentUser?.is_hod || 
+    currentUser?.is_manager ||
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.role === 'QMR' ||
+    (Array.isArray(currentUser?.managedDepartments) && currentUser?.managedDepartments.includes('*'))
+  );
+
+  // default: หากเป็น DCC ให้เริ่มที่ 'ALL', หากเป็นผู้ใช้ทั่วไปให้เริ่มที่ 'MY_DEPT'
+  const [viewScope, setViewScope] = useState(isDccUser ? 'ALL' : 'MY_DEPT');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('ALL');
 
   const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
   const effectiveToday = useMemo(() => {
@@ -601,6 +803,11 @@ const PeriodicReviewDashboard = () => {
         dueState: getDueState ? getDueState(nextReviewDate, effectiveToday) : 'UPCOMING',
         hasActiveTask: Boolean(activeTask),
         isActive: true,
+        lastReviewedDate: doc.last_reviewed_at,
+        last_reviewed_at: doc.last_reviewed_at,
+        periodic_reviews: doc.periodic_reviews,
+        is_reviewed_this_cycle: doc.is_reviewed_this_cycle,
+        targetDoc: doc,
         createdAt: doc.createdAt || new Date().toISOString(),
         updatedAt: doc.updatedAt || new Date().toISOString()
       });
@@ -613,7 +820,10 @@ const PeriodicReviewDashboard = () => {
 
   const visibleRecords = useMemo(
     () => {
-      const records = getVisiblePeriodicReviews(currentUser, effectiveSchedules, allDocs, effectiveToday);
+      const records = isManagementOrDcc
+        ? effectiveSchedules.map(s => normalizePeriodicReviewRecord(s, effectiveToday))
+        : getVisiblePeriodicReviews(currentUser, effectiveSchedules, allDocs, effectiveToday);
+
       return records.map(r => {
         const isExternal =
           r.documentCategory === 'EXTERNAL' ||
@@ -631,14 +841,57 @@ const PeriodicReviewDashboard = () => {
         );
         return {
           ...r,
+          targetDoc,
           isExternal,
           documentCategory: isExternal ? 'EXTERNAL' : 'INTERNAL',
-          rev: r.rev || targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || targetDoc?.edition || '00'
+          rev: r.rev || targetDoc?.revision || targetDoc?.rev || targetDoc?.revNo || targetDoc?.edition || '00',
+          nextReviewDate: targetDoc?.next_review_date || r.nextReviewDate || r.currentScheduledReviewDate,
+          currentScheduledReviewDate: targetDoc?.next_review_date || r.currentScheduledReviewDate || r.nextReviewDate,
+          next_review_date: targetDoc?.next_review_date || r.nextReviewDate || r.currentScheduledReviewDate,
+          lastReviewedDate: r.lastReviewedDate || targetDoc?.last_reviewed_at,
+          last_reviewed_at: r.lastReviewedDate || targetDoc?.last_reviewed_at,
+          periodic_reviews: targetDoc?.periodic_reviews || r.periodic_reviews,
+          is_reviewed_this_cycle: r.is_reviewed_this_cycle || targetDoc?.is_reviewed_this_cycle
         };
       });
     },
-    [currentUser, effectiveSchedules, allDocs, externalDocuments, effectiveToday]
+    [currentUser, effectiveSchedules, allDocs, externalDocuments, effectiveToday, isManagementOrDcc]
   );
+
+  const handleExportCsv = () => {
+    if (!canExportPeriodicReviews(currentUser)) return;
+    const rows = [
+      ['เลขที่เอกสาร', 'ชื่อเอกสาร', 'ฉบับที่ (Rev)', 'ประเภทเอกสาร', 'แผนกเจ้าของเอกสาร', 'เจ้าของเอกสาร', 'วันที่บังคับใช้', 'วันที่ทบทวนล่าสุด', 'วันที่ครบกำหนด', 'สถานะการทบทวน', 'ผลการทบทวน', 'ผู้ทบทวน', 'วันที่ดำเนินการ', 'เลขที่ DAR ที่เชื่อมโยง', 'จำนวนวันเกินกำหนด']
+    ];
+    visibleRecords.forEach(r => {
+      rows.push([
+        r.documentNumber || '',
+        r.documentName || '',
+        r.rev || '',
+        r.documentCategory || '',
+        r.ownerDepartmentId || '',
+        r.ownerUserId || '',
+        r.originalReviewAnchorDate || '',
+        r.lastReviewedDate || '',
+        r.nextReviewDate || '',
+        getReviewStatusLabel(r.status)?.label || '',
+        getReviewOutcomeLabel(r.outcome)?.label || '',
+        '',
+        r.updatedAt || '',
+        r.linkedActionId || '',
+        r.overdueDays || 0
+      ]);
+    });
+    const csvContent = "\uFEFF" + rows.map(e => e.map(cell => `"${(cell||'').toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `periodic_reviews_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 w-full max-w-full overflow-hidden">
@@ -649,41 +902,68 @@ const PeriodicReviewDashboard = () => {
             <RotateCw className="text-[#0D99FF]" size={24} /> การทบทวนเอกสารตามรอบ
           </h1>
           <p className="text-xs text-[#666666] mt-0.5">
-            {view === 'OWNER_DEPT' ? 'งานทบทวนเอกสารของแผนกฉัน' : 'ภาพรวมการทบทวนเอกสารทุกแผนก'}
+            {viewScope === 'MY_DEPT' ? 'งานทบทวนเอกสารของแผนกฉัน' : 'ภาพรวมการทบทวนเอกสารทุกแผนก'}
           </p>
         </div>
 
-        {canSeeAll && (
-          <div className="bg-[#F5F5F5] p-1 rounded-xl flex items-center shadow-xs">
-            <button
-              onClick={() => setView('OWNER_DEPT')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                view === 'OWNER_DEPT'
-                  ? 'bg-white text-[#007BE5] shadow-xs'
-                  : 'text-slate-600 hover:text-[#1E1E1E]'
-              }`}
-            >
-              งานของแผนกฉัน
-            </button>
-            <button
-              onClick={() => setView('CONTROL_BOARD')}
-              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                view === 'CONTROL_BOARD'
-                  ? 'bg-white text-[#007BE5] shadow-xs'
-                  : 'text-slate-600 hover:text-[#1E1E1E]'
-              }`}
-            >
-              ภาพรวมทุกแผนก
-            </button>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {isManagementOrDcc && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setViewScope('MY_DEPT');
+                  setSelectedDeptFilter(currentUser?.department || 'ALL');
+                }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                  viewScope === 'MY_DEPT'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                งานของแผนกฉัน{currentUser?.department ? ` (${currentUser.department})` : ''}
+              </button>
+
+              <button
+                onClick={() => {
+                  setViewScope('ALL');
+                  setSelectedDeptFilter('ALL');
+                }}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                  viewScope === 'ALL'
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                ภาพรวมทุกแผนก
+              </button>
+            </div>
+          )}
+
+          {canExportPeriodicReviews(currentUser) && (
+            <div className="flex flex-col items-end gap-0.5">
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E5E5E5] text-slate-700 rounded-lg hover:bg-[#F5F5F5] text-xs font-medium transition-colors shadow-xs cursor-pointer"
+              >
+                <Download size={14} /> ส่งออก CSV
+              </button>
+              <span className="text-[10px] text-slate-400">สามารถเปิดด้วย Microsoft Excel ได้</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {view === 'OWNER_DEPT' ? (
-        <UnifiedWorkspaceView visibleRecords={visibleRecords} allDocs={allDocs} effectiveToday={effectiveToday} />
-      ) : (
-        <PeriodicReviewControlBoard />
-      )}
+      <UnifiedWorkspaceView
+        visibleRecords={visibleRecords}
+        allDocs={allDocs}
+        effectiveToday={effectiveToday}
+        viewScope={viewScope}
+        setViewScope={setViewScope}
+        selectedDeptFilter={selectedDeptFilter}
+        setSelectedDeptFilter={setSelectedDeptFilter}
+        isManagementOrDcc={isManagementOrDcc}
+      />
     </div>
   );
 };

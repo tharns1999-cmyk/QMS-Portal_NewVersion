@@ -36,11 +36,17 @@ const Dashboard = () => {
   const isAdmin = Boolean(currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN' || currentUser?.isDccAdmin);
   const isQmrApprover = Boolean(currentUser?.isQmr || currentUser?.role === 'QMR' || (currentUser?.position && currentUser.position.toUpperCase().includes('QMR')) || (currentUser?.level >= 6 && !currentUser?.isDcc));
 
+  const allDocs = useMemo(() => [...(documents || [])], [documents]);
+  const effectiveToday = useMemo(() => {
+    return simulatedDate ? new Date(simulatedDate) : new Date();
+  }, [simulatedDate]);
+
   // 1. Calculate Stats (Split into Group 1 and Group 2)
   const isMyTask = (t) => {
     if (!t) return false;
+    if (t.status === 'COMPLETED' || t.status === 'REJECTED' || t.status === 'RESOLVED' || t.is_completed === true) return false;
     if (isLevel6Plus(currentUser) && isReceiptTask(t)) return false;
-    return isActionableTask(t, currentUser) || t.assigneeId === currentUser?.id;
+    return isActionableTask(t, currentUser, allDocs, effectiveToday);
   };
 
   const myTasks = (tasks || []).filter(t => isMyTask(t));

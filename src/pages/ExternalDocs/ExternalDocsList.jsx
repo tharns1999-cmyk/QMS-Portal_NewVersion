@@ -1093,7 +1093,7 @@ const ExternalDocsList = () => {
 
   return (
     <div className="w-full space-y-4 pb-12">
-      {/* 1. Page Header Card with 3 ED Action Controls (Standardized Page Header) */}
+      {/* 1. Page Header Card with Scope Tabs & Primary Action (Standardized Page Header) */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/80 rounded-xl px-6 py-4 shadow-2xs">
         <div className="flex items-center gap-3">
           <Globe className="w-5 h-5 text-slate-700 shrink-0" strokeWidth={1.75} />
@@ -1107,122 +1107,92 @@ const ExternalDocsList = () => {
           </div>
         </div>
 
-        {/* 3 Main Action Controls (Separated strictly from Internal DAR) */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {/* Action 1: ลงทะเบียนเอกสารใหม่ */}
+        {/* Scope Tabs & Primary Action Control (Symmetric with Master Document Library) */}
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {/* 3 Scope Tabs: Minimal Segmented Pills */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-lg overflow-x-auto shrink-0 text-xs">
+            {/* Tab 1: เอกสารทั่วไป */}
+            <button
+              type="button"
+              title="เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น"
+              aria-label="เอกสารทั่วไป (เอกสารส่วนกลาง / เอกสารทั่วไปของแผนกอื่น)"
+              onClick={() => {
+                setActiveMainTab(TAB_GENERAL);
+                setStatusFilter('ACTIVE');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeMainTab === TAB_GENERAL
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Globe size={13} className={activeMainTab === TAB_GENERAL ? 'text-blue-600' : 'text-slate-400'} />
+              <span>เอกสารทั่วไป</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeMainTab === TAB_GENERAL ? 'bg-blue-50 text-blue-700 border border-blue-200/80' : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {generalDocsCount}
+              </span>
+            </button>
+
+            {/* Tab 2: ในแผนกฉัน */}
+            <button
+              type="button"
+              aria-label="เอกสารในแผนกฉัน"
+              onClick={() => {
+                setActiveMainTab(TAB_MY_DEPT);
+                setStatusFilter('ACTIVE');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeMainTab === TAB_MY_DEPT
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Building2 size={13} className={activeMainTab === TAB_MY_DEPT ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ในแผนกฉัน</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeMainTab === TAB_MY_DEPT ? 'bg-blue-50 text-blue-700 border border-blue-200/80' : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {myDeptDocsCount}
+              </span>
+            </button>
+
+            {/* Tab 3: เอกสารที่ได้รับการแจกจ่าย */}
+            <button
+              type="button"
+              aria-label="เอกสารที่ได้รับการแจกจ่าย"
+              onClick={() => {
+                setActiveMainTab(TAB_DISTRIBUTED);
+                setStatusFilter('ACTIVE');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeMainTab === TAB_DISTRIBUTED
+                  ? 'bg-white text-slate-900 border border-slate-200/80 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 border border-transparent'
+              }`}
+            >
+              <Share2 size={13} className={activeMainTab === TAB_DISTRIBUTED ? 'text-blue-600' : 'text-slate-400'} />
+              <span>ได้รับการแจกจ่าย</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                activeMainTab === TAB_DISTRIBUTED ? 'bg-blue-50 text-blue-700 border border-blue-200/80' : 'bg-slate-200/80 text-slate-600'
+              }`}>
+                {distributedDocsCount}
+              </span>
+            </button>
+          </div>
+
+          {/* Primary Action Button: เด่น 1 ปุ่มสำหรับ "ลงทะเบียนเอกสารใหม่" */}
           <button
             type="button"
             aria-label="ลงทะเบียนเอกสารภายนอก"
             onClick={handleRegisterNew}
-            className="h-10 px-4 text-xs sm:text-sm font-semibold text-white bg-[#0D99FF] hover:bg-[#007BE5] active:bg-[#0066BE] rounded-xl shadow-xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
+            className="h-10 px-4 text-xs sm:text-sm font-semibold text-white bg-[#0D99FF] hover:bg-[#007BE5] active:bg-[#0066BE] rounded-xl shadow-xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0"
           >
             <Plus size={16} strokeWidth={2.2} />
             <span>ลงทะเบียนเอกสารใหม่</span>
           </button>
-
-          {/* Action 2: อัปเดตฉบับใหม่ */}
-          <button
-            type="button"
-            onClick={() => handleOpenSelectDoc('UPDATE')}
-            className="h-10 px-3.5 text-xs sm:text-sm font-semibold bg-white text-[#1E293B] border border-[#CBD5E1] hover:border-[#F59E0B] hover:text-[#D97706] hover:bg-[#FFFBEB]/40 rounded-xl shadow-2xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
-            title="เลือกเอกสารภายนอกเพื่อขอปรับปรุงเวอร์ชันใหม่"
-          >
-            <RotateCw size={15} className="text-[#D97706]" />
-            <span>อัปเดตฉบับใหม่</span>
-          </button>
-
-          {/* Action 3: ยกเลิกการใช้งาน */}
-          <button
-            type="button"
-            onClick={() => handleOpenSelectDoc('OBSOLETE')}
-            className="h-10 px-3.5 text-xs sm:text-sm font-semibold bg-white text-[#1E293B] border border-[#CBD5E1] hover:border-[#FCA5A5] hover:text-[#DC2626] hover:bg-[#FEF2F2]/40 rounded-xl shadow-2xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
-            title="เลือกเอกสารภายนอกเพื่อขอยกเลิกการใช้งานถาวร"
-          >
-            <Archive size={15} className="text-[#DC2626]" />
-            <span>ยกเลิกการใช้งาน</span>
-          </button>
-
-          <div className="h-6 w-px bg-slate-200 mx-0.5 hidden sm:block" />
-
-          {/* Action 4: คำร้องเอกสารภายนอกของฉัน */}
-          <button
-            type="button"
-            onClick={() => navigate('/dcc/external/my-requests')}
-            className="h-10 px-3.5 text-xs sm:text-sm font-semibold bg-white text-[#0D99FF] border border-[#B8E1FF] hover:bg-[#E5F4FF] rounded-xl shadow-2xs inline-flex items-center justify-center gap-2 transition-all cursor-pointer"
-            title="ติดตามสถานะคำร้องเอกสารภายนอกของฉัน"
-          >
-            <FileText size={15} className="text-[#0D99FF]" />
-            <span>คำร้องของฉัน</span>
-            {myReviseCount > 0 && (
-              <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-[#EF4444] text-white rounded-full">
-                {myReviseCount}
-              </span>
-            )}
-          </button>
         </div>
-      </div>
-
-      {/* 2. 3-Tier Main Category Tabs Navigation (Mirrored from Library.jsx) */}
-      <div className="flex items-center gap-1.5 p-1 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl w-fit max-w-full overflow-x-auto scrollbar-hide shadow-2xs shrink-0">
-        {/* Tab 1: เอกสารทั่วไป */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveMainTab(TAB_GENERAL);
-            setStatusFilter('ACTIVE');
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-            activeMainTab === TAB_GENERAL
-              ? 'bg-white text-[#0D99FF] border border-[#B8E1FF] shadow-2xs'
-              : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
-          }`}
-        >
-          <Globe size={16} strokeWidth={1.5} />
-          <span>เอกสารทั่วไป</span>
-          <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
-            {generalDocsCount}
-          </span>
-        </button>
-
-        {/* Tab 2: เอกสารในแผนกฉัน */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveMainTab(TAB_MY_DEPT);
-            setStatusFilter('ACTIVE');
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-            activeMainTab === TAB_MY_DEPT
-              ? 'bg-white text-[#0D99FF] border border-[#B8E1FF] shadow-2xs'
-              : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
-          }`}
-        >
-          <Building2 size={16} strokeWidth={1.5} />
-          <span>เอกสารในแผนกฉัน</span>
-          <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
-            {myDeptDocsCount}
-          </span>
-        </button>
-
-        {/* Tab 3: เอกสารที่ได้รับการแจกจ่าย */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveMainTab(TAB_DISTRIBUTED);
-            setStatusFilter('ACTIVE');
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
-            activeMainTab === TAB_DISTRIBUTED
-              ? 'bg-white text-[#0D99FF] border border-[#B8E1FF] shadow-2xs'
-              : 'text-[#555555] hover:text-[#1E1E1E] hover:bg-[#F0F0F0] border border-transparent'
-          }`}
-        >
-          <Share2 size={16} strokeWidth={1.5} />
-          <span>เอกสารที่ได้รับการแจกจ่าย</span>
-          <span className="px-2 py-0.5 rounded bg-[#EEEEEE] text-xs font-mono font-bold text-[#1E1E1E]">
-            {distributedDocsCount}
-          </span>
-        </button>
       </div>
 
       {/* Sub-Metric Awareness Indicator (สำหรับแสดงงานที่รอพิจารณา และใกล้ครบกำหนด) */}
@@ -1248,24 +1218,24 @@ const ExternalDocsList = () => {
       {/* 3. Main Data Card with Filter Toolbar & Bento Data Grid (Full Width) */}
       <div className="w-full bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-2xs h-auto space-y-0">
         {/* Enterprise Control Toolbar: 2-Row Clean Layout */}
-        <div className="p-4 border-b border-[#E2E8F0] bg-white space-y-3.5">
-          {/* แถวที่ 1: ค้นหา + แผนก + ระดับสิทธิ์ + ปุ่มส่งออก CSV */}
+        <div className="p-4 border-b border-slate-200/80 bg-white space-y-3.5">
+          {/* แถวที่ 1: ค้นหา + แผนก + ระดับสิทธิ์ + ปุ่ม Action รอง + ปุ่มส่งออก CSV */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
             {/* ช่องค้นหาเอกสาร (ขยายตามพื้นที่ว่างที่เหลือ) */}
             <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" size={16} />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               <input
                 type="text"
                 placeholder="ค้นหารหัส ED, ชื่อ, แหล่งที่มา..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full h-10 text-sm placeholder:text-[#94A3B8] pl-9 pr-10 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[#1E293B] focus:bg-white focus:outline-none focus:border-[#0D99FF] focus:ring-2 focus:ring-[#0D99FF]/15 transition-all"
+                className="w-full h-10 text-sm placeholder:text-slate-400 pl-9 pr-10 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-slate-800 focus:outline-none transition-all"
               />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569] cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <FilterX size={15} />
                 </button>
@@ -1273,11 +1243,11 @@ const ExternalDocsList = () => {
             </div>
 
             {/* Dropdown 1: แผนก (Department Filter) */}
-            <div className="w-full lg:w-48 shrink-0">
+            <div className="w-full lg:w-44 shrink-0">
               <select
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
-                className="w-full h-10 px-3 text-xs sm:text-sm bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[#1E293B] focus:bg-white focus:outline-none focus:border-[#0D99FF] cursor-pointer"
+                className="w-full h-10 px-3 text-sm bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-slate-700 focus:outline-none transition-all cursor-pointer"
               >
                 <option value="ALL">ทุกแผนก (All Depts)</option>
                 {availableDepts.map(deptObj => {
@@ -1295,7 +1265,7 @@ const ExternalDocsList = () => {
               <select
                 value={scopeFilter}
                 onChange={(e) => setScopeFilter(e.target.value)}
-                className="w-full h-10 px-3 text-xs sm:text-sm bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-[#1E293B] focus:bg-white focus:outline-none focus:border-[#0D99FF] cursor-pointer"
+                className="w-full h-10 px-3 text-sm bg-slate-50 hover:bg-white border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-slate-700 focus:outline-none transition-all cursor-pointer"
               >
                 <option value="ALL">ทุกระดับสิทธิ์</option>
                 <option value="General">ทั่วไป (General)</option>
@@ -1304,15 +1274,56 @@ const ExternalDocsList = () => {
               </select>
             </div>
 
-            {/* ปุ่มส่งออกรายงาน CSV */}
-            <div className="shrink-0">
+            {/* ปุ่ม Action รอง (อัปเดต, ยกเลิก, คำร้อง) และ ปุ่มส่งออก CSV */}
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* Action 2: อัปเดตฉบับใหม่ */}
+              <button
+                type="button"
+                onClick={() => handleOpenSelectDoc('UPDATE')}
+                className="h-10 px-3 text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50/50 rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="เลือกเอกสารภายนอกเพื่อขอปรับปรุงเวอร์ชันใหม่"
+              >
+                <RotateCw size={15} className="text-amber-600" />
+                <span>อัปเดต</span>
+              </button>
+
+              {/* Action 3: ยกเลิกการใช้งาน */}
+              <button
+                type="button"
+                onClick={() => handleOpenSelectDoc('OBSOLETE')}
+                className="h-10 px-3 text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:border-rose-300 hover:text-rose-700 hover:bg-rose-50/50 rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="เลือกเอกสารภายนอกเพื่อขอยกเลิกการใช้งานถาวร"
+              >
+                <Archive size={15} className="text-rose-600" />
+                <span>ยกเลิก</span>
+              </button>
+
+              {/* Action 4: คำร้องเอกสารภายนอกของฉัน */}
+              <button
+                type="button"
+                onClick={() => navigate('/dcc/external/my-requests')}
+                className="h-10 px-3 text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:border-sky-300 hover:text-sky-700 hover:bg-sky-50/50 rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="ติดตามสถานะคำร้องเอกสารภายนอกของฉัน"
+              >
+                <FileText size={15} className="text-sky-600" />
+                <span>คำร้อง</span>
+                {myReviseCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-500 text-white rounded-full">
+                    {myReviseCount}
+                  </span>
+                )}
+              </button>
+
+              <div className="h-6 w-px bg-slate-200 mx-0.5 hidden sm:block" />
+
+              {/* ปุ่มส่งออกรายงาน CSV */}
               <button
                 type="button"
                 onClick={handleExportCsv}
-                className="w-full lg:w-auto h-10 px-4 inline-flex items-center justify-center gap-2 text-xs sm:text-sm font-semibold bg-white border border-[#CBD5E1] text-[#1E293B] hover:bg-[#F8FAFC] hover:border-[#94A3B8] rounded-xl shadow-2xs transition-all whitespace-nowrap cursor-pointer"
+                className="h-10 px-3.5 inline-flex items-center justify-center gap-1.5 text-sm font-semibold bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 rounded-lg shadow-xs transition-all whitespace-nowrap cursor-pointer"
               >
-                <Download className="text-[#0D99FF] shrink-0" size={15} />
-                <span>ส่งออกรายการ</span>
+                <Download className="text-slate-500 shrink-0" size={15} />
+                <span>ส่งออก</span>
               </button>
             </div>
           </div>
@@ -1322,33 +1333,32 @@ const ExternalDocsList = () => {
             <div className="pt-2.5 border-t border-[#F1F5F9] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Responsive Scrollable & Wrap Capsule Pill Container */}
               <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide py-0.5">
-                <div className="inline-flex items-center gap-1 p-1 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl shadow-2xs shrink-0 whitespace-nowrap">
+                <div className="inline-flex p-1 bg-slate-100/80 rounded-xl gap-1 shrink-0 whitespace-nowrap">
                   {[
                     { id: 'ACTIVE', label: 'มีผลบังคับใช้ (Active)', count: statusCounts.active },
                     { id: 'SUPERSEDED', label: 'ฉบับตกรุ่น (Superseded)', count: statusCounts.superseded },
                     { id: 'OBSOLETE', label: 'ยกเลิกถาวร (Obsolete)', count: statusCounts.obsolete },
                     { id: 'ALL', label: 'ทั้งหมด (All Records)', count: statusCounts.total },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setStatusFilter(tab.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                        statusFilter === tab.id
-                          ? 'bg-white text-[#0D99FF] shadow-2xs font-bold border border-slate-200/70'
-                          : 'text-[#64748B] hover:text-[#1E293B] hover:bg-white/60 border border-transparent'
-                      }`}
-                    >
-                      <span>{tab.label}</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold ${
-                        statusFilter === tab.id
-                          ? 'bg-[#E5F4FF] text-[#0D99FF]'
-                          : 'bg-[#CBD5E1]/60 text-[#475569]'
-                      }`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
+                  ].map((tab) => {
+                    const isSelected = statusFilter === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setStatusFilter(tab.id)}
+                        className={`cursor-pointer flex items-center whitespace-nowrap shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-white text-slate-900 shadow-xs font-medium rounded-lg px-3 py-1.5 text-xs'
+                            : 'text-slate-500 hover:text-slate-800 rounded-lg px-3 py-1.5 text-xs'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[11px] bg-slate-200/70 text-slate-700 font-mono">
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1402,16 +1412,16 @@ const ExternalDocsList = () => {
           <table className="w-full text-left text-sm table-auto min-w-full border-collapse">
             <thead className="bg-[#F8FAFC] text-[#374151] font-bold text-xs uppercase tracking-wider border-b border-[#E2E8F0] sticky top-0 z-20 whitespace-nowrap backdrop-blur-xs shadow-xs">
               <tr>
-                {statusFilter !== 'OBSOLETE' && (
-                  <th className="w-[85px] min-w-[85px] py-3 px-3 text-center select-none bg-[#F8FAFC]">การจัดการ</th>
-                )}
-                <th className={`${statusFilter === 'OBSOLETE' ? 'w-[36%]' : 'w-[32%]' } min-w-[240px] py-3 px-3.5 select-none bg-[#F8FAFC]`}>รหัสและชื่อเอกสาร</th>
-                <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">แผนกและสิทธิ์</th>
-                <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">เวอร์ชันต้นทาง (Edition / Ver.)</th>
+                <th className={`${statusFilter === 'OBSOLETE' ? 'w-[36%]' : 'w-[30%]'} min-w-[220px] py-3 px-3.5 select-none bg-[#F8FAFC]`}>รหัสและชื่อเอกสาร</th>
+                <th className="w-[15%] min-w-[120px] py-3 px-3.5 select-none bg-[#F8FAFC]">แผนกและสิทธิ์</th>
+                <th className="w-[16%] min-w-[130px] py-3 px-3.5 select-none bg-[#F8FAFC]">เวอร์ชันต้นทาง (EDITION / VER.)</th>
                 <th className="w-[18%] min-w-[150px] py-3 px-3.5 select-none bg-[#F8FAFC]">
                   {statusFilter === 'SUPERSEDED' ? 'การแทนที่และประวัติ' : 'รอบทบทวนและความถูกต้อง'}
                 </th>
-                <th className="w-[14%] min-w-[130px] py-3 px-3.5 text-center select-none bg-[#F8FAFC]">สถานะเอกสาร</th>
+                <th className="w-[13%] min-w-[120px] py-3 px-3.5 text-center select-none bg-[#F8FAFC]">สถานะเอกสาร</th>
+                {statusFilter !== 'OBSOLETE' && (
+                  <th className="w-[84px] min-w-[84px] py-3 px-3 text-right select-none bg-[#F8FAFC]">การจัดการ</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
@@ -1450,160 +1460,7 @@ const ExternalDocsList = () => {
                       }`}
                       onClick={handleRowClick}
                     >
-                      {/* 1. เครื่องมือและการจัดการ (Action Dock with direct buttons + 3-dot dropdown) */}
-                      {statusFilter !== 'OBSOLETE' && (
-                        <td className={`px-2.5 py-3 whitespace-nowrap text-xs text-center ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1 ed-action-dock">
-                            {/* Quick View Details Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(doc)}
-                              className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                              title="ดูข้อมูลเอกสาร (View Details)"
-                            >
-                              <Eye size={14} strokeWidth={1.5} />
-                            </button>
-
-                            {/* Quick Watermarked Download Button */}
-                            <button
-                              type="button"
-                              onClick={(e) => handleDownload(doc, e)}
-                              className="p-1.5 rounded text-slate-500 hover:text-emerald-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                              title="ดาวน์โหลด PDF พร้อมลายน้ำ (Watermarked PDF)"
-                            >
-                              <Download size={14} strokeWidth={1.5} />
-                            </button>
-
-                            {/* 3-Dot More Options Dropdown */}
-                            <div className="relative">
-                              <button
-                                type="button"
-                                aria-label="เมนูเพิ่มเติม"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenMenuDocId(isMenuOpen ? null : doc.id);
-                                }}
-                                className={`p-1.5 rounded transition-colors cursor-pointer ${
-                                  isMenuOpen
-                                    ? 'bg-slate-900 text-white shadow-xs'
-                                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-                                }`}
-                                title="เมนูการจัดการเพิ่มเติม (Row-Level Actions)"
-                              >
-                                <MoreHorizontal size={14} strokeWidth={1.5} />
-                              </button>
-
-                              {/* Dropdown Menu Popup (Dropup / Smart Placement Support) */}
-                              {isMenuOpen && (
-                                <div 
-                                  className={`absolute left-0 ${
-                                    isDropup ? 'bottom-full mb-2' : 'top-full mt-2'
-                                  } w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 py-1.5 text-left ed-dropdown-menu divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {/* Group 1: Core View Actions */}
-                                  <div className="py-1">
-                                    {/* 1. ดูข้อมูลเอกสาร (View Details) */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenDetail(doc)}
-                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-[#0D99FF] hover:bg-[#F0F7FF] flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                    >
-                                      <FileText size={15} strokeWidth={1.5} className="text-[#0D99FF] group-hover/item:scale-110 transition-transform" />
-                                      <span>ดูข้อมูลเอกสาร (View Details)</span>
-                                    </button>
-
-                                    {/* 2. เปิดอ่านไฟล์ PDF (View PDF) */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePreview(doc)}
-                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                    >
-                                      <Eye size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
-                                      <span>เปิดอ่านไฟล์ PDF (View PDF)</span>
-                                    </button>
-                                  </div>
-
-                                  {/* Group 2: Lifecycle Actions (Update & Obsolete) */}
-                                  {canManageDoc(doc) && (
-                                    <div className="py-1">
-                                      {/* 3. ขออัปเดตฉบับใหม่ */}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRevise(doc)}
-                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                        title="ขออัปเดตฉบับใหม่จากต้นทาง"
-                                      >
-                                        <RotateCw size={15} strokeWidth={1.5} className="text-amber-600 group-hover/item:rotate-45 transition-transform" />
-                                        <span>ขออัปเดตฉบับใหม่ (Update External Edition)</span>
-                                      </button>
-
-                                      {/* 4. ยื่นขอยกเลิกใช้งาน */}
-                                      {isActive && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleObsolete(doc)}
-                                          className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                          title="ยื่นขอยกเลิกเอกสาร"
-                                        >
-                                          <Archive size={15} strokeWidth={1.5} className="text-rose-600 group-hover/item:scale-110 transition-transform" />
-                                          <span>ยื่นขอยกเลิกใช้งาน (Request Obsolete)</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Group 3: Controlled Copies & Download Actions */}
-                                  <div className="py-1">
-                                    {isActive && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRequestPhysicalCopy(doc)}
-                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                        title="ขอสำเนาควบคุมหน้างาน (Request Physical Copy)"
-                                      >
-                                        <Layers size={15} strokeWidth={1.5} className="text-indigo-600 group-hover/item:scale-110 transition-transform" />
-                                        <span>ขอสำเนาควบคุมหน้างาน</span>
-                                      </button>
-                                    )}
-
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleDownload(doc, e)}
-                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                    >
-                                      <Download size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
-                                      <span>ดาวน์โหลด PDF (มีลายน้ำ)</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleHistory(doc)}
-                                      className="w-full px-3.5 py-2 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                    >
-                                      <History size={15} strokeWidth={1.5} className="text-slate-400 group-hover/item:scale-110 transition-transform" />
-                                      <span>ประวัติเอกสารและการแก้ไข</span>
-                                    </button>
-
-                                    {stack.supersededEditions.length > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleOpenSupersededModal(stack, e)}
-                                        className="w-full px-3.5 py-2 text-xs text-amber-700 hover:text-amber-900 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
-                                      >
-                                        <Package size={15} strokeWidth={1.5} className="text-amber-600 group-hover/item:scale-110 transition-transform" />
-                                        <span>ประวัติฉบับตกรุ่น ({stack.supersededEditions.length} ฉบับ)</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      )}
-
-                      {/* 2. รหัสและชื่อเอกสาร (Document Identity & Stack Badge) */}
+                      {/* 1. รหัสและชื่อเอกสาร (Document Identity & Stack Badge) */}
                       <td className="py-3 px-3.5 align-middle">
                         <div className="flex flex-col gap-1">
                           {/* ชั้นที่ 1 (Identity & History) */}
@@ -1765,6 +1622,159 @@ const ExternalDocsList = () => {
                           getStatusBadge(doc)
                         )}
                       </td>
+
+                      {/* 6. เครื่องมือและการจัดการ (Action Dock with direct buttons + 3-dot dropdown - Far Right) */}
+                      {statusFilter !== 'OBSOLETE' && (
+                        <td className={`px-2.5 py-3 whitespace-nowrap text-xs text-right ${isMenuOpen ? 'relative z-50' : 'relative z-1'}`} onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1 ed-action-dock">
+                            {/* Quick View Details Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetail(doc)}
+                              className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="ดูข้อมูลเอกสาร (View Details)"
+                            >
+                              <Eye size={14} strokeWidth={1.5} />
+                            </button>
+
+                            {/* Quick Watermarked Download Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleDownload(doc, e)}
+                              className="p-1.5 rounded text-slate-500 hover:text-emerald-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="ดาวน์โหลด PDF พร้อมลายน้ำ (Watermarked PDF)"
+                            >
+                              <Download size={14} strokeWidth={1.5} />
+                            </button>
+
+                            {/* 3-Dot More Options Dropdown */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                aria-label="เมนูเพิ่มเติม"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuDocId(isMenuOpen ? null : doc.id);
+                                }}
+                                className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                  isMenuOpen
+                                    ? 'bg-slate-900 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                }`}
+                                title="เมนูการจัดการเพิ่มเติม (Row-Level Actions)"
+                              >
+                                <MoreHorizontal size={14} strokeWidth={1.5} />
+                              </button>
+
+                              {/* Dropdown Menu Popup (Dropup / Smart Placement Support) */}
+                              {isMenuOpen && (
+                                <div 
+                                  className={`absolute right-0 ${
+                                    isDropup ? 'bottom-full mb-2' : 'top-full mt-2'
+                                  } w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 py-1.5 text-left ed-dropdown-menu divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Group 1: Core View Actions */}
+                                  <div className="py-1">
+                                    {/* 1. ดูข้อมูลเอกสาร (View Details) */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenDetail(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-[#0D99FF] hover:bg-[#F0F7FF] flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <FileText size={15} strokeWidth={1.5} className="text-[#0D99FF] group-hover/item:scale-110 transition-transform" />
+                                      <span>ดูข้อมูลเอกสาร (View Details)</span>
+                                    </button>
+
+                                    {/* 2. เปิดอ่านไฟล์ PDF (View PDF) */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePreview(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <Eye size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <span>เปิดอ่านไฟล์ PDF (View PDF)</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Group 2: Lifecycle Actions (Update & Obsolete) */}
+                                  {canManageDoc(doc) && (
+                                    <div className="py-1">
+                                      {/* 3. ขออัปเดตฉบับใหม่ */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRevise(doc)}
+                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                        title="ขออัปเดตฉบับใหม่จากต้นทาง"
+                                      >
+                                        <RotateCw size={15} strokeWidth={1.5} className="text-amber-600 group-hover/item:rotate-45 transition-transform" />
+                                        <span>ขออัปเดตฉบับใหม่ (Update External Edition)</span>
+                                      </button>
+
+                                      {/* 4. ยื่นขอยกเลิกใช้งาน */}
+                                      {isActive && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleObsolete(doc)}
+                                          className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-rose-600 hover:bg-rose-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                          title="ยื่นขอยกเลิกเอกสาร"
+                                        >
+                                          <Archive size={15} strokeWidth={1.5} className="text-rose-600 group-hover/item:scale-110 transition-transform" />
+                                          <span>ยื่นขอยกเลิกใช้งาน (Request Obsolete)</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Group 3: Controlled Copies & Download Actions */}
+                                  <div className="py-1">
+                                    {isActive && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRequestPhysicalCopy(doc)}
+                                        className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                        title="ขอสำเนาควบคุมหน้างาน (Request Physical Copy)"
+                                      >
+                                        <Layers size={15} strokeWidth={1.5} className="text-indigo-600 group-hover/item:scale-110 transition-transform" />
+                                        <span>ขอสำเนาควบคุมหน้างาน</span>
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDownload(doc, e)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-700 hover:text-emerald-600 hover:bg-emerald-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <Download size={15} strokeWidth={1.5} className="text-emerald-600 group-hover/item:scale-110 transition-transform" />
+                                      <span>ดาวน์โหลด PDF (มีลายน้ำ)</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleHistory(doc)}
+                                      className="w-full px-3.5 py-2 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                    >
+                                      <History size={15} strokeWidth={1.5} className="text-slate-400 group-hover/item:scale-110 transition-transform" />
+                                      <span>ประวัติเอกสารและการแก้ไข</span>
+                                    </button>
+
+                                    {stack.supersededEditions.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleOpenSupersededModal(stack, e)}
+                                        className="w-full px-3.5 py-2 text-xs text-amber-700 hover:text-amber-900 hover:bg-amber-50/70 flex items-center gap-2.5 transition-all duration-150 font-medium cursor-pointer group/item"
+                                      >
+                                        <Package size={15} strokeWidth={1.5} className="text-amber-600 group-hover/item:scale-110 transition-transform" />
+                                        <span>ประวัติฉบับตกรุ่น ({stack.supersededEditions.length} ฉบับ)</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 }).concat(
@@ -1774,12 +1784,9 @@ const ExternalDocsList = () => {
                 )
               ) : (
                 <tr>
-                  <td colSpan={statusFilter === 'OBSOLETE' ? 6 : 7} className="px-6 py-14 text-center text-[#888888]">
-                    <AlertCircle size={36} className="mx-auto mb-2 text-[#CCCCCC]" strokeWidth={1.5} />
-                    <p className="font-bold text-xs text-[#1E293B]">ไม่พบเอกสารในหมวดหมู่นี้</p>
-                    <p className="text-xs text-[#888888] mt-0.5">
-                      {searchTerm ? 'ลองค้นหาด้วยคำค้นอื่น หรือกด "ล้างตัวกรองทั้งหมด"' : 'กดปุ่ม "+ ลงทะเบียนเอกสารใหม่" เพื่อเริ่มสร้างเอกสารฉบับแรก'}
-                    </p>
+                  <td colSpan={statusFilter === 'OBSOLETE' ? 5 : 6} className="py-12 text-center">
+                    <Globe className="w-10 h-10 text-slate-300 mx-auto mb-2" strokeWidth={1.5} />
+                    <p className="text-sm text-slate-500 font-medium">ไม่พบเอกสารในหมวดหมู่นี้</p>
                   </td>
                 </tr>
               )}

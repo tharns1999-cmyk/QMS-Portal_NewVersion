@@ -75,8 +75,11 @@ const Sidebar = () => {
   const isDccAdmin = checkDccAdmin(currentUser);
   const isAdmin = isDccAdmin;
 
+  const effectiveToday = simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
+  const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
+
   // Task Counts Calculations
-  const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser));
+  const userTasks = (tasks || []).filter(t => isActionableTask(t, currentUser, allDocs, effectiveToday));
   const myTaskCount = userTasks.filter(t => t.actionRequired !== false && !t.is_completed && t.status !== 'COMPLETED').length;
 
   const ccTaskCount = (controlledCopyInstances || []).filter(inst => {
@@ -86,12 +89,12 @@ const Sidebar = () => {
   }).length;
 
   const periodicReviewCount = useMemo(() => {
-    // 1. นับจาก Task ประเภท PERIODIC_REVIEW หรือ EXTERNAL_VERIFICATION ที่ยังไม่เสร็จ
+    // 1. นับจาก Task ประเภท PERIODIC_REVIEW หรือ EXTERNAL_VERIFICATION ที่ยังไม่เสร็จ และเข้าข่าย actionable (<= 30 วัน หรือเกินกำหนด)
     const reviewTasksCount = (tasks || []).filter(t => 
       (t.type === 'PERIODIC_REVIEW' || t.taskType === 'PERIODIC_REVIEW' || t.type === 'EXTERNAL_VERIFICATION' || t.taskType === 'EXTERNAL_VERIFICATION') && 
       t.status !== 'COMPLETED' &&
       !t.is_completed &&
-      (t.assigneeId === currentUser?.id || currentUser?.managedDepartments?.includes('*') || currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN')
+      isActionableTask(t, currentUser, allDocs, effectiveToday)
     ).length;
 
     // 2. หรือนับจากเอกสารที่ OVERDUE / DUE_SOON ในความรับผิดชอบ

@@ -444,5 +444,136 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(isActionableTask(approvalTask, mockKalyaneeL5)).toBe(true);
     });
   });
+
+  describe('6. Dynamic Approver Resolution, State Locking & Rejection Notification', () => {
+    const mockStaff = {
+      id: 'USR-OP-001',
+      name: 'Anan Operator',
+      role: 'OPERATOR',
+      position: 'Line Operator',
+      department: 'EN',
+      level: 2
+    };
+
+    const mockEnManager = {
+      id: 'USR-MGR-EN',
+      name: 'Chaiwat EN Manager',
+      role: 'MANAGER',
+      position: 'Engineering Manager',
+      department: 'EN',
+      is_manager: true,
+      level: 5
+    };
+
+    const enDoc = {
+      id: 'DOC-EN-999',
+      code: 'WI-EN-999',
+      title: 'Machine Calibration WI',
+      department: 'EN',
+      next_review_date: '2026-10-20',
+      review_status: 'UPCOMING'
+    };
+
+    const enSchedule = {
+      id: 'SCH-EN-999',
+      documentId: 'DOC-EN-999',
+      documentNumber: 'WI-EN-999',
+      documentName: 'Machine Calibration WI',
+      ownerDepartmentId: 'EN',
+      status: 'ACTION_REQUIRED',
+      nextReviewDate: '2026-10-20',
+      cycleYears: 1
+    };
+
+    it('dynamically resolves department approver and locks document with pending_review_task_id', () => {
+      useStore.setState({
+        users: [mockStaff, mockEnManager],
+        documents: [JSON.parse(JSON.stringify(enDoc))],
+        periodicReviewSchedules: [JSON.parse(JSON.stringify(enSchedule))],
+        tasks: [],
+        notifications: [],
+        currentUser: mockStaff
+      });
+
+      const res = useStore.getState().submitPeriodicReview({
+        scheduleId: 'SCH-EN-999',
+        outcome: 'NO_CHANGE',
+        comment: 'เครื่องจักรยังคงสอบเทียบตามมาตรฐานเดิม',
+        reviewDetails: {
+          findings: 'ไม่มีประเด็นผิดปกติ',
+          standards: 'ISO 9001 Clause 7.1.5'
+        }
+      });
+
+      expect(res.status).toBe('PENDING_APPROVAL');
+      expect(res.fastTrack).toBe(false);
+
+      const store = useStore.getState();
+      const approvalTask = store.tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+      expect(approvalTask).toBeDefined();
+
+      // Dynamic Approver Resolution (No hardcoded string): Assigned directly to mockEnManager
+      expect(approvalTask.assignee_id).toBe(mockEnManager.id);
+      expect(approvalTask.assignee_name).toBe(mockEnManager.name);
+      expect(approvalTask.payload.reviewer_position).toBe('Line Operator');
+      expect(approvalTask.payload.reviewer_name).toBe(mockStaff.name);
+
+      // State Locking on Document
+      const doc = store.documents.find(d => d.id === 'DOC-EN-999');
+      expect(doc.review_status).toBe('PENDING_APPROVAL');
+      expect(doc.pending_review_task_id).toBe(approvalTask.id);
+
+      // Rejection clears lock and dispatches notification to reviewer
+      useStore.getState().rejectPeriodicReview({
+        taskId: approvalTask.id,
+        approverUser: mockEnManager,
+        remarks: 'ให้แนบใบสอบเทียบภายนอกประกอบด้วย'
+      });
+
+      const afterRejectStore = useStore.getState();
+      const rejectedDoc = afterRejectStore.documents.find(d => d.id === 'DOC-EN-999');
+      expect(rejectedDoc.review_status).toBe('ACTION_REQUIRED');
+      expect(rejectedDoc.pending_review_task_id).toBeUndefined();
+
+      // Notification sent to reviewer
+      const reviewerNotif = afterRejectStore.notifications.find(n => n.userId === mockStaff.id);
+      expect(reviewerNotif).toBeDefined();
+      expect(reviewerNotif.title).toContain('WI-EN-999');
+      expect(reviewerNotif.message).toContain('ให้แนบใบสอบเทียบภายนอกประกอบด้วย');
+    });
+
+    it('fallback dynamic resolution to DCC when no department manager exists', () => {
+      const mockDccOnly = {
+        id: 'USR-DCC-099',
+        name: 'Darika DCC',
+        role: 'DCC',
+        position: 'DCC Lead',
+        is_dcc: true,
+        department: 'DC',
+        managedDepartments: ['*']
+      };
+
+      useStore.setState({
+        users: [mockStaff, mockDccOnly], // No EN manager in users list
+        documents: [JSON.parse(JSON.stringify(enDoc))],
+        periodicReviewSchedules: [JSON.parse(JSON.stringify(enSchedule))],
+        tasks: [],
+        currentUser: mockStaff
+      });
+
+      useStore.getState().submitPeriodicReview({
+        scheduleId: 'SCH-EN-999',
+        outcome: 'NO_CHANGE',
+        comment: 'ทบทวนความพร้อม'
+      });
+
+      const store = useStore.getState();
+      const approvalTask = store.tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+      expect(approvalTask).toBeDefined();
+      // Dynamically falls back to DCC (not hardcoded)
+      expect(approvalTask.assignee_id).toBe(mockDccOnly.id);
+      expect(approvalTask.assignee_name).toBe(mockDccOnly.name);
+    });
+  });
 });
 

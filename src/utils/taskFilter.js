@@ -205,13 +205,13 @@ export const isReceiptTask = (task) => {
   );
 };
 
-export const isActionableTask = (task, currentUser) => {
+export const isActionableTask = (task, currentUser, documents = [], referenceDate = new Date()) => {
   if (!task || !currentUser) return false;
 
   // 1. Reactive completion filter: immediately drop completed or resolved tasks
   // Exception: DCC delivery tracking tasks (where delivery_status === 'DISPATCHED_TRACKING')
   // remain visible for DCC tracking in TaskInbox until all receipts are confirmed.
-  if ((task.status === 'COMPLETED' || task.status === 'RESOLVED' || task.is_completed === true) && task.delivery_status !== 'DISPATCHED_TRACKING') {
+  if ((task.status === 'COMPLETED' || task.status === 'REJECTED' || task.status === 'RESOLVED' || task.is_completed === true) && task.delivery_status !== 'DISPATCHED_TRACKING') {
     return false;
   }
 
@@ -253,6 +253,37 @@ export const isActionableTask = (task, currentUser) => {
 
   // Internal document periodic review is routed to owner department (or designated assignee)
   if (normType === 'PERIODIC_REVIEW' || task.taskType === 'PERIODIC_REVIEW') {
+    // 1. Completion guard
+    if (task.status === 'COMPLETED' || task.status === 'REJECTED' || task.status === 'RESOLVED' || task.is_completed === true) {
+      return false;
+    }
+
+    // 2. Strict 30-Day Due Window Enforcement (Just-In-Time Task Visibility)
+    const docCode = task.document_code || task.doc_code || task.docCode || task.documentNumber;
+    const docId = task.doc_id || task.docId || task.documentId;
+    const allDocs = Array.isArray(documents) && documents.length > 0 ? documents : [];
+    const targetDoc = allDocs.find(d => 
+      (docId && (d.id === docId || d.doc_id === docId)) ||
+      (docCode && (d.code === docCode || d.doc_code === docCode || d.document_code === docCode || d.title === docCode))
+    );
+
+    const nextReviewDate = targetDoc?.next_review_date || targetDoc?.nextReviewDate || task.dueDate || task.due_date;
+    if (nextReviewDate) {
+      const today = new Date(referenceDate || new Date());
+      today.setHours(0, 0, 0, 0);
+      const target = new Date(nextReviewDate);
+      if (!isNaN(target.getTime())) {
+        target.setHours(0, 0, 0, 0);
+        const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        // เอกสารที่มีวันครบกำหนดเกินกว่า 30 วัน (> 30 วัน เช่น ปี 2030) ต้องไม่มี Task ปรากฏในกล่องงานเด็ดขาด
+        if (diffDays > 30) {
+          return false;
+        }
+      }
+    } else if (targetDoc && !targetDoc.next_review_date) {
+      return false;
+    }
+
     const taskAssigneeId = task.assigneeId || task.assignee_id || task.assignedToUserId || task.target_user_id;
     if (taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || task.assigneeName === currentUser?.name)) {
       return true;

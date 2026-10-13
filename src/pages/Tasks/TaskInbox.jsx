@@ -1023,12 +1023,50 @@ const TaskInbox = () => {
     return isSameDepartment(tDept, targetDept);
   }, [resolveTaskDept, currentUser]);
 
+  const effectiveToday = useMemo(() => {
+    return simulatedSystemDate ? new Date(simulatedSystemDate) : new Date();
+  }, [simulatedSystemDate]);
+
+  const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
+
   // Master Task Filtering: Distribution & Recall tasks are strictly exclusive to DCC Admin.
   // Receipt tasks are strictly hidden for Level 6+ executives and pooled for all Level < 6 department members.
   // Strict Department Isolation: Non-DCC users see ONLY tasks matching their department or directly assigned to them.
   const userTasks = useMemo(() => {
     return (tasks || [])
-      .filter(t => isActionableTask(t, currentUser))
+      .filter(task => {
+        // 1. ถ้าเป็น Task ที่เสร็จสิ้นหรือยกเลิกแล้ว ไม่แสดงในกล่องงานค้าง
+        if (task.status === 'COMPLETED' || task.status === 'REJECTED' || task.status === 'RESOLVED' || task.is_completed === true) {
+          return false;
+        }
+
+        // 2. ถ้าเป็น Task ประเภท PERIODIC_REVIEW (งานบันทึกผลการทบทวน)
+        if (task.type === 'PERIODIC_REVIEW' || task.taskType === 'PERIODIC_REVIEW') {
+          const docCode = task.document_code || task.doc_code || task.docCode || task.documentNumber;
+          const docId = task.doc_id || task.docId || task.documentId;
+          const targetDoc = allDocs.find(d => 
+            (docId && (d.id === docId || d.doc_id === docId)) ||
+            (docCode && (d.code === docCode || d.doc_code === docCode || d.document_code === docCode || d.title === docCode))
+          );
+          
+          const nextReviewDate = targetDoc?.next_review_date || targetDoc?.nextReviewDate || task.dueDate || task.due_date;
+          if (!nextReviewDate) return false;
+
+          const target = new Date(nextReviewDate);
+          if (isNaN(target.getTime())) return false;
+          target.setHours(0, 0, 0, 0);
+
+          const today = new Date(effectiveToday);
+          today.setHours(0, 0, 0, 0);
+          const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+          // ต้องเหลือเวลาไม่เกิน 30 วัน หรือเกินกำหนดแล้วเท่านั้น ถึงจะถือเป็นงานที่ต้องทำ!
+          // หาก diffDays > 30 (เช่น ปี 2030) ต้องไม่แสดงใน Inbox
+          if (diffDays > 30) return false;
+        }
+
+        return isActionableTask(task, currentUser, allDocs, effectiveToday);
+      })
       .filter(t => dccAdmin || !isDccExclusiveTask(t))
       .filter(t => !((isLevel6Executive || isLevel6Plus(currentUser)) && (normalizeTaskCategory(t) === 'RECEIPT' || isReceiptTask(t))))
       .filter(t => {
@@ -1048,6 +1086,16 @@ const TaskInbox = () => {
 
         const taskAssigneeId = t.assigneeId || t.assignee_id || t.assignedToUserId || t.target_user_id;
         const isAssignee = Boolean(taskAssigneeId && (taskAssigneeId === currentUser?.id || taskAssigneeId === currentUser?.empId || t.assigneeName === currentUser?.name));
+
+        if (t.type === 'PERIODIC_REVIEW_APPROVAL' || t.taskType === 'PERIODIC_REVIEW_APPROVAL') {
+          const tDept = resolveTaskDept(t);
+          return isAssignee || 
+            userDepts.some(uDept => isSameDepartment(uDept, tDept)) || 
+            isSameDepartment(currentUser?.department, tDept) || 
+            isSameDepartment(currentUser?.primary_department, tDept) ||
+            userMatchesDepartment(currentUser, tDept);
+        }
+
         if (taskAssigneeId) {
           return isAssignee;
         }
