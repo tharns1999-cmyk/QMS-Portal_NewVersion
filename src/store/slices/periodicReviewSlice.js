@@ -31,6 +31,34 @@ import {
   getCleanDept 
 } from '../../utils/domainNormalizer';
 
+const PERIODIC_APPROVAL_DENIED_MSG = 'ไม่มีสิทธิ์อนุมัติ: ต้องเป็นระดับหัวหน้าแผนก (Level 5 ขึ้นไป) หรือ QMR และต้องไม่ใช่ผู้ส่งผลทบทวนเอง';
+
+export const REVIEW_OUTCOME_LABELS = { NO_CHANGE: 'ยังคงใช้งานต่อได้', REVISION_REQUIRED: 'ต้องปรับปรุง/แก้ไข', OBSOLETE: 'ขอยกเลิกการใช้งาน' };
+export const normalizeReviewOutcome = (o) => (o === 'OBSOLETE_REQUIRED' ? 'OBSOLETE' : (!o || o === 'CONFIRM_CONTINUE') ? 'NO_CHANGE' : o);
+
+// Appends the audit-grade history record; legacy keys (reviewer, approver, outcome, nextReviewDate) stay as-is for existing readers.
+const appendReviewHistory = (doc, legacy, { reviewer, approver, details = {}, nextDate, cycleMonths }) => {
+  const outcome = normalizeReviewOutcome(legacy.outcome);
+  return [...(doc.review_history || []), {
+    ...legacy,
+    history_id: legacy.id,
+    edition: doc.sourceVersion || doc.edition || doc.rev || doc.revision || '-',
+    review_date: legacy.reviewDate,
+    reviewed_by: { id: reviewer?.id || null, name: reviewer?.name || '-', dept: reviewer?.dept || reviewer?.department || null },
+    approved_by: approver ? { id: approver.id || null, name: approver.name || '-', dept: approver.dept || approver.department || null, role: approver.role || null } : null,
+    is_fast_track: Boolean(approver && reviewer && String(approver.id) === String(reviewer.id)),
+    outcome_code: outcome,
+    outcome_label: REVIEW_OUTCOME_LABELS[outcome] || outcome,
+    justification: details.reason || details.justification || details.comment || legacy.comment || '',
+    findings: details.findings || '',
+    standards_referenced: details.standard_clause || details.standards || details.check_source || '',
+    previous_due_date: doc.next_review_date || doc.nextReviewDate || null,
+    extended_next_due_date: nextDate || null,
+    cycle_months: cycleMonths || Number(doc.reviewCycleMonths || doc.frequencyMonths) || 12,
+    rejection_trail: doc.review_rejection_trail || []
+  }];
+};
+
 // Extracted Domain Helper Functions
 export const canFastTrackReview = (currentUser, docDepartment) => {
   if (!currentUser) return false;
@@ -162,10 +190,52 @@ export const createPeriodicReviewSlice = (set, get) => ({
         };
       });
 
+      // Cycle rollover: COMPLETED / orphaned PENDING_APPROVAL flags from the previous cycle must not survive once the next cycle is due (<=30 days)
+      const today = new Date(effectiveToday);
+      today.setHours(0, 0, 0, 0);
+      const openTaskIds = new Set((state.tasks || [])
+        .filter(t => !t.is_completed && !['COMPLETED', 'CANCELLED', 'APPROVED', 'REJECTED'].includes(t.status))
+        .map(t => t.id));
+      const rolledStatus = (item, isSchedule) => {
+        const due = isSchedule ? (item.nextReviewDate || item.currentScheduledReviewDate) : (item.nextReviewDate || item.next_review_date);
+        if (!due) return null;
+        const completed = item.is_reviewed_this_cycle || item.review_status === 'COMPLETED' || (isSchedule && item.status === 'COMPLETED');
+        const pending = item.review_status === 'PENDING_APPROVAL' || (isSchedule && item.status === 'PENDING_APPROVAL') || Boolean(item.pending_periodic_review || item.pendingReview);
+        // A pending review whose approval task is still open belongs to this cycle — keep it
+        const approvalTaskId = item.pendingApprovalTaskId || item.pending_review_task_id;
+        if (!completed && !(pending && !openTaskIds.has(approvalTaskId))) return null;
+        const dueDate = new Date(due);
+        dueDate.setHours(0, 0, 0, 0);
+        if (isNaN(dueDate.getTime()) || Math.ceil((dueDate - today) / 86400000) > 30) return null;
+        return { due, status: dueDate < today ? 'OVERDUE' : 'DUE_SOON' };
+      };
+      const cleared = {
+        is_reviewed_this_cycle: false,
+        pending_periodic_review: false,
+        pendingReview: null,
+        pending_review_details: null,
+        pending_review_task_id: null,
+        pendingApprovalTaskId: null
+      };
+      // doc.status is the document lifecycle (EFFECTIVE/ACTIVE), so documents only get review_status
+      const rollover = (list) => (list || []).map(d => {
+        const r = rolledStatus(d, false);
+        return r ? { ...d, ...cleared, review_status: r.status } : d;
+      });
+      const documents = rollover(state.documents);
+      const externalDocuments = rollover(state.externalDocuments);
+      schedules = schedules.map(s => {
+        const r = rolledStatus(s, true);
+        // currentScheduledReviewDate drives the task dueDate/SLA in generateTasksForSchedules
+        return r ? { ...s, ...cleared, status: r.status, review_status: r.status, currentScheduledReviewDate: r.due } : s;
+      });
+
       const newTasks = generateTasksForSchedules(schedules, state.tasks || [], effectiveToday);
 
       set({
         periodicReviewSchedules: schedules,
+        documents,
+        externalDocuments,
         tasks: newTasks
       });
     } catch {
@@ -530,7 +600,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
             delete doc.rejectedAt;
             delete doc.periodic_review_outcome;
             doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-            doc.review_history = [...(doc.review_history || []), historyEntry];
+            doc.review_history = appendReviewHistory(state.documents[matchedIntIdx], historyEntry, { reviewer: activeUser, approver: activeUser, details: reviewDetails || {}, nextDate, cycleMonths });
+            delete doc.review_rejection_trail;
             updatedDocs = [...state.documents];
             updatedDocs[matchedIntIdx] = doc;
           } else if (isExternalTarget && matchedExtIdx !== -1) {
@@ -556,7 +627,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
             delete doc.rejectedAt;
             delete doc.periodic_review_outcome;
             doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-            doc.review_history = [...(doc.review_history || []), historyEntry];
+            doc.review_history = appendReviewHistory(state.externalDocuments[matchedExtIdx], historyEntry, { reviewer: activeUser, approver: activeUser, details: reviewDetails || {}, nextDate, cycleMonths });
+            delete doc.review_rejection_trail;
             updatedExtDocs = [...state.externalDocuments];
             updatedExtDocs[matchedExtIdx] = doc;
             schedule.periodic_reviews = doc.periodic_reviews;
@@ -1651,11 +1723,12 @@ export const createPeriodicReviewSlice = (set, get) => ({
 
     const docDept = task.department || task.target_department || targetSchedule?.ownerDepartmentId || matchedExtDoc?.department || matchedIntDoc?.department || 'DC';
 
-    // RBAC Check for External Documents: Only Level 4+ in the same department (or QMR/Admin) can approve
-    if (is_external && !canFastTrackExternalReview(approver, docDept)) {
+    // RBAC Check for External Documents: Level 5+ (HOD/Manager/QMR), and never the reviewer approving their own submission
+    const isSelfApproval = Boolean(reviewer_id && approver?.id && String(approver.id) === String(reviewer_id));
+    if (isSelfApproval || (is_external && !canFastTrackExternalReview(approver, docDept))) {
       console.warn(`[RBAC] User ${approver?.name} is not authorized to approve periodic review for external doc ${doc_code || doc_id} in dept ${docDept}`);
       if (typeof toast !== 'undefined' && toast.error) {
-        toast.error('ไม่มีสิทธิ์อนุมัติ: ต้องเป็นระดับหัวหน้างาน (Level 4 ขึ้นไป) ในแผนก หรือ QMR/DCC Admin');
+        toast.error(PERIODIC_APPROVAL_DENIED_MSG);
       }
       return state;
     }
@@ -1731,6 +1804,20 @@ export const createPeriodicReviewSlice = (set, get) => ({
       approval_remarks: remarks || details?.approval_remarks || '-'
     };
 
+    const historyLegacy = {
+      id: `PRH-${Date.now()}`,
+      reviewer: reviewer_name,
+      reviewerId: reviewer_id,
+      reviewerRole: reviewer_role,
+      approver: approver?.name,
+      approverRole: approver?.role,
+      reviewDate: now,
+      comment: details?.comment || remarks || '',
+      outcome: 'NO_CHANGE',
+      nextReviewDate: nextDate
+    };
+    const historyCtx = { reviewer: { id: reviewer_id, name: reviewer_name, dept: taskPayload.reviewer_dept || null }, approver, details, nextDate, cycleMonths };
+
     let updatedDocs = state.documents;
     let updatedExtDocs = state.externalDocuments;
 
@@ -1759,18 +1846,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
         delete doc.rejectedAt;
         delete doc.periodic_review_outcome;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-        doc.review_history = [...(doc.review_history || []), {
-          id: `PRH-${Date.now()}`,
-          reviewer: reviewer_name,
-          reviewerId: reviewer_id,
-          reviewerRole: reviewer_role,
-          approver: approver?.name,
-          approverRole: approver?.role,
-          reviewDate: now,
-          comment: details?.comment || remarks || '',
-          outcome: 'NO_CHANGE',
-          nextReviewDate: nextDate
-        }];
+        doc.review_history = appendReviewHistory(state.documents[docIdx], historyLegacy, historyCtx);
+        delete doc.review_rejection_trail;
         updatedDocs = [...state.documents];
         updatedDocs[docIdx] = doc;
       }
@@ -1800,18 +1877,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
         delete doc.rejectedAt;
         delete doc.periodic_review_outcome;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-        doc.review_history = [...(doc.review_history || []), {
-          id: `PRH-${Date.now()}`,
-          reviewer: reviewer_name,
-          reviewerId: reviewer_id,
-          reviewerRole: reviewer_role,
-          approver: approver?.name,
-          approverRole: approver?.role,
-          reviewDate: now,
-          comment: details?.comment || remarks || '',
-          outcome: 'NO_CHANGE',
-          nextReviewDate: nextDate
-        }];
+        doc.review_history = appendReviewHistory(state.externalDocuments[docIdx], historyLegacy, historyCtx);
+        delete doc.review_rejection_trail;
         updatedExtDocs = [...state.externalDocuments];
         updatedExtDocs[docIdx] = doc;
       }
@@ -1991,11 +2058,13 @@ export const createPeriodicReviewSlice = (set, get) => ({
     const doc = state.externalDocuments[docIdx];
     const docDept = doc.department || doc.dept || 'DC';
 
-    // RBAC Check: Only Level 4+ in the same department (or QMR/Admin) can approve
-    if (!canFastTrackExternalReview(activeApprover, docDept)) {
+    // RBAC Check: Level 5+ (HOD/Manager/QMR), and never the reviewer approving their own submission
+    const pendingReviewerId = doc.pendingReview?.reviewer_id || doc.pending_review_details?.reviewer_id || doc.pending_periodic_review?.reviewer_id;
+    const isSelfApproval = Boolean(pendingReviewerId && activeApprover?.id && String(activeApprover.id) === String(pendingReviewerId));
+    if (isSelfApproval || !canFastTrackExternalReview(activeApprover, docDept)) {
       console.warn(`[RBAC] User ${activeApprover?.name} is not authorized to approve periodic review for external doc ${doc.edCode || doc.id} in dept ${docDept}`);
       if (typeof toast !== 'undefined' && toast.error) {
-        toast.error('ไม่มีสิทธิ์อนุมัติ: ต้องเป็นระดับหัวหน้างาน (Level 4 ขึ้นไป) ในแผนก หรือ QMR/DCC Admin');
+        toast.error(PERIODIC_APPROVAL_DENIED_MSG);
       }
       return { success: false, error: 'UNAUTHORIZED' };
     }
@@ -2120,7 +2189,11 @@ export const createPeriodicReviewSlice = (set, get) => ({
       delete doc.rejectedAt;
       delete doc.periodic_review_outcome;
       doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
-      doc.review_history = [...(doc.review_history || []), historyEntry];
+      doc.review_history = appendReviewHistory(currState.externalDocuments[docIdx], historyEntry, {
+        reviewer: { id: reviewerId, name: reviewerName, dept: pendingInfo.reviewer_dept || null },
+        approver: activeApprover, details: pendingInfo.details || {}, nextDate, cycleMonths: extCycleMonths
+      });
+      delete doc.review_rejection_trail;
 
       const updatedExtDocs = [...currState.externalDocuments];
       updatedExtDocs[docIdx] = doc;
@@ -2251,6 +2324,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
     let updatedExtDocs = state.externalDocuments;
     let targetDoc = null;
     let docDept = task.department || task.target_department || task.owner_dept || 'DC';
+    const rejectedOn = (get().getEffectiveToday ? get().getEffectiveToday() : new Date()).toISOString().split('T')[0];
+    const rejectionEntry = { rejected_at: rejectedOn, rejected_by: { id: approver?.id || null, name: approver?.name || '-', role: approver?.role || null }, remarks: remarks || '-' };
 
     if (!isExternal && state.documents) {
       const matchInt = (d) =>
@@ -2267,6 +2342,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
         delete doc.pending_periodic_review;
         delete doc.pending_review_task_id;
         doc.rejection_remarks = remarks;
+        doc.review_rejection_trail = [...(doc.review_rejection_trail || []), rejectionEntry];
         updatedDocs = [...state.documents];
         updatedDocs[docIdx] = doc;
       }
@@ -2286,6 +2362,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
         doc.pendingReview = null;
         delete doc.pending_review_task_id;
         doc.rejection_remarks = remarks;
+        doc.review_rejection_trail = [...(doc.review_rejection_trail || []), rejectionEntry];
         updatedExtDocs = [...state.externalDocuments];
         updatedExtDocs[docIdx] = doc;
       }

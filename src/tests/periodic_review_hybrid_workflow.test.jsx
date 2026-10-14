@@ -239,6 +239,11 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(historyEntry.approver).toBe(mockHodUser.name);
       expect(historyEntry.outcome).toBe('NO_CHANGE');
       expect(historyEntry.nextReviewDate).toBe('2027-10-15');
+      expect(historyEntry.outcome_label).toBe('ยังคงใช้งานต่อได้');
+      expect(historyEntry.extended_next_due_date).toBe('2027-10-15');
+      expect(historyEntry.approved_by.name).toBe(mockHodUser.name);
+      expect(historyEntry.is_fast_track).toBe(false);
+      expect(historyEntry.rejection_trail).toEqual([]);
     });
 
     it('HOD Rejects: resets status to ACTION_REQUIRED, stores rejectReason, and clears pending state', () => {

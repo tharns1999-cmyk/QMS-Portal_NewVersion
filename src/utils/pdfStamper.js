@@ -592,8 +592,8 @@ export const generateExternalDocStampImage = async (stampData) => {
     // 2. Right-Aligned Typography setup
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    // Stamp Red (Crimson/Carmine) with 60% opacity as requested
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.60)'; 
+    // Stamp Red (Crimson/Carmine) with 0.85 opacity as watermark stamp
+    ctx.fillStyle = 'rgba(220, 38, 38, 0.85)'; 
 
     // Right-Margin Safety Buffer to avoid edge clipping (e.g. 2569 or ')')
     const paddingRight = 36;
@@ -683,22 +683,13 @@ export const stampExternalDocumentTopRight = async (pdfBytes, stampData) => {
       y = height - stampHeight - margin;
     }
 
-    // Mask out any pre-existing top-right stamp so version stamps never overlap
-    page.drawRectangle({
-      x,
-      y,
-      width: stampWidth,
-      height: stampHeight,
-      color: rgb(1, 1, 1),
-      borderWidth: 0,
-      opacity: 1.0,
-    });
-
+    // 100% Transparent Watermark Stamp (no opaque background rectangle that blocks table lines or header text)
     page.drawImage(stampImage, {
       x,
       y,
       width: stampWidth,
       height: stampHeight,
+      opacity: 0.85,
     });
   });
 

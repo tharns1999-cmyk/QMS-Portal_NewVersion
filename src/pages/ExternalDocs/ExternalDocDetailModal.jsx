@@ -24,6 +24,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
 import ExternalCopyDispositionModal from './ExternalCopyDispositionModal';
 import ExternalDocPreviewModal from './ExternalDocPreviewModal';
+import ExternalReviewHistoryTab from './ExternalReviewHistoryTab';
 import UniversalWatermarkService, { WATERMARK_TYPES } from '../../services/UniversalWatermarkService';
 import toast from 'react-hot-toast';
 import { fmtDate, getCanonicalDocNo } from './ExternalDocsList';
@@ -47,6 +48,8 @@ const ExternalDocDetailModal = ({
   } = useStore();
 
   const [currentDoc, setCurrentDoc] = useState(initialDoc);
+  // currentDoc is a snapshot; review history must reflect approvals made while the modal is open
+  const liveDoc = (externalDocuments || []).find(d => String(d.id) === String(currentDoc?.id)) || currentDoc;
   const [activeTab, setActiveTab] = useState('general'); // 'general' | 'lineage'
   const [isRequestCopiesOpen, setIsRequestCopiesOpen] = useState(false);
   const [isDispositionModalOpen, setIsDispositionModalOpen] = useState(false);
@@ -511,6 +514,17 @@ const ExternalDocDetailModal = ({
                   {familyEditions.length}
                 </span>
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('reviews')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                  activeTab === 'reviews'
+                    ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700 font-medium'
+                }`}
+              >
+                {`ประวัติการทบทวน (${liveDoc?.review_history?.length || 0})`}
+              </button>
 
             </div>
           </div>
@@ -897,6 +911,8 @@ const ExternalDocDetailModal = ({
                 </div>
               </div>
             )}
+
+            {activeTab === 'reviews' && <ExternalReviewHistoryTab doc={liveDoc} />}
 
             {/* Tab 2: Version & Edition Lineage (Pinned Active Card + Compact Collapsible Timeline) */}
             {activeTab === 'lineage' && (

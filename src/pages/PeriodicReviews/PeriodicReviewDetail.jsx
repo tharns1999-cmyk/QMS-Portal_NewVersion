@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import useStore, { canFastTrackReview } from '../../store/useStore';
 import { getPeriodicReviewForUser, canPerformPeriodicReview, getPositionLevelForDepartment } from '../../services/PeriodicReviewAccessService';
 import { getDocCode, getCleanDept } from '../../utils/domainNormalizer';
-import DocumentDigest from './DocumentDigest';
+import DocumentDigest, { getCycleLabel, getCycleMonths } from './DocumentDigest';
 import ReviewDecisionForm from './ReviewDecisionForm';
 import { PendingReviewPanel, EvaluatedReviewPanel } from './ReviewStatusPanels';
 import { resolveReviewContext, normalizeReviewUser } from './resolveReviewContext';
@@ -440,12 +440,12 @@ const PeriodicReviewDetail = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-5">
-          <DocumentDigest schedule={schedule} document={targetDoc} isExternal={isExternal} statusLabel={statusLabel} onOpenDocument={handleOpenDocModal} />
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="lg:col-span-4">
+          <DocumentDigest schedule={schedule} document={targetDoc} isExternal={isExternal} statusLabel={statusLabel} effectiveToday={effectiveToday} onOpenDocument={handleOpenDocModal} />
         </div>
 
-        <div className="lg:col-span-7">
+        <div className="lg:col-span-8">
           {isPendingApproval ? (
             <PendingReviewPanel schedule={schedule} isDeptManagerOrSupervisor={isDeptManagerOrSupervisor} taskId={taskId} navigate={navigate} handleApproveReview={handleApproveReview} handleStartReReview={handleStartReReview} />
           ) : isEvaluated ? (
@@ -471,6 +471,7 @@ const PeriodicReviewDetail = () => {
               isFastTrack={isFastTrack}
               docDept={docDept}
               ownerDepartmentId={schedule.ownerDepartmentId}
+              cycleLabel={getCycleLabel(getCycleMonths(targetDoc, schedule))}
               onCancel={() => isReEvaluating ? setIsReEvaluating(false) : navigate(taskId ? '/tasks' : '/dcc/periodic-reviews')}
               onSubmit={handleSubmit}
             />

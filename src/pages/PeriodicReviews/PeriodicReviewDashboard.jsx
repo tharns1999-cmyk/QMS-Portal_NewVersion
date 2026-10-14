@@ -27,11 +27,23 @@ import { getDueState, getReviewStatusLabel, getReviewOutcomeLabel } from '../../
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
-import { getDocumentReviewMetrics, isDocumentReviewedThisCycle, evaluateDocumentReviewStatus, getPeriodicReviewStatus } from '../../utils/documentUtils';
+import { isDocumentReviewedThisCycle, evaluateDocumentReviewStatus, getPeriodicReviewStatus } from '../../utils/documentUtils';
 import { isSameDepartment } from '../../utils/taskFilter';
 import { extractDeptCode } from '../../services/darService';
 import { PeriodicReviewAuditCard } from '../../components/workflow/PeriodicReviewHistoryTab';
 import PeriodicReviewApprovalModal from '../Tasks/PeriodicReviewApprovalModal';
+import { canFastTrackExternalReview } from '../../store/slices/periodicReviewSlice';
+
+// KPI bucket by due date: pending/awaiting rows of this cycle still count as DUE_SOON/OVERDUE so the cards add up to the total
+const getKpiBucket = (r, today) => {
+  const ev = evaluateDocumentReviewStatus(r, today);
+  const st = typeof ev === 'object' ? ev.status : ev;
+  const hasDue = Boolean(r.nextReviewDate || r.next_review_date || r.currentScheduledReviewDate || r.targetDoc?.nextReviewDate || r.targetDoc?.next_review_date);
+  if ((st === 'PENDING_APPROVAL' || st === 'AWAITING_ACTION') && hasDue && ev.diffDays <= 30) {
+    return ev.diffDays < 0 ? 'OVERDUE' : 'DUE_SOON';
+  }
+  return st;
+};
 
 const formatPeriodicDocVersion = (record, targetDoc, isExternalTab = false) => {
   const isExt = Boolean(
@@ -367,7 +379,15 @@ const UnifiedWorkspaceView = ({
 
   // KPI Metrics computed for the currently selected Category Tab using MECE helper
   const stats = useMemo(() => {
-    return getDocumentReviewMetrics(currentCategoryList, effectiveToday);
+    const s = { total: currentCategoryList.length, dueSoon: 0, overdue: 0, completed: 0, upToDate: 0 };
+    currentCategoryList.forEach(r => {
+      const b = getKpiBucket(r, effectiveToday);
+      if (b === 'OVERDUE') s.overdue++;
+      else if (b === 'DUE_SOON') s.dueSoon++;
+      else if (b === 'COMPLETED') s.completed++;
+      else s.upToDate++;
+    });
+    return { ...s, actionRequired: s.dueSoon + s.overdue };
   }, [currentCategoryList, effectiveToday]);
 
   // Filtered records for the Table
@@ -404,11 +424,7 @@ const UnifiedWorkspaceView = ({
         return st === 'OVERDUE' || st === 'DUE_SOON';
       });
     } else if (statusFilter === 'DUE_SOON') {
-      result = result.filter(r => {
-        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
-        const st = typeof ev === 'object' ? ev.status : ev;
-        return st === 'DUE_SOON';
-      });
+      result = result.filter(r => getKpiBucket(r, effectiveToday) === 'DUE_SOON');
     } else if (statusFilter === 'UPCOMING') {
       result = result.filter(r => {
         if (hasPendingReviewWorkflow(r)) return false;
@@ -417,11 +433,7 @@ const UnifiedWorkspaceView = ({
         return st === 'UP_TO_DATE' || st === 'NORMAL';
       });
     } else if (statusFilter === 'OVERDUE') {
-      result = result.filter(r => {
-        const ev = evaluateDocumentReviewStatus(r, effectiveToday);
-        const st = typeof ev === 'object' ? ev.status : ev;
-        return st === 'OVERDUE';
-      });
+      result = result.filter(r => getKpiBucket(r, effectiveToday) === 'OVERDUE');
     } else if (statusFilter === 'COMPLETED') {
       result = result.filter(r => {
         const ev = evaluateDocumentReviewStatus(r, effectiveToday);
@@ -544,6 +556,13 @@ const UnifiedWorkspaceView = ({
 
   const canUserApprove = (rec, doc) => {
     if (!currentUser) return false;
+    // Segregation of duties: the reviewer can never approve their own submission
+    const reviewerId = doc?.pendingReview?.reviewer_id || doc?.pending_review_details?.reviewer_id ||
+      doc?.pending_periodic_review?.reviewer_id || rec?.pendingReview?.reviewer_id;
+    if (reviewerId && String(reviewerId) === String(currentUser.id)) return false;
+    if (rec?.documentCategory === 'EXTERNAL' || rec?.isExternal || rec?.externalDocumentId) {
+      return canFastTrackExternalReview(currentUser, rec?.ownerDepartmentId || doc?.department || doc?.dept || 'DC');
+    }
     if (
       currentUser.isDcc ||
       currentUser.is_dcc ||
@@ -1011,10 +1030,10 @@ const UnifiedWorkspaceView = ({
                               disabled
                               className="h-8 px-2.5 text-xs inline-flex items-center gap-1 rounded-lg font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-not-allowed opacity-80"
                               title="อยู่ระหว่างรอหัวหน้าแผนกอนุมัติผล"
-                              aria-label="รออนุมัติ"
+                              aria-label="รอหัวหน้าอนุมัติ"
                             >
                               <Clock size={13} />
-                              <span>รออนุมัติ</span>
+                              <span>รอหัวหน้าอนุมัติ</span>
                             </button>
                           )
                         ) : isRejected && userCanReReview ? (

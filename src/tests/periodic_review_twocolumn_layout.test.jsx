@@ -61,8 +61,8 @@ describe('PeriodicReviewDetail - Two-Column Layout & Compact UI', () => {
     const grid = container.querySelector('.grid.grid-cols-1.lg\\:grid-cols-12');
     expect(grid).toBeInTheDocument();
 
-    const leftCol = container.querySelector('.lg\\:col-span-5');
-    const rightCol = container.querySelector('.lg\\:col-span-7');
+    const leftCol = container.querySelector('.lg\\:col-span-4');
+    const rightCol = container.querySelector('.lg\\:col-span-8');
     expect(leftCol).toBeInTheDocument();
     expect(rightCol).toBeInTheDocument();
   });
