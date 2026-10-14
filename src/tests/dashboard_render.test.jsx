@@ -7,6 +7,7 @@ import ExternalDocDetailModal from '../pages/ExternalDocs/ExternalDocDetailModal
 import ExternalDocsList from '../pages/ExternalDocs/ExternalDocsList';
 import PeriodicReviewDashboard from '../pages/PeriodicReviews/PeriodicReviewDashboard';
 import PeriodicReviewDetail from '../pages/PeriodicReviews/PeriodicReviewDetail';
+import { getDetailStatusLabel } from '../pages/PeriodicReviews/reviewDetailStatus';
 import Sidebar from '../components/layout/Sidebar';
 import useStore from '../store/useStore';
 import { normalizeDept, getDarStatusBadgeMeta } from '../utils/darHelper';
@@ -20,6 +21,12 @@ import { saveFile, resolveFileBlob } from '../utils/fileStorage';
 import { getPeriodicReviewStatus, getDocumentReviewMetrics } from '../utils/documentUtils';
 
 describe('Dashboard & Lean Refactor Verification', () => {
+  it('uses the live due date and keeps workflow intent above date status', () => {
+    const schedule = { status: 'OVERDUE', nextReviewDate: '2027-10-13' };
+    expect(getDetailStatusLabel(schedule, {}, '', false, new Date('2026-10-14')).label).toBe('ยังไม่ถึงกำหนด');
+    expect(getDetailStatusLabel(schedule, { review_status: 'AWAITING_ACTION' }, '', false, new Date('2026-10-14')).label).toBe('รอดำเนินการ (แก้ไข/ยกเลิก)');
+    expect(getDetailStatusLabel(schedule, {}, 'REVISION_REQUIRED', false, new Date('2026-10-14')).label).toBe('ต้องแก้ไขเอกสาร');
+  });
   it('renders Dashboard without ReferenceError (useMemo properly imported)', () => {
     useStore.setState({
       currentUser: { id: 'U001', name: 'Test User', role: 'DCC_ADMIN', isDcc: true },
@@ -794,7 +801,7 @@ describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Ap
     expect(screen.getAllByText('ED-QC-01').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('Case 3 (Staff Submission -> Pending Approval -> L4+ Approval -> +1 Year): Staff submits NO_CHANGE -> PENDING_APPROVAL, L4 Supervisor approves -> advances nextReviewDate to 2028-10-13, COMPLETED', () => {
+  it('Case 3 (Staff Submission -> Pending Approval -> L5+ Approval -> +1 Year): Staff submits NO_CHANGE -> PENDING_APPROVAL, HOD approves -> advances nextReviewDate to 2028-10-13, COMPLETED', () => {
     const staffUser = {
       id: 'U-QC-STAFF',
       name: 'QC Staff',
@@ -805,10 +812,10 @@ describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Ap
 
     const supervisorUser = {
       id: 'U-QC-SUP',
-      name: 'QC Supervisor',
+      name: 'QC HOD',
       department: 'QC',
-      level: 4,
-      role: 'SUPERVISOR'
+      level: 5,
+      role: 'HOD'
     };
 
     const extDoc = {
@@ -883,8 +890,8 @@ describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Ap
     expect(unauthorizedRes.success).toBe(false);
     expect(unauthorizedRes.error).toBe('UNAUTHORIZED');
 
-    // 3. L4 Supervisor approves via approveExternalPeriodicReview
-    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-01', supervisorUser, 'Supervisor verified and approved');
+    // 3. L5 HOD approves via approveExternalPeriodicReview
+    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-01', supervisorUser, 'HOD verified and approved');
     expect(approveRes.success).toBe(true);
 
     // 4. Assert nextReviewDate advanced to 2028-10-13 (+1 year), COMPLETED, is_reviewed_this_cycle
@@ -979,13 +986,13 @@ describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Ap
       </MemoryRouter>
     );
 
-    expect(screen.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeTruthy();
-    expect(screen.getByText(/ยังคงใช้งานต่อไปได้ \(Up-to-date \/ No Change Needed\)/i)).toBeTruthy();
-    expect(screen.getByText(/เนื้อหาเอกสารยังคงถูกต้อง สอดคล้อง และเป็นปัจจุบัน ไม่จำเป็นต้องแก้ไข/i)).toBeTruthy();
-    expect(screen.getByText(/ต้องปรับปรุง\/แก้ไข \(Revision Required \/ Update Edition\)/i)).toBeTruthy();
-    expect(screen.getByText(/เอกสารมีเวอร์ชันใหม่จากผู้ผลิต หรือจำเป็นต้องออก Edition ใหม่/i)).toBeTruthy();
-    expect(screen.getByText(/ขอยกเลิกการใช้งาน \(Obsolete \/ Discontinue\)/i)).toBeTruthy();
-    expect(screen.getByText(/เอกสารนี้ยกเลิกหรือไม่จำเป็นต้องใช้งานต่อไป ควรดำเนินการขอยกเลิก/i)).toBeTruthy();
+    expect(screen.getByText('บันทึกผลการทบทวน')).toBeTruthy();
+    expect(screen.getByText('ยังคงใช้งานต่อไปได้')).toBeTruthy();
+    expect(screen.getByText('เอกสารยังถูกต้องและเป็นปัจจุบัน')).toBeTruthy();
+    expect(screen.getByText('ต้องปรับปรุง/แก้ไข')).toBeTruthy();
+    expect(screen.getByText('เนื้อหาหรือ Edition ต้องได้รับการปรับปรุง')).toBeTruthy();
+    expect(screen.getByText('ขอยกเลิกการใช้งาน')).toBeTruthy();
+    expect(screen.getByText('เอกสารไม่จำเป็นต้องใช้งานต่อ')).toBeTruthy();
   });
 });
 
@@ -1104,10 +1111,10 @@ describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () 
 
     const supervisorUser = {
       id: 'U-QC-SUP-C2',
-      name: 'QC Supervisor C2',
+      name: 'QC Manager C2',
       department: 'QC',
-      level: 4,
-      role: 'SUPERVISOR'
+      level: 5,
+      role: 'MANAGER'
     };
 
     const extDoc = {
@@ -1188,19 +1195,19 @@ describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () 
     fireEvent.click(reEvaluateBtn);
 
     // Re-evaluating banner is displayed and form is active
-    expect(screen.getByText(/โหมดแก้ไขผลการทบทวน: คุณสามารถเปลี่ยนผลการประเมินหรือปรับปรุงรายละเอียดได้/i)).toBeTruthy();
-    expect(screen.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeTruthy();
+    expect(screen.getByText(/โหมดแก้ไขผลการทบทวน: เปลี่ยนผลประเมินหรือรายละเอียดได้/i)).toBeTruthy();
+    expect(screen.getByText('บันทึกผลการทบทวน')).toBeTruthy();
 
     // User changes outcome to NO_CHANGE (ยังคงใช้งานต่อไปได้)
     const noChangeRadio = screen.getByLabelText(/ยังคงใช้งานต่อไปได้/i);
     fireEvent.click(noChangeRadio);
 
     // Provide reason
-    const reasonTextarea = screen.getByPlaceholderText(/ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว/i);
+    const reasonTextarea = screen.getByPlaceholderText(/อธิบายเหตุผลที่เลือกผลการประเมิน/i);
     fireEvent.change(reasonTextarea, { target: { value: 'Verified standard: current version is still valid and no change needed' } });
 
     // Submit review
-    const submitBtn = screen.getByRole('button', { name: /ส่งผลการทบทวนให้หัวหน้าแผนก/i });
+    const submitBtn = screen.getByRole('button', { name: /ส่งผลให้หัวหน้าแผนก/i });
     fireEvent.click(submitBtn);
 
     // Store updated to PENDING_APPROVAL for supervisor sign-off
@@ -1307,7 +1314,7 @@ describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () 
     expect(updatedSched.linkageStatus).toBe('PENDING');
   });
 
-  it('Case 4 (L4+ Approval Flow): When NO_CHANGE is submitted by staff -> PENDING_APPROVAL -> L4 Supervisor approves -> advances nextReviewDate +1 year (+12 months) and marks review_status: COMPLETED, is_reviewed_this_cycle: true', async () => {
+  it('Case 4 (L5+ Approval Flow): When NO_CHANGE is submitted by staff -> PENDING_APPROVAL -> HOD approves -> advances nextReviewDate +1 year (+12 months) and marks review_status: COMPLETED, is_reviewed_this_cycle: true', async () => {
     const staffUser = {
       id: 'U-QC-C4',
       name: 'QC Officer C4',
@@ -1318,10 +1325,10 @@ describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () 
 
     const supervisorUser = {
       id: 'U-QC-SUP-C4',
-      name: 'QC Section Head C4',
+      name: 'QC HOD C4',
       department: 'QC',
-      level: 4,
-      role: 'SUPERVISOR'
+      level: 5,
+      role: 'HOD'
     };
 
     const extDoc = {
@@ -1391,8 +1398,8 @@ describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () 
     expect(approvalTask).toBeTruthy();
     expect(approvalTask.assignee_id).toBe('U-QC-SUP-C4');
 
-    // 2. L4 Supervisor approves
-    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-CASE4', supervisorUser, 'Supervisor approved review');
+    // 2. L5 HOD approves
+    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-CASE4', supervisorUser, 'HOD approved review');
     expect(approveRes.success).toBe(true);
 
     // 3. Verify nextReviewDate +1 year (+12 months), COMPLETED, is_reviewed_this_cycle

@@ -340,7 +340,7 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
   const handleDeptToggle = (deptCode) => {
     const ownerDept = formData.department || userDept;
     if (deptCode === ownerDept) {
-      toast.info(`แผนก ${deptCode} เป็นแผนกต้นสังกัด/ผู้ถือครองเอกสาร จึงต้องมีสิทธิ์เข้าถึงเสมอ`, { id: 'owner-dept-locked' });
+      toast.success(`แผนก ${deptCode} เป็นแผนกต้นสังกัด/ผู้ถือครองเอกสาร จึงต้องมีสิทธิ์เข้าถึงเสมอ`, { id: 'owner-dept-locked' });
       return;
     }
     setFormData(prev => {

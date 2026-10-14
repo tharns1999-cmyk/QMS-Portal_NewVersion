@@ -88,19 +88,19 @@ describe('PeriodicReviewDetail - Two-Column Layout & Compact UI', () => {
 
     // Quick Action Bar
     expect(screen.getByRole('button', { name: /เปิดดูไฟล์เอกสาร/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /ดูประวัติย้อนหลัง/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ดูประวัติตรวจสอบ/i })).toBeInTheDocument();
   });
 
   it('renders 3 outcome cards with icons and active styles on selection', async () => {
     renderComponent();
 
     // Form title
-    expect(screen.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).toBeInTheDocument();
 
     // 3 Outcome radio options
-    const noChangeOption = screen.getByText('ไม่มีการเปลี่ยนแปลง');
-    const revisionOption = screen.getByText('ต้องแก้ไขเอกสาร');
-    const obsoleteOption = screen.getByText('ต้องยกเลิกเอกสาร');
+    const noChangeOption = screen.getByText('ยังคงใช้งานต่อไปได้');
+    const revisionOption = screen.getByText('ต้องปรับปรุง/แก้ไข');
+    const obsoleteOption = screen.getByText('ขอยกเลิกการใช้งาน');
 
     expect(noChangeOption).toBeInTheDocument();
     expect(revisionOption).toBeInTheDocument();
@@ -108,26 +108,26 @@ describe('PeriodicReviewDetail - Two-Column Layout & Compact UI', () => {
 
     // Click "ไม่มีการเปลี่ยนแปลง"
     await userEvent.click(noChangeOption);
-    const noChangeRadio = screen.getByRole('radio', { name: /ไม่มีการเปลี่ยนแปลง/i });
+    const noChangeRadio = screen.getByRole('radio', { name: /ยังคงใช้งานต่อไปได้/i });
     expect(noChangeRadio.checked).toBe(true);
 
     // Switch to "ต้องแก้ไขเอกสาร"
     await userEvent.click(revisionOption);
-    const revisionRadio = screen.getByRole('radio', { name: /ต้องแก้ไขเอกสาร/i });
+    const revisionRadio = screen.getByRole('radio', { name: /ต้องปรับปรุง\/แก้ไข/i });
     expect(revisionRadio.checked).toBe(true);
     expect(noChangeRadio.checked).toBe(false);
   });
 
-  it('renders compact 2-column input fields and action buttons', () => {
+  it('reveals grouped optional details and action buttons', async () => {
     renderComponent();
 
     // Reason textarea
     expect(screen.getByText(/เหตุผล \/ รายละเอียดการทบทวน/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/อธิบายเหตุผลที่เลือกผลการประเมิน/i)).toBeInTheDocument();
 
-    // 4 compact inputs
+    await userEvent.click(screen.getByRole('button', { name: /หลักฐานและรายละเอียดประกอบ/i }));
     expect(screen.getByText('ประเด็นที่พบ')).toBeInTheDocument();
-    expect(screen.getByText('มาตรฐานหรือข้อกำหนดที่ใช้พิจารณา')).toBeInTheDocument();
+    expect(screen.getByText('มาตรฐานหรือข้อกำหนด')).toBeInTheDocument();
     expect(screen.getByText('ข้อมูลหรือหลักฐานอ้างอิง')).toBeInTheDocument();
     expect(screen.getByText('ความคิดเห็นเพิ่มเติม')).toBeInTheDocument();
 

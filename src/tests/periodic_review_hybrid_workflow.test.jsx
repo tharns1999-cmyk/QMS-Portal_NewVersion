@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import useStore, { canFastTrackReview } from '../store/useStore';
+import useStore, { canFastTrackExternalReview, canFastTrackReview } from '../store/useStore';
 import { isActionableTask } from '../utils/taskFilter';
 
 describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-Click Fast-Track)', () => {
@@ -267,6 +267,8 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
 
       // Task marked rejected
       expect(task.status).toBe('REJECTED');
+      expect(task.is_completed).toBe(true);
+      expect(task.actionRequired).toBe(false);
       expect(task.rejectReason).toBe('เอกสารมีกระบวนการเปลี่ยน ให้ส่งขอจัดทำ DAR แก้ไขแทน');
     });
   });
@@ -390,6 +392,7 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
 
     it('evaluates Beam (L4 QAQC Supervisor) as strictly NOT eligible for Fast-Track', () => {
       expect(canFastTrackReview(mockBeamL4, 'QC')).toBe(false);
+      expect(canFastTrackExternalReview(mockBeamL4, 'QC')).toBe(false);
     });
 
     it('evaluates Kalyanee (L5 Manager overseeing QC) as eligible for Fast-Track', () => {
@@ -442,6 +445,70 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(isActionableTask(approvalTask, mockBeamL4)).toBe(false);
       // Task IS visible to Kalyanee L5
       expect(isActionableTask(approvalTask, mockKalyaneeL5)).toBe(true);
+    });
+
+    it('routes an external review from Beam L4 to the other QC L5 approver without rolling its due date', () => {
+      const extDoc = {
+        id: 'ED-QC-001',
+        edCode: 'ED-QC-001',
+        department: 'QC',
+        nextReviewDate: '2026-10-15',
+        next_review_date: '2026-10-15',
+        review_status: 'DUE_SOON'
+      };
+      const extSchedule = {
+        id: 'SCH-ED-QC-001',
+        externalDocumentId: extDoc.id,
+        documentNumber: extDoc.edCode,
+        documentName: 'QC External Standard',
+        documentCategory: 'EXTERNAL',
+        isExternal: true,
+        ownerDepartmentId: 'QC',
+        status: 'ACTION_REQUIRED',
+        nextReviewDate: '2026-10-15'
+      };
+      useStore.setState({
+        users: [mockBeamL4, mockKalyaneeL5],
+        masterUsers: [mockBeamL4, mockKalyaneeL5],
+        externalDocuments: [extDoc],
+        periodicReviewSchedules: [extSchedule],
+        tasks: [],
+        notifications: [],
+        currentUser: mockBeamL4
+      });
+
+      const result = useStore.getState().submitPeriodicReview({
+        scheduleId: extSchedule.id,
+        docId: extDoc.id,
+        docCode: extDoc.edCode,
+        isExternal: true,
+        outcome: 'NO_CHANGE',
+        comment: 'ทบทวนเอกสารภายนอกแล้ว'
+      });
+
+      expect(result).toMatchObject({ status: 'PENDING_APPROVAL', fastTrack: false });
+      const store = useStore.getState();
+      const task = store.tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+      expect(task).toMatchObject({
+        assigneeId: mockKalyaneeL5.id,
+        assignee_id: mockKalyaneeL5.id,
+        actionRequired: true,
+        status: 'PENDING',
+        is_completed: false,
+        referenceType: 'EXTERNAL_DOC',
+        origin: 'EXTERNAL',
+        department: 'QC',
+        target_department: 'QC',
+        owner_dept: 'QC'
+      });
+      expect(store.notifications.some(n => n.userId === mockKalyaneeL5.id && n.taskId === task.id)).toBe(true);
+      expect(store.externalDocuments[0].nextReviewDate).toBe('2026-10-15');
+      expect(store.externalDocuments[0].next_review_date).toBe('2026-10-15');
+      expect(store.externalDocuments[0].review_status).toBe('PENDING_APPROVAL');
+      expect(store.periodicReviewSchedules[0]).toMatchObject({
+        nextReviewDate: '2026-10-15',
+        status: 'PENDING_APPROVAL'
+      });
     });
   });
 

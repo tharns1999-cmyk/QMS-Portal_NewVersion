@@ -77,13 +77,12 @@ export const canFastTrackReview = (currentUser, docDepartment) => {
 export const canFastTrackExternalReview = (currentUser, docDepartment) => {
   if (!currentUser) return false;
 
-  // 1. ระดับสากล: DCC, DCC_ADMIN, QMR, ADMIN, SUPER_ADMIN ทำ Fast-Track ได้เสมอ
+  // 1. ผู้มีอำนาจส่วนกลางต้องเป็น L5+ เช่นเดียวกับ HOD/Manager
   const isGlobalApprover = 
     ['DCC', 'ADMIN', 'DC', 'SUPER_ADMIN', 'DCC_ADMIN', 'QMR', 'EXECUTIVE', 'MANAGING_DIRECTOR', 'BOARD'].includes(currentUser.role) ||
     Boolean(currentUser.is_dcc || currentUser.isDcc || currentUser.is_dcc_admin || currentUser.isDccAdmin || currentUser.is_qmr || currentUser.isQmr || currentUser.is_admin || currentUser.isAdmin || currentUser.isExecutive);
-  if (isGlobalApprover) return true;
 
-  // 2. ตรวจสอบระดับ Level: ต้องเป็น Level 4+ ขึ้นไป (Supervisor, Dept Manager, HOD)
+  // 2. ตรวจสอบระดับ Level: ต้องเป็น Level 5+ ขึ้นไปเท่านั้น
   const userLevel = Number(
     currentUser.level || 
     currentUser.approval_level || 
@@ -93,13 +92,12 @@ export const canFastTrackExternalReview = (currentUser, docDepartment) => {
     getUserLevelNumber(currentUser)
   );
 
-  const isLevel4Plus = userLevel >= 4 ||
-    ['HOD', 'MANAGER', 'DEPT_MANAGER', 'SUPERVISOR', 'DEPT_SUPERVISOR'].includes(currentUser.role) ||
-    Boolean(currentUser.is_hod || currentUser.isDeptHead || currentUser.is_manager || currentUser.is_supervisor);
+  const isLevel5Plus = userLevel >= 5;
 
-  if (!isLevel4Plus) return false;
+  if (!isLevel5Plus) return false;
+  if (isGlobalApprover) return true;
 
-  // 3. ตรวจสอบขอบเขตแผนก: ต้องเป็น Level 4+ ในแผนกของเอกสารนั้น หรือมีสิทธิ์ข้ามแผนก ('*')
+  // 3. ตรวจสอบขอบเขตแผนก: ต้องเป็น Level 5+ ในแผนกของเอกสารนั้น หรือมีสิทธิ์ข้ามแผนก ('*')
   if (!docDepartment) return true;
   const hasDeptScope = currentUser.managedDepartments?.includes('*') || 
                        currentUser.managedDepartments?.includes(docDepartment) ||
@@ -558,7 +556,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
             }, ...(state.actionLog || [])]
           };
         } else {
-          // === Flow 2: 2-Step Approval (Staff Submits -> Creates Task for HOD / Supervisor) ===
+          // === Flow 2: 2-Step Approval (Staff Submits -> Creates Task for HOD) ===
           // Expiration date is NOT extended yet!
           schedule.status = 'PENDING_APPROVAL';
           schedule.review_status = 'PENDING_APPROVAL';
@@ -566,8 +564,9 @@ export const createPeriodicReviewSlice = (set, get) => ({
           schedule.pending_periodic_review = true;
 
           // 1. Dynamic Approver Resolution: ค้นหาผู้มีอำนาจอนุมัติในแผนกเดียวกันจาก Store
-          const allUsers = (state.users && state.users.length > 0) ? state.users : (state.masterUsers || masterUsers);
+          const allUsers = (state.users && state.users.length > 0) ? state.users : (state.masterUsers || []);
           const departmentApprover = allUsers.find(u => {
+            if (u.id === activeUser?.id) return false;
             const isSameDept = Boolean(
               docDept && (
                 userMatchesDepartment(u, docDept) ||
@@ -579,14 +578,12 @@ export const createPeriodicReviewSlice = (set, get) => ({
               )
             );
             const userLvl = getUserLevelNumber(u);
-            const hasApprovalRole = isExternalTarget
-              ? (userLvl >= 4 || Number(u.level) >= 4 || Number(u.approval_level) >= 4 || ['SUPERVISOR', 'DEPT_SUPERVISOR', 'HOD', 'MANAGER', 'DEPT_MANAGER'].includes(u.role) || Boolean(u.is_supervisor || u.is_hod || u.is_manager || u.isDeptHead))
-              : (u.is_hod || u.is_manager || u.isDeptHead || userLvl >= 5 || Number(u.level) >= 5 || Number(u.approval_level) >= 5 || u.role === 'HOD' || u.role === 'MANAGER');
-            return isSameDept && hasApprovalRole;
+            return isSameDept && userLvl >= 5;
           });
 
           // 2. Dynamic Fallback: หากไม่พบผู้อนุมัติในแผนก ให้ค้นหาผู้ใช้ที่เป็น DCC / QMR จาก Store
-          const dccApprover = allUsers.find(u => 
+          const dccApprover = allUsers.find(u =>
+            u.id !== activeUser?.id && (
             u.is_dcc || 
             u.isDcc ||
             u.is_dcc_admin ||
@@ -596,7 +593,9 @@ export const createPeriodicReviewSlice = (set, get) => ({
             u.role === 'DCC' || 
             u.role === 'DCC_ADMIN' ||
             u.role === 'QMR' ||
+            ['EXECUTIVE', 'MANAGING_DIRECTOR', 'BOARD'].includes(u.role) ||
             u.managedDepartments?.includes('*')
+            )
           );
 
           // เลือกรหัสผู้รับงานจากข้อมูลที่ค้นพบจริง (Zero Hardcoding)
@@ -638,14 +637,20 @@ export const createPeriodicReviewSlice = (set, get) => ({
             department: docDept,
             target_department: docDept,
             targetDepartment: docDept,
-            target_role: isExternalTarget ? (departmentApprover?.role || 'SUPERVISOR') : 'HOD',
-            targetRole: isExternalTarget ? (departmentApprover?.role || 'SUPERVISOR') : 'HOD',
-            target_level: departmentApprover ? getUserLevelNumber(departmentApprover) : (isExternalTarget ? 4 : 5),
+            owner_dept: docDept,
+            target_role: departmentApprover ? 'HOD' : (dccApprover?.role || 'HOD'),
+            targetRole: departmentApprover ? 'HOD' : (dccApprover?.role || 'HOD'),
+            target_level: departmentApprover ? getUserLevelNumber(departmentApprover) : (dccApprover ? getUserLevelNumber(dccApprover) : 5),
+            assigneeId: targetAssigneeId,
             assignee_id: targetAssigneeId,
             assigned_to: targetAssigneeId,
             assignee_name: targetAssigneeName,
             assignee_department: docDept,
+            actionRequired: true,
             status: 'PENDING',
+            is_completed: false,
+            referenceType: isExternalTarget ? 'EXTERNAL_DOC' : 'INTERNAL_DOC',
+            origin: isExternalTarget ? 'EXTERNAL' : 'INTERNAL',
             payload: pendingReviewPayload,
             scheduleId: schedule.id,
             isExternal: isExternalTarget,
@@ -677,16 +682,30 @@ export const createPeriodicReviewSlice = (set, get) => ({
 
           result = { status: 'PENDING_APPROVAL', fastTrack: false, task: approvalTask };
 
+          const approvalNotification = targetAssigneeId ? {
+            id: `notif-periodic-review-approval-${Date.now()}`,
+            userId: targetAssigneeId,
+            user_id: targetAssigneeId,
+            title: `รออนุมัติผลการทบทวน: ${schedule.documentNumber}`,
+            message: `มีผลการทบทวนเอกสาร${isExternalTarget ? 'ภายนอก' : ''}รอการอนุมัติ`,
+            isRead: false,
+            read: false,
+            type: 'PERIODIC_REVIEW_APPROVAL',
+            taskId: approvalTask.id,
+            createdAt: new Date().toISOString()
+          } : null;
+
           return {
             documents: updatedDocs,
             externalDocuments: (updatedExtDocs || []).map(d => sanitizeExternalDocReviewStatus(d, now)),
             periodicReviewSchedules: schedules,
             periodicReviewTasks: tasks,
             tasks: [approvalTask, ...updatedTasks],
+            notifications: approvalNotification ? [approvalNotification, ...(state.notifications || [])] : state.notifications,
             actionLog: [{
               id: `LOG-${Date.now()}`,
               actionType: 'PERIODIC_REVIEW_SUBMITTED_FOR_APPROVAL',
-              details: `Periodic review submitted for approval for ${schedule.documentNumber} to ${isExternalTarget ? 'Supervisor/Manager' : 'HOD'} (${docDept})`,
+              details: `Periodic review submitted for approval for ${schedule.documentNumber} to HOD (${docDept})`,
               actor: activeUser?.name,
               actorId: activeUser?.id,
               date: new Date().toISOString()
@@ -2149,6 +2168,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
         return { 
           ...t, 
           status: 'REJECTED', 
+          is_completed: true,
+          actionRequired: false,
           rejectReason: remarks, 
           returnReason: remarks, 
           updatedAt: new Date().toISOString() 

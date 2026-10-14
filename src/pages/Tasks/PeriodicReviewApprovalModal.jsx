@@ -65,7 +65,7 @@ export default function PeriodicReviewApprovalModal({ isOpen, onClose, task }) {
         approverUser: currentUser,
         remarks: remarks.trim()
       });
-      toast.info('ส่งกลับผลการทบทวนให้ผู้จัดทำแก้ไขแล้ว');
+      toast.success('ตีกลับผลการทบทวนให้ผู้จัดทำเรียบร้อยแล้ว');
       onClose();
     } catch (err) {
       toast.error(err.message || 'เกิดข้อผิดพลาดในการตีกลับ');
