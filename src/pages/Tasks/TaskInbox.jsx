@@ -565,6 +565,14 @@ export const resolveDarIdentifier = (task, matchedDar) => {
 // Helper: Task Type Badge & Action Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 export const getTaskTypeBadgeConfig = (normType, task) => {
+  if (normType === 'PERIODIC_REVIEW_REVISE' || task?.type === 'PERIODIC_REVIEW_REVISE') {
+    return {
+      label: '⚠️ ส่งกลับแก้ไข (Revision Required)',
+      actionLabel: 'ดำเนินการทบทวนใหม่',
+      icon: <RotateCcw size={13} className="text-orange-600" />,
+      badgeClass: 'bg-orange-50 text-orange-800 border-orange-200'
+    };
+  }
   if (normType === 'REVIEW' || normType === 'EXT_REVIEW' || normType === 'EXTERNAL_REVIEW') {
     return {
       label: 'ทบทวนคำร้อง',
@@ -767,7 +775,7 @@ export function normalizeTaskCategory(task) {
   if (rawType === 'REVIEW' || rawType === 'EXT_REVIEW' || rawType === 'EXTERNAL_REVIEW' || rawType === 'PERIODIC_REVIEW' || rawType === 'EXTERNAL_VERIFICATION') return 'REVIEW';
   if (rawType === 'APPROVE' || rawType === 'APPROVAL' || rawType === 'EXT_APPROVAL' || rawType === 'EXTERNAL_APPROVAL' || rawType === 'CC_REPLACEMENT_APPROVAL' || rawType === 'PERIODIC_REVIEW_APPROVAL') return 'APPROVE';
   if (rawType === 'ACK' || rawType === 'ACKNOWLEDGE') return 'ACK';
-  if (rawType === 'REVISE' || rawType === 'EXTERNAL_REVISE' || rawType === 'EXT_REVISE') return 'REVISE';
+  if (rawType === 'REVISE' || rawType === 'EXTERNAL_REVISE' || rawType === 'EXT_REVISE' || rawType === 'PERIODIC_REVIEW_REVISE') return 'REVISE';
   if (
     rawType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
     task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
@@ -1102,6 +1110,17 @@ const TaskInbox = () => {
     // 🛡️ Periodic Review Approval for HOD
     if (normType === 'PERIODIC_REVIEW_APPROVAL' || task.type === 'PERIODIC_REVIEW_APPROVAL') {
       setSelectedPeriodicReviewApprovalTask(task);
+      return;
+    }
+
+    if (normType === 'PERIODIC_REVIEW_REVISE' || task.type === 'PERIODIC_REVIEW_REVISE') {
+      const docId = task.docId || task.documentId || task.externalDocId || '';
+      const docCode = task.docCode || task.doc_code || task.document_code || '';
+      const params = new URLSearchParams({ taskId: task.id, isReEvaluating: 'true' });
+      if (docId) params.set('docId', docId);
+      if (docCode) params.set('docCode', docCode);
+      if (task.referenceType === 'EXTERNAL_DOC' || task.origin === 'EXTERNAL') params.set('isExternal', 'true');
+      navigate(`/dcc/periodic-reviews/${encodeURIComponent(docId || docCode)}?${params.toString()}`);
       return;
     }
 
@@ -1547,11 +1566,11 @@ const TaskInbox = () => {
                     )}
 
                     {/* 🛡️ Return Reason Alert Banner for EXTERNAL_REVISE / REVISE */}
-                    {(task.returnReason || task.rejectReason) && (
+                    {(task.returnReason || task.rejectReason || task.rejectionRemarks || task.rejection_remarks) && (
                       <div className="w-full flex items-start gap-1.5 text-xs bg-rose-50 text-rose-800 border border-rose-200/80 px-2.5 py-1.5 rounded-md font-medium mt-0.5">
                         <AlertCircle size={13} className="text-rose-600 shrink-0 mt-0.5" />
                         <div>
-                          <span className="font-bold">เหตุผลที่ส่งกลับแก้ไข:</span> {task.returnReason || task.rejectReason}
+                          <span className="font-bold">เหตุผลที่ส่งกลับแก้ไข:</span> {task.returnReason || task.rejectReason || task.rejectionRemarks || task.rejection_remarks}
                         </div>
                       </div>
                     )}

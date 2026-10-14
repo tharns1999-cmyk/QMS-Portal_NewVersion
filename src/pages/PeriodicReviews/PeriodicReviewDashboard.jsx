@@ -96,6 +96,12 @@ const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick
 );
 
 const getStatusBadgeConfig = (status, _hasActiveTask, isPendingApproval, isReviewed) => {
+  if (status === 'REJECTED') {
+    return {
+      label: '⚠️ ถูกตีกลับแก้ไข',
+      cls: 'bg-orange-50 text-orange-800 border-orange-200'
+    };
+  }
   if (isReviewed || status === 'COMPLETED') {
     return {
       label: '✔️ ทบทวนแล้วเสร็จ',
@@ -370,6 +376,7 @@ const UnifiedWorkspaceView = ({
 
     // Helper to detect active pending workflow states
     const hasPendingReviewWorkflow = (r) => {
+      if (r.is_reviewed_this_cycle || r.status === 'COMPLETED' || r.review_status === 'COMPLETED') return false;
       const targetDoc = r.targetDoc || allDocs?.find(d => 
         !d.is_superseded && !d.is_obsolete && d.status !== 'SUPERSEDED' && d.status !== 'OBSOLETE' && (
           (r.documentId && d.id === r.documentId) || 
@@ -377,6 +384,7 @@ const UnifiedWorkspaceView = ({
           (r.documentNumber && (d.edCode === r.documentNumber || d.documentNumber === r.documentNumber || d.code === r.documentNumber || d.doc_code === r.documentNumber))
         )
       );
+      if (targetDoc?.is_reviewed_this_cycle || targetDoc?.review_status === 'COMPLETED') return false;
       return Boolean(
         r.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL' ||
         r.status === 'AWAITING_ACTION' || targetDoc?.review_status === 'AWAITING_ACTION' ||
@@ -557,7 +565,7 @@ const UnifiedWorkspaceView = ({
     const deptLevel = getPositionLevelForDepartment(currentUser, docDept);
     const userLevel = Number(currentUser.level || currentUser.approval_level || 0);
     const effectiveLevel = Math.max(deptLevel, userLevel);
-    const isSupervisorOrManager = effectiveLevel >= 4 || currentUser.is_hod || currentUser.is_manager;
+    const isHodOrManager = effectiveLevel >= 5;
 
     const userDeptList = [
       currentUser.department,
@@ -568,7 +576,7 @@ const UnifiedWorkspaceView = ({
     ].filter(Boolean);
 
     const isMatchingDept = userDeptList.some(d => isSameDepartment(d, docDept));
-    return isSupervisorOrManager && isMatchingDept;
+    return isHodOrManager && isMatchingDept;
   };
 
   const handleApproveClick = (record, targetDoc) => {
@@ -848,6 +856,18 @@ const UnifiedWorkspaceView = ({
                 const diffDays = typeof evaluation === 'object' ? evaluation.diffDays : null;
                 const isReviewed = calculatedStatus === 'COMPLETED';
 
+                const isCompletedCycle = Boolean(
+                  record.is_reviewed_this_cycle ||
+                  record.review_status === 'COMPLETED' ||
+                  record.status === 'COMPLETED' ||
+                  targetDoc?.is_reviewed_this_cycle ||
+                  targetDoc?.review_status === 'COMPLETED' ||
+                  isReviewed
+                );
+                const isRejected = !isCompletedCycle && Boolean(
+                  record.rejectionRemarks || record.rejection_remarks || targetDoc?.rejection_remarks
+                );
+
                 // Check review outcomes for contextual action buttons
                 const effectiveOutcome =
                   record.outcome ||
@@ -889,10 +909,14 @@ const UnifiedWorkspaceView = ({
 
                 const hasPendingIntent = !hasActiveLinkedRequest && (isRevisionRequired || isObsoleteRequired);
 
-                // Priority 1: Pending review workflow states strictly override date-based calculations
+                // Priority 1: Completed review strictly takes precedence; followed by pending workflow and date calculations
                 let effectiveStatus = calculatedStatus;
-                if (record.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL' || isPendingApproval) {
+                if (isCompletedCycle) {
+                  effectiveStatus = 'COMPLETED';
+                } else if (record.status === 'PENDING_APPROVAL' || targetDoc?.review_status === 'PENDING_APPROVAL' || isPendingApproval) {
                   effectiveStatus = 'PENDING_APPROVAL';
+                } else if (isRejected) {
+                  effectiveStatus = 'REJECTED';
                 } else if (effectiveOutcome === 'OBSOLETE_REQUIRED' || isObsoleteRequired) {
                   effectiveStatus = 'OBSOLETE_REQUIRED';
                 } else if (
@@ -902,8 +926,6 @@ const UnifiedWorkspaceView = ({
                   isRevisionRequired
                 ) {
                   effectiveStatus = 'REVISION_REQUIRED';
-                } else if (isReviewed) {
-                  effectiveStatus = 'COMPLETED';
                 } else if (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'UP_TO_DATE') {
                   effectiveStatus = calculatedStatus;
                 } else {
@@ -912,11 +934,13 @@ const UnifiedWorkspaceView = ({
 
                 // Safety guard: Under NO circumstances should pending workflow show UP_TO_DATE / ยังไม่ถึงกำหนด
                 const isPendingWorkflow = Boolean(
-                  effectiveStatus === 'PENDING_APPROVAL' ||
-                  effectiveStatus === 'OBSOLETE_REQUIRED' ||
-                  effectiveStatus === 'REVISION_REQUIRED' ||
-                  record.status === 'AWAITING_ACTION' ||
-                  targetDoc?.review_status === 'AWAITING_ACTION'
+                  !isCompletedCycle && (
+                    effectiveStatus === 'PENDING_APPROVAL' ||
+                    effectiveStatus === 'OBSOLETE_REQUIRED' ||
+                    effectiveStatus === 'REVISION_REQUIRED' ||
+                    record.status === 'AWAITING_ACTION' ||
+                    targetDoc?.review_status === 'AWAITING_ACTION'
+                  )
                 );
                 if (isPendingWorkflow && (effectiveStatus === 'UP_TO_DATE' || effectiveStatus === 'NORMAL')) {
                   effectiveStatus = isObsoleteRequired ? 'OBSOLETE_REQUIRED' : (isPendingApproval ? 'PENDING_APPROVAL' : 'REVISION_REQUIRED');
@@ -925,6 +949,19 @@ const UnifiedWorkspaceView = ({
                 const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, effectiveStatus === 'PENDING_APPROVAL', effectiveStatus === 'COMPLETED', diffDays);
 
                 const userCanApprove = canUserApprove(record, targetDoc);
+                const reviseTask = (tasks || []).find(t =>
+                  (t.type === 'PERIODIC_REVIEW_REVISE' || t.taskType === 'PERIODIC_REVIEW_REVISE') &&
+                  t.status === 'PENDING' && (
+                    (targetDoc?.id && t.docId === targetDoc.id) ||
+                    (record.documentNumber && t.docCode === record.documentNumber)
+                  )
+                );
+                const userCanReReview = Boolean(
+                  currentUser && (
+                    (reviseTask?.assigneeId || reviseTask?.assignee_id) === currentUser.id ||
+                    targetDoc?.ownerId === currentUser.id || targetDoc?.owner_id === currentUser.id
+                  )
+                );
                 return (
                   <tr key={record.id} className="hover:bg-[#F5F5F5]/70 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-[#0D99FF] text-xs sm:text-sm whitespace-nowrap">
@@ -980,6 +1017,17 @@ const UnifiedWorkspaceView = ({
                               <span>รออนุมัติ</span>
                             </button>
                           )
+                        ) : isRejected && userCanReReview ? (
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateRecord(targetDoc ? { ...record, targetDoc } : record, { isReEvaluating: true })}
+                            className="h-8 px-2.5 text-xs inline-flex items-center gap-1 rounded-lg font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-2xs transition-colors cursor-pointer"
+                            title="ทบทวนผลใหม่ตามข้อเสนอแนะของหัวหน้าแผนก"
+                            aria-label="ทบทวนใหม่"
+                          >
+                            <RotateCcw size={13} />
+                            <span>ทบทวนใหม่</span>
+                          </button>
                         ) : isRevisionRequired ? (
                           <button
                             type="button"
@@ -1205,7 +1253,10 @@ const PeriodicReviewDashboard = () => {
         documentCategory: isExt ? 'EXTERNAL' : 'INTERNAL',
         nextReviewDate: resolvedNext,
         next_review_date: resolvedNext,
-        currentScheduledReviewDate: resolvedNext
+        currentScheduledReviewDate: resolvedNext,
+        is_reviewed_this_cycle: Boolean(s.is_reviewed_this_cycle || matchedActive.is_reviewed_this_cycle),
+        status: (s.status === 'COMPLETED' || matchedActive.review_status === 'COMPLETED' || matchedActive.is_reviewed_this_cycle) ? 'COMPLETED' : s.status,
+        review_status: (s.status === 'COMPLETED' || matchedActive.review_status === 'COMPLETED' || matchedActive.is_reviewed_this_cycle) ? 'COMPLETED' : (matchedActive.review_status || s.review_status || s.status)
       } : {
         ...s,
         isExternal: isExt,
@@ -1270,7 +1321,9 @@ const PeriodicReviewDashboard = () => {
         edition: doc.sourceVersion || doc.edition || '',
         sourceVersion: doc.sourceVersion || doc.edition || '',
         isExternal,
-        status: isDateDue ? (doc.review_status || (activeTask ? 'ACTION_REQUIRED' : 'DUE_SOON')) : 'UP_TO_DATE',
+        status: (doc.is_reviewed_this_cycle || doc.review_status === 'COMPLETED')
+          ? 'COMPLETED'
+          : (isDateDue ? (doc.review_status || (activeTask ? 'ACTION_REQUIRED' : 'DUE_SOON')) : 'UP_TO_DATE'),
         dueState: getDueState ? getDueState(nextReviewDate, effectiveToday) : 'UPCOMING',
         hasActiveTask: Boolean(activeTask),
         isActive: true,

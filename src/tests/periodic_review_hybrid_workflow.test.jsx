@@ -211,9 +211,9 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       const sch = store.periodicReviewSchedules.find(s => s.id === 'SCH-PRD-001');
       const task = store.tasks.find(t => t.id === approvalTaskId);
 
-      // 1. Next review date extended by +1 year from mock date (2026-10-09 -> 2027-10-09)
-      expect(doc.next_review_date).toBe('2027-10-09');
-      expect(sch.nextReviewDate).toBe('2027-10-09');
+      // 1. Next review date extended by +1 year from current due date anchor (2026-10-15 -> 2027-10-15)
+      expect(doc.next_review_date).toBe('2027-10-15');
+      expect(sch.nextReviewDate).toBe('2027-10-15');
       expect(doc.review_status).toBe('UP_TO_DATE');
       expect(sch.status).toBe('UPCOMING');
       expect(doc.pending_periodic_review).toBeUndefined();
@@ -230,7 +230,7 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(auditEntry.approver_name).toBe(mockHodUser.name);
       expect(auditEntry.approver_role).toBe(mockHodUser.role);
       expect(auditEntry.result).toBe('NO_CHANGE');
-      expect(auditEntry.next_review_due).toBe('2027-10-09');
+      expect(auditEntry.next_review_due).toBe('2027-10-15');
 
       // 4. review_history entry
       expect(doc.review_history).toHaveLength(1);
@@ -238,7 +238,7 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(historyEntry.reviewer).toBe(mockStaffUser.name);
       expect(historyEntry.approver).toBe(mockHodUser.name);
       expect(historyEntry.outcome).toBe('NO_CHANGE');
-      expect(historyEntry.nextReviewDate).toBe('2027-10-09');
+      expect(historyEntry.nextReviewDate).toBe('2027-10-15');
     });
 
     it('HOD Rejects: resets status to ACTION_REQUIRED, stores rejectReason, and clears pending state', () => {
@@ -270,6 +270,13 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(task.is_completed).toBe(true);
       expect(task.actionRequired).toBe(false);
       expect(task.rejectReason).toBe('เอกสารมีกระบวนการเปลี่ยน ให้ส่งขอจัดทำ DAR แก้ไขแทน');
+      expect(store.tasks.find(t => t.type === 'PERIODIC_REVIEW_REVISE')).toMatchObject({
+        assigneeId: mockStaffUser.id,
+        status: 'PENDING',
+        actionRequired: true,
+        is_completed: false,
+        rejectionRemarks: 'เอกสารมีกระบวนการเปลี่ยน ให้ส่งขอจัดทำ DAR แก้ไขแทน'
+      });
     });
   });
 
@@ -291,9 +298,9 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       const sch = store.periodicReviewSchedules.find(s => s.id === 'SCH-PRD-001');
       const approvalTask = store.tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
 
-      // Date extended immediately by 1 year
-      expect(doc.next_review_date).toBe('2027-10-09');
-      expect(sch.nextReviewDate).toBe('2027-10-09');
+      // Date extended immediately by 1 year from current due date anchor
+      expect(doc.next_review_date).toBe('2027-10-15');
+      expect(sch.nextReviewDate).toBe('2027-10-15');
       expect(doc.review_status).toBe('UP_TO_DATE');
       expect(sch.status).toBe('UPCOMING');
 
@@ -359,7 +366,7 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       // Verify task completed in store and next review date rolled
       const store = useStore.getState();
       const doc = store.documents.find(d => d.id === 'DOC-PRD-001');
-      expect(doc.next_review_date).toBe('2027-10-09');
+      expect(doc.next_review_date).toBe('2027-10-15');
       expect(doc.review_status).toBe('UP_TO_DATE');
       expect(doc.periodic_reviews[0].approver_name).toBe(mockHodUser.name);
     });
@@ -508,6 +515,43 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       expect(store.periodicReviewSchedules[0]).toMatchObject({
         nextReviewDate: '2026-10-15',
         status: 'PENDING_APPROVAL'
+      });
+
+      useStore.getState().rejectPeriodicReview(task.id, mockKalyaneeL5, 'กรุณาตรวจสอบฉบับอ้างอิงอีกครั้ง');
+      const rejectedStore = useStore.getState();
+      expect(rejectedStore.externalDocuments[0]).toMatchObject({
+        review_status: 'ACTION_REQUIRED',
+        pending_periodic_review: false,
+        pendingReview: null,
+        rejection_remarks: 'กรุณาตรวจสอบฉบับอ้างอิงอีกครั้ง'
+      });
+      expect(rejectedStore.periodicReviewSchedules[0]).toMatchObject({
+        status: 'ACTION_REQUIRED',
+        pendingApprovalTaskId: null,
+        pendingReview: null
+      });
+      const reviseTask = rejectedStore.tasks.find(t => t.type === 'PERIODIC_REVIEW_REVISE');
+      expect(reviseTask).toMatchObject({
+        assigneeId: mockBeamL4.id,
+        referenceType: 'EXTERNAL_DOC',
+        origin: 'EXTERNAL',
+        priority: 'HIGH',
+        isUrgent: true,
+        rejection_remarks: 'กรุณาตรวจสอบฉบับอ้างอิงอีกครั้ง'
+      });
+
+      useStore.getState().submitPeriodicReview({
+        scheduleId: extSchedule.id,
+        docId: extDoc.id,
+        docCode: extDoc.edCode,
+        isExternal: true,
+        outcome: 'NO_CHANGE',
+        comment: 'ทบทวนเอกสารภายนอกใหม่แล้ว'
+      });
+      expect(useStore.getState().tasks.find(t => t.id === reviseTask.id)).toMatchObject({
+        status: 'COMPLETED',
+        is_completed: true,
+        actionRequired: false
       });
     });
   });

@@ -657,7 +657,7 @@ describe('QA/QC Canonical Normalization, RBAC & Document Prefix Extraction', () 
     const updatedExtDoc = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-01-ACTIVE-2');
     expect(updatedExtDoc.is_reviewed_this_cycle).toBe(true);
     expect(updatedExtDoc.review_status).toBe('COMPLETED');
-    expect(updatedExtDoc.nextReviewDate).toBe('2027-10-13');
+    expect(updatedExtDoc.nextReviewDate).toBe('2027-10-20');
     expect(updatedExtDoc.periodic_reviews.length).toBe(1);
   });
 });

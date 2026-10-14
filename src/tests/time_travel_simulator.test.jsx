@@ -1,6 +1,11 @@
+import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { evaluateDocumentReviewStatus } from '../utils/documentUtils';
+import SystemTimeSimulatorWidget from '../components/common/SystemTimeSimulatorWidget';
+import Sidebar from '../components/layout/Sidebar';
 
 describe('System Date Time Travel Simulator', () => {
   beforeEach(() => {
@@ -90,5 +95,74 @@ describe('System Date Time Travel Simulator', () => {
     // 3. Reset simulated date -> returns to null
     useStore.getState().resetSimulatedDate();
     expect(useStore.getState().simulatedSystemDate).toBeNull();
+  });
+
+  it('Criteria 4: SystemTimeSimulatorWidget renders UI elements, status badges, and handles actions', () => {
+    useStore.setState({ simulatedSystemDate: null });
+    const { rerender } = render(<SystemTimeSimulatorWidget />);
+
+    // Header & Real time badge
+    expect(screen.getByText('เวลาจำลองระบบ')).toBeInTheDocument();
+    expect(screen.getByText('เวลาจริง')).toBeInTheDocument();
+
+    // 4 action buttons
+    const btn6m = screen.getByRole('button', { name: '+6 เดือน' });
+    const btn1y = screen.getByRole('button', { name: '+1 ปี' });
+    const btn2y = screen.getByRole('button', { name: '+2 ปี' });
+    const btnReset = screen.getByRole('button', { name: /🔄 คืนค่า/i });
+
+    expect(btn6m).toBeInTheDocument();
+    expect(btn1y).toBeInTheDocument();
+    expect(btn2y).toBeInTheDocument();
+    expect(btnReset).toBeInTheDocument();
+    expect(btnReset).toBeDisabled();
+
+    // Fast-forward +1 year
+    fireEvent.click(btn1y);
+    expect(useStore.getState().simulatedSystemDate).not.toBeNull();
+
+    rerender(<SystemTimeSimulatorWidget />);
+    expect(screen.getByText('จำลองอยู่')).toBeInTheDocument();
+    expect(btnReset).not.toBeDisabled();
+
+    // Reset back
+    fireEvent.click(btnReset);
+    expect(useStore.getState().simulatedSystemDate).toBeNull();
+
+    rerender(<SystemTimeSimulatorWidget />);
+    expect(screen.getByText('เวลาจริง')).toBeInTheDocument();
+
+    // Change date via date input
+    const dateInput = screen.getByLabelText('วันที่จำลองระบบ');
+    fireEvent.change(dateInput, { target: { value: '2029-05-20' } });
+    expect(useStore.getState().simulatedSystemDate).toBe('2029-05-20');
+  });
+
+  it('Criteria 5: Sidebar renders SystemTimeSimulatorWidget for non-admin users as well', () => {
+    useStore.setState({
+      currentUser: {
+        id: 'EMP-999',
+        name: 'Regular Staff',
+        department: 'PD',
+        role: 'STAFF',
+        isDcc: false,
+        level: 1
+      },
+      simulatedSystemDate: null
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Sidebar />
+      </MemoryRouter>
+    );
+
+    // Dev tools should not be visible for non-admin
+    expect(screen.queryByText('DEV TOOLS')).not.toBeInTheDocument();
+
+    // Time simulator widget MUST be visible
+    expect(screen.getByText('เวลาจำลองระบบ')).toBeInTheDocument();
+    expect(screen.getByText('เวลาจริง')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+1 ปี' })).toBeInTheDocument();
   });
 });

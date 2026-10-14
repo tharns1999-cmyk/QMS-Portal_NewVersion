@@ -218,7 +218,7 @@ describe('Periodic Review Components & Integration', () => {
         { route: '/dcc/periodic-reviews/SCH-1' }
       );
 
-      const revisionBtn = await screen.findByText('ต้องแก้ไขเอกสาร');
+      const revisionBtn = await screen.findByText('ต้องปรับปรุง/แก้ไข');
       await userEvent.click(revisionBtn);
 
       const schedule = useStore.getState().periodicReviewSchedules[0];

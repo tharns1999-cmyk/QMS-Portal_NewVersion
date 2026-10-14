@@ -25,6 +25,7 @@ import NotificationPopover from './NotificationPopover';
 import { isActionableTask, isDccAdmin as checkDccAdmin, isSameDepartment } from '../../utils/taskFilter';
 import { evaluateDocumentReviewStatus } from '../../utils/documentUtils';
 import { extractDeptCode } from '../../services/darService';
+import SystemTimeSimulatorWidget from '../common/SystemTimeSimulatorWidget';
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ const Sidebar = () => {
     externalDocuments, periodicReviewSchedules,
     masterUsers, setCurrentUser, switchUser, notifications,
     resetTransactionDataToCleanSlate, manualSeedData, externalRequests,
-    simulatedSystemDate, setSimulatedDate, fastForwardSystemDate, resetSimulatedDate, getEffectiveToday
+    simulatedSystemDate, getEffectiveToday
   } = useStore();
   
   const [isCleanSlateOpen, setIsCleanSlateOpen] = useState(false);
@@ -422,95 +423,41 @@ const Sidebar = () => {
 
       {/* ================= BOTTOM SECTION: Dev Tools & User Profile ================= */}
       <div className="p-3 border-t border-slate-200/80 bg-white shrink-0 space-y-2.5">
-        {/* Compact Dev Action Bar (QA Seed / Clean Slate) */}
+        {/* Compact Dev Action Bar (QA Seed / Clean Slate) - Admins only */}
         {isAdmin && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-1.5 py-1 px-2 bg-slate-50 border border-slate-200/60 rounded-lg text-[11px] text-slate-500">
-              <span className="font-mono text-[10px] font-medium text-slate-400 uppercase tracking-wider pl-1">
-                DEV TOOLS
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    manualSeedData();
-                    toast?.success?.('โหลดชุดข้อมูลตัวอย่างสำเร็จ');
-                  }}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-blue-50 text-slate-600 hover:text-blue-700 transition-colors font-medium cursor-pointer"
-                  title="โหลดชุดข้อมูลตัวอย่าง (Manual Seed)"
-                >
-                  <Sparkles size={11} className="text-blue-600 shrink-0" />
-                  <span>🔀 Seed</span>
-                </button>
-                <span className="text-slate-300">|</span>
-                <button
-                  type="button"
-                  onClick={() => setIsCleanSlateOpen(true)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-colors font-medium cursor-pointer"
-                  title="ล้างข้อมูลจำลองทั้งหมดเพื่อเริ่มทดสอบใหม่"
-                >
-                  <RotateCcw size={11} className="text-rose-600 shrink-0" />
-                  <span>Reset</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Time Travel Simulator Widget */}
-            <div className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5 mt-2">
-              <div className="flex items-center justify-between text-slate-700 font-medium">
-                <span className="flex items-center gap-1">⏱️ เวลาจำลองระบบ</span>
-                {simulatedSystemDate && (
-                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-mono font-semibold">
-                    จำลองอยู่
-                  </span>
-                )}
-              </div>
-
-              {/* Date Picker ป้อนวันที่ตามใจชอบ */}
-              <input
-                type="date"
-                value={simulatedSystemDate || new Date().toISOString().split('T')[0]}
-                onChange={(e) => setSimulatedDate(e.target.value)}
-                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-              />
-
-              {/* ปุ่ม Jump ข้ามเวลาเร็ว */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => fastForwardSystemDate(6)}
-                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 cursor-pointer text-slate-700"
-                >
-                  +6 เดือน
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fastForwardSystemDate(12)}
-                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 font-semibold text-indigo-600 cursor-pointer"
-                >
-                  +1 ปี
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fastForwardSystemDate(24)}
-                  className="flex-1 py-0.5 px-1 bg-white border border-slate-200 rounded text-[10px] hover:bg-slate-100 text-slate-600 cursor-pointer"
-                >
-                  +2 ปี
-                </button>
-                {simulatedSystemDate && (
-                  <button
-                    type="button"
-                    onClick={resetSimulatedDate}
-                    className="py-0.5 px-1.5 bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] hover:bg-rose-100 cursor-pointer font-medium"
-                    title="รีเซ็ตกลับเป็นเวลาจริง"
-                  >
-                    🔄 คืนค่า
-                  </button>
-                )}
-              </div>
+          <div className="flex items-center justify-between gap-1.5 py-1 px-2 bg-slate-50 border border-slate-200/60 rounded-lg text-[11px] text-slate-500">
+            <span className="font-mono text-[10px] font-medium text-slate-400 uppercase tracking-wider pl-1">
+              DEV TOOLS
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  manualSeedData();
+                  toast?.success?.('โหลดชุดข้อมูลตัวอย่างสำเร็จ');
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-blue-50 text-slate-600 hover:text-blue-700 transition-colors font-medium cursor-pointer"
+                title="โหลดชุดข้อมูลตัวอย่าง (Manual Seed)"
+              >
+                <Sparkles size={11} className="text-blue-600 shrink-0" />
+                <span>🔀 Seed</span>
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={() => setIsCleanSlateOpen(true)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-colors font-medium cursor-pointer"
+                title="ล้างข้อมูลจำลองทั้งหมดเพื่อเริ่มทดสอบใหม่"
+              >
+                <RotateCcw size={11} className="text-rose-600 shrink-0" />
+                <span>Reset</span>
+              </button>
             </div>
           </div>
         )}
+
+        {/* Global System Time Simulator Widget - Available for all roles & pages */}
+        <SystemTimeSimulatorWidget />
 
         {/* User Profile & Role Switcher */}
         <div className="p-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-2.5 shadow-2xs">

@@ -264,7 +264,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
       const schedules = [...(state.periodicReviewSchedules || [])];
       const tasks = [...(state.periodicReviewTasks || [])];
       const records = [...(state.periodicReviewRecords || [])];
-      const now = (state.simulatedSystemDate ? new Date(state.simulatedSystemDate) : new Date()).toISOString().split('T')[0];
+      const effectiveToday = (get().getEffectiveToday ? get().getEffectiveToday() : (state.simulatedSystemDate ? new Date(state.simulatedSystemDate) : (state.simulatedDate ? new Date(state.simulatedDate) : new Date())));
+      const now = effectiveToday.toISOString().split('T')[0];
 
       const autoDocId = scheduleId ? String(scheduleId).replace(/^PRS-AUTO-/, '') : null;
       let scheduleIndex = scheduleId ? schedules.findIndex(s => s.id === scheduleId) : -1;
@@ -407,22 +408,41 @@ export const createPeriodicReviewSlice = (set, get) => ({
         if (isFastTrack) {
           // === Flow 1: Fast-Track (1-Click Direct Approval by HOD/Manager/DCC/Admin) ===
           const targetExtDoc = matchedExtIdx !== -1 ? state.externalDocuments[matchedExtIdx] : null;
-          const extCycleMonths = Number(
+          const targetIntDoc = matchedIntIdx !== -1 ? state.documents[matchedIntIdx] : null;
+
+          const cycleMonths = Number(
             targetExtDoc?.reviewCycleMonths ||
-            schedule.frequencyMonths ||
+            targetExtDoc?.frequencyMonths ||
             (targetExtDoc?.verification_frequency ? Number(targetExtDoc.verification_frequency) * 12 : 0) ||
-            (schedule.cycleYears ? schedule.cycleYears * 12 : 12)
+            schedule.frequencyMonths ||
+            (schedule.cycleYears ? schedule.cycleYears * 12 : 0) ||
+            (schedule.documentNumber ? getReviewCycleYears(schedule.documentNumber) * 12 : 0) ||
+            12
           ) || 12;
-          const cycleYears = isExternalTarget
-            ? (extCycleMonths / 12)
-            : (schedule.cycleYears || getReviewCycleYears(schedule.documentNumber));
+
+          const currentDueDateStr = targetExtDoc?.next_review_date || targetExtDoc?.nextReviewDate ||
+            targetIntDoc?.next_review_date || targetIntDoc?.nextReviewDate ||
+            schedule.nextReviewDate || schedule.next_review_date || schedule.currentScheduledReviewDate;
+
+          let anchorDate = currentDueDateStr ? new Date(currentDueDateStr) : new Date(effectiveToday);
+          if (isNaN(anchorDate.getTime())) {
+            anchorDate = new Date(effectiveToday);
+          }
+
           let nextDate;
-          if (isExternalTarget && extCycleMonths % 12 !== 0) {
-            const dt = new Date(now);
-            dt.setMonth(dt.getMonth() + extCycleMonths);
-            nextDate = dt.toISOString().split('T')[0];
+          if (cycleMonths % 12 === 0) {
+            const anchorStr = anchorDate.toISOString().split('T')[0];
+            nextDate = addYears(anchorStr, cycleMonths / 12);
           } else {
-            nextDate = addYears(now, cycleYears);
+            const nextDateObj = new Date(anchorDate);
+            nextDateObj.setMonth(nextDateObj.getMonth() + cycleMonths);
+            nextDate = nextDateObj.toISOString().split('T')[0];
+          }
+
+          if (nextDate <= now) {
+            nextDate = cycleMonths % 12 === 0
+              ? addYears(now, cycleMonths / 12)
+              : (() => { const d = new Date(effectiveToday); d.setMonth(d.getMonth() + cycleMonths); return d.toISOString().split('T')[0]; })();
           }
           
           schedule.currentScheduledReviewDate = nextDate;
@@ -434,6 +454,10 @@ export const createPeriodicReviewSlice = (set, get) => ({
           schedule.status = isExternalTarget ? 'COMPLETED' : 'UPCOMING';
           schedule.review_status = isExternalTarget ? 'COMPLETED' : 'UPCOMING';
           schedule.dueState = 'NOT_YET_DUE';
+          schedule.rejectionRemarks = null;
+          schedule.rejection_remarks = null;
+          schedule.pendingReview = null;
+          schedule.pendingApprovalTaskId = null;
 
           const periodicReviewAuditEntry = {
             id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -495,7 +519,16 @@ export const createPeriodicReviewSlice = (set, get) => ({
             doc.review_status = 'UP_TO_DATE';
             doc.is_reviewed_this_cycle = true;
             delete doc.pending_periodic_review;
+            delete doc.pendingReview;
+            delete doc.pending_review_details;
             delete doc.pending_review_task_id;
+            delete doc.rejection_remarks;
+            delete doc.rejectionRemarks;
+            delete doc.rejection_reason;
+            delete doc.rejectionReason;
+            delete doc.rejected_at;
+            delete doc.rejectedAt;
+            delete doc.periodic_review_outcome;
             doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
             doc.review_history = [...(doc.review_history || []), historyEntry];
             updatedDocs = [...state.documents];
@@ -512,7 +545,16 @@ export const createPeriodicReviewSlice = (set, get) => ({
             doc.review_status = 'COMPLETED';
             doc.is_reviewed_this_cycle = true;
             doc.pending_periodic_review = false;
+            doc.pendingReview = null;
+            delete doc.pending_review_details;
             delete doc.pending_review_task_id;
+            delete doc.rejection_remarks;
+            delete doc.rejectionRemarks;
+            delete doc.rejection_reason;
+            delete doc.rejectionReason;
+            delete doc.rejected_at;
+            delete doc.rejectedAt;
+            delete doc.periodic_review_outcome;
             doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
             doc.review_history = [...(doc.review_history || []), historyEntry];
             updatedExtDocs = [...state.externalDocuments];
@@ -1618,12 +1660,45 @@ export const createPeriodicReviewSlice = (set, get) => ({
       return state;
     }
 
-    const now = (state.simulatedSystemDate ? new Date(state.simulatedSystemDate) : new Date()).toISOString().split('T')[0];
-    const extCycleYears = matchedExtDoc?.reviewCycleMonths ? Number(matchedExtDoc.reviewCycleMonths) / 12 : null;
-    const cycleYears = targetSchedule?.cycleYears ||
-      (targetSchedule?.frequencyMonths ? targetSchedule.frequencyMonths / 12 : null) ||
-      (is_external ? (extCycleYears || 1) : (targetSchedule?.documentNumber ? getReviewCycleYears(targetSchedule.documentNumber) : (doc_code ? getReviewCycleYears(doc_code) : 1)));
-    const nextDate = addYears(now, cycleYears || 1);
+    const effectiveToday = (get().getEffectiveToday ? get().getEffectiveToday() : (state.simulatedSystemDate ? new Date(state.simulatedSystemDate) : (state.simulatedDate ? new Date(state.simulatedDate) : new Date())));
+    const now = effectiveToday.toISOString().split('T')[0];
+
+    const cycleMonths = Number(
+      matchedExtDoc?.reviewCycleMonths ||
+      matchedExtDoc?.frequencyMonths ||
+      (matchedExtDoc?.verification_frequency ? Number(matchedExtDoc.verification_frequency) * 12 : 0) ||
+      targetSchedule?.frequencyMonths ||
+      (targetSchedule?.cycleYears ? targetSchedule.cycleYears * 12 : 0) ||
+      (targetSchedule?.documentNumber ? getReviewCycleYears(targetSchedule.documentNumber) * 12 : 0) ||
+      (doc_code ? getReviewCycleYears(doc_code) * 12 : 0) ||
+      12
+    ) || 12;
+
+    const currentDueDateStr = matchedExtDoc?.next_review_date || matchedExtDoc?.nextReviewDate ||
+      matchedIntDoc?.next_review_date || matchedIntDoc?.nextReviewDate ||
+      targetSchedule?.nextReviewDate || targetSchedule?.currentScheduledReviewDate;
+
+    let anchorDate = currentDueDateStr ? new Date(currentDueDateStr) : new Date(effectiveToday);
+    if (isNaN(anchorDate.getTime())) {
+      anchorDate = new Date(effectiveToday);
+    }
+
+    let nextDate;
+    if (cycleMonths % 12 === 0) {
+      const anchorStr = anchorDate.toISOString().split('T')[0];
+      nextDate = addYears(anchorStr, cycleMonths / 12);
+    } else {
+      const nextDateObj = new Date(anchorDate);
+      nextDateObj.setMonth(nextDateObj.getMonth() + cycleMonths);
+      nextDate = nextDateObj.toISOString().split('T')[0];
+    }
+
+    if (nextDate <= now) {
+      nextDate = cycleMonths % 12 === 0
+        ? addYears(now, cycleMonths / 12)
+        : (() => { const d = new Date(effectiveToday); d.setMonth(d.getMonth() + cycleMonths); return d.toISOString().split('T')[0]; })();
+    }
+    const cycleYears = cycleMonths / 12;
 
     const periodicReviewAuditEntry = {
       id: `REV-HIST-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1667,11 +1742,22 @@ export const createPeriodicReviewSlice = (set, get) => ({
         periodicReviewAuditEntry.round = (doc.periodic_reviews?.length || 0) + 1;
         periodicReviewAuditEntry.review_round = (doc.periodic_reviews?.length || 0) + 1;
         doc.last_reviewed_at = now;
+        doc.lastReviewedDate = now;
         doc.next_review_date = nextDate;
+        doc.nextReviewDate = nextDate;
         doc.review_status = 'UP_TO_DATE';
         doc.is_reviewed_this_cycle = true;
         delete doc.pending_periodic_review;
+        delete doc.pendingReview;
+        delete doc.pending_review_details;
         delete doc.pending_review_task_id;
+        delete doc.rejection_remarks;
+        delete doc.rejectionRemarks;
+        delete doc.rejection_reason;
+        delete doc.rejectionReason;
+        delete doc.rejected_at;
+        delete doc.rejectedAt;
+        delete doc.periodic_review_outcome;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
         doc.review_history = [...(doc.review_history || []), {
           id: `PRH-${Date.now()}`,
@@ -1703,7 +1789,16 @@ export const createPeriodicReviewSlice = (set, get) => ({
         doc.review_status = 'COMPLETED';
         doc.is_reviewed_this_cycle = true;
         doc.pending_periodic_review = false;
+        doc.pendingReview = null;
+        delete doc.pending_review_details;
         delete doc.pending_review_task_id;
+        delete doc.rejection_remarks;
+        delete doc.rejectionRemarks;
+        delete doc.rejection_reason;
+        delete doc.rejectionReason;
+        delete doc.rejected_at;
+        delete doc.rejectedAt;
+        delete doc.periodic_review_outcome;
         doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
         doc.review_history = [...(doc.review_history || []), {
           id: `PRH-${Date.now()}`,
@@ -1742,6 +1837,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
           is_reviewed_this_cycle: true,
           pendingApprovalTaskId: null,
           pendingReview: null,
+          rejectionRemarks: null,
+          rejection_remarks: null,
           updatedAt: new Date().toISOString()
         };
       }
@@ -1780,6 +1877,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
         is_reviewed_this_cycle: true,
         pendingApprovalTaskId: null,
         pendingReview: null,
+        rejectionRemarks: null,
+        rejection_remarks: null,
         updatedAt: new Date().toISOString()
       });
     }
@@ -1792,7 +1891,9 @@ export const createPeriodicReviewSlice = (set, get) => ({
         t.type === 'EXTERNAL_VERIFICATION' ||
         t.taskType === 'EXTERNAL_VERIFICATION' ||
         t.type === 'PERIODIC_REVIEW_APPROVAL' ||
-        t.taskType === 'PERIODIC_REVIEW_APPROVAL'
+        t.taskType === 'PERIODIC_REVIEW_APPROVAL' ||
+        t.type === 'PERIODIC_REVIEW_REVISE' ||
+        t.taskType === 'PERIODIC_REVIEW_REVISE'
       ) && (
         (scheduleId && t.scheduleId === scheduleId) ||
         (doc_id && (t.docId === doc_id || t.documentId === doc_id || t.doc_id === doc_id)) ||
@@ -1924,9 +2025,31 @@ export const createPeriodicReviewSlice = (set, get) => ({
     set(currState => {
       const doc = { ...currState.externalDocuments[docIdx] };
 
-      const now = (currState.simulatedSystemDate ? new Date(currState.simulatedSystemDate) : new Date()).toISOString().split('T')[0];
+      const effectiveToday = (get().getEffectiveToday ? get().getEffectiveToday() : (currState.simulatedSystemDate ? new Date(currState.simulatedSystemDate) : (currState.simulatedDate ? new Date(currState.simulatedDate) : new Date())));
+      const now = effectiveToday.toISOString().split('T')[0];
       const extCycleMonths = Number(doc.reviewCycleMonths || doc.frequencyMonths || (doc.verification_frequency ? Number(doc.verification_frequency) * 12 : 12)) || 12;
-      const nextDate = addYears(now, extCycleMonths / 12 || 1);
+
+      const currentDueDateStr = doc.next_review_date || doc.nextReviewDate;
+      let anchorDate = currentDueDateStr ? new Date(currentDueDateStr) : new Date(effectiveToday);
+      if (isNaN(anchorDate.getTime())) {
+        anchorDate = new Date(effectiveToday);
+      }
+
+      let nextDate;
+      if (extCycleMonths % 12 === 0) {
+        const anchorStr = anchorDate.toISOString().split('T')[0];
+        nextDate = addYears(anchorStr, extCycleMonths / 12);
+      } else {
+        const nextDateObj = new Date(anchorDate);
+        nextDateObj.setMonth(nextDateObj.getMonth() + extCycleMonths);
+        nextDate = nextDateObj.toISOString().split('T')[0];
+      }
+
+      if (nextDate <= now) {
+        nextDate = extCycleMonths % 12 === 0
+          ? addYears(now, extCycleMonths / 12)
+          : (() => { const d = new Date(effectiveToday); d.setMonth(d.getMonth() + extCycleMonths); return d.toISOString().split('T')[0]; })();
+      }
 
       const pendingInfo = doc.pending_periodic_review && typeof doc.pending_periodic_review === 'object' ? doc.pending_periodic_review : (doc.pending_review_details || {});
       const reviewerName = pendingInfo.reviewer_name || doc.reviewerName || 'Staff';
@@ -1986,8 +2109,16 @@ export const createPeriodicReviewSlice = (set, get) => ({
       doc.review_status = 'COMPLETED';
       doc.is_reviewed_this_cycle = true;
       doc.pending_periodic_review = false;
-      delete doc.pending_review_task_id;
+      doc.pendingReview = null;
       delete doc.pending_review_details;
+      delete doc.pending_review_task_id;
+      delete doc.rejection_remarks;
+      delete doc.rejectionRemarks;
+      delete doc.rejection_reason;
+      delete doc.rejectionReason;
+      delete doc.rejected_at;
+      delete doc.rejectedAt;
+      delete doc.periodic_review_outcome;
       doc.periodic_reviews = [...(doc.periodic_reviews || []), periodicReviewAuditEntry];
       doc.review_history = [...(doc.review_history || []), historyEntry];
 
@@ -2016,6 +2147,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
             is_reviewed_this_cycle: true,
             pendingApprovalTaskId: null,
             pendingReview: null,
+            rejectionRemarks: null,
+            rejection_remarks: null,
             updatedAt: new Date().toISOString()
           };
         }
@@ -2032,7 +2165,9 @@ export const createPeriodicReviewSlice = (set, get) => ({
           t.type === 'PERIODIC_REVIEW_APPROVAL' ||
           t.taskType === 'PERIODIC_REVIEW_APPROVAL' ||
           t.type === 'PERIODIC_REVIEW' ||
-          t.type === 'EXTERNAL_VERIFICATION'
+          t.type === 'EXTERNAL_VERIFICATION' ||
+          t.type === 'PERIODIC_REVIEW_REVISE' ||
+          t.taskType === 'PERIODIC_REVIEW_REVISE'
         );
         if (matches) {
           return {
@@ -2105,13 +2240,19 @@ export const createPeriodicReviewSlice = (set, get) => ({
     const approver = approverUser || state.currentUser;
     const { scheduleId, doc_id } = task.payload || {};
     const doc_code = task.payload?.doc_code || task.docCode || task.document_code || null;
+    const isExternal = Boolean(
+      task.payload?.is_external || task.isExternal || task.is_external ||
+      task.referenceType === 'EXTERNAL_DOC' || String(doc_code || doc_id || '').startsWith('ED-')
+    );
     const rawScheduleKey = scheduleId ? String(scheduleId).replace(/^PRS-AUTO-/, '') : null;
     const isActiveRecord = (d) => d && !d.is_superseded && !d.is_obsolete && d.status !== 'SUPERSEDED' && d.status !== 'OBSOLETE' && d.status !== 'OBSOLETE_ARCHIVED';
 
     let updatedDocs = state.documents;
     let updatedExtDocs = state.externalDocuments;
+    let targetDoc = null;
+    let docDept = task.department || task.target_department || task.owner_dept || 'DC';
 
-    if (!task.payload?.is_external && state.documents) {
+    if (!isExternal && state.documents) {
       const matchInt = (d) =>
         (doc_id && String(d.id) === String(doc_id)) ||
         (rawScheduleKey && (String(d.id) === rawScheduleKey || d.doc_code === rawScheduleKey || d.code === rawScheduleKey)) ||
@@ -2120,6 +2261,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
       if (docIdx === -1) docIdx = state.documents.findIndex(matchInt);
       if (docIdx !== -1) {
         const doc = { ...state.documents[docIdx] };
+        targetDoc = doc;
+        docDept = doc.department || doc.dept || docDept;
         doc.review_status = 'ACTION_REQUIRED';
         delete doc.pending_periodic_review;
         delete doc.pending_review_task_id;
@@ -2127,7 +2270,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
         updatedDocs = [...state.documents];
         updatedDocs[docIdx] = doc;
       }
-    } else if (task.payload?.is_external && state.externalDocuments) {
+    } else if (isExternal && state.externalDocuments) {
       const matchExt = (d) =>
         (doc_id && String(d.id) === String(doc_id)) ||
         (rawScheduleKey && (String(d.id) === rawScheduleKey || d.edCode === rawScheduleKey || d.doc_code === rawScheduleKey || d.code === rawScheduleKey)) ||
@@ -2136,8 +2279,11 @@ export const createPeriodicReviewSlice = (set, get) => ({
       if (docIdx === -1) docIdx = state.externalDocuments.findIndex(matchExt);
       if (docIdx !== -1) {
         const doc = { ...state.externalDocuments[docIdx] };
+        targetDoc = doc;
+        docDept = doc.department || doc.dept || doc.owner_dept || docDept;
         doc.review_status = 'ACTION_REQUIRED';
         doc.pending_periodic_review = false;
+        doc.pendingReview = null;
         delete doc.pending_review_task_id;
         doc.rejection_remarks = remarks;
         updatedExtDocs = [...state.externalDocuments];
@@ -2156,6 +2302,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
           status: 'ACTION_REQUIRED',
           dueState: 'DUE',
           pendingApprovalTaskId: null,
+          pendingReview: null,
           rejectionRemarks: remarks,
           updatedAt: new Date().toISOString()
         };
@@ -2178,9 +2325,49 @@ export const createPeriodicReviewSlice = (set, get) => ({
       return t;
     });
 
+    const targetDocId = doc_id || task.docId || task.documentId || targetDoc?.id;
+    const reviewerId = task.payload?.reviewer_id || task.reviewer_id || task.payload?.reviewerId || task.reviewerId || targetDoc?.ownerId || targetDoc?.owner_id;
+    const reviewerName = task.payload?.reviewer_name || task.reviewer_name || targetDoc?.ownerName || targetDoc?.owner_name;
+    const reviseTask = reviewerId ? {
+      id: `TASK-REV-REJECT-${Date.now()}`,
+      type: 'PERIODIC_REVIEW_REVISE',
+      taskType: 'PERIODIC_REVIEW_REVISE',
+      category: 'PERIODIC_REVIEW',
+      referenceType: isExternal ? 'EXTERNAL_DOC' : 'INTERNAL_DOC',
+      origin: isExternal ? 'EXTERNAL' : 'INTERNAL',
+      title: `[ตีกลับแก้ไข] ทบทวนเอกสารตามรอบ: ${doc_code || targetDocId}`,
+      description: `หัวหน้าแผนก (${approver?.name || 'HOD'}) ตีกลับผลการทบทวน: ${remarks || '-'}`,
+      docId: targetDocId,
+      documentId: targetDocId,
+      externalDocId: isExternal ? targetDocId : null,
+      docCode: doc_code,
+      doc_code: doc_code,
+      document_code: doc_code,
+      docTitle: task.docTitle || task.payload?.doc_title,
+      docName: task.docTitle || task.payload?.doc_title || doc_code,
+      department: docDept,
+      target_department: docDept,
+      targetDepartment: docDept,
+      owner_dept: docDept,
+      currentHandlerDepartment: docDept,
+      assigneeId: reviewerId,
+      assignee_id: reviewerId,
+      assigneeName: reviewerName,
+      assignedToRole: 'REVIEWER',
+      status: 'PENDING',
+      actionRequired: true,
+      is_completed: false,
+      priority: 'HIGH',
+      isUrgent: true,
+      rejectionRemarks: remarks,
+      rejection_remarks: remarks,
+      link: `/dcc/periodic-reviews/${encodeURIComponent(targetDocId || doc_code)}`,
+      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    } : null;
+
     // 🛡️ Create Notification for Reviewer
     const newNotifications = [...(state.notifications || [])];
-    const reviewerId = task.payload?.reviewer_id;
     if (reviewerId) {
       newNotifications.unshift({
         id: `notif-rev-reject-${Date.now()}`,
@@ -2199,7 +2386,7 @@ export const createPeriodicReviewSlice = (set, get) => ({
       documents: updatedDocs,
       externalDocuments: updatedExtDocs,
       periodicReviewSchedules: schedules,
-      tasks: updatedTasks,
+      tasks: reviseTask ? [reviseTask, ...updatedTasks] : updatedTasks,
       notifications: newNotifications,
       actionLog: [{
         id: `LOG-${Date.now()}`,
