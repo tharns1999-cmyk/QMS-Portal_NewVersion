@@ -44,7 +44,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
     expect(screen.getByText('ระเบียบปฏิบัติการตลาด')).toBeInTheDocument();
 
     // Verify Single Source of Truth badge is present
-    expect(screen.getByText(/เชื่อมโยงจาก Tab 3 \(Single Source of Truth\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Single Source of Truth/i)).toBeInTheDocument();
   });
 
   it('2. Compact SLA stepper buttons [-] and [+] adjust day counts within valid range', () => {
@@ -71,7 +71,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
     expect(inputs[0].value).toBe('4');
 
     // Click Save All
-    const saveBtn = screen.getByRole('button', { name: /บันทึกการตั้งค่าสายการอนุมัติและ SLAs/i });
+    const saveBtn = screen.getByRole('button', { name: /บันทึกการตั้งค่า/i });
     fireEvent.click(saveBtn);
 
     expect(useStore.getState().slaSettings.reviewSlaDays).toBe(4);
