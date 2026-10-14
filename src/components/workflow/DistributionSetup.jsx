@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Printer, Check, Plus, X, Lock, Crown, CheckCircle2, Search,
+  Printer, Check, Plus, X, Lock, CheckCircle2, Search,
   Building2, Sparkles
 } from 'lucide-react';
 import useStore from '../../store/useStore';
@@ -46,7 +46,6 @@ const DistributionSetup = ({
   originatorDeptCode = null,
   distributions = [],
   _oldDistributions = null,
-  oldDistributions = null,
   onChange = () => {},
   showConfirmButton = false,
   onConfirm = () => {},
@@ -82,7 +81,7 @@ const DistributionSetup = ({
     return [...new Set(list.filter(Boolean))];
   }, [targetDepartments, accessControl]);
 
-  const isOriginatorDept = (dept) => {
+  const isOriginatorDept = useCallback((dept) => {
     if (!dept) return false;
     const dId = String(dept.id || '').trim();
     const dCode = String(dept.code || dept.shortName || '').trim();
@@ -96,7 +95,7 @@ const DistributionSetup = ({
       dId === normOwnerDept ||
       dCode === normOwnerDept
     );
-  };
+  }, [effectiveOwnerDeptId, effectiveOwnerDeptCode, normOwnerDept]);
 
   const matchesTarget = (dept, target) => {
     if (!dept || !target) return false;
@@ -184,7 +183,7 @@ const DistributionSetup = ({
     }
 
     return deduped;
-  }, [masterDepartments, storeDepts, isTargeted, rawTargetDepts, effectiveOwnerDeptId, effectiveOwnerDeptCode, normOwnerDept]);
+  }, [masterDepartments, storeDepts, isTargeted, rawTargetDepts, effectiveOwnerDeptId, effectiveOwnerDeptCode, normOwnerDept, isOriginatorDept]);
 
   // Active selected department in Master-Detail Pane (Defaults to Originator/Requester Dept)
   const [selectedDeptId, setSelectedDeptId] = useState(effectiveOwnerDeptId);
@@ -203,7 +202,7 @@ const DistributionSetup = ({
         setSelectedDeptId(defaultDept.id || defaultDept.code || effectiveOwnerDeptId);
       }
     }
-  }, [availableDeptsList, selectedDeptId, effectiveOwnerDeptId, effectiveOwnerDeptCode, normOwnerDept]);
+  }, [availableDeptsList, selectedDeptId, effectiveOwnerDeptId, effectiveOwnerDeptCode, normOwnerDept, isOriginatorDept]);
 
   const selectedDeptObj = useMemo(() => {
     return availableDeptsList.find(d => 
@@ -284,12 +283,12 @@ const DistributionSetup = ({
     onChange(calculated.distributedCopies);
   };
 
-  const getDeptAllocatedCount = (deptId) => {
+  const getDeptAllocatedCount = useCallback((deptId) => {
     const normDept = normalizeDepartmentId(deptId);
-    return copyCalculation.allAllocations.filter(alloc => 
+    return (copyCalculation?.allAllocations || []).filter(alloc => 
       normalizeDepartmentId(alloc.departmentId || alloc.dept || alloc.dept_code || alloc.department) === normDept
     ).length;
-  };
+  }, [copyCalculation]);
 
   // Dynamic Department Sorting:
   // 1. Originator department on TOP ALWAYS with ★ badge
@@ -327,7 +326,7 @@ const DistributionSetup = ({
       // 3. Other departments alphabetically
       return (a.shortName || a.id || '').localeCompare(b.shortName || b.id || '');
     });
-  }, [availableDeptsList, deptSearchQuery, normOwnerDept, copyCalculation]);
+  }, [availableDeptsList, deptSearchQuery, normOwnerDept, getDeptAllocatedCount]);
 
   // Stations belonging to the currently selected department in Detail View
   const allStationsForSelectedDept = useMemo(() => {

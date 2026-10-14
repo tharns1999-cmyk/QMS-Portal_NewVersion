@@ -1,10 +1,9 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import TaskInbox from '../pages/Tasks/TaskInbox';
-import Sidebar from '../components/layout/Sidebar';
 
 describe('Controlled Copy Receipt Task Routing to Strict DAR Requester Tests', () => {
   const requesterUser = {

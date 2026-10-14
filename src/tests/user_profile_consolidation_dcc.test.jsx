@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import useStore, { MASTER_DATA_USER, MASTER_DEPARTMENTS, MASTER_DATA_DEPT } from '../store/useStore';

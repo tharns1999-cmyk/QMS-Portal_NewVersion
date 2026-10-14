@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore, { resolveReceiptTaskDepartment, createReceiptTask } from '../store/useStore';
-import TaskInbox, { formatDepartmentBadge, resolveTaskDepartment } from '../pages/Tasks/TaskInbox';
+import TaskInbox, { formatDepartmentBadge } from '../pages/Tasks/TaskInbox';
 import { normalizeCanonicalDept, isSameDepartment } from '../utils/taskFilter';
 import { normalizeDepartmentId, DEPARTMENT_METADATA } from '../services/MasterDataService';
 

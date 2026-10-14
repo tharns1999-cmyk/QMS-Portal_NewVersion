@@ -8,7 +8,6 @@ import {
   ChevronRight,
   FileEdit,
   Eye,
-  ExternalLink,
   AlertCircle,
   AlertTriangle,
   FilterX,
@@ -17,7 +16,6 @@ import {
   Bell,
   ShieldCheck,
   Send,
-  Calendar,
   Building2,
   MapPin,
   Zap,
@@ -37,8 +35,8 @@ import DccCustodyActionModal from '../../components/modals/DccCustodyActionModal
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
-import { isActionableTask, isDccUser, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment, normalizeCanonicalDept } from '../../utils/taskFilter';
-import { getDepartmentBadgeClasses, getDeptNameTh } from '../../config/qmsRegistry';
+import { isActionableTask, isSameDepartment, isDccAdmin, isDccExclusiveTask, isLevel6Plus, isReceiptTask, userMatchesDepartment, normalizeCanonicalDept } from '../../utils/taskFilter';
+import { getDeptNameTh } from '../../config/qmsRegistry';
 import { getDeptBadgeStyle } from '../../utils/departmentColors';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -278,16 +276,6 @@ export const getDocumentTitle = (task, storeContext = {}) => {
   return task.title || docCode || 'เอกสารควบคุม';
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper 2.5: Extract Revision chip label
-// ─────────────────────────────────────────────────────────────────────────────
-const getRevisionChip = (task) => {
-  const raw = task.doc_version || task.revision || task.rev || task.targetRevision;
-  if (!raw || raw === 'ALL') return null;
-  const clean = String(raw).trim();
-  if (clean.toLowerCase().startsWith('rev')) return clean;
-  return `Rev.${clean}`;
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper 3: Extract copy number chip label
@@ -696,138 +684,6 @@ export const getTaskTypeBadgeConfig = (normType, task) => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper 4: Short Thai task type label
-// ─────────────────────────────────────────────────────────────────────────────
-const getTaskTypeShortLabel = (normType, task) => {
-  if (normType === 'REVIEW' || normType === 'EXT_REVIEW') return 'ทบทวนเอกสาร';
-  if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL') return 'อนุมัติคำร้อง';
-  if (normType === 'CC_REPLACEMENT_APPROVAL') return 'อนุมัติสำเนาทดแทน';
-  if (normType === 'ACK' || normType === 'ACKNOWLEDGE') return 'รับทราบเอกสาร';
-  if (normType === 'REVISE') return 'แก้ไขคำร้อง';
-  if (
-    normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-    normType === 'CONFIRM_RECEIPT' ||
-    normType === 'RECEIPT'
-  ) return 'ตรวจรับสำเนา';
-  if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
-    if (task?.delivery_status === 'DISPATCHED_TRACKING' || task?.status === 'COMPLETED') {
-      return 'ติดตามการส่งมอบ';
-    }
-    return 'แจกจ่ายสำเนา';
-  }
-  if (
-    normType === 'DCC_RECALL' ||
-    normType === 'DCC_RECALL_WITH_CHECKLIST' ||
-    normType === 'RECALL_HARDCOPY' ||
-    normType === 'RECALL' ||
-    normType === 'OBSOLETE_RECALL'
-  ) {
-    if (task?.isDamaged || task?.reason === 'DAMAGED' || task?.title?.includes('ชำรุด') || task?.description?.includes('ชำรุด')) {
-      return 'เรียกคืน (ชำรุด)';
-    }
-    return 'เรียกคืนสำเนา';
-  }
-  if (normType.startsWith('DCC_')) return 'งานฝ่ายควบคุมเอกสาร (DC)';
-  return 'งาน';
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper 5: Icon + color config per task type
-// ─────────────────────────────────────────────────────────────────────────────
-const getTaskIconConfig = (task) => {
-  const normType = (task.type || task.taskType || '').toUpperCase();
-
-  if (normType === 'REVIEW' || normType === 'EXT_REVIEW') {
-    return {
-      icon: <Eye size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-indigo-50 text-indigo-600 border border-indigo-100',
-      chipClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
-    };
-  }
-  if (normType === 'APPROVE' || normType === 'APPROVAL' || normType === 'EXT_APPROVAL' || normType === 'CC_REPLACEMENT_APPROVAL') {
-    return {
-      icon: <ShieldCheck size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
-      chipClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-    };
-  }
-  if (normType === 'ACK' || normType === 'ACKNOWLEDGE') {
-    return {
-      icon: <Bell size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
-      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
-    };
-  }
-  if (normType === 'REVISE') {
-    return {
-      icon: <FileEdit size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
-      chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-    };
-  }
-  if (
-    normType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-    task.taskType === 'DEPT_CONFIRM_HARDCOPY_RECEIPT' ||
-    normType === 'CONFIRM_RECEIPT' ||
-    normType === 'RECEIPT'
-  ) {
-    return {
-      icon: <Layers size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-violet-50 text-violet-600 border border-violet-100',
-      chipClass: 'bg-violet-50 text-violet-700 border border-violet-200',
-    };
-  }
-  if (normType === 'DCC_DISTRIBUTE' || normType === 'DCC_ISSUE') {
-    if (task.delivery_status === 'DISPATCHED_TRACKING' || task.status === 'COMPLETED') {
-      return {
-        icon: <Clock size={17} strokeWidth={1.5} />,
-        iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
-        chipClass: 'bg-amber-50 text-amber-700 border border-amber-200',
-      };
-    }
-    return {
-      icon: <Send size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
-      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
-    };
-  }
-  if (
-    normType === 'DCC_RECALL' ||
-    normType === 'DCC_RECALL_WITH_CHECKLIST' ||
-    normType === 'RECALL_HARDCOPY' ||
-    normType === 'RECALL' ||
-    normType === 'OBSOLETE_RECALL' ||
-    task.taskType === 'RECALL' ||
-    task.taskType === 'DCC_RECALL_WITH_CHECKLIST'
-  ) {
-    const isDamaged = task.isDamaged || task.reason === 'DAMAGED' || task.title?.includes('ชำรุด') || task.description?.includes('ชำรุด');
-    if (isDamaged) {
-      return {
-        icon: <AlertTriangle size={17} strokeWidth={1.5} />,
-        iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
-        chipClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-      };
-    }
-    return {
-      icon: <AlertTriangle size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-orange-50 text-orange-600 border border-orange-100',
-      chipClass: 'bg-orange-50 text-orange-700 border border-orange-200',
-    };
-  }
-  if (normType.startsWith('DCC_')) {
-    return {
-      icon: <AlertCircle size={17} strokeWidth={1.5} />,
-      iconBg: 'bg-sky-50 text-sky-600 border border-sky-100',
-      chipClass: 'bg-sky-50 text-sky-700 border border-sky-200',
-    };
-  }
-  return {
-    icon: <CheckSquare size={17} strokeWidth={1.5} />,
-    iconBg: 'bg-slate-100 text-slate-500 border border-slate-200',
-    chipClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-  };
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper 6: SLA / Priority badge
@@ -941,7 +797,6 @@ const TaskInbox = () => {
   const [selectedExtTask, setSelectedExtTask] = useState(null);
   const [selectedReceiptTask, setSelectedReceiptTask] = useState(null);
   const [selectedCustodyTask, setSelectedCustodyTask] = useState(null);
-  const [selectedPeriodicReviewTask, setSelectedPeriodicReviewTask] = useState(null);
   const [selectedPeriodicReviewApprovalTask, setSelectedPeriodicReviewApprovalTask] = useState(null);
   const [editingExternalDoc, setEditingExternalDoc] = useState(null);
   const [resubmitTaskId, setResubmitTaskId] = useState(null);
@@ -1105,7 +960,7 @@ const TaskInbox = () => {
           isSameDepartment(currentUser?.primary_department, tDept);
         return isDeptMatch;
       });
-  }, [tasks, currentUser, dccAdmin, isLevel6Executive, userDepts, resolveTaskDept]);
+  }, [tasks, currentUser, dccAdmin, isLevel6Executive, userDepts, resolveTaskDept, allDocs, effectiveToday]);
 
   const availableDepts = useMemo(() => {
     // 🛡️ When in RECEIPT tab: strictly scoped to recipient department(s) of receipt tasks

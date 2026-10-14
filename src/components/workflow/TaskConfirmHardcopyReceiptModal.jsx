@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, CheckCircle2, ShieldCheck, MapPin, Building, Printer, Calendar, UserCheck, AlertTriangle, FileText, Check } from 'lucide-react';
+import { X, CheckCircle2, MapPin, Building, Printer, Calendar, UserCheck, AlertTriangle, Check } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
 import { isLevel6Plus, userMatchesDepartment } from '../../utils/taskFilter';
@@ -29,7 +29,6 @@ const TaskConfirmHardcopyReceiptModal = ({ isOpen, onClose, task }) => {
   const location = task.location || copy?.location || copy?.locationName || copy?.station_name || 'จุดใช้งานหลัก';
   const dept = task.target_department || task.targetDepartment || task.assignedToDept || copy?.holder_dept || copy?.department || currentUser?.department;
   const dispatchedAt = copy?.dispatched_at || task.createdAt;
-  const dispatchedBy = copy?.dispatched_by || 'ฝ่ายควบคุมเอกสาร (DCC)';
 
   const isLevel6 = isLevel6Plus(currentUser);
   const isWildcardUser = currentUser?.isDcc || currentUser?.role === 'DCC_ADMIN';

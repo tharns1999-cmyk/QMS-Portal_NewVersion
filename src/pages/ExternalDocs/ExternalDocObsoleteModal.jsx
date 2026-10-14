@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle, Archive, Calendar, Layers } from 'lucide-react';
 import useStore from '../../store/useStore';
@@ -28,7 +28,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
   }, [isOpen, documentToObsolete]);
 
   // Helper to determine if a user matches Current User / Requester
-  const isCurrentUser = (u) => {
+  const isCurrentUser = useCallback((u) => {
     if (!u || !currentUser) return false;
     const currentId = currentUser?.id;
     const currentEmpId = currentUser?.empId;
@@ -45,7 +45,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
     if (currentUsername && (uUsername === currentUsername || uId === currentUsername)) return true;
     if (currentName && uName && (uName === currentName)) return true;
     return false;
-  };
+  }, [currentUser]);
 
   // Rule 1: Eligible Reviewers (Exclude DCC Admin, Current User, and selected Approver)
   const eligibleReviewers = useMemo(() => {
@@ -56,7 +56,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
       if (formData?.approverId && (u.id === formData.approverId || u.empId === formData.approverId)) return false;
       return true;
     });
-  }, [masterUsers, currentUser, formData?.approverId]);
+  }, [masterUsers, isCurrentUser, formData?.approverId]);
 
   // Rule 2: Eligible Approvers (Exclude DCC Admin, Current User, and selected Reviewer)
   const eligibleApprovers = useMemo(() => {
@@ -67,7 +67,7 @@ const ExternalDocObsoleteModal = ({ isOpen, onClose, documentToObsolete }) => {
       if (formData?.reviewerId && (u.id === formData.reviewerId || u.empId === formData.reviewerId)) return false;
       return true;
     });
-  }, [masterUsers, currentUser, formData?.reviewerId]);
+  }, [masterUsers, isCurrentUser, formData?.reviewerId]);
 
   const docCode = documentToObsolete?.edCode || documentToObsolete?.doc_code || documentToObsolete?.docNo || documentToObsolete?.id;
 

@@ -5,6 +5,7 @@ import { isDccExclusiveTask, isDccOperationalTask, isReceiptTask } from '../../u
 import { resolveReceiptTaskDepartment, sanitizeControlledCopies } from '../slices/controlledCopySlice';
 import { syncCompletedDarToMasterDocuments } from '../slices/darSlice';
 import { sanitizeExternalDocReviewStatus } from '../slices/periodicReviewSlice';
+import { getDocCode, getCleanRev } from '../../utils/domainNormalizer';
 
 let _storeInstance = null;
 
@@ -78,14 +79,14 @@ export const runSinglePassStorageSelfHealing = () => {
         if (dar.status === 'COMPLETED') {
           const darType = String(dar.type || dar.requestType || dar.darType || '').toUpperCase();
           if (darType === 'REVISE' || darType === 'REVISION' || darType === 'REVISE_DOCUMENT') {
-            const targetCode = dar.docNo || dar.document_code || dar.doc_code || dar.docCode || dar.docIdInput || dar.code || dar.title;
+            const targetCode = getDocCode(dar) || dar.docIdInput;
             const rawTarget = dar.targetRevision || dar.newRevision || dar.newRev || dar.targetRev || dar.proposedRev;
             if (targetCode && rawTarget) {
-              const cleanTarget = String(rawTarget).replace(/^rev\.?/i, '').trim().padStart(2, '0');
+              const cleanTarget = getCleanRev(rawTarget);
               const docs = state.documents;
               const hasActiveNewRev = docs.some(d => {
-                const code = d.docNo || d.document_code || d.doc_code || d.code || d.docCode || d.title;
-                const rev = String(d.revision || d.rev || d.doc_version || d.version).replace(/^rev\.?/i, '').trim().padStart(2, '0');
+                const code = getDocCode(d);
+                const rev = getCleanRev(d);
                 return code && code.trim().toLowerCase() === targetCode.trim().toLowerCase() && rev === cleanTarget && (d.status === 'EFFECTIVE' || d.status === 'ACTIVE' || d.is_active);
               });
               if (!hasActiveNewRev) {
@@ -183,7 +184,7 @@ export const runSinglePassStorageSelfHealing = () => {
           const uniqueRevs = new Set();
           const cleanHistory = [];
           doc.revision_history.forEach(hist => {
-            const rev = String(hist.revision ?? hist.rev ?? hist.target_revision ?? hist.docRev ?? '00').padStart(2, '0');
+            const rev = getCleanRev(hist);
             if (!uniqueRevs.has(rev)) {
               uniqueRevs.add(rev);
               cleanHistory.push(hist);
@@ -678,25 +679,32 @@ export const persistConfig = {
     }
   },
   partialize: (state) => {
+    // 🛡️ Helper to strip all in-memory File, Blobs, binary data to prevent QuotaExceededError without unused variable warnings
+    const stripBinaries = (item) => {
+      if (!item || typeof item !== 'object') return item;
+      const clean = { ...item };
+      delete clean.fileBlob;
+      delete clean.binaryData;
+      delete clean.pdf_binary;
+      delete clean.pdfBlob;
+      delete clean.blob;
+      delete clean.previewBlob;
+      delete clean.rawBlob;
+      delete clean.fileContent;
+      delete clean.final_file;
+      delete clean.file;
+      return clean;
+    };
+
     // 🛡️ Sanitize documents: strip all in-memory File, Blobs, binary data to prevent QuotaExceededError
     const sanitizeDoc = (doc) => {
       if (!doc) return doc;
-      const {
-        fileBlob,
-        binaryData,
-        pdf_binary,
-        pdfBlob,
-        blob,
-        file,
-        previewBlob,
-        rawBlob,
-        fileContent,
-        ...cleanDoc
-      } = doc;
+      const originalFile = doc.file;
+      const cleanDoc = stripBinaries(doc);
 
       // Retain serializable fileKey and fileName
-      const fileName = cleanDoc.fileName || cleanDoc.file_name || cleanDoc.name || (typeof file === 'object' && file?.name ? file.name : undefined);
-      const fileKey = cleanDoc.fileKey || cleanDoc.fileId || cleanDoc.file_id || (typeof file === 'string' && !file.startsWith('data:') ? file : undefined);
+      const fileName = cleanDoc.fileName || cleanDoc.file_name || cleanDoc.name || (typeof originalFile === 'object' && originalFile?.name ? originalFile.name : undefined);
+      const fileKey = cleanDoc.fileKey || cleanDoc.fileId || cleanDoc.file_id || (typeof originalFile === 'string' && !originalFile.startsWith('data:') ? originalFile : undefined);
 
       const res = {
         ...cleanDoc,
@@ -707,7 +715,7 @@ export const persistConfig = {
       if (Array.isArray(res.revision_history)) {
         res.revision_history = res.revision_history.map(rev => {
           if (!rev) return rev;
-          const { fileBlob: _fb, binaryData: _bd, pdf_binary: _pb, pdfBlob: _pb2, blob: _b, file: _f, ...cleanRev } = rev;
+          const cleanRev = stripBinaries(rev);
           return {
             ...cleanRev,
             fileName: cleanRev.fileName || res.fileName,
@@ -722,19 +730,7 @@ export const persistConfig = {
     // 🛡️ Sanitize DARs: strip attached file blobs and binary payloads
     const sanitizeDar = (dar) => {
       if (!dar) return dar;
-      const {
-        fileBlob,
-        pdf_binary,
-        binaryData,
-        pdfBlob,
-        blob,
-        file,
-        final_file,
-        previewBlob,
-        rawBlob,
-        fileContent,
-        ...cleanDar
-      } = dar;
+      const cleanDar = stripBinaries(dar);
 
       let cleanAttachedFile = cleanDar.attachedFile;
       if (cleanAttachedFile) {
@@ -757,16 +753,7 @@ export const persistConfig = {
     // 🛡️ Sanitize Tasks: strip large file blobs
     const sanitizeTask = (task) => {
       if (!task) return task;
-      const {
-        fileBlob,
-        binaryData,
-        pdf_binary,
-        pdfBlob,
-        blob,
-        file,
-        previewBlob,
-        ...cleanTask
-      } = task;
+      const cleanTask = stripBinaries(task);
 
       let cleanAttachedFile = cleanTask.attachedFile;
       if (cleanAttachedFile) {
@@ -789,16 +776,7 @@ export const persistConfig = {
     // 🛡️ Sanitize Controlled Copies: strip binary data
     const sanitizeCopy = (copy) => {
       if (!copy) return copy;
-      const {
-        fileBlob,
-        binaryData,
-        pdf_binary,
-        pdfBlob,
-        blob,
-        file,
-        ...cleanCopy
-      } = copy;
-      return cleanCopy;
+      return stripBinaries(copy);
     };
 
     return {

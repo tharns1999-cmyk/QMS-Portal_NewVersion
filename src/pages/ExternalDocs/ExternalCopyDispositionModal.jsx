@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Flame, Archive, CheckCircle2, AlertTriangle, Layers, MapPin, Building, ShieldCheck } from 'lucide-react';
+import { X, Flame, Archive, CheckCircle2, Layers, MapPin, ShieldCheck } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
 
@@ -49,7 +49,6 @@ const ExternalCopyDispositionModal = ({
   if (!isOpen || !doc) return null;
 
   const docCode = doc.edCode || doc.doc_code || doc.docNo || doc.id || 'ED-DOC';
-  const docTitle = doc.title || doc.name || 'เอกสารภายนอก';
   const docEdition = doc.edition || doc.sourceVersion || 'ฉบับต้นทาง';
 
   const handleToggleSelectCopy = (id) => {

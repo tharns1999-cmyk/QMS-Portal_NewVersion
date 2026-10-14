@@ -22,9 +22,14 @@ import {
 import { 
   isSameDepartment, 
   userMatchesDepartment, 
-  isDccAdmin, 
   getUserLevelNumber 
 } from '../../utils/taskFilter';
+import { 
+  getDocCode, 
+  getDocTitle, 
+  getCleanRev, 
+  getCleanDept 
+} from '../../utils/domainNormalizer';
 
 // Extracted Domain Helper Functions
 export const canFastTrackReview = (currentUser, docDepartment) => {
@@ -291,9 +296,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
           : (intIdx !== -1 ? state.documents[intIdx] : null);
 
         if (doc) {
-          const docCode = doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.docNo || doc.title || doc.id;
-          const rawRev = doc.revision || doc.rev || doc.revNo || '00';
-          const cleanRev = String(rawRev).trim().replace(/^(Rev\.?\s*)+/i, '') || '00';
+          const docCode = getDocCode(doc) || doc.document_number || doc.id;
+          const cleanRev = getCleanRev(doc);
           const extCycleMonths = Number(doc.reviewCycleMonths || doc.frequencyMonths || (doc.verification_frequency ? Number(doc.verification_frequency) * 12 : 12)) || 12;
           const intCycleYears = getReviewCycleYears(doc.doc_type || doc.type || docCode);
           const synthSchedule = {
@@ -301,8 +305,8 @@ export const createPeriodicReviewSlice = (set, get) => ({
             documentId: doc.id,
             externalDocumentId: isExtDoc ? doc.id : null,
             documentNumber: docCode,
-            documentName: doc.title || doc.name || doc.doc_name || docCode,
-            ownerDepartmentId: doc.department || doc.dept || doc.owner_dept || 'DC',
+            documentName: getDocTitle(doc) || docCode,
+            ownerDepartmentId: getCleanDept(doc, 'DC'),
             ownerUserId: doc.ownerId || doc.owner_id || 'U002',
             responsibleUserId: doc.ownerId || doc.owner_id || 'U002',
             rev: cleanRev,

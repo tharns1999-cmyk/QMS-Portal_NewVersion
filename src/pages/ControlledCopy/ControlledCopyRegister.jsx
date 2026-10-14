@@ -7,7 +7,6 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   Clock, 
-  Building, 
   Building2, 
   MapPin, 
   FileDown, 
@@ -1513,7 +1512,6 @@ const ControlledCopyRegister = () => {
             const totalCount = group.copies.length;
             const percentage = totalCount > 0 ? Math.round((receivedCount / totalCount) * 100) : 0;
             const isAllReceived = totalCount > 0 && receivedCount === totalCount;
-            const canDispose = receivedCount > 0;
 
             return (
               <div 

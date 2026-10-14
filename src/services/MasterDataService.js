@@ -5,6 +5,8 @@
  * Conforms to ISO 9001 / FSSC 22000 industrial standard document distribution requirements.
  */
 
+import { getCleanDept } from '../utils/domainNormalizer';
+
 export const STANDARD_STATIONS = [
   // ฝ่ายผลิต (PD - Production)
   {
@@ -247,8 +249,7 @@ export const DEPARTMENT_METADATA = [
  */
 export const normalizeDepartmentId = (deptId) => {
   if (!deptId) return 'PD';
-  const clean = String(deptId).trim();
-  if (clean === 'QA' || clean === 'QA Super' || clean === 'QA/QC' || clean === 'QC' || clean === 'QAQC') return 'QC';
+  const clean = getCleanDept(deptId, String(deptId).trim());
   if (clean === 'HR' || clean === 'GA') return 'HR&GA';
   return clean;
 };

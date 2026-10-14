@@ -20,7 +20,6 @@
 import {
   CROSS_ORG_DEPTS as _REGISTRY_CROSS_ORG_DEPTS,
   getApprovalThresholdsFromRegistry,
-  QMS_CONFIG,
 } from '../config/qmsRegistry';
 
 /**

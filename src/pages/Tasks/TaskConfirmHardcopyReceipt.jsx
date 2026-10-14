@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -9,10 +9,8 @@ import {
   Calendar, 
   UserCheck, 
   FileText, 
-  KeyRound, 
   CheckCircle2, 
-  AlertTriangle,
-  Lock
+  AlertTriangle
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';

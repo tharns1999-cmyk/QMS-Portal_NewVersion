@@ -8,15 +8,13 @@
  *   5. Zero Hard Delete  — original doc still present in state after publish
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import useStore from '../store/useStore';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 /** Reset Zustand store to a fresh seeded state for each test */
 const seedState = () => {
-  const store = useStore.getState();
 
   // Minimal document seed
   const testDoc = {

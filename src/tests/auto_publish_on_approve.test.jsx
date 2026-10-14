@@ -73,7 +73,6 @@ describe('Auto-Publish Master Document to EFFECTIVE upon Final Approval', () => 
       expect(pubDoc.effective_date || pubDoc.effectiveDate).toBe('2026-09-06');
 
       // 3. Digital document is effective regardless of physical distribution tasks
-      const dccTask = state.tasks.find(t => t.type === 'DCC_DISTRIBUTE');
       expect(pubDoc.status).toBe('EFFECTIVE');
     });
 

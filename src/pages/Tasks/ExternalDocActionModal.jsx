@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   X, Check, XCircle, FileText, ShieldCheck, Eye, Bell,
-  Clock, CheckCircle2, AlertCircle, AlertTriangle,
-  Building2, Globe, Lock, Calendar, MapPin,
-  Printer, UserCheck, RotateCcw, FileCheck, ChevronRight,
+  Clock, AlertCircle, AlertTriangle,
+  Building2, Globe, Calendar, MapPin,
+  Printer, RotateCcw, FileCheck, ChevronRight,
   MessageSquare, Activity
 } from "lucide-react";
 import useStore from "../../store/useStore";
@@ -222,15 +222,6 @@ const ExternalDocActionModal = ({ task, onClose, layoutId }) => {
   const isRevision = ['REVISION', 'UPDATE'].includes(
     request?.type || request?.actionType || request?.extAction || task?.extAction || ''
   );
-  const currentRevNum = parseInt(
-    String(request?.originalRevision || doc?.originalRevision || doc?.rev || '0').replace(/\D/g, '') || '0',
-    10
-  );
-  const originalRevStr = String(currentRevNum).padStart(2, '0');
-  const targetRevNum = request?.targetRevision
-    ? parseInt(String(request.targetRevision).replace(/\D/g, '') || '1', 10)
-    : (isRevision ? currentRevNum + 1 : (doc?.rev ? parseInt(String(doc.rev).replace(/\D/g, '') || '0', 10) : 0));
-  const targetRevStr = String(targetRevNum).padStart(2, '0');
 
   const signoffs = useMemo(() => {
     const raw = request?.signoffs || doc?.signoffs;

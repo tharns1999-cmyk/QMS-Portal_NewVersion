@@ -2,7 +2,6 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ActionConfirmModal from '../components/common/ActionConfirmModal';
-import { MemoryRouter } from 'react-router-dom';
 
 describe('Modal Summary, Typography Scale-Up & Thai Localization Tests', () => {
   it('renders ActionConfirmModal with scaled-up typography and Thai default submit button', () => {

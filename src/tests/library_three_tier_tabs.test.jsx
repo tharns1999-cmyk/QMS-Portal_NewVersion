@@ -17,26 +17,6 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     isDcc: false
   };
 
-  const qaUser = {
-    id: 'U005',
-    name: 'บีม (QA)',
-    department: 'QA',
-    depts: ['QA'],
-    role: 'DEPT_ADMIN',
-    level: 4,
-    isDcc: false
-  };
-
-  const dccUser = {
-    id: 'U001',
-    name: 'Admin QA (DCC)',
-    department: 'QA',
-    depts: ['QA'],
-    role: 'DCC_ADMIN',
-    level: 1,
-    isDcc: true
-  };
-
   const sampleDocuments = [
     // 1. GENERAL Scope (PD owner)
     {

@@ -8,7 +8,6 @@
 
 export const getMockQaSeedData = () => {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
   const dueSoonDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   // ==========================================

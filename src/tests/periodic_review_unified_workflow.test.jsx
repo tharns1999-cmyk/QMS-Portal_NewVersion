@@ -93,7 +93,6 @@ describe('Unified Periodic Review Workflow Tests', () => {
     expect(taskAfter.is_completed).toBe(true);
 
     // Verify standardized review logs and record schema
-    const scheduleAfter = useStore.getState().periodicReviewSchedules.find(s => s.id === 'SCH-TEST-1');
     const records = useStore.getState().periodicReviewRecords;
     expect(records.length).toBeGreaterThan(0);
     const lastRecord = records[records.length - 1];

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
@@ -265,7 +265,7 @@ const ExternalDocsList = () => {
   }, []);
 
   // Helper: Calculate Validity Status
-  const getValidityInfo = (doc) => {
+  const getValidityInfo = useCallback((doc) => {
     if (doc.status === 'OBSOLETE' || doc.status === 'OBSOLETE_ARCHIVED' || doc.is_obsolete) {
       return { status: 'OBSOLETE', label: 'ยกเลิกแล้ว', colorClass: 'badge-inactive' };
     }
@@ -316,7 +316,7 @@ const ExternalDocsList = () => {
       diffDays,
       formattedDate: reviewDateObj.toISOString().split('T')[0]
     };
-  };
+  }, [getEffectiveToday, simulatedSystemDate]);
 
   // Department normalization & matching helpers
   const getUserDepartments = (user) => {
@@ -334,16 +334,15 @@ const ExternalDocsList = () => {
   };
 
   const userDepts = useMemo(() => getUserDepartments(currentUser), [currentUser]);
-  const userDept = userDepts[0] || normalizeDept(currentUser?.department) || 'QA';
 
-  const deptMatches = (d1, d2) => {
+  const deptMatches = useCallback((d1, d2) => {
     const s1 = normalizeDept(d1);
     const s2 = normalizeDept(d2);
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
     if ((s1 === 'QA' || s1 === 'QA/QC' || s1 === 'QAQC' || s1 === 'QC') && (s2 === 'QA' || s2 === 'QA/QC' || s2 === 'QAQC' || s2 === 'QC')) return true;
     return false;
-  };
+  }, []);
 
   const getDocCode = (doc) => {
     if (!doc) return '';
@@ -358,11 +357,11 @@ const ExternalDocsList = () => {
     );
   };
 
-  const isOwnerDept = (doc) => {
+  const isOwnerDept = useCallback((doc) => {
     if (!doc) return false;
     const docDept = doc.department || doc.dept || doc.owner_dept || extractDeptCode(getDocCode(doc));
     return userDepts.includes(docDept) || userDepts.some(ud => deptMatches(ud, docDept));
-  };
+  }, [userDepts, deptMatches]);
 
   const canManageDoc = (doc) => {
     if (!doc) return false;
@@ -389,7 +388,7 @@ const ExternalDocsList = () => {
     );
   };
 
-  const hasDistributedCopyToUserDept = (doc) => {
+  const hasDistributedCopyToUserDept = useCallback((doc) => {
     if (isOwnerDept(doc)) return false; // Strict: exclude own department
     
     // 1. Array of distributed dept codes / allowedDepartments
@@ -416,7 +415,7 @@ const ExternalDocsList = () => {
     });
 
     return Boolean(inDistDepts || inDistObjs || inAccessDepts || isUserAllowed || hasControlledCopy);
-  };
+  }, [isOwnerDept, userDepts, deptMatches, currentUser, controlledCopyInstances, documentControlledCopies]);
 
   // Master Document Source (Official Lifecycle Records: ACTIVE, SUPERSEDED, OBSOLETE)
   const allExternalDocs = useMemo(() => {
@@ -448,7 +447,7 @@ const ExternalDocsList = () => {
       }
       return false;
     });
-  }, [allExternalDocs, isAdmin, isDccAdmin, currentUser, userDepts]);
+  }, [allExternalDocs, isAdmin, isDccAdmin, currentUser, userDepts, isOwnerDept, deptMatches]);
 
   // ─────────────────────────────────────────────────────────────
   // Master Document Status Resolution (ISO 9001 Clause 7.5.3.2)
@@ -551,7 +550,7 @@ const ExternalDocsList = () => {
       }
       return true;
     });
-  }, [allExternalDocs, docMasterMap, activeMainTab, userDepts, controlledCopyInstances, documentControlledCopies]);
+  }, [allExternalDocs, docMasterMap, activeMainTab, isOwnerDept, hasDistributedCopyToUserDept]);
 
   // Phase 2 & 3: Synchronized Scope Tab Counters (Effective-Only Unique Document Code Counts)
   const countMyDept = useMemo(() => {
@@ -562,7 +561,7 @@ const ExternalDocsList = () => {
       }
     });
     return count;
-  }, [docMasterMap, userDepts]);
+  }, [docMasterMap, isOwnerDept]);
 
   const countGeneral = useMemo(() => {
     let count = 0;
@@ -572,7 +571,7 @@ const ExternalDocsList = () => {
       }
     });
     return count;
-  }, [docMasterMap, userDepts]);
+  }, [docMasterMap, isOwnerDept]);
 
   const countDistributed = useMemo(() => {
     let count = 0;
@@ -582,7 +581,7 @@ const ExternalDocsList = () => {
       }
     });
     return count;
-  }, [docMasterMap, userDepts, controlledCopyInstances, documentControlledCopies]);
+  }, [docMasterMap, isOwnerDept, hasDistributedCopyToUserDept]);
 
   const myDeptDocsCount = countMyDept;
   const generalDocsCount = countGeneral;
@@ -725,7 +724,7 @@ const ExternalDocsList = () => {
     }).length;
 
     return { total, active, superseded, obsolete, pending, dueSoon };
-  }, [allExternalDocs, accessibleDocs, simulatedSystemDate]);
+  }, [allExternalDocs, accessibleDocs, getValidityInfo]);
 
   // Filtered Document Stacks (Status + Toolbar Filters + Deep Search Transitivity)
   const filteredStacks = useMemo(() => {
@@ -765,7 +764,7 @@ const ExternalDocsList = () => {
 
       return true;
     });
-  }, [docStacks, activeMainTab, statusFilter, deptFilter, scopeFilter, searchTerm]);
+  }, [docStacks, activeMainTab, statusFilter, deptFilter, scopeFilter, searchTerm, deptMatches]);
 
   // Sorted Parent Document Stacks for Data Grid
   const displayStacks = useMemo(() => {
@@ -801,7 +800,7 @@ const ExternalDocsList = () => {
   // Active documents pool for Header Action Selectors (Strictly My Department documents or DCC)
   const selectableActiveDocs = useMemo(() => {
     return accessibleDocs.filter(d => (d.status === 'ACTIVE' || d.status === 'EFFECTIVE') && (isOwnerDept(d) || isDccAdmin));
-  }, [accessibleDocs, userDepts, isDccAdmin]);
+  }, [accessibleDocs, isOwnerDept, isDccAdmin]);
 
   const filteredSelectableDocs = useMemo(() => {
     if (!selectorSearch.trim()) return selectableActiveDocs;
@@ -920,7 +919,7 @@ const ExternalDocsList = () => {
         }
       }
     }
-  }, [deepLinkDocCode, deepLinkDocId, autoOpenUpdate, autoOpenObsolete, externalDocuments]);
+  }, [deepLinkDocCode, deepLinkDocId, autoOpenUpdate, autoOpenObsolete, externalDocuments, location.state?.fromPeriodicReview, searchParams]);
 
   const cleanupDeepLinkParams = () => {
     handledDeepLinkKeyRef.current = '';
@@ -1029,7 +1028,6 @@ const ExternalDocsList = () => {
     setDocToObsolete(null);
   };
 
-  const handleCloseModal = handleCloseFormModal;
 
   const handleHistory = (doc) => {
     setOpenMenuDocId(null);
@@ -1239,29 +1237,6 @@ const ExternalDocsList = () => {
     );
   };
 
-  const getScopeBadge = (scope) => {
-    switch (scope) {
-      case 'Restricted':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF2F0] text-[#F24822] border border-[#FDC4B8]">
-            <Lock size={13} strokeWidth={1.5} /> ลับเฉพาะ
-          </span>
-        );
-      case 'Department':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#FFF8E6] text-[#B87C33] border border-[#FDE6B0]">
-            <Building2 size={13} strokeWidth={1.5} /> เฉพาะแผนก
-          </span>
-        );
-      case 'General':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-[#E6F7ED] text-[#14AE5C] border border-[#B3E7C9]">
-            <Globe size={13} strokeWidth={1.5} /> ทั่วไป
-          </span>
-        );
-    }
-  };
 
   return (
     <div className="w-full space-y-4 pb-12">

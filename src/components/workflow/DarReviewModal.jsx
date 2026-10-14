@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { 
   FileText, 
   CheckCircle, 
-  XCircle, 
   Ban, 
   X, 
   Globe, 
@@ -12,17 +11,11 @@ import {
   Eye, 
   Calendar, 
   Layers, 
-  Award, 
-  Users, 
-  Bell, 
-  Download, 
-  Sparkles, 
   FileCheck2, 
   MessageSquare,
-  AlertTriangle,
   RotateCcw
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import useStore from '../../store/useStore';
 import { ACCESS_SCOPES, ACCESS_SCOPE_METADATA } from '../../utils/accessControl';
 import { getDarReason, getDarDetail, getDarDocInfo, getRequesterName } from '../../utils/darHelper';
@@ -63,9 +56,8 @@ const DarReviewModal = ({
   onReturn,
   readOnly = false
 }) => {
-  const { documents, masterUsers, masterDepartments, currentUser } = useStore();
+  const { documents, masterUsers, currentUser } = useStore();
   const [comment, setComment] = useState('');
-  const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
 
   if (!isOpen || !dar) return null;
 
@@ -385,7 +377,6 @@ const DarReviewModal = ({
                           const isOrigin = d.copyNo === '01' || d.isOwner || i === 0;
                           const rawLoc = d.location || d.station_name || d.stationName || d.locationName || d.name || d.departmentId || 'จุดหน้างาน';
                           const cleanLoc = cleanLocationName(rawLoc);
-                          const deptTag = d.departmentId || d.dept || ownerDept;
                           return (
                             <div 
                               key={i} 

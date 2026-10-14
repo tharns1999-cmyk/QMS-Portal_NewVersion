@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, ChevronRight, ChevronLeft, Search, X, FileText, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { FilePlus, Edit, Trash2, ClipboardCheck, Eye, Search, X, FileText, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 import { isDarDraft, isDarRequester, formatDarDocumentDisplay } from '../../utils/darHelper';

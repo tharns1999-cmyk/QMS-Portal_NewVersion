@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
@@ -47,7 +47,6 @@ const TaskApprove = () => {
     processWorkflow, 
     finalizeAndPublishMaster,
     currentUser, 
-    canDownloadDocument, 
     masterUsers = [],
     users = [] 
   } = useStore();
@@ -366,13 +365,6 @@ const TaskApprove = () => {
         }
 
         // 5. BACKGROUND ASYNC STAMPING: Process stamping in background
-        const draftMetadata = {
-          darNo: dar.darNumber || dar.darNo || dar.id,
-          docCode: docInfo.docCode || dar.docCode || dar.title,
-          docTitle: dar.title,
-          timestamp: signOffData?.requester?.timestamp || resolveSubmissionDate(dar, task, darTimeline)
-        };
-
         try {
           // Allow React to render the instant preview first
           await new Promise(resolve => setTimeout(resolve, 40));
@@ -417,6 +409,7 @@ const TaskApprove = () => {
       isCancelled = true;
       // Protected: Do NOT synchronously revoke URLs here
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dar?.id, dar?.darNumber, dar?.fileId, dar?.attachedFile?.fileId, task?.id, pdfLoadRetryKey]);
 
   const handleDownloadDraft = async () => {
@@ -755,9 +748,6 @@ const TaskApprove = () => {
     );
   }
 
-  // Use a pseudo-document for access rules since DAR is not in documents array yet
-  const pseudoDoc = { department: dar.department, distributedTo: dar.distributedDepts || [] };
-  const canDownload = canDownloadDocument ? canDownloadDocument(pseudoDoc, currentUser) : false;
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 

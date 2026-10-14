@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import useStore, { generateNextEdrNumber } from '../../store/useStore';
-import { X, Upload, Save, AlertCircle, FileText, CheckCircle2, Shield, Clock, Building2, Tag, Layers, Printer } from 'lucide-react';
+import { X, Upload, Save, AlertCircle, FileText, CheckCircle2, Shield, Building2, Tag, Layers, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import UserSelector from '../../components/UserSelector';
@@ -47,9 +47,6 @@ const ExternalDocFormModal = ({ isOpen, onClose, documentToEdit = null, resubmit
     return match ? parseInt(match[0], 10) : 0;
   };
 
-  const currentNum = extractRevNumber(documentToEdit?.revision || documentToEdit?.rev);
-  const prevRev = `Rev.${String(currentNum).padStart(2, '0')}`;
-  const nextRev = `Rev.${String(currentNum + 1).padStart(2, '0')}`;
   const isReviseMode = Boolean(documentToEdit && !isResubmit);
 
   // Helper for Safe Initial Form State (Defensive Render & Fallbacks)

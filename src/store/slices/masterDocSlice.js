@@ -8,6 +8,7 @@ import { getSystemSampleDocumentBlob } from '../../utils/pdfStamper';
 import { saveFile } from '../../utils/fileStorage';
 import { MOCK_DOCUMENTS, MOCK_DARS, MOCK_DOC_FORMATS, MASTER_DATA_USER } from '../fixtures/seedData';
 import { MASTER_DOCUMENT_TYPES } from '../../config/qmsRegistry';
+import { getDocCode, syncMirroredState } from '../../utils/domainNormalizer';
 
 export const DEFAULT_DOCUMENT_CATEGORIES = [
   { id: 'PROCEDURE', code: 'SOP', name: 'ระเบียบปฏิบัติงาน (SOP)', nameTh: 'ระเบียบปฏิบัติงาน', category: 'INTERNAL' },
@@ -182,10 +183,7 @@ export const createMasterDocSlice = (set, get) => ({
     return generateDocumentCode(docType, dept, state.documents || []);
   },
 
-  resolveDocumentCode: (doc) => {
-    if (!doc) return '';
-    return doc.document_code || doc.doc_code || doc.code || doc.docCode || doc.docNo || doc.title || '';
-  },
+  resolveDocumentCode: (doc) => getDocCode(doc) || '',
 
   setDocumentStatus: (docId, status, additionalProps = {}) => set((state) => {
     const updateFn = (d) => {
@@ -504,11 +502,11 @@ export const createMasterDocSlice = (set, get) => ({
         (d.status === 'SUPERSEDED' || d.status === 'SUPERSEDED_ARCHIVED' || d.is_superseded)
       );
 
-      return {
+      return syncMirroredState({
         documents: currentDocs,
         supersededDocuments: supersededSnapshots,
         dars: currentDars
-      };
+      });
     });
 
     if (typeof window !== 'undefined' && window.localStorage) {

@@ -8,7 +8,7 @@ import {
   handleDownloadHistoricalRevision, 
   default as DocumentDetailModal 
 } from '../components/workflow/DocumentDetailModal';
-import { applySupersededWatermark, UniversalWatermarkService } from '../services/UniversalWatermarkService';
+import { applySupersededWatermark } from '../services/UniversalWatermarkService';
 import * as fileStorage from '../utils/fileStorage';
 
 describe('Historical Revision Download & Stamping Test Suite (ISO 9001 Clause 7.5.3)', () => {

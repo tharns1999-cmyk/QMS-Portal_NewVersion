@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, ShieldCheck, Clock, CheckCircle2, AlertTriangle, XCircle, FileText, RotateCw } from 'lucide-react';
+import { User, ShieldCheck, Clock, CheckCircle2, AlertTriangle, XCircle, RotateCw } from 'lucide-react';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 
 /**

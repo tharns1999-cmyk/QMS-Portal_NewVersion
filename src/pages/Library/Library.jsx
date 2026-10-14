@@ -22,11 +22,13 @@ import {
   ShieldCheck,
   Clock,
   XCircle,
-  Eye
+  Eye,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { getRequesterName, getReviewerName, getApproverName, getAckNames, normalizeDeptCode, normalizeDept } from '../../utils/darHelper';
 import { hasDocumentAccess } from '../../utils/accessControl';
-import { resolveDocCode, getReviewStatus, evaluateDocumentReviewStatus, addYears, getReviewCycleYears } from '../../utils/documentUtils';
+import { resolveDocCode, evaluateDocumentReviewStatus, addYears, getReviewCycleYears } from '../../utils/documentUtils';
 import ReplacementModal from './ReplacementModal';
 import RequestAdditionalCopiesModal from '../../components/workflow/RequestAdditionalCopiesModal';
 import DocumentDetailModal from '../../components/workflow/DocumentDetailModal';
@@ -109,7 +111,6 @@ const Library = () => {
   const [filterAccessScope, setFilterAccessScope] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
   const [openMenuDocId, setOpenMenuDocId] = useState(null);
-  const [menuAnchor, setMenuAnchor] = useState(null);
   
   // For Replacement & Ad-Hoc Copy Requests
   const [replacementInstance, setReplacementInstance] = useState(null);
@@ -137,19 +138,16 @@ const Library = () => {
     const handleOutsideClick = (e) => {
       if (!e.target.closest('.dropdown-action-dock') && !e.target.closest('.overflow-dropdown-menu')) {
         setOpenMenuDocId(null);
-        setMenuAnchor(null);
       }
     };
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         setOpenMenuDocId(null);
-        setMenuAnchor(null);
       }
     };
     const handleScrollOrResize = () => {
       if (openMenuDocId) {
         setOpenMenuDocId(null);
-        setMenuAnchor(null);
       }
     };
     window.addEventListener('click', handleOutsideClick);
@@ -332,7 +330,7 @@ const Library = () => {
       }
       return true;
     });
-  }, [documents, activeTab, userDistinctDepts, isOwnerDept, hasDistributedCopyToUserDept, currentUser, isDccUser, filterStatus]);
+  }, [documents, activeTab, isOwnerDept, hasDistributedCopyToUserDept, currentUser]);
 
   // Compute Counts for All Tabs
   const accessibleDocs = useMemo(() => {
@@ -413,7 +411,7 @@ const Library = () => {
 
       return true;
     });
-  }, [documents, activeTab, isOwnerDept, hasDocumentAccess, currentUser, filterType, filterDept, searchTerm, filterAccessScope, filterStandard, filterDate]);
+  }, [documents, activeTab, isOwnerDept, hasDistributedCopyToUserDept, currentUser, filterType, filterDept, searchTerm, filterAccessScope, filterStandard, filterDate]);
 
   // Helper for Resolving Normalized Master Document Code
   const resolveDocCodeKey = useCallback((doc) => {
@@ -546,7 +544,7 @@ const Library = () => {
     }
 
     return rawList;
-  }, [baseDocs, filterStatus, filterType, filterDept, activeTab, userDistinctDepts, searchTerm, filterAccessScope, filterStandard, filterDate, resolveDocCodeKey]);
+  }, [baseDocs, filterStatus, filterType, filterDept, activeTab, searchTerm, filterAccessScope, filterStandard, filterDate, resolveDocCodeKey]);
 
   // Grouped Stacking for Superseded and Obsolete tabs (1 Document Code = 1 Row)
   const isGroupedView = filterStatus === 'SUPERSEDED' || filterStatus === 'OBSOLETE';
@@ -655,7 +653,7 @@ const Library = () => {
     });
 
     return groups;
-  }, [filteredDocs, isGroupedView, resolveDocCodeKey, controlledCopyInstances, documentControlledCopies]);
+  }, [filteredDocs, isGroupedView, resolveDocCodeKey, controlledCopyInstances, documentControlledCopies, filterStatus]);
 
   const currentStatusTabTotal = useMemo(() => {
     if (filterStatus === 'SUPERSEDED') return tabCounts.superseded;
@@ -1132,34 +1130,7 @@ const Library = () => {
     setFilterStatus('EFFECTIVE');
   };
 
-  const handleToggleMenu = (doc, e) => {
-    e.stopPropagation();
-    if (openMenuDocId === doc.id) {
-      setOpenMenuDocId(null);
-      setMenuAnchor(null);
-    } else {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const spaceBelow = (typeof window !== 'undefined' ? window.innerHeight : 800) - rect.bottom;
-      const openUpward = spaceBelow < 340 && rect.top > 340;
-      
-      const menuWidth = 240;
-      let left = rect.left;
-      if (typeof window !== 'undefined' && left + menuWidth > window.innerWidth) {
-        left = window.innerWidth - menuWidth - 16;
-      }
-      if (left < 16) left = 16;
 
-      const top = openUpward ? Math.max(10, rect.top - 8) : (rect.bottom + 6);
-
-      setOpenMenuDocId(doc.id);
-      setMenuAnchor({
-        docId: doc.id,
-        top,
-        left,
-        openUpward
-      });
-    }
-  };
 
 
 
@@ -1355,22 +1326,6 @@ const Library = () => {
               const isObsoleteTab = filterStatus === 'OBSOLETE';
               const isSupersededTab = filterStatus === 'SUPERSEDED';
 
-              // Cumulative superseded revisions list for metric transformation
-              const supersededDocsList = (documents || []).filter(d => {
-                const c = (d.document_code || d.doc_code || d.code || d.docCode || d.title || String(d.id)).trim().toUpperCase();
-                if (c !== docCodeUpper) return false;
-                const st = (d.status || '').toUpperCase();
-                const isEff = st === 'EFFECTIVE' || st === 'ACTIVE' || st === 'APPROVED' || st === 'PUBLISHED' || Boolean(d.is_active);
-                if (isEff) return false;
-                return st === 'SUPERSEDED' || st === 'SUPERSEDED_ARCHIVED' || st === 'OUTDATED' || Boolean(d.is_superseded);
-              }).sort((a, b) => {
-                const revA = parseInt(String(a.rev || a.revision || '0').replace(/\D/g, ''), 10) || 0;
-                const revB = parseInt(String(b.rev || b.revision || '0').replace(/\D/g, ''), 10) || 0;
-                return revA - revB;
-              });
-
-
-
               // Workflow and Distribution
               const workflow = resolveDocWorkflow(primaryDoc);
               const distSummary = getDistributionSummary(primaryDoc);
@@ -1411,6 +1366,19 @@ const Library = () => {
                           <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold border border-slate-200">
                             {docType}
                           </span>
+                          {isGroupedView && (item.revisions || item.docs || []).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleGroupExpand(docCode);
+                              }}
+                              className="p-0.5 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                              title={isExpanded ? "ย่อรายการฉบับเก่า" : "ขยายดูประวัติทุกฉบับ"}
+                            >
+                              {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            </button>
+                          )}
                         </div>
                         <div 
                           className="font-medium text-slate-700 text-xs sm:text-sm leading-relaxed truncate max-w-md group-hover:text-blue-900 transition-colors" 

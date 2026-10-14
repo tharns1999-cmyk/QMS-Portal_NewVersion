@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import DarList from '../pages/DarWorkflow/DarList';
@@ -223,12 +223,8 @@ describe('DAR Table Title Standardization, [OBSOLETE] Strip, & Status Badge Loca
 
   describe('5. DarObsoleteForm Presets and Submission Payload', () => {
     it('sets clean title without [OBSOLETE] prefix when creating an obsolete DAR', () => {
-      let createdPayload = null;
       useStore.setState({
-        addDar: (payload) => {
-          createdPayload = payload;
-          return { id: 'DAR-NEW-OBS-01' };
-        }
+        addDar: () => ({ id: 'DAR-NEW-OBS-01' })
       });
 
       render(

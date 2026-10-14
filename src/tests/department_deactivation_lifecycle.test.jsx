@@ -24,8 +24,6 @@ describe('Department Deactivation / Soft Delete with Pre-check & User Re-assignm
 
   describe('1. Store Logic & Dependency Pre-checks', () => {
     it('accurately pre-checks dependencies (effective docs, copies, tasks, affected users)', () => {
-      const store = useStore.getState();
-
       // Seed mock dependencies for department 'MKT'
       useStore.setState({
         documents: [
@@ -67,8 +65,6 @@ describe('Department Deactivation / Soft Delete with Pre-check & User Re-assignm
     });
 
     it('blocks deactivating department with effective docs, copies, or pending tasks', () => {
-      const store = useStore.getState();
-
       // Case A: Has effective document
       useStore.setState({
         documents: [{ id: 'D1', department: 'MKT', status: 'EFFECTIVE' }],

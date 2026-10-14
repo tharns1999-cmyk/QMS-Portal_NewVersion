@@ -23,7 +23,7 @@ import {
 import toast from 'react-hot-toast';
 import NotificationPopover from './NotificationPopover';
 import { isActionableTask, isDccAdmin as checkDccAdmin, isSameDepartment } from '../../utils/taskFilter';
-import { evaluateDocumentReviewStatus, getPeriodicReviewStatus } from '../../utils/documentUtils';
+import { evaluateDocumentReviewStatus } from '../../utils/documentUtils';
 import { extractDeptCode } from '../../services/darService';
 
 const Sidebar = () => {

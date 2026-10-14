@@ -5,7 +5,6 @@ import { BrowserRouter } from 'react-router-dom';
 import DarRevisionForm from '../pages/DarWorkflow/DarRevisionForm';
 import DarObsoleteForm from '../pages/DarWorkflow/DarObsoleteForm';
 import useStore from '../store/useStore';
-import toast from 'react-hot-toast';
 
 vi.mock('react-hot-toast', () => ({
   default: {

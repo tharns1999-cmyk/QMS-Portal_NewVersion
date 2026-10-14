@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, CheckCircle2, FileText } from 'lucide-react';
+import { MapPin, CheckCircle2 } from 'lucide-react';
 import ActionConfirmModal from '../common/ActionConfirmModal';
 import { cleanLocationName } from '../../services/MasterDataService';
 

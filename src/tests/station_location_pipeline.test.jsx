@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import useStore from '../store/useStore';
-import { calculateCopyAllocations, STANDARD_STATIONS } from '../services/MasterDataService';
+import { calculateCopyAllocations } from '../services/MasterDataService';
 import { UniversalWatermarkService, WATERMARK_TYPES } from '../services/UniversalWatermarkService';
 import { WATERMARK_CONFIG } from '../config/qmsRegistry';
 import ControlledCopyRegister from '../pages/ControlledCopy/ControlledCopyRegister';

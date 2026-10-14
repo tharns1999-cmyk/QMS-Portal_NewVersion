@@ -13,13 +13,37 @@ import Button from '../../components/ui/Button';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
 import { 
-  isDocumentEligibleForRevision,
   getActiveDarForDocument,
   isUserAuthorizedForDocDept 
 } from '../../utils/darHelper';
 import { cleanLocationName, getMasterStationForDept, normalizeDepartmentId, calculateCopyAllocations } from '../../services/MasterDataService';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
 import { saveFile } from '../../utils/fileStorage';
+
+const initialFormState = {
+  docId: '',
+  title: '', // new title, default to old
+  changeSummary: '',
+  changeReason: '',
+  otherReason: '',
+  confidentialityLevel: 'INTERNAL',
+  slaPriority: 'NORMAL',
+  isFastTrack: false,
+  dueDate: calculateDueDateBySla('NORMAL'),
+  ackRequirement: 'NOT_REQUIRED',
+  ackUserId: '',
+  distributions: [],
+  effectiveDate: '',
+  file: null,
+  relatedStandards: [],
+  otherStandardDetail: '',
+  access_control: {
+    scope: 'GENERAL',
+    authorized_depts: [],
+    authorized_users: [],
+    min_access_level: 4
+  }
+};
 
 const DarRevisionForm = () => {
   const navigate = useNavigate();
@@ -45,31 +69,6 @@ const DarRevisionForm = () => {
     );
   }, [documentTypes]);
   
-  const initialFormState = {
-    docId: '',
-    title: '', // new title, default to old
-    changeSummary: '',
-    changeReason: '',
-    otherReason: '',
-    confidentialityLevel: 'INTERNAL',
-    slaPriority: 'NORMAL',
-    isFastTrack: false,
-    dueDate: calculateDueDateBySla('NORMAL'),
-    ackRequirement: 'NOT_REQUIRED',
-    ackUserId: '',
-    distributions: [],
-    effectiveDate: '',
-    file: null,
-    relatedStandards: [],
-    otherStandardDetail: '',
-    access_control: {
-      scope: 'GENERAL',
-      authorized_depts: [],
-      authorized_users: [],
-      min_access_level: 4
-    }
-  };
-
   const [formData, setFormData] = useState(initialFormState);
   const [selectedFile, setSelectedFile] = useState(null);
   
@@ -509,6 +508,11 @@ const DarRevisionForm = () => {
     setSearchQuery('');
   };
 
+  const handleDocSelectRef = useRef(handleDocSelect);
+  useEffect(() => {
+    handleDocSelectRef.current = handleDocSelect;
+  });
+
   // Handle Prefill / Deep-link from Document Library or URL parameters
   useEffect(() => {
     if (hasHandledDeepLinkRef.current || isSubmittedRef.current || isSubmitting) return;
@@ -530,7 +534,7 @@ const DarRevisionForm = () => {
 
       if (matched) {
         hasHandledDeepLinkRef.current = true;
-        handleDocSelect(matched);
+        handleDocSelectRef.current(matched);
       }
     }
   }, [deepLinkDocId, deepLinkDocCode, effectiveDocs, documents, targetDraftId, location.state?.draftData, formData.docId, isSubmitting]);
@@ -615,7 +619,7 @@ const DarRevisionForm = () => {
         distributions: alignedDists
       }));
     }
-  }, [selectedDoc?.id, targetDraftId, location.state?.draftData, distributionLocations, isSubmitting]);
+  }, [selectedDoc, isFormDocument, targetDraftId, location.state?.draftData, distributionLocations, isSubmitting, formData.distributions, activeCopiesInCirculation, currentUser?.department]);
 
 
   /**

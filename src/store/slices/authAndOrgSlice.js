@@ -10,14 +10,13 @@ import {
 } from '../fixtures/seedData';
 import {
   MASTER_DEPARTMENTS,
-  MASTER_DATA_DEPT,
   SYSTEM_CORE_DEPTS,
   DEFAULT_SIGNATURE_SETTINGS,
   DEFAULT_SLA_SETTINGS,
   DEFAULT_APPROVAL_MATRIX
 } from '../../config/qmsRegistry';
 import { STANDARD_STATIONS, cleanLocationName } from '../../services/MasterDataService';
-import { getFile, saveFile, resolveRawFileBlob } from '../../utils/fileStorage';
+import { saveFile, resolveRawFileBlob } from '../../utils/fileStorage';
 import { isSameDepartment } from '../../utils/taskFilter';
 
 export const createAuthAndOrgSlice = (set, get) => ({

@@ -1,10 +1,10 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentDetailModal from '../components/workflow/DocumentDetailModal';
 import useStore from '../store/useStore';
 import { ACCESS_SCOPES } from '../utils/accessControl';
-import { getRevisionIndex, compareRevisions, resolveDocCode } from '../utils/documentUtils';
+import { getRevisionIndex, compareRevisions } from '../utils/documentUtils';
 
 describe('Cumulative DAR History Lineage (Audit Trail <= Current Revision) Tests', () => {
   const currentUser = {

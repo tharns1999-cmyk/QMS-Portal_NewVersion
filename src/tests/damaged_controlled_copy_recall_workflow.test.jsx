@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import ControlledCopyRegister from '../pages/ControlledCopy/ControlledCopyRegister';

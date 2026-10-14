@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import ControlledCopyRegister from '../pages/ControlledCopy/ControlledCopyRegister';
@@ -209,7 +209,7 @@ describe('ISO 9001 / FSSC 22000 Universal Superseded Copy Recall Engine Tests', 
   it('4. ControlledCopyRegister UI: Renders Tab 3 Recall Checklist with both MKT and EN copies and action buttons', async () => {
     useStore.getState().publishDarRevision('DAR01-08-26');
 
-    const { container } = renderWithRouter(<ControlledCopyRegister />);
+    renderWithRouter(<ControlledCopyRegister />);
 
     // Switch to Tab 3: Recall Checklist
     const tab3Btn = screen.getByText(/3\. เช็กลิสต์เรียกคืนเอกสาร/i);

@@ -130,7 +130,7 @@ const Viewer = () => {
         URL.revokeObjectURL(activeUrl);
       }
     };
-  }, [doc]);
+  }, [doc, isArchive]);
 
   const iframeUrl = useMemo(() => {
     if (!realPdfUrl) return '';

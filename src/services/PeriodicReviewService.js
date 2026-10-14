@@ -46,6 +46,7 @@ export const getDueState = (dueDate, referenceDate = new Date()) => {
 };
 
 import { getReviewCycleYears, getReviewStatusFlag, getPeriodicReviewStatus, evaluateDocumentReviewStatus } from '../utils/documentUtils';
+import { getDocCode, getDocTitle, getCleanRev, isActiveDoc } from '../utils/domainNormalizer';
 export { getPeriodicReviewStatus, evaluateDocumentReviewStatus };
 
 export const generateSchedules = (internalDocs, externalDocs, existingSchedules = []) => {
@@ -56,18 +57,9 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
   // Internal Docs
   (internalDocs || []).forEach(doc => {
     // 🛡️ Criteria 1: Exclude superseded and obsolete documents strictly
+    if (!isActiveDoc(doc)) return;
     const statusUpper = (doc.status || '').toUpperCase();
     if (statusUpper !== 'EFFECTIVE' && statusUpper !== 'ACTIVE') return;
-    if (
-      statusUpper === 'SUPERSEDED' || 
-      statusUpper === 'OBSOLETE' || 
-      statusUpper === 'SUPERSEDED_ARCHIVED' || 
-      statusUpper === 'OBSOLETE_ARCHIVED' ||
-      doc.is_superseded || 
-      doc.is_obsolete || 
-      doc.isSuperseded || 
-      doc.isObsolete
-    ) return;
 
     // Check if schedule already exists
     const exists = newSchedules.find(s => s.documentId === doc.id && s.documentCategory === 'INTERNAL' && s.isActive);
@@ -83,15 +75,14 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
     const anchor = doc.last_reviewed_at || doc.lastReviewedDate || doc.effectiveDate || doc.effective_date || todayStr;
     const nextReviewDate = doc.next_review_date || doc.nextReviewDate || calculateNextReviewDate(anchor, frequencyMonths, null);
     const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
-    const rawIntRev = doc.revision || doc.rev || doc.revNo || '00';
-    const cleanIntRev = String(rawIntRev).trim().replace(/^(Rev\.?\s*)+/i, '') || '00';
+    const cleanIntRev = getCleanRev(doc.revision || doc.rev || doc.revNo, '00');
     
     newSchedules.push({
       id: `PRS-INT-${doc.id}-${Date.now()}`,
       documentCategory: 'INTERNAL',
       documentId: doc.id,
-      documentNumber: doc.title || doc.doc_code || doc.doc_number || doc.id, // e.g., WI-IT-001
-      documentName: doc.name || doc.doc_name || doc.title,
+      documentNumber: getDocCode(doc) || doc.title || doc.doc_number || doc.id, // e.g., WI-IT-001
+      documentName: getDocTitle(doc) || doc.name || doc.doc_name || doc.title,
       rev: cleanIntRev,
       ownerUserId: doc.ownerId || doc.owner_id || 'U002', 
       ownerDepartmentId: doc.department || doc.dept || 'QA',
@@ -119,18 +110,9 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
   // External Docs
   (externalDocs || []).forEach(doc => {
     // 🛡️ Criteria 1: Exclude superseded and obsolete documents strictly
+    if (!isActiveDoc(doc)) return;
     const statusUpper = (doc.status || '').toUpperCase();
     if (statusUpper !== 'ACTIVE' && statusUpper !== 'EFFECTIVE') return;
-    if (
-      statusUpper === 'SUPERSEDED' || 
-      statusUpper === 'OBSOLETE' || 
-      statusUpper === 'SUPERSEDED_ARCHIVED' || 
-      statusUpper === 'OBSOLETE_ARCHIVED' ||
-      doc.is_superseded || 
-      doc.is_obsolete || 
-      doc.isSuperseded || 
-      doc.isObsolete
-    ) return;
 
     const exists = newSchedules.find(s => s.externalDocumentId === doc.id && s.documentCategory === 'EXTERNAL' && s.isActive);
     if (exists) return;
@@ -151,8 +133,7 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
     const anchor = doc.last_reviewed_at || doc.lastReviewedDate || doc.last_verified_at || doc.receivedDate || doc.received_date || doc.effectiveDate || todayStr;
     const nextReviewDate = doc.nextReviewDate || doc.next_review_date || calculateNextReviewDate(anchor, frequencyMonths, null);
     const reviewStatusFlag = getReviewStatusFlag(nextReviewDate, todayStr);
-    const rawExtRev = doc.revision || doc.rev || doc.revNo || '00';
-    const cleanExtRev = String(rawExtRev).trim().replace(/^(Rev\.?\s*)+/i, '') || '00';
+    const cleanExtRev = getCleanRev(doc.revision || doc.rev || doc.revNo, '00');
     const editionVal = doc.sourceVersion || doc.edition || '';
 
     newSchedules.push({
@@ -161,8 +142,8 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
       isExternal: true,
       documentId: doc.id,
       externalDocumentId: doc.id,
-      documentNumber: doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.id, 
-      documentName: doc.title || doc.name,
+      documentNumber: getDocCode(doc) || doc.edCode || doc.doc_code || doc.code || doc.document_number || doc.id, 
+      documentName: getDocTitle(doc) || doc.title || doc.name,
       rev: cleanExtRev,
       edition: editionVal,
       sourceVersion: editionVal,

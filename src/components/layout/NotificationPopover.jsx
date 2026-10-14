@@ -17,6 +17,8 @@ dayjs.extend(relativeTime);
  * unread badges, mark-all-read action, and full NotificationCenterModal history.
  * Rendered via createPortal to eliminate overflow clipping traps.
  */
+const EMPTY_NOTIFICATIONS = [];
+
 const NotificationPopover = ({
   notifications: propNotifications,
   unreadCount: propUnreadCount,
@@ -37,7 +39,7 @@ const NotificationPopover = ({
 
   // Extract from store if props not explicitly passed
   const currentUser = store?.currentUser;
-  const rawNotifications = propNotifications !== undefined ? propNotifications : (store?.notifications || []);
+  const rawNotifications = propNotifications !== undefined ? propNotifications : (store?.notifications || EMPTY_NOTIFICATIONS);
   const markNotificationAsRead = store?.markNotificationAsRead || store?.markAsRead;
   const markAllNotificationsAsRead = store?.markAllNotificationsAsRead || store?.markAllAsRead;
 

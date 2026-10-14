@@ -326,7 +326,7 @@ describe('Hybrid 2-Step Periodic Review Workflow (Staff -> HOD Approval with 1-C
       // HOD views TaskInbox
       useStore.setState({ currentUser: mockHodUser });
 
-      const { container } = render(
+      render(
         <MemoryRouter>
           <TaskInbox />
         </MemoryRouter>

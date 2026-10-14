@@ -7,10 +7,7 @@ import {
   Eye, 
   Download, 
   ShieldCheck, 
-  ArrowRight,
   Building2,
-  Calendar,
-  Layers,
   FileCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';

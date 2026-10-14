@@ -714,7 +714,6 @@ const ExternalDocHistoryModal = ({
                 <div className="relative space-y-5 before:absolute before:inset-0 before:left-5 before:w-0.5 before:bg-slate-200 before:pointer-events-none">
                   {historicalDocs.map((item, idx) => {
                     const isObs = item.status === 'OBSOLETE' || item.status === 'OBSOLETE_ARCHIVED' || item.is_obsolete;
-                    const revCode = item.rev || item.sourceVersion || '00';
                     const copies = getCopiesForRevision(item);
                     const isDownloadingThis = isDownloading && downloadingDocId === item.id;
                     const matchedReq = getRequestForRevision(item);

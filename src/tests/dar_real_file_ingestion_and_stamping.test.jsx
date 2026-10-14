@@ -1,12 +1,12 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { PDFDocument } from 'pdf-lib';
 import useStore from '../store/useStore';
 import TaskReview from '../pages/Tasks/TaskReview';
-import { rawBlobRegistry, inMemoryBlobRegistry, getFile } from '../utils/fileStorage';
-import { stampDarPreviewPdf, resolveRawFileBlob } from '../utils/pdfStamper';
+import { rawBlobRegistry, inMemoryBlobRegistry } from '../utils/fileStorage';
+import { stampDarPreviewPdf } from '../utils/pdfStamper';
 
 // Helper to generate a genuine 2-page test PDF
 async function createTestPdf(pageCount = 2) {

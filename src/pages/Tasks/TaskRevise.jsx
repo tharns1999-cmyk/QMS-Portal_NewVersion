@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
 import { 
-  FileText, 
   CheckCircle, 
   ChevronLeft, 
   AlertCircle, 
@@ -103,12 +102,14 @@ const TaskRevise = () => {
     };
   }
 
-  const resolvedDar = dar || (task ? {
-    id: task.darId || task.referenceId || rawId,
-    title: task.docTitle || task.title || 'คำร้อง DAR',
-    type: 'REVISION',
-    status: 'RETURNED_FOR_REVISION'
-  } : null);
+  const resolvedDar = useMemo(() => {
+    return dar || (task ? {
+      id: task.darId || task.referenceId || rawId,
+      title: task.docTitle || task.title || 'คำร้อง DAR',
+      type: 'REVISION',
+      status: 'RETURNED_FOR_REVISION'
+    } : null);
+  }, [dar, task, rawId]);
 
   const [formData, setFormData] = useState({
     title: resolvedDar?.title || '',

@@ -159,12 +159,11 @@ describe('Hierarchical Distribution Matrix & Copy Numbering Engine Tests', () =>
     });
 
     it('DistributionSetup renders Form Distribution View and bypasses Tier 2 station matrix for FM documentType', () => {
-      let emittedDistributions = [];
       const { unmount } = render(
         <DistributionSetup
           ownerDept="PD"
           distributions={[]}
-          onChange={(d) => { emittedDistributions = d; }}
+          onChange={() => {}}
           documentType="FM"
         />
       );
@@ -184,12 +183,11 @@ describe('Hierarchical Distribution Matrix & Copy Numbering Engine Tests', () =>
     });
 
     it('Switching to Targeted Departments in DistributionSetup renders Tier 1 Department grid and updates payload', () => {
-      let emittedDistributions = [];
       render(
         <DistributionSetup
           ownerDept="PD"
           distributions={[]}
-          onChange={(d) => { emittedDistributions = d; }}
+          onChange={() => {}}
           documentType="FM"
         />
       );

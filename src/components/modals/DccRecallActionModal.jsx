@@ -38,8 +38,9 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
 
   // Synchronize initial selection based on physical receipt state in store
   useEffect(() => {
-    if (isOpen && group && copies.length > 0) {
-      const alreadyReceived = copies
+    const currentCopies = group?.copies || [];
+    if (isOpen && group && currentCopies.length > 0) {
+      const alreadyReceived = currentCopies
         .filter(c => c.status === 'RECALLED' || c.status === 'RECEIVED_AT_DCC' || c.recalled_at)
         .map(c => c.id);
 
@@ -47,7 +48,7 @@ const DccRecallActionModal = ({ isOpen, onClose, group, onComplete }) => {
       if (alreadyReceived.length > 0) {
         setCollectedCopyIds(alreadyReceived);
       } else {
-        setCollectedCopyIds(copies.map(c => c.id));
+        setCollectedCopyIds(currentCopies.map(c => c.id));
       }
     }
   }, [isOpen, group]);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   CheckCircle, 
   AlertTriangle, 
@@ -540,7 +540,7 @@ const ActionConfirmModal = ({
       initials,
       originalValue: rawVal
     };
-  }, [categorized.nextStepItem, calculatedNextWorkflowStep, currentActorInfo, effectiveCurrentStep]);
+  }, [categorized.nextStepItem, calculatedNextWorkflowStep, currentActorInfo, effectiveCurrentStep, approvalNextStep, isObsolete]);
 
   // Helper to render values with proper typography
   const renderItemValue = (item) => {

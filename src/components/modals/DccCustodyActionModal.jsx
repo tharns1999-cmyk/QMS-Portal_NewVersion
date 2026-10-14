@@ -1,6 +1,6 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MapPin, CornerDownLeft, ShieldCheck, CheckSquare, Square, AlertTriangle, ChevronDown, Check, XCircle } from 'lucide-react';
+import { X, MapPin, CornerDownLeft, ShieldCheck, CheckSquare, Square, AlertTriangle, Check, XCircle } from 'lucide-react';
 import useStore from '../../store/useStore';
 import toast from 'react-hot-toast';
 
@@ -99,7 +99,6 @@ const DccCustodyActionModal = ({ isOpen, onClose, task }) => {
     }
   };
 
-  const accentColor = isRelocation ? 'sky' : 'amber';
   const gradientClass = isRelocation
     ? 'from-sky-600 to-blue-700'
     : 'from-amber-500 to-orange-600';

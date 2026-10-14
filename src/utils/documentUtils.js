@@ -15,6 +15,15 @@ export {
   checkDocumentCodeCollision
 } from '../services/numberingService';
 
+export {
+  getDocCode,
+  getDocTitle,
+  getCleanRev,
+  getCleanDept,
+  isActiveDoc,
+  syncMirroredState
+} from './domainNormalizer';
+
 import numberingService from '../services/numberingService';
 export default numberingService;
 

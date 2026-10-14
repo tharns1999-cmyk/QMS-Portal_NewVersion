@@ -17,12 +17,7 @@ import {
   ArrowRight,
   MapPin,
   Flame,
-  Tag,
-  Eye,
-  CheckCircle2,
-  XCircle,
-  Calendar,
-  Hash
+  Eye
 } from 'lucide-react';
 import useStore from '../../store/useStore';
 import StatusBadge from '../../components/ui/StatusBadge';

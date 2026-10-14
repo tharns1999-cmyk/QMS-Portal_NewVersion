@@ -2,12 +2,7 @@ import React, { useState } from 'react';
 import { 
   X, 
   CheckCircle2, 
-  AlertTriangle, 
-  FileText, 
   ShieldCheck, 
-  Clock, 
-  User, 
-  Building2, 
   RotateCcw,
   Check
 } from 'lucide-react';

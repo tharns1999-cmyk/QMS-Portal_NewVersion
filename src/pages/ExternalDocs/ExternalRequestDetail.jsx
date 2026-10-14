@@ -343,15 +343,6 @@ const ExternalRequestDetail = () => {
   const isRevisionReq = ['REVISION', 'UPDATE'].includes(
     reqData.requestType || reqData.type || reqData.actionType || reqData.extAction || ''
   );
-  const origRevNum = parseInt(
-    String(reqData.originalRevision || matchingDoc?.rev || matchingDoc?.revision || '0').replace(/\D/g, '') || '0',
-    10
-  );
-  const origRevStr = String(origRevNum).padStart(2, '0');
-  const targetRevNum = reqData.targetRevision
-    ? parseInt(String(reqData.targetRevision).replace(/\D/g, '') || '1', 10)
-    : (reqData.rev ? parseInt(String(reqData.rev).replace(/\D/g, '') || '1', 10) : origRevNum + 1);
-  const targetRevStr = String(targetRevNum).padStart(2, '0');
 
   // Format date helper
   const formatDate = (dateStr) => {

@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import TaskInbox from '../pages/Tasks/TaskInbox';
-import { calculateTaskDueDate, formatDateToYMD, parseToLocalMidnight } from '../utils/slaCalculator';
+import { calculateTaskDueDate } from '../utils/slaCalculator';
 
 describe('Enterprise QMS: Dynamic Task Due Date Capped by Document Effective Date (Urgent / Fast-Track SLA)', () => {
   beforeEach(() => {

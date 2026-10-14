@@ -15,6 +15,8 @@
  *    number to prevent collision.
  */
 
+import { getDocCode } from '../utils/domainNormalizer';
+
 /**
  * Escapes regex special characters in a string
  */
@@ -110,6 +112,11 @@ export const getNextSequenceNumber = (prefix, dept, items = []) => {
     }
 
     if (typeof item === 'object') {
+      const docCode = getDocCode(item);
+      if (docCode) {
+        inspectCandidate(docCode);
+      }
+
       // Check all possible code fields across documents, dars, externalRequests, and tasks
       const candidateFields = [
         item.edCode,
@@ -197,6 +204,8 @@ export const checkDocumentCodeCollision = (code, pool = []) => {
   return (pool || []).some(item => {
     if (!item) return false;
     if (typeof item === 'string') return item.trim().toUpperCase() === cleanCode;
+    const docCode = getDocCode(item);
+    if (docCode && docCode.toUpperCase() === cleanCode) return true;
     const candidates = [
       item.edCode, item.docCode, item.doc_code, item.documentCode,
       item.document_code, item.docNo, item.docIdInput, item.id, item.docId

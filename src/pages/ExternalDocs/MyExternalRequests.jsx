@@ -11,18 +11,11 @@ import {
   XCircle, 
   Search, 
   FilterX, 
-  Building2, 
-  Calendar, 
   Eye, 
   Edit3, 
   RotateCcw, 
-  Layers, 
-  ExternalLink,
   ChevronRight,
   ShieldCheck,
-  UserCheck,
-  User,
-  Sparkles,
   X
 } from 'lucide-react';
 import { TablePagination } from '../../components/common/TablePagination';
@@ -642,6 +635,14 @@ const MyExternalRequests = () => {
                           title="ดูรายละเอียดคำร้อง (View Details)"
                         >
                           <Eye size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenPreview(req, e)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="ดูตัวอย่างเอกสาร (Preview)"
+                        >
+                          <FileText size={15} />
                         </button>
                         {isReturned && (
                           <button

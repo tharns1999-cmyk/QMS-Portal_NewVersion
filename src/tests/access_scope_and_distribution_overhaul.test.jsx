@@ -1,7 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
 import DocumentAccessControlSelector from '../components/workflow/DocumentAccessControlSelector';
 import DistributionSetup from '../components/workflow/DistributionSetup';
 import useStore from '../store/useStore';

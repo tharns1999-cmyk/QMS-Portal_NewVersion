@@ -1,5 +1,5 @@
 import { PDFDocument, rgb } from 'pdf-lib';
-import { formatSignOffDate as _formatSignOffDate, formatQmsDate } from './dateFormatter';
+import { formatSignOffDate as _formatSignOffDate } from './dateFormatter';
 
 /**
  * Ensure TH Sarabun New font is loaded and ready before drawing on canvas.
@@ -909,7 +909,7 @@ export const drawIsoDiagonalWatermark = (pageOrBytes, text = 'UNCONTROLLED COPY'
 /**
  * Apply the Uncontrolled watermark to all pages of a PDF using responsive ISO engine
  */
-export const applyUncontrolledWatermarkToPdf = async (pdfBytes, metadata = {}) => {
+export const applyUncontrolledWatermarkToPdf = async (pdfBytes, _metadata = {}) => {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const pages = pdfDoc.getPages();
 

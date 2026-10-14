@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation, useParams } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
+import { QMS_CONFIG, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { Calendar, X, Settings, Trash2, FileText, ChevronLeft, User, AlertTriangle, Building, Layers, Search, Lock } from 'lucide-react';
 import UserSelector from '../../components/UserSelector';
@@ -11,6 +11,21 @@ import { resolveReviewer } from '../../utils/workflowResolver';
 import { normalizeDraftToFormState } from '../../utils/draftNormalizer';
 import { isUserAuthorizedForDocDept, getActiveDarForDocument } from '../../utils/darHelper';
 import { resolveDocCode, resolveDocTitle } from '../../utils/documentUtils';
+
+const initialFormState = {
+  docId: '',
+  obsoleteReason: '',
+  otherReason: '',
+  obsoleteDetail: '',
+  recallPlan: '',
+  confidentialityLevel: 'INTERNAL',
+  slaPriority: 'NORMAL',
+  isFastTrack: false,
+  dueDate: calculateDueDateBySla('NORMAL'),
+  ackRequirement: 'NOT_REQUIRED',
+  ackUserId: '',
+  effectiveDate: '',
+};
 
 const DarObsoleteForm = () => {
   const navigate = useNavigate();
@@ -54,21 +69,6 @@ const DarObsoleteForm = () => {
     );
   }, [documentTypes]);
   
-  const initialFormState = {
-    docId: '',
-    obsoleteReason: '',
-    otherReason: '',
-    obsoleteDetail: '',
-    recallPlan: '',
-    confidentialityLevel: 'INTERNAL',
-    slaPriority: 'NORMAL',
-    isFastTrack: false,
-    dueDate: calculateDueDateBySla('NORMAL'),
-    ackRequirement: 'NOT_REQUIRED',
-    ackUserId: '',
-    effectiveDate: '',
-  };
-
   const [formData, setFormData] = useState(initialFormState);
   
   const [errors, setErrors] = useState({});
@@ -130,8 +130,6 @@ const DarObsoleteForm = () => {
       return matchesType && matchesSearch;
     });
   }, [effectiveDocs, selectedType, searchTerm]);
-
-  const filteredDocs = filteredActiveDocs;
 
   const selectedDoc = (effectiveDocs || []).find(d => d && d.id === formData.docId) || (documents || []).find(d => d && d.id === formData.docId);
 

@@ -136,7 +136,7 @@ const MasterList = () => {
           return true;
       }
     });
-  }, [documents, selectedScope, currentUser, affiliatedDepts, userDept]);
+  }, [documents, selectedScope, affiliatedDepts, userDept]);
 
   const myDeptCount = useMemo(() => {
     return (documents || []).filter((doc) => {

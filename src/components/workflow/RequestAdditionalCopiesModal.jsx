@@ -12,7 +12,6 @@ import {
   Send, 
   Sparkles,
   FileText,
-  Building2,
   ArrowRight
 } from 'lucide-react';
 import useStore, { getActivePhysicalCopies } from '../../store/useStore';
@@ -86,9 +85,6 @@ const RequestAdditionalCopiesModal = ({ isOpen, onClose, document: doc }) => {
   const activeCopies = useMemo(() => {
     return getActivePhysicalCopies(allCopies, doc);
   }, [allCopies, doc]);
-
-  // Backward-compatibility alias
-  const existingCopies = activeCopies;
 
   // Calculate highest existing copy number from active physical copies
   const maxExistingCopyNo = useMemo(() => {

@@ -11,9 +11,6 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
 
 // ─── Import helpers directly for unit testing ────────────────────────────────
 // We test the pure helper logic here without needing a full store mount.

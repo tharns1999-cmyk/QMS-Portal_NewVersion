@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { getDeptOptions, getDocTypeOptions, QMS_CONFIG, QMS_POLICIES, calculateDueDateBySla } from '../../config/qmsRegistry';
+import { QMS_CONFIG, calculateDueDateBySla } from '../../config/qmsRegistry';
 import toast from 'react-hot-toast';
 import { 
   FileText, 
@@ -18,7 +18,6 @@ import UserSelector from '../../components/UserSelector';
 import DistributionSetup from '../../components/workflow/DistributionSetup';
 import RelatedStandardsSelector from '../../components/workflow/RelatedStandardsSelector';
 import DocumentAccessControlSelector from '../../components/workflow/DocumentAccessControlSelector';
-import ActionConfirmModal from '../../components/common/ActionConfirmModal';
 import ConfirmRegistrationModal from '../../components/modals/ConfirmRegistrationModal';
 import Button from '../../components/ui/Button';
 import { generateDynamicWorkflow } from '../../utils/workflowEngine';

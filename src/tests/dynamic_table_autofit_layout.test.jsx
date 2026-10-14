@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Library from '../pages/Library/Library';
 import ActionLog from '../pages/Admin/ActionLog';

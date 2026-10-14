@@ -7,7 +7,6 @@ import TaskReview from '../pages/Tasks/TaskReview';
 import TaskApprove from '../pages/Tasks/TaskApprove';
 import Viewer from '../pages/Library/Viewer';
 import FileViewerModal from '../components/modals/FileViewerModal';
-import ExternalDocPreviewModal from '../pages/ExternalDocs/ExternalDocPreviewModal';
 import { saveFile } from '../utils/fileStorage';
 
 describe('PDF Preview Clean Toolbar Suppression & Single Source Download Enforcement', () => {

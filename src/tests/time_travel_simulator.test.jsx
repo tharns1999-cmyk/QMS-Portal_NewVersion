@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import useStore from '../store/useStore';
-import { evaluateDocumentReviewStatus, getReviewStatus } from '../utils/documentUtils';
+import { evaluateDocumentReviewStatus } from '../utils/documentUtils';
 
 describe('System Date Time Travel Simulator', () => {
   beforeEach(() => {

@@ -28,11 +28,13 @@ dayjs.extend(relativeTime);
  * Enterprise Notification Architecture & Lifecycle Management Modal.
  * Provides rich filtering (Tabs & Search), pagination, and instant mark-as-read.
  */
+const EMPTY_NOTIFICATIONS = [];
+
 export const NotificationCenterModal = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const store = useStore();
   
-  const notifications = store.notifications || [];
+  const notifications = store.notifications || EMPTY_NOTIFICATIONS;
   const currentUser = store.currentUser;
   const markAsRead = store.markAsRead || store.markNotificationAsRead;
   const markAllAsRead = store.markAllAsRead || store.markAllNotificationsAsRead;

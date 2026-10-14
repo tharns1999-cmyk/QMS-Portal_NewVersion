@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { 
   FileText, 
@@ -349,9 +349,14 @@ const PeriodicReviewDetail = () => {
     setAdditionalComments(schedule?.additionalComments || schedule?.additional_comment || schedule?.pendingReview?.details?.additional_comment || '');
   };
 
+  const handleStartReReviewRef = useRef(handleStartReReview);
+  useEffect(() => {
+    handleStartReReviewRef.current = handleStartReReview;
+  });
+
   useEffect(() => {
     if (hasIncomingReEvaluate && accessCheck.status === 'ALLOWED') {
-      handleStartReReview();
+      handleStartReReviewRef.current();
     }
   }, [hasIncomingReEvaluate, accessCheck.status]);
 

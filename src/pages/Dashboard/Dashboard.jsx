@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { 
   AlertCircle, Clock, CheckCircle, FileText, Activity, 
-  Search, Plus, FileEdit, Library, Briefcase, Copy,
-  FilterX, Trash2, Edit, ClipboardCheck, Eye, AlertTriangle, ChevronRight,
-  Sparkles, Printer
+  Search, Briefcase, Copy,
+  FilterX, Trash2, Edit, ClipboardCheck, Eye, AlertTriangle,
+  Printer
 } from 'lucide-react';
 import EmptyState from '../../components/EmptyState';
 import { isActionableTask, isLevel6Plus, isReceiptTask } from '../../utils/taskFilter';

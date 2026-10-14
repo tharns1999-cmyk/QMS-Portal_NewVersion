@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { getDeptBadgeStyle, getDepartmentBadgeClass } from '../utils/departmentColors';
+import { getDeptBadgeStyle } from '../utils/departmentColors';
 import DepartmentBadge from '../components/ui/DepartmentBadge';
 
 describe('Department Badge High-Contrast Modern Pastel Pill Palette Tests', () => {

@@ -7,9 +7,6 @@ import {
   CheckCircle2, 
   FolderCheck, 
   Search, 
-  ChevronRight,
-  Download,
-  Calendar,
   Layers
 } from 'lucide-react';
 import { getDeptBadgeStyle } from '../../utils/departmentColors';

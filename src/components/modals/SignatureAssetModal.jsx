@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PenTool, X, Upload, Trash2, CheckCircle2, Save, RotateCcw, Type } from 'lucide-react';
+import { PenTool, X, Upload, Trash2, CheckCircle2, Save, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useStore from '../../store/useStore';
 import { generateCursiveSignatureDataUrl } from '../../utils/pdfStamper';

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import useStore from '../store/useStore';
 import { generateSchedules, generateTasksForSchedules } from '../services/PeriodicReviewService';
 import { isActionableTask } from '../utils/taskFilter';
-import { getReviewCycleYears, getReviewStatusFlag, addYears } from '../utils/documentUtils';
+import { getReviewCycleYears, getReviewStatusFlag } from '../utils/documentUtils';
 
 describe('Periodic Review Engine & Routing Audit', () => {
   beforeEach(() => {

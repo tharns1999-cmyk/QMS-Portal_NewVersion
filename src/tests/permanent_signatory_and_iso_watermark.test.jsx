@@ -104,7 +104,7 @@ describe('Permanent Signatory Stamping & Responsive ISO Watermark Engine', () =>
   describe('2. Permanent Signatory Stamping (applyProgressiveSignatoryStamp)', () => {
     it('should draw a white background mask rectangle and stamp 3x3 table onto page 1', async () => {
       const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([600, 800]);
+      pdfDoc.addPage([600, 800]);
       const pdfBytes = await pdfDoc.save();
 
       const signatories = {

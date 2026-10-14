@@ -1,6 +1,4 @@
 import React from 'react';
-import useStore from '../../store/useStore';
-import { resolveDocCode } from '../../utils/documentUtils';
 
 /**
  * ฟังก์ชันรวบรวมประวัติทั้งวงจรชีวิตของเอกสาร (Full Document Lifecycle Traceability)

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
 import { normalizeDepartmentId } from '../../services/MasterDataService';
@@ -16,7 +16,6 @@ import {
   getActiveUserSignatureAsset, 
   resolveSubmissionDate 
 } from '../../utils/pdfStamper';
-import { formatSignOffDate } from '../../utils/dateFormatter';
 import { resolveFileBlob } from '../../utils/fileStorage';
 import { generateQmsDownloadName, triggerBrowserDownload, formatDarHeaderTitle } from '../../utils/documentNamingHelper';
 
@@ -142,7 +141,6 @@ const TaskReview = () => {
     timeline = [], 
     processWorkflow, 
     currentUser, 
-    canDownloadDocument, 
     documents = [], 
     masterUsers = [],
     users = [] 
@@ -577,6 +575,7 @@ const TaskReview = () => {
       isCancelled = true;
       // Protected: Do NOT synchronously revoke URLs here to prevent React Strict Mode Blank PDF dropouts
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dar?.id, dar?.darNumber, dar?.fileId, dar?.attachedFile?.fileId, task?.id, pdfLoadRetryKey]);
 
   const handleDownloadDraft = async () => {
@@ -701,9 +700,6 @@ const TaskReview = () => {
     );
   }
 
-  // Use a pseudo-document for access rules since DAR is not in documents array yet
-  const pseudoDoc = { department: dar.department, distributedTo: dar.distributedDepts || [] };
-  const canDownload = canDownloadDocument ? canDownloadDocument(pseudoDoc, currentUser) : false;
   const accessScope = dar.access_control?.scope || dar.access_scope || 'GENERAL';
   const scopeMeta = ACCESS_SCOPE_METADATA[accessScope] || ACCESS_SCOPE_METADATA.GENERAL;
 

@@ -3,13 +3,14 @@
  * Extracted from useStore.js (Phase 5 Refactor)
  */
 import toast from 'react-hot-toast';
-import { getFile, saveFile, resolveFileBlob, resolveRawFileBlob } from '../../utils/fileStorage';
-import { stampExternalDocumentTopRight, applyProgressiveSignatoryStamp, getSystemSampleDocumentBlob } from '../../utils/pdfStamper';
+import { getFile, saveFile, resolveFileBlob } from '../../utils/fileStorage';
+import { applyProgressiveSignatoryStamp } from '../../utils/pdfStamper';
 import { resolveProgressiveSignatories } from '../../utils/signatoryResolver';
 import { resolveReviewer, resolveApprover } from '../../utils/workflowResolver';
-import { getActiveDarForDocument, IN_FLIGHT_DAR_STATUSES } from '../../utils/workflowHelpers';
+import { getActiveDarForDocument } from '../../utils/workflowHelpers';
 import { calculateTaskDueDate } from '../../utils/slaCalculator';
 import { generateInternalDarNumber } from '../../utils/darNumberGenerator';
+import { getCleanDept } from '../../utils/domainNormalizer';
 import {
   formatDocumentRunningNumber,
   calculateNextDocumentSequence,
@@ -2155,7 +2156,7 @@ export const createDarSlice = (set, get) => ({
     let createdDoc;
 
     const rawDept = dar.department || dar.dept || dar.departmentId || 'QC';
-    const cleanDept = (rawDept === 'QA' || rawDept === 'QC' || rawDept === 'QA/QC' || rawDept === 'QAQC') ? 'QC' : rawDept;
+    const cleanDept = getCleanDept(rawDept);
     const deptObj = (state.masterDepartments || []).find(d => d.id === cleanDept || d.code === cleanDept);
     const deptName = dar.departmentName || deptObj?.nameTh || (cleanDept === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : cleanDept);
 

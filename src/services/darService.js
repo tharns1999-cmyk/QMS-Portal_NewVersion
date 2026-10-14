@@ -1,8 +1,4 @@
-/**
- * darService.js
- * Data Transformation & Department Normalization Layer from DAR to Master Document.
- * Ensures consistent standardization to Master Department Code 'QC'.
- */
+import { getDocCode, getDocTitle, getCleanRev, getCleanDept } from '../utils/domainNormalizer';
 
 /**
  * Standardize department code to Master Department Code
@@ -11,8 +7,12 @@
 export const standardizeDepartmentCode = (dept) => {
   if (!dept) return 'QC';
   const raw = String(dept).trim();
-  const clean = raw.replace(/[^a-zA-Z]/g, '').toUpperCase();
-  if (clean === 'QA' || clean === 'QC' || clean === 'QAQC' || clean === 'QASUPER') {
+  const clean = getCleanDept(raw, raw);
+  if (clean === 'QC' || clean === 'DC') {
+    return clean;
+  }
+  const stripped = raw.replace(/[^a-zA-Z]/g, '').toUpperCase();
+  if (stripped === 'QA' || stripped === 'QC' || stripped === 'QAQC' || stripped === 'QASUPER') {
     return 'QC';
   }
   return raw.toUpperCase();
@@ -137,24 +137,20 @@ export const transformDarToMasterDocument = (dar) => {
   const todayStr = now.split('T')[0];
 
   const targetDocCode = 
+    getDocCode(dar) || 
     dar.docNo || 
     dar.docIdInput || 
-    dar.document_code || 
-    dar.doc_code || 
-    dar.code || 
-    dar.docCode || 
-    dar.title || 
     'SOP-QC-01';
 
-  const docTitle = dar.documentName || dar.docTitle || dar.title || targetDocCode;
+  const docTitle = getDocTitle(dar) || dar.documentName || dar.docTitle || targetDocCode;
   const docType = dar.documentType || dar.docType || dar.type || (targetDocCode ? targetDocCode.split('-')[0] : 'SOP');
   
   // Standardize department strictly to 'QC' if it belongs to Quality dept
-  const deptCode = standardizeDepartmentCode(dar.department || dar.departmentId || dar.dept || 'QC');
+  const deptCode = standardizeDepartmentCode(getCleanDept(dar, 'QC'));
   const deptName = deptCode === 'QC' ? 'ฝ่ายประกันและควบคุมคุณภาพ' : (dar.departmentName || deptCode);
 
-  const docRevision = String(dar.revision || dar.rev || dar.edition || '00').replace(/^rev\.?/i, '').padStart(2, '0');
-  const docEdition = String(dar.edition || dar.revision || dar.rev || '00').replace(/^rev\.?/i, '').padStart(2, '0');
+  const docRevision = getCleanRev(dar.revision ?? dar.rev ?? dar.edition, '00');
+  const docEdition = getCleanRev(dar.edition ?? dar.revision ?? dar.rev, '00');
 
   const effectiveDate = dar.effectiveDate || dar.effective_date || todayStr;
   const isFormDoc = docType === 'FM' || String(targetDocCode).startsWith('FM');

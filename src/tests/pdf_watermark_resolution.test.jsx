@@ -4,12 +4,10 @@ import { PDFDocument, PDFPage } from 'pdf-lib';
 import { 
   UniversalWatermarkService, 
   WATERMARK_TYPES, 
-  WATERMARK_PRESETS,
   resolveWatermarkConfig,
-  buildWatermarkSubLines,
-  getBangkokFormattedTimestamp
+  buildWatermarkSubLines
 } from '../services/UniversalWatermarkService';
-import { resolveWatermarkConfig as resolveFromUtil, buildWatermarkSubLines as buildSubLinesFromUtil } from '../utils/pdfWatermark';
+import { resolveWatermarkConfig as resolveFromUtil } from '../utils/pdfWatermark';
 
 describe('Enterprise PDF Watermark Engine & Status-Driven Stamp Resolution Tests', () => {
   let drawTextSpy;

@@ -30,8 +30,7 @@ import {
   ChevronDown,
   AlertTriangle,
   FileText,
-  RefreshCw,
-  Zap
+  RefreshCw
 } from 'lucide-react';
 import useStore, { SYSTEM_CORE_DEPTS } from '../../store/useStore';
 import { QMS_CONFIG } from '../../config/qmsRegistry';
@@ -50,7 +49,6 @@ const MasterDataHub = () => {
     departments: storeDepts,
     documentTypes, 
     distributionLocations, 
-    signatureSettings, 
     slaSettings,
     approvalMatrix,
     approval_matrix,
@@ -62,13 +60,11 @@ const MasterDataHub = () => {
     updateMasterUser,
     toggleUserStatus,
     resetUserPassword,
-    resetUserPin,
     unlockUserAccount,
     updateUserSignatureProfile,
     updateUserSignature,
     addDepartment,
     updateDepartment,
-    toggleDepartmentStatus,
     checkDepartmentDependencies,
     deactivateDepartment,
     reactivateDepartment,
@@ -79,9 +75,7 @@ const MasterDataHub = () => {
     updateDistributionLocation,
     deleteDistributionLocation,
     toggleLocationStatus,
-    updateSignatureSettings,
     updateSlaSettings,
-    updateApprovalMatrix,
     updateApprovalMatrixEntry,
     resetTransactionDataToCleanSlate,
     seedComprehensiveQaMockData
@@ -110,10 +104,6 @@ const MasterDataHub = () => {
   const [locDeptSearchText, setLocDeptSearchText] = useState('');
   const locDeptDropdownRef = useRef(null);
 
-  // --- TAB 5 E-SIGNATURE FILTERS & SEARCH STATES ---
-  const [sigUserSearch, setSigUserSearch] = useState('');
-  const [sigDeptFilter, setSigDeptFilter] = useState('ALL');
-  const [sigStatusFilter, setSigStatusFilter] = useState('ALL');
 
   // --- MODAL STATES ---
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -177,18 +167,6 @@ const MasterDataHub = () => {
     message: ''
   });
 
-  // Security Form (21 CFR Part 11 Compliant)
-  const [secForm, setSecForm] = useState({
-    pinLength: signatureSettings?.pinLength || 6,
-    maxFailedAttempts: signatureSettings?.maxFailedAttempts || 3,
-    defaultPin: signatureSettings?.defaultPin || '123456',
-    requireReasonForSigning: signatureSettings?.requireReasonForSigning !== undefined ? signatureSettings.requireReasonForSigning : true,
-    requireReAuthentication: signatureSettings?.requireReAuthentication !== undefined ? signatureSettings.requireReAuthentication : true,
-    enableTimestampAuthority: signatureSettings?.enableTimestampAuthority !== undefined ? signatureSettings.enableTimestampAuthority : true,
-    dualSignOffOnObsolete: signatureSettings?.dualSignOffOnObsolete !== undefined ? signatureSettings.dualSignOffOnObsolete : true,
-    auditTrailLogging: signatureSettings?.auditTrailLogging !== undefined ? signatureSettings.auditTrailLogging : true,
-    signatureStampFormat: signatureSettings?.signatureStampFormat || 'STANDARD_WITH_METADATA'
-  });
 
   // Signature Asset Modal States (Draw, Upload, Font)
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
@@ -256,12 +234,9 @@ const MasterDataHub = () => {
     });
   }, [documentTypes, approvalMatrix, approval_matrix]);
 
-  // Keep currentMatrix as alias to dynamicApprovalRows for non-regression
-  const currentMatrix = dynamicApprovalRows;
   const approvalMatrixPagination = useTablePagination(dynamicApprovalRows, 10);
 
   const [isMatrixModalOpen, setIsMatrixModalOpen] = useState(false);
-  const [editingMatrixEntry, setEditingMatrixEntry] = useState(null);
   const [matrixFormData, setMatrixFormData] = useState({
     docType: 'SOP',
     nameTh: '',
@@ -882,28 +857,6 @@ const MasterDataHub = () => {
     setIsStampSimulatorModalOpen(true);
   };
 
-  // Filtered Users for Tab 5 Signature Directory
-  const filteredSigUsers = useMemo(() => {
-    return (masterUsers || []).filter(u => {
-      const matchSearch = (u.name || '').toLowerCase().includes(sigUserSearch.toLowerCase()) ||
-        (u.empId || '').toLowerCase().includes(sigUserSearch.toLowerCase()) ||
-        (u.id || '').toLowerCase().includes(sigUserSearch.toLowerCase()) ||
-        (u.position || '').toLowerCase().includes(sigUserSearch.toLowerCase()) ||
-        (u.department || '').toLowerCase().includes(sigUserSearch.toLowerCase());
-
-      const matchDept = sigDeptFilter === 'ALL' || u.department === sigDeptFilter || (u.depts && u.depts.includes(sigDeptFilter));
-
-      let matchStatus = true;
-      if (sigStatusFilter === 'REGISTERED') matchStatus = Boolean(u.hasRegisteredSignature);
-      else if (sigStatusFilter === 'PENDING') matchStatus = !u.hasRegisteredSignature;
-      else if (sigStatusFilter === 'LOCKED') matchStatus = Boolean(u.isLocked);
-
-      return matchSearch && matchDept && matchStatus;
-    });
-  }, [masterUsers, sigUserSearch, sigDeptFilter, sigStatusFilter]);
-
-  const sigUserPagination = useTablePagination(filteredSigUsers, 10);
-
   // --- TAB 6 HANDLERS (SLA & Approval Matrix Settings) ---
   const handleAdjustSla = (field, delta) => {
     setSlaForm(prev => {
@@ -914,7 +867,6 @@ const MasterDataHub = () => {
   };
 
   const handleOpenMatrixModal = (entry) => {
-    setEditingMatrixEntry(entry);
     const code = entry.docType || entry.code || entry.doc_type || 'SOP';
     const matchedType = (documentTypes || []).find(t => (t.code || t.id) === code);
     setMatrixFormData({
@@ -941,38 +893,10 @@ const MasterDataHub = () => {
     setIsMatrixModalOpen(false);
   };
 
-  const handleSaveSlaSettings = (e) => {
-    e.preventDefault();
-    updateSlaSettings(slaForm);
-    toast.success('บันทึกกำหนดเวลา SLA เรียบร้อยแล้ว');
-  };
-
   const handleSaveAllSlaAndMatrix = (e) => {
     e.preventDefault();
     updateSlaSettings(slaForm);
     toast.success('บันทึกการตั้งค่าสายการอนุมัติและ SLAs เรียบร้อยแล้ว');
-  };
-
-  const getMatrixLevelBadge = (level, label = '') => {
-    const lvlNum = Number(level) || 1;
-    let colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
-    let roleText = 'Staff / Operator';
-
-    if (lvlNum === 1) { colorClass = 'bg-slate-100 text-slate-700 border-slate-200'; roleText = 'ทุกคน / Staff'; }
-    else if (lvlNum === 2) { colorClass = 'bg-slate-100 text-slate-700 border-slate-200'; roleText = 'Officer'; }
-    else if (lvlNum === 3) { colorClass = 'bg-sky-50 text-sky-700 border-sky-200'; roleText = 'Senior Staff'; }
-    else if (lvlNum === 4) { colorClass = 'bg-blue-50 text-blue-700 border-blue-200'; roleText = 'Supervisor'; }
-    else if (lvlNum === 5) { colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-200'; roleText = 'Asst. Mgr / Lead'; }
-    else if (lvlNum === 6) { colorClass = 'bg-purple-50 text-purple-700 border-purple-200'; roleText = 'General Manager'; }
-    else if (lvlNum === 7) { colorClass = 'bg-amber-50 text-amber-800 border-amber-200'; roleText = 'Director'; }
-    else if (lvlNum >= 8) { colorClass = 'bg-rose-50 text-rose-800 border-rose-200'; roleText = 'MD / กรรมการ'; }
-
-    return (
-      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border font-mono ${colorClass}`}>
-        <span>L{lvlNum}+</span>
-        <span className="font-sans font-medium text-[11px] opacity-90 hidden sm:inline">({label || roleText})</span>
-      </span>
-    );
   };
 
   // If unauthorized, render Access Denied Card
@@ -1231,6 +1155,13 @@ const MasterDataHub = () => {
                               title="จัดการลายเซ็นอิเล็กทรอนิกส์ (Signature Asset)"
                             >
                               <PenTool size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleOpenStampSimulator(user)}
+                              className="w-7 h-7 rounded hover:bg-emerald-50 flex items-center justify-center text-slate-500 hover:text-emerald-700 transition-colors"
+                              title="ทดสอบตราประทับจำลอง (21 CFR Part 11 Stamp Simulator)"
+                            >
+                              <ShieldCheck size={13} />
                             </button>
                             <button
                               onClick={() => handleOpenUserModal(user)}

@@ -1,12 +1,12 @@
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import useStore, { MASTER_DATA_USER, MASTER_DEPARTMENTS } from '../store/useStore';
 import MasterDataHub from '../pages/Admin/MasterDataHub';
 import MasterDocsList from '../pages/MasterDocs/MasterDocsList';
 import Library from '../pages/Library/Library';
-import { isMyDepartment, extractDeptCode, isDeptEquivalent } from '../services/darService';
+import { isMyDepartment } from '../services/darService';
 
 describe('Department Code QC Drift Resolution & Multi-Department Filter Blueprint', () => {
   beforeEach(() => {

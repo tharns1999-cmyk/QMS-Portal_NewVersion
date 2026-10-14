@@ -6,9 +6,6 @@ import {
   ShieldAlert, 
   History, 
   FileText, 
-  Filter, 
-  ChevronLeft, 
-  ChevronRight, 
   X,
   Layers,
   FileCheck,
@@ -43,20 +40,6 @@ const ActionLog = () => {
   );
 
   // --- Safe Extraction Helpers (Guaranteed string return, zero React 19 child crash) ---
-
-  const getSafeString = (val, fallback = '') => {
-    if (val === null || val === undefined) return fallback;
-    if (typeof val === 'string') return val;
-    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-    if (typeof val === 'object') {
-      try {
-        return JSON.stringify(val);
-      } catch {
-        return fallback;
-      }
-    }
-    return String(val);
-  };
 
   const getActorName = (log) => {
     const raw = log?.actor || log?.actorName || log?.userName || log?.performed_by || log?.user;

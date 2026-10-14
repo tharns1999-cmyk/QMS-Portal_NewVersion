@@ -4,9 +4,7 @@ import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
 import Dashboard from '../pages/Dashboard/Dashboard';
-import DashboardHeader from '../pages/Dashboard/components/DashboardHeader';
 import Header from '../components/layout/Header';
-import { isDarDraft, isDarRequester } from '../utils/darHelper';
 
 describe('Reactive User Session & Strict Data Scoping (Draft Isolation & Role Scoping)', () => {
   const thanawutUser = {

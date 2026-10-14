@@ -5,8 +5,6 @@ import { renderWithRouter, setTestUser } from './test_utils';
 import useStore from '../store/useStore';
 import MasterDataHub from '../pages/Admin/MasterDataHub';
 import TaskInbox from '../pages/Tasks/TaskInbox';
-import TaskConfirmHardcopyReceipt from '../pages/Tasks/TaskConfirmHardcopyReceipt';
-import { Routes, Route } from 'react-router-dom';
 
 describe('Multi-Department Membership & Cross-Department Task Routing Tests', () => {
   beforeEach(() => {

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import useStore from '../store/useStore';
-import Library, { filterDocumentsByScope, TAB_GENERAL, TAB_MY_DEPT, TAB_DISTRIBUTED } from '../pages/Library/Library';
+import Library, { filterDocumentsByScope } from '../pages/Library/Library';
 import MasterList from '../pages/MasterList/MasterList';
 
 describe('Strict Separation Between "ในแผนกฉัน" and "เอกสารทั่วไป" Scope Filtering', () => {
