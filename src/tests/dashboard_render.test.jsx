@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Dashboard from '../pages/Dashboard/Dashboard';
 import ExternalDocDetailModal from '../pages/ExternalDocs/ExternalDocDetailModal';
@@ -898,7 +898,735 @@ describe('E2E Integration: Live Recalculation, Action Handoff Deep-Link & L4+ Ap
     expect(scheduleApproved.status).toBe('COMPLETED');
     expect(scheduleApproved.is_reviewed_this_cycle).toBe(true);
   });
+
+  it('Case 4 (QMS Standard Alignment): Dashboard default action button [บันทึกผล], Review Form 3 Options, and Lifecycle Flow', async () => {
+    const staffUser = {
+      id: 'U-QC-STAFF-02',
+      name: 'QC Officer',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    const supervisorUser = {
+      id: 'U-QC-SUP-02',
+      name: 'QC Section Head',
+      department: 'QC',
+      level: 4,
+      role: 'SUPERVISOR'
+    };
+
+    // Document with historical review that had REVISION_REQUIRED in the past, but is currently a new cycle needing review
+    const extDoc = {
+      id: 'ED-QC-99',
+      edCode: 'ED-QC-99',
+      doc_code: 'ED-QC-99',
+      code: 'ED-QC-99',
+      title: 'Packaging Quality Assurance Standard',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '3.0',
+      sourceVersion: '3.0',
+      is_external: true,
+      nextReviewDate: '2026-10-20',
+      next_review_date: '2026-10-20',
+      review_status: 'DUE_SOON',
+      is_reviewed_this_cycle: false,
+      periodic_reviews: [
+        {
+          round: 1,
+          outcome: 'REVISION_REQUIRED',
+          result: 'REVISION_REQUIRED',
+          reviewed_date: '2025-10-20'
+        }
+      ]
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser, supervisorUser],
+      masterUsers: [staffUser, supervisorUser],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    // 1. Dashboard Action Button: MUST be [ 🔄 บันทึกผล ] by default, NOT [ อัปเดตฉบับใหม่ ]
+    const { unmount: unmountDash } = render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
+        <PeriodicReviewDashboard />
+      </MemoryRouter>
+    );
+
+    const extTabBtn = screen.getByRole('button', { name: /เอกสารภายนอก/i });
+    fireEvent.click(extTabBtn);
+
+    expect(screen.getByText('ED-QC-99')).toBeTruthy();
+    expect(screen.getByText('บันทึกผล')).toBeTruthy();
+    expect(screen.queryByText('อัปเดตฉบับใหม่')).toBeNull();
+    unmountDash();
+
+    // 2. Open PeriodicReviewDetail: must display Review Assessment Form with 3 clear options and sublabels
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews/PRS-AUTO-ED-QC-99?docId=ED-QC-99&docCode=ED-QC-99&isExternal=true']}>
+        <Routes>
+          <Route path="/dcc/periodic-reviews/:id" element={<PeriodicReviewDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeTruthy();
+    expect(screen.getByText(/ยังคงใช้งานต่อไปได้ \(Up-to-date \/ No Change Needed\)/i)).toBeTruthy();
+    expect(screen.getByText(/เนื้อหาเอกสารยังคงถูกต้อง สอดคล้อง และเป็นปัจจุบัน ไม่จำเป็นต้องแก้ไข/i)).toBeTruthy();
+    expect(screen.getByText(/ต้องปรับปรุง\/แก้ไข \(Revision Required \/ Update Edition\)/i)).toBeTruthy();
+    expect(screen.getByText(/เอกสารมีเวอร์ชันใหม่จากผู้ผลิต หรือจำเป็นต้องออก Edition ใหม่/i)).toBeTruthy();
+    expect(screen.getByText(/ขอยกเลิกการใช้งาน \(Obsolete \/ Discontinue\)/i)).toBeTruthy();
+    expect(screen.getByText(/เอกสารนี้ยกเลิกหรือไม่จำเป็นต้องใช้งานต่อไป ควรดำเนินการขอยกเลิก/i)).toBeTruthy();
+  });
 });
 
+describe('5-Use-Case Periodic Review Two-Phase Commit & Rollback Lifecycle', () => {
+  it('Case 1 (Cancel Rollback): User selects REVISION_REQUIRED for an external document -> store has AWAITING_ACTION -> calling resetPendingReviewIntent rolls back the intent: document status is restored to actionable (DUE_SOON), periodic_review_outcome is cleared, and Dashboard action button renders [ 🔄 บันทึกผล ]', async () => {
+    const staffUser = {
+      id: 'U-QC-C1',
+      name: 'QC Officer C1',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
 
+    const extDoc = {
+      id: 'ED-QC-CASE1',
+      edCode: 'ED-QC-CASE1',
+      doc_code: 'ED-QC-CASE1',
+      code: 'ED-QC-CASE1',
+      title: 'Analytical Method Standard C1',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      ownerId: 'U-QC-C1',
+      ownerUserId: 'U-QC-C1',
+      is_external: true,
+      effectiveDate: '2026-10-14',
+      nextReviewDate: '2026-10-25',
+      next_review_date: '2026-10-25',
+      review_status: 'DUE_SOON',
+      is_reviewed_this_cycle: false
+    };
 
+    const schedule = {
+      id: 'PRS-AUTO-ED-QC-CASE1',
+      documentId: 'ED-QC-CASE1',
+      externalDocumentId: 'ED-QC-CASE1',
+      documentNumber: 'ED-QC-CASE1',
+      documentName: 'Analytical Method Standard C1',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      ownerUserId: 'U-QC-C1',
+      status: 'ACTION_REQUIRED',
+      nextReviewDate: '2026-10-25'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser],
+      masterUsers: [staffUser],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    // 1. Submit periodic review with outcome REVISION_REQUIRED
+    useStore.getState().submitPeriodicReview({
+      scheduleId: 'PRS-AUTO-ED-QC-CASE1',
+      docId: 'ED-QC-CASE1',
+      docCode: 'ED-QC-CASE1',
+      isExternal: true,
+      outcome: 'REVISION_REQUIRED',
+      currentUser: staffUser,
+      reviewDetails: { reason: 'Revision required due to vendor upgrade' }
+    });
+
+    const docAwaiting = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-CASE1');
+    expect(docAwaiting.review_status).toBe('AWAITING_ACTION');
+    expect(docAwaiting.periodic_review_outcome).toBe('REVISION_REQUIRED');
+
+    // Dashboard renders [ อัปเดตฉบับใหม่ ]
+    const { unmount: unmountDash1 } = render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
+        <PeriodicReviewDashboard />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารภายนอก/i }));
+    expect(screen.getByText('ED-QC-CASE1')).toBeTruthy();
+    expect(screen.getByText('อัปเดตฉบับใหม่')).toBeTruthy();
+    unmountDash1();
+
+    // 2. Call resetPendingReviewIntent (or simulate modal cancellation)
+    useStore.getState().resetPendingReviewIntent('ED-QC-CASE1');
+
+    // Document status restored to actionable (DUE_SOON) and periodic_review_outcome cleared
+    const docRolledBack = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-CASE1');
+    expect(docRolledBack.review_status).toBe('DUE_SOON');
+    expect(docRolledBack.periodic_review_outcome).toBeUndefined();
+    expect(docRolledBack.is_reviewed_this_cycle).toBe(false);
+
+    // 3. Dashboard action button renders [ 🔄 บันทึกผล ]
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
+        <PeriodicReviewDashboard />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารภายนอก/i }));
+    expect(screen.getByText('ED-QC-CASE1')).toBeTruthy();
+    expect(screen.getByText('บันทึกผล')).toBeTruthy();
+    expect(screen.queryByText('อัปเดตฉบับใหม่')).toBeNull();
+  });
+
+  it('Case 2 (Re-evaluation): In PeriodicReviewDetail, a document in AWAITING_ACTION with outcome: REVISION_REQUIRED can trigger re-evaluation (handleStartReReview / isReEvaluating), allowing user to change outcome to NO_CHANGE (ใช้งานต่อ)', async () => {
+    const staffUser = {
+      id: 'U-QC-C2',
+      name: 'QC Officer C2',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    const supervisorUser = {
+      id: 'U-QC-SUP-C2',
+      name: 'QC Supervisor C2',
+      department: 'QC',
+      level: 4,
+      role: 'SUPERVISOR'
+    };
+
+    const extDoc = {
+      id: 'ED-QC-CASE2',
+      edCode: 'ED-QC-CASE2',
+      doc_code: 'ED-QC-CASE2',
+      code: 'ED-QC-CASE2',
+      title: 'Microbiology Test Manual C2',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      ownerId: 'U-QC-C2',
+      ownerUserId: 'U-QC-C2',
+      is_external: true,
+      effectiveDate: '2026-10-14',
+      nextReviewDate: '2026-10-28',
+      next_review_date: '2026-10-28',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      is_reviewed_this_cycle: false,
+      periodic_reviews: [
+        {
+          round: 1,
+          outcome: 'REVISION_REQUIRED',
+          result: 'REVISE',
+          reviewed_date: '2026-10-14',
+          reason: 'Initial inspection thought new revision required'
+        }
+      ]
+    };
+
+    const schedule = {
+      id: 'PRS-AUTO-ED-QC-CASE2',
+      documentId: 'ED-QC-CASE2',
+      externalDocumentId: 'ED-QC-CASE2',
+      documentNumber: 'ED-QC-CASE2',
+      documentName: 'Microbiology Test Manual C2',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      ownerUserId: 'U-QC-C2',
+      status: 'AWAITING_ACTION',
+      review_status: 'AWAITING_ACTION',
+      outcome: 'REVISION_REQUIRED',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      nextReviewDate: '2026-10-28'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser, supervisorUser],
+      masterUsers: [staffUser, supervisorUser],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews/PRS-AUTO-ED-QC-CASE2?docId=ED-QC-CASE2&docCode=ED-QC-CASE2&isExternal=true']}>
+        <Routes>
+          <Route path="/dcc/periodic-reviews/:id" element={<PeriodicReviewDetail />} />
+          <Route path="/dcc/periodic-reviews" element={<div>Dashboard</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Initial view: Awaiting action notice and re-evaluate button
+    expect(screen.getByText(/ขั้นตอนถัดไป: จัดทำเอกสารภายนอกฉบับใหม่/i)).toBeTruthy();
+    const reEvaluateBtn = screen.getByRole('button', { name: /เปลี่ยนผลการทบทวน \(Re-evaluate\)/i });
+    expect(reEvaluateBtn).toBeTruthy();
+
+    // Trigger Re-evaluation
+    fireEvent.click(reEvaluateBtn);
+
+    // Re-evaluating banner is displayed and form is active
+    expect(screen.getByText(/โหมดแก้ไขผลการทบทวน: คุณสามารถเปลี่ยนผลการประเมินหรือปรับปรุงรายละเอียดได้/i)).toBeTruthy();
+    expect(screen.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeTruthy();
+
+    // User changes outcome to NO_CHANGE (ยังคงใช้งานต่อไปได้)
+    const noChangeRadio = screen.getByLabelText(/ยังคงใช้งานต่อไปได้/i);
+    fireEvent.click(noChangeRadio);
+
+    // Provide reason
+    const reasonTextarea = screen.getByPlaceholderText(/ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว/i);
+    fireEvent.change(reasonTextarea, { target: { value: 'Verified standard: current version is still valid and no change needed' } });
+
+    // Submit review
+    const submitBtn = screen.getByRole('button', { name: /ส่งผลการทบทวนให้หัวหน้าแผนก/i });
+    fireEvent.click(submitBtn);
+
+    // Store updated to PENDING_APPROVAL for supervisor sign-off
+    const docAfterReReview = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-CASE2');
+    expect(docAfterReReview.review_status).toBe('PENDING_APPROVAL');
+    expect(docAfterReReview.pending_periodic_review).toBeTruthy();
+
+    const approvalTask = useStore.getState().tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+    expect(approvalTask).toBeTruthy();
+    expect(approvalTask.assignee_id).toBe('U-QC-SUP-C2');
+  });
+
+  it('Case 3 (Actual Request Linkage): When an update request is submitted via updateExternalDoc on an AWAITING_ACTION document, it binds linkedRequestId and linkedActionId', async () => {
+    const staffUser = {
+      id: 'U-QC-C3',
+      name: 'QC Officer C3',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    const supervisorUser = {
+      id: 'U-QC-SUP-C3',
+      name: 'QC Sup C3',
+      department: 'QC',
+      level: 4,
+      role: 'SUPERVISOR'
+    };
+
+    const extDoc = {
+      id: 'ED-QC-CASE3',
+      edCode: 'ED-QC-CASE3',
+      doc_code: 'ED-QC-CASE3',
+      code: 'ED-QC-CASE3',
+      title: 'Water Analysis Standard C3',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      is_external: true,
+      nextReviewDate: '2026-10-30',
+      next_review_date: '2026-10-30',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      is_reviewed_this_cycle: false
+    };
+
+    const schedule = {
+      id: 'PRS-AUTO-ED-QC-CASE3',
+      documentId: 'ED-QC-CASE3',
+      externalDocumentId: 'ED-QC-CASE3',
+      documentNumber: 'ED-QC-CASE3',
+      documentName: 'Water Analysis Standard C3',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'AWAITING_ACTION',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      nextReviewDate: '2026-10-30'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser, supervisorUser],
+      masterUsers: [staffUser, supervisorUser],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      externalRequests: [],
+      tasks: [],
+      notifications: []
+    });
+
+    // Submit update request via updateExternalDoc
+    useStore.getState().updateExternalDoc('ED-QC-CASE3', {
+      edition: '2.0',
+      sourceVersion: '2.0',
+      reason: 'Updated to 2026 revised ISO guideline',
+      reviewerId: 'U-QC-SUP-C3'
+    });
+
+    const store = useStore.getState();
+    const req = store.externalRequests[0];
+    expect(req).toBeTruthy();
+    expect(req.edCode).toBe('ED-QC-CASE3');
+
+    // Assert existing doc binds linkedRequestId and linkedActionId
+    const oldDoc = store.externalDocuments.find(d => d.id === 'ED-QC-CASE3');
+    expect(oldDoc.linkedRequestId).toBe(req.id);
+    expect(oldDoc.linkedActionId).toBe(req.id);
+
+    // Assert new edition doc binds linkedRequestId and linkedActionId
+    const newDoc = store.externalDocuments.find(d => d.edition === '2.0' && d.edCode === 'ED-QC-CASE3');
+    expect(newDoc).toBeTruthy();
+    expect(newDoc.linkedRequestId).toBe(req.id);
+    expect(newDoc.linkedActionId).toBe(req.id);
+
+    // Assert periodic review schedule binds linkedRequestId and linkedActionId
+    const updatedSched = store.periodicReviewSchedules.find(s => s.id === 'PRS-AUTO-ED-QC-CASE3');
+    expect(updatedSched.linkedRequestId).toBe(req.id);
+    expect(updatedSched.linkedActionId).toBe(req.id);
+    expect(updatedSched.linkageStatus).toBe('PENDING');
+  });
+
+  it('Case 4 (L4+ Approval Flow): When NO_CHANGE is submitted by staff -> PENDING_APPROVAL -> L4 Supervisor approves -> advances nextReviewDate +1 year (+12 months) and marks review_status: COMPLETED, is_reviewed_this_cycle: true', async () => {
+    const staffUser = {
+      id: 'U-QC-C4',
+      name: 'QC Officer C4',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    const supervisorUser = {
+      id: 'U-QC-SUP-C4',
+      name: 'QC Section Head C4',
+      department: 'QC',
+      level: 4,
+      role: 'SUPERVISOR'
+    };
+
+    const extDoc = {
+      id: 'ED-QC-CASE4',
+      edCode: 'ED-QC-CASE4',
+      doc_code: 'ED-QC-CASE4',
+      code: 'ED-QC-CASE4',
+      title: 'Calibration Standard C4',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      is_external: true,
+      effectiveDate: '2026-10-14',
+      nextReviewDate: '2027-10-14',
+      next_review_date: '2027-10-14',
+      review_status: 'DUE_SOON',
+      reviewCycleMonths: 12,
+      is_reviewed_this_cycle: false
+    };
+
+    const schedule = {
+      id: 'PRS-AUTO-ED-QC-CASE4',
+      documentId: 'ED-QC-CASE4',
+      externalDocumentId: 'ED-QC-CASE4',
+      documentNumber: 'ED-QC-CASE4',
+      documentName: 'Calibration Standard C4',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'ACTION_REQUIRED',
+      nextReviewDate: '2027-10-14'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser, supervisorUser],
+      masterUsers: [staffUser, supervisorUser],
+      simulatedSystemDate: '2027-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [extDoc],
+      periodicReviewSchedules: [schedule],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    // 1. Staff submits NO_CHANGE
+    const submitRes = useStore.getState().submitPeriodicReview({
+      scheduleId: 'PRS-AUTO-ED-QC-CASE4',
+      docId: 'ED-QC-CASE4',
+      docCode: 'ED-QC-CASE4',
+      isExternal: true,
+      outcome: 'NO_CHANGE',
+      currentUser: staffUser,
+      reviewDetails: { reason: 'Annual review complete, no changes required' }
+    });
+
+    expect(submitRes?.fastTrack).toBe(false);
+    expect(submitRes?.status).toBe('PENDING_APPROVAL');
+
+    const docPending = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-CASE4');
+    expect(docPending.review_status).toBe('PENDING_APPROVAL');
+    expect(docPending.pending_periodic_review).toBeTruthy();
+
+    const approvalTask = useStore.getState().tasks.find(t => t.type === 'PERIODIC_REVIEW_APPROVAL');
+    expect(approvalTask).toBeTruthy();
+    expect(approvalTask.assignee_id).toBe('U-QC-SUP-C4');
+
+    // 2. L4 Supervisor approves
+    const approveRes = useStore.getState().approveExternalPeriodicReview('ED-QC-CASE4', supervisorUser, 'Supervisor approved review');
+    expect(approveRes.success).toBe(true);
+
+    // 3. Verify nextReviewDate +1 year (+12 months), COMPLETED, is_reviewed_this_cycle
+    const docApproved = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-CASE4');
+    expect(docApproved.nextReviewDate).toBe('2028-10-14');
+    expect(docApproved.review_status).toBe('COMPLETED');
+    expect(docApproved.is_reviewed_this_cycle).toBe(true);
+    expect(docApproved.pending_periodic_review).toBe(false);
+
+    const schedApproved = useStore.getState().periodicReviewSchedules.find(s => s.id === 'PRS-AUTO-ED-QC-CASE4');
+    expect(schedApproved.status).toBe('COMPLETED');
+    expect(schedApproved.is_reviewed_this_cycle).toBe(true);
+  });
+
+  it('Case 5 (Rejection Rollback): If a linked request or review task is rejected (cancelExternalRequest / rejectExternalRequest), resetPendingReviewIntent is invoked, returning document to actionable state', async () => {
+    const staffUser = {
+      id: 'U-QC-C5',
+      name: 'QC Officer C5',
+      department: 'QC',
+      level: 2,
+      role: 'STAFF'
+    };
+
+    // Sub-case 5A: cancelExternalRequest rollback
+    const docA = {
+      id: 'ED-QC-C5A',
+      edCode: 'ED-QC-C5A',
+      doc_code: 'ED-QC-C5A',
+      code: 'ED-QC-C5A',
+      title: 'Testing Guide 5A',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      nextReviewDate: '2026-10-25',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      linkedRequestId: 'EDR-REQ-001',
+      linkedActionId: 'EDR-REQ-001',
+      is_reviewed_this_cycle: false
+    };
+
+    const schedA = {
+      id: 'PRS-AUTO-ED-QC-C5A',
+      documentId: 'ED-QC-C5A',
+      externalDocumentId: 'ED-QC-C5A',
+      documentNumber: 'ED-QC-C5A',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'AWAITING_ACTION',
+      review_status: 'AWAITING_ACTION',
+      linkedRequestId: 'EDR-REQ-001',
+      linkedActionId: 'EDR-REQ-001',
+      nextReviewDate: '2026-10-25'
+    };
+
+    const reqA = {
+      id: 'EDR-REQ-001',
+      requestId: 'EDR-REQ-001',
+      edCode: 'ED-QC-C5A',
+      docId: 'ED-QC-C5A',
+      previousDocId: 'ED-QC-C5A',
+      status: 'PENDING_EXT_REVIEW'
+    };
+
+    // Sub-case 5B: rejectExternalRequest rollback
+    const docB = {
+      id: 'ED-QC-C5B',
+      edCode: 'ED-QC-C5B',
+      doc_code: 'ED-QC-C5B',
+      code: 'ED-QC-C5B',
+      title: 'Testing Guide 5B',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      sourceVersion: '1.0',
+      nextReviewDate: '2026-10-25',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      linkedRequestId: 'EDR-REQ-002',
+      linkedActionId: 'EDR-REQ-002',
+      is_reviewed_this_cycle: false
+    };
+
+    const schedB = {
+      id: 'PRS-AUTO-ED-QC-C5B',
+      documentId: 'ED-QC-C5B',
+      externalDocumentId: 'ED-QC-C5B',
+      documentNumber: 'ED-QC-C5B',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'AWAITING_ACTION',
+      review_status: 'AWAITING_ACTION',
+      linkedRequestId: 'EDR-REQ-002',
+      linkedActionId: 'EDR-REQ-002',
+      nextReviewDate: '2026-10-25'
+    };
+
+    const reqB = {
+      id: 'EDR-REQ-002',
+      requestId: 'EDR-REQ-002',
+      edCode: 'ED-QC-C5B',
+      docId: 'ED-QC-C5B',
+      previousDocId: 'ED-QC-C5B',
+      status: 'PENDING_EXT_REVIEW'
+    };
+
+    useStore.setState({
+      currentUser: staffUser,
+      users: [staffUser],
+      masterUsers: [staffUser],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [docA, docB],
+      periodicReviewSchedules: [schedA, schedB],
+      externalRequests: [reqA, reqB],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    // 1. Cancel request A -> rolls back doc A
+    useStore.getState().cancelExternalRequest('EDR-REQ-001');
+
+    const updatedDocA = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-C5A');
+    expect(updatedDocA.review_status).toBe('DUE_SOON');
+    expect(updatedDocA.periodic_review_outcome).toBeUndefined();
+    expect(updatedDocA.linkedRequestId).toBeUndefined();
+    expect(updatedDocA.linkedActionId).toBeUndefined();
+
+    const cancelledReqA = useStore.getState().externalRequests.find(r => r.id === 'EDR-REQ-001');
+    expect(cancelledReqA.status).toBe('CANCELLED');
+
+    // 2. Reject request B -> rolls back doc B
+    useStore.getState().rejectExternalRequest('EDR-REQ-002', 'Rejected by approver: not conforming to current format');
+
+    const updatedDocB = useStore.getState().externalDocuments.find(d => d.id === 'ED-QC-C5B');
+    expect(updatedDocB.review_status).toBe('DUE_SOON');
+    expect(updatedDocB.periodic_review_outcome).toBeUndefined();
+    expect(updatedDocB.linkedRequestId).toBeUndefined();
+    expect(updatedDocB.linkedActionId).toBeUndefined();
+
+    const rejectedReqB = useStore.getState().externalRequests.find(r => r.id === 'EDR-REQ-002');
+    expect(rejectedReqB.status).toBe('REJECTED');
+  });
+});
+
+describe('Periodic Review Status Badge Contradiction & Action Button Layout Optimization', () => {
+  it('Criterion 1 & 2: A document with pending REVISION_REQUIRED outcome displays "รออัปเดตฉบับใหม่" (overriding "ยังไม่ถึงกำหนด") and compact action group (text button + icon-only secondary buttons)', () => {
+    const user = {
+      id: 'U-QC-OPT',
+      name: 'QC Officer Opt',
+      department: 'QC',
+      level: 3,
+      role: 'STAFF'
+    };
+
+    // External doc whose next review date is in 2027 (normally UP_TO_DATE / ยังไม่ถึงกำหนด)
+    // BUT has pending review outcome: REVISION_REQUIRED
+    const doc = {
+      id: 'ED-QC-OPT-01',
+      edCode: 'ED-QC-OPT-01',
+      doc_code: 'ED-QC-OPT-01',
+      code: 'ED-QC-OPT-01',
+      title: 'Analytical Method Standard 2027',
+      department: 'QC',
+      status: 'ACTIVE',
+      edition: '1.0',
+      is_external: true,
+      effectiveDate: '2026-10-14',
+      nextReviewDate: '2027-10-14',
+      next_review_date: '2027-10-14',
+      review_status: 'AWAITING_ACTION',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      is_reviewed_this_cycle: false
+    };
+
+    const schedule = {
+      id: 'PRS-AUTO-ED-QC-OPT-01',
+      documentId: 'ED-QC-OPT-01',
+      externalDocumentId: 'ED-QC-OPT-01',
+      documentNumber: 'ED-QC-OPT-01',
+      documentName: 'Analytical Method Standard 2027',
+      documentCategory: 'EXTERNAL',
+      isExternal: true,
+      ownerDepartmentId: 'QC',
+      status: 'AWAITING_ACTION',
+      review_status: 'AWAITING_ACTION',
+      outcome: 'REVISION_REQUIRED',
+      periodic_review_outcome: 'REVISION_REQUIRED',
+      nextReviewDate: '2027-10-14'
+    };
+
+    useStore.setState({
+      currentUser: user,
+      users: [user],
+      masterUsers: [user],
+      simulatedSystemDate: '2026-10-14T00:00:00.000Z',
+      documents: [],
+      externalDocuments: [doc],
+      periodicReviewSchedules: [schedule],
+      tasks: [],
+      periodicReviewTasks: [],
+      periodicReviewRecords: []
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/dcc/periodic-reviews']}>
+        <PeriodicReviewDashboard />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /เอกสารภายนอก/i }));
+
+    // Criterion 1: Must show "รออัปเดตฉบับใหม่" instead of "ยังไม่ถึงกำหนด" in row status column
+    const docRow = screen.getByText('ED-QC-OPT-01').closest('tr');
+    expect(docRow).toBeTruthy();
+    expect(within(docRow).getByText(/รออัปเดตฉบับใหม่/i)).toBeTruthy();
+    expect(within(docRow).queryByText(/ยังไม่ถึงกำหนด/i)).toBeNull();
+
+    // Criterion 2: Primary action button has text "อัปเดตฉบับใหม่"
+    const updateBtn = within(docRow).getByRole('button', { name: /อัปเดตฉบับใหม่/i });
+    expect(updateBtn).toBeTruthy();
+    expect(updateBtn.textContent).toContain('อัปเดตฉบับใหม่');
+
+    // Secondary actions are icon-only with tooltips/aria-labels
+    const reEvaluateBtn = within(docRow).getByRole('button', { name: /เปลี่ยนผลการทบทวน/i });
+    expect(reEvaluateBtn).toBeTruthy();
+    expect(reEvaluateBtn.textContent).toBe('');
+
+    const historyBtn = within(docRow).getByRole('button', { name: /ดูประวัติการทบทวน/i });
+    expect(historyBtn).toBeTruthy();
+    expect(historyBtn.textContent).toBe('');
+  });
+});

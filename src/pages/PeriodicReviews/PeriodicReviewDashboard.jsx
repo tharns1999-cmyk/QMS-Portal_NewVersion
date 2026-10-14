@@ -11,6 +11,7 @@ import {
   Search,
   Filter,
   RotateCw,
+  RotateCcw,
   Eye,
   History,
   X,
@@ -97,15 +98,33 @@ const DashboardCard = ({ title, sublabel, value, icon: Icon, colorClass, onClick
 );
 
 const getStatusBadgeConfig = (status, _hasActiveTask, isPendingApproval, isReviewed) => {
-  if (isReviewed) {
+  if (isReviewed || status === 'COMPLETED') {
     return {
       label: '✔️ ทบทวนแล้วเสร็จ',
       cls: 'bg-emerald-50 text-emerald-700 border-emerald-200'
     };
   }
+  if (status === 'REVISION_REQUIRED') {
+    return {
+      label: '⚠️ รออัปเดตฉบับใหม่',
+      cls: 'bg-amber-50 text-amber-800 border-amber-200'
+    };
+  }
+  if (status === 'OBSOLETE_REQUIRED') {
+    return {
+      label: '🚫 รอขอยกเลิก',
+      cls: 'bg-rose-50 text-rose-700 border-rose-200'
+    };
+  }
   if (status === 'PENDING_APPROVAL' || isPendingApproval) {
     return {
       label: '⏳ รออนุมัติผล',
+      cls: 'bg-amber-50 text-amber-800 border-amber-200'
+    };
+  }
+  if (status === 'AWAITING_ACTION') {
+    return {
+      label: '⚠️ รอการดำเนินการ',
       cls: 'bg-amber-50 text-amber-800 border-amber-200'
     };
   }
@@ -119,12 +138,6 @@ const getStatusBadgeConfig = (status, _hasActiveTask, isPendingApproval, isRevie
     return {
       label: '⚠️ ใกล้ครบกำหนด',
       cls: 'bg-amber-50 text-amber-700 border-amber-200'
-    };
-  }
-  if (status === 'COMPLETED') {
-    return {
-      label: '🏁 เสร็จสิ้นแล้ว',
-      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200'
     };
   }
   return {
@@ -438,7 +451,7 @@ const UnifiedWorkspaceView = ({
 
   const pagination = useTablePagination(sortedDocuments, 10);
 
-  const handleNavigateRecord = (record) => {
+  const handleNavigateRecord = (record, options = {}) => {
     if (!record) return;
     const docId = record.documentId || record.externalDocumentId || record.targetDoc?.id || '';
     const docCode = record.documentNumber || record.targetDoc?.edCode || record.targetDoc?.doc_code || record.targetDoc?.code || record.id || '';
@@ -454,10 +467,30 @@ const UnifiedWorkspaceView = ({
     const scheduleId = (record.id && !String(record.id).startsWith('PRS-AUTO-'))
       ? record.id
       : (docId || docCode || record.id);
+    const hasActiveLinkedRequest = Boolean(
+      record.linkedActionId ||
+      record.linkedRequestId ||
+      record.linked_request_id ||
+      record.linkedDraftId ||
+      record.targetDoc?.linked_request_id ||
+      record.targetDoc?.linkedActionId ||
+      record.targetDoc?.linkedRequestId
+    );
+    const isAwaitingAction = Boolean(
+      record.status === 'AWAITING_ACTION' ||
+      record.targetDoc?.review_status === 'AWAITING_ACTION'
+    );
+    const shouldReEvaluate = Boolean(
+      options.isReEvaluating ||
+      (!hasActiveLinkedRequest && isAwaitingAction)
+    );
     const params = new URLSearchParams();
     if (docId) params.set('docId', String(docId));
     if (docCode) params.set('docCode', String(docCode));
     if (isExternal) params.set('isExternal', 'true');
+    if (shouldReEvaluate) {
+      params.set('isReEvaluating', 'true');
+    }
     const queryString = params.toString();
     navigate(
       `/dcc/periodic-reviews/${encodeURIComponent(scheduleId)}${queryString ? `?${queryString}` : ''}`,
@@ -466,7 +499,8 @@ const UnifiedWorkspaceView = ({
           record,
           docId,
           docCode,
-          isExternal
+          isExternal,
+          isReEvaluating: shouldReEvaluate
         }
       }
     );
@@ -795,39 +829,72 @@ const UnifiedWorkspaceView = ({
                 const calculatedStatus = typeof evaluation === 'object' ? evaluation.status : evaluation;
                 const diffDays = typeof evaluation === 'object' ? evaluation.diffDays : null;
                 const isReviewed = calculatedStatus === 'COMPLETED';
-                const effectiveStatus = (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'COMPLETED' || calculatedStatus === 'UP_TO_DATE')
-                  ? (isPendingApproval ? 'PENDING_APPROVAL' : calculatedStatus)
-                  : (isPendingApproval || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status);
-                const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed, diffDays);
 
                 // Check review outcomes for contextual action buttons
-                const reviews = targetDoc?.periodic_reviews || targetDoc?.review_history || record.periodic_reviews || record.reviewLogs;
-                const latestReview = Array.isArray(reviews) && reviews.length > 0 ? reviews[reviews.length - 1] : null;
-                const rawOutcome =
+                // Only treat as revision/obsolete required if the document was actively evaluated in the CURRENT cycle
+                const isCurrentCycleAwaitingAction = Boolean(
+                  record.status === 'AWAITING_ACTION' ||
+                  targetDoc?.review_status === 'AWAITING_ACTION' ||
+                  record.status === 'REVISION_REQUIRED' ||
+                  targetDoc?.review_status === 'REVISION_REQUIRED' ||
+                  record.status === 'OBSOLETE_REQUIRED' ||
+                  targetDoc?.review_status === 'OBSOLETE_REQUIRED'
+                );
+
+                const currentOutcome =
                   record.outcome ||
                   record.reviewOutcome ||
+                  targetDoc?.periodic_review_outcome ||
                   targetDoc?.review_outcome ||
                   targetDoc?.reviewOutcome ||
-                  latestReview?.outcome ||
-                  latestReview?.result ||
                   '';
 
-                const isRevisionRequired =
-                  rawOutcome === 'REVISION_REQUIRED' ||
-                  rawOutcome === 'AWAITING_ACTION' ||
-                  rawOutcome === 'INTERNAL_REVISION_REQUIRED' ||
-                  rawOutcome === 'EXTERNAL_NEW_VERSION' ||
+                const isRevisionRequired = isCurrentCycleAwaitingAction && (
+                  currentOutcome === 'REVISION_REQUIRED' ||
+                  currentOutcome === 'INTERNAL_REVISION_REQUIRED' ||
+                  currentOutcome === 'EXTERNAL_NEW_VERSION' ||
                   record.status === 'REVISION_REQUIRED' ||
-                  record.status === 'AWAITING_ACTION' ||
-                  targetDoc?.review_status === 'REVISION_REQUIRED' ||
-                  targetDoc?.review_status === 'AWAITING_ACTION';
+                  targetDoc?.review_status === 'REVISION_REQUIRED'
+                );
 
-                const isObsoleteRequired =
-                  rawOutcome === 'OBSOLETE_REQUIRED' ||
-                  rawOutcome === 'INTERNAL_OBSOLETE_REQUIRED' ||
-                  rawOutcome === 'EXTERNAL_NO_LONGER_APPLICABLE' ||
+                const isObsoleteRequired = isCurrentCycleAwaitingAction && (
+                  currentOutcome === 'OBSOLETE_REQUIRED' ||
+                  currentOutcome === 'INTERNAL_OBSOLETE_REQUIRED' ||
+                  currentOutcome === 'EXTERNAL_NO_LONGER_APPLICABLE' ||
                   record.status === 'OBSOLETE_REQUIRED' ||
-                  targetDoc?.review_status === 'OBSOLETE_REQUIRED';
+                  targetDoc?.review_status === 'OBSOLETE_REQUIRED'
+                );
+
+                const hasActiveLinkedRequest = Boolean(
+                  record.linkedActionId ||
+                  record.linkedRequestId ||
+                  record.linked_request_id ||
+                  record.linkedDraftId ||
+                  targetDoc?.linked_request_id ||
+                  targetDoc?.linkedActionId ||
+                  targetDoc?.linkedRequestId
+                );
+
+                const hasPendingIntent = !hasActiveLinkedRequest && (isRevisionRequired || isObsoleteRequired);
+
+                // Priority 1: Check active workflow action/intent before falling back to date-based status
+                let effectiveStatus = calculatedStatus;
+                if (isReviewed) {
+                  effectiveStatus = 'COMPLETED';
+                } else if (isRevisionRequired) {
+                  effectiveStatus = 'REVISION_REQUIRED';
+                } else if (isObsoleteRequired) {
+                  effectiveStatus = 'OBSOLETE_REQUIRED';
+                } else if (isPendingApproval) {
+                  effectiveStatus = 'PENDING_APPROVAL';
+                } else if (isCurrentCycleAwaitingAction) {
+                  effectiveStatus = 'AWAITING_ACTION';
+                } else if (calculatedStatus === 'OVERDUE' || calculatedStatus === 'DUE_SOON' || calculatedStatus === 'UP_TO_DATE') {
+                  effectiveStatus = calculatedStatus;
+                } else {
+                  effectiveStatus = isPendingApproval || record.status === 'IN_PROGRESS' ? record.status : calculatedStatus || record.status;
+                }
+                const badge = getStatusBadgeConfig(effectiveStatus, record.hasActiveTask, isPendingApproval, isReviewed, diffDays);
 
                 const userCanApprove = canUserApprove(record, targetDoc);
                 return (
@@ -861,6 +928,7 @@ const UnifiedWorkspaceView = ({
                     </td>
                     <td className="px-4 py-2.5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1.5">
+                        {/* Primary Action (ปุ่มหลัก) */}
                         {isPendingApproval ? (
                           userCanApprove ? (
                             <button
@@ -868,6 +936,7 @@ const UnifiedWorkspaceView = ({
                               onClick={() => handleApproveClick(record, targetDoc)}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
                               title="พิจารณาอนุมัติผลการทบทวนเอกสาร"
+                              aria-label="อนุมัติผล"
                             >
                               <CheckCircle2 size={13} />
                               <span>อนุมัติผล</span>
@@ -877,6 +946,7 @@ const UnifiedWorkspaceView = ({
                               disabled
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-not-allowed opacity-80"
                               title="อยู่ระหว่างรอหัวหน้าแผนกอนุมัติผล"
+                              aria-label="รออนุมัติ"
                             >
                               <Clock size={13} />
                               <span>รออนุมัติ</span>
@@ -893,6 +963,7 @@ const UnifiedWorkspaceView = ({
                             }}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-2xs transition-colors cursor-pointer"
                             title="ไปที่คลังเอกสารภายนอกเพื่ออัปเดตฉบับใหม่"
+                            aria-label="อัปเดตฉบับใหม่"
                           >
                             <FileEdit size={13} />
                             <span>อัปเดตฉบับใหม่</span>
@@ -908,6 +979,7 @@ const UnifiedWorkspaceView = ({
                             }}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-2xs transition-colors cursor-pointer"
                             title="ไปที่คลังเอกสารภายนอกเพื่อขอยกเลิกเอกสาร"
+                            aria-label="ขอยกเลิกเอกสาร"
                           >
                             <Ban size={13} />
                             <span>ขอยกเลิกเอกสาร</span>
@@ -915,10 +987,11 @@ const UnifiedWorkspaceView = ({
                         ) : isReviewed ? (
                           <button
                             disabled
-                            className="px-2.5 py-1 text-xs text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed inline-flex items-center gap-1"
+                            className="px-2.5 py-1.5 text-xs text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed inline-flex items-center gap-1 border border-slate-200"
                             title="เอกสารผ่านการทบทวนรอบปีนี้เรียบร้อยแล้ว"
+                            aria-label="ทบทวนแล้ว"
                           >
-                            <Check className="w-3 h-3 text-emerald-500" />
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
                             <span>ทบทวนแล้ว</span>
                           </button>
                         ) : (
@@ -927,19 +1000,34 @@ const UnifiedWorkspaceView = ({
                             onClick={() => handleNavigateRecord(targetDoc ? { ...record, targetDoc } : record)}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#0D99FF] hover:bg-[#007BE5] text-white shadow-2xs transition-colors cursor-pointer"
                             title="บันทึกผลการทบทวน"
+                            aria-label="บันทึกผล"
                           >
                             <RotateCw size={13} />
                             <span>บันทึกผล</span>
                           </button>
                         )}
+
+                        {/* Secondary Actions (ปุ่มรอง - Icon Only) */}
+                        {hasPendingIntent && (
+                          <button
+                            type="button"
+                            onClick={() => handleNavigateRecord(targetDoc ? { ...record, targetDoc } : record, { isReEvaluating: true })}
+                            className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:bg-sky-50 rounded-lg border border-slate-200 hover:border-sky-300 transition-colors cursor-pointer"
+                            title="เปลี่ยนผลการทบทวน"
+                            aria-label="เปลี่ยนผลการทบทวน"
+                          >
+                            <RotateCcw size={13} />
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => handleOpenHistory(record)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
                           title="ดูประวัติการทบทวน"
+                          aria-label="ดูประวัติการทบทวน"
                         >
-                          <Eye size={13} />
-                          <span>ประวัติ</span>
+                          <History size={13} />
                         </button>
                       </div>
                     </td>

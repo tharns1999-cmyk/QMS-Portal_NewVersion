@@ -101,7 +101,11 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
       originalReviewAnchorDate: anchor,
       currentScheduledReviewDate: nextReviewDate,
       nextReviewDate: nextReviewDate,
-      status: 'NOT_YET_DUE',
+      status: (doc.review_status === 'AWAITING_ACTION' || doc.review_status === 'PENDING_APPROVAL') ? doc.review_status : 'NOT_YET_DUE',
+      review_status: doc.review_status || 'NOT_YET_DUE',
+      periodic_review_outcome: doc.periodic_review_outcome || null,
+      linkedRequestId: doc.linkedRequestId || null,
+      linkedActionId: doc.linkedActionId || null,
       dueState: getDueState(nextReviewDate),
       reviewStatusFlag: reviewStatusFlag,
       statusFlag: reviewStatusFlag,
@@ -175,7 +179,11 @@ export const generateSchedules = (internalDocs, externalDocs, existingSchedules 
       last_reviewed_at: doc.last_reviewed_at || doc.lastReviewedDate || null,
       is_reviewed_this_cycle: Boolean(doc.is_reviewed_this_cycle),
       periodic_reviews: doc.periodic_reviews || [],
-      status: 'NOT_YET_DUE',
+      status: (doc.review_status === 'AWAITING_ACTION' || doc.review_status === 'PENDING_APPROVAL') ? doc.review_status : 'NOT_YET_DUE',
+      review_status: doc.review_status || 'NOT_YET_DUE',
+      periodic_review_outcome: doc.periodic_review_outcome || null,
+      linkedRequestId: doc.linkedRequestId || null,
+      linkedActionId: doc.linkedActionId || null,
       dueState: getDueState(nextReviewDate),
       reviewStatusFlag: reviewStatusFlag,
       statusFlag: reviewStatusFlag,
@@ -321,3 +329,18 @@ export const getReviewOutcomeLabel = (outcome) => {
   };
   return map[outcome] || { label: outcome || '-', color: 'bg-gray-100 text-gray-700' };
 };
+
+export const canResetReviewIntent = (scheduleOrDoc) => {
+  if (!scheduleOrDoc) return false;
+  const status = scheduleOrDoc.review_status || scheduleOrDoc.status;
+  const outcome = scheduleOrDoc.periodic_review_outcome || scheduleOrDoc.outcome;
+  return (
+    status === 'AWAITING_ACTION' ||
+    status === 'PENDING_APPROVAL' ||
+    status === 'REVISION_REQUIRED' ||
+    status === 'OBSOLETE_REQUIRED' ||
+    outcome === 'REVISION_REQUIRED' ||
+    outcome === 'OBSOLETE_REQUIRED'
+  );
+};
+

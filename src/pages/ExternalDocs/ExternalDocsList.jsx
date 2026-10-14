@@ -150,7 +150,8 @@ const ExternalDocsList = () => {
     controlledCopyInstances,
     documentControlledCopies,
     simulatedSystemDate,
-    getEffectiveToday
+    getEffectiveToday,
+    resetPendingReviewIntent
   } = useStore();
   
   // Level 1: Main Category Tabs (GENERAL, MY_DEPT, DISTRIBUTED)
@@ -202,7 +203,7 @@ const ExternalDocsList = () => {
   };
 
   // Deep-linking from notifications or external triggers
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const deepLinkDocCode = searchParams.get('docCode') || searchParams.get('openDocCode') || searchParams.get('code') || location.state?.openDocCode;
   const deepLinkDocId = searchParams.get('docId') || searchParams.get('openDocId') || searchParams.get('id') || location.state?.openDocId;
@@ -866,6 +867,12 @@ const ExternalDocsList = () => {
 
   // Deep-linking auto-open effects (Update / Obsolete / Detail)
   const handledDeepLinkKeyRef = useRef('');
+  const deepLinkActionActiveRef = useRef(null);
+  const deepLinkFromReviewRef = useRef(false);
+  const deepLinkTargetCodeRef = useRef('');
+  const initialRequestsCountRef = useRef(0);
+  const initialTasksCountRef = useRef(0);
+
   useEffect(() => {
     const currentKey = `${deepLinkDocCode || ''}_${deepLinkDocId || ''}_${autoOpenUpdate}_${autoOpenObsolete}`;
     if (!deepLinkDocCode && !deepLinkDocId) return;
@@ -887,8 +894,26 @@ const ExternalDocsList = () => {
       if (found) {
         handledDeepLinkKeyRef.current = currentKey;
         if (autoOpenUpdate) {
+          deepLinkActionActiveRef.current = 'UPDATE';
+          deepLinkFromReviewRef.current = Boolean(
+            location.state?.fromPeriodicReview || 
+            searchParams.get('fromPeriodicReview') === 'true' || 
+            autoOpenUpdate
+          );
+          deepLinkTargetCodeRef.current = getDocCode(found) || found.edCode || found.doc_code || deepLinkDocCode || '';
+          initialRequestsCountRef.current = (useStore.getState().externalRequests || []).length;
+          initialTasksCountRef.current = (useStore.getState().tasks || []).length;
           handleRevise(found);
         } else if (autoOpenObsolete) {
+          deepLinkActionActiveRef.current = 'OBSOLETE';
+          deepLinkFromReviewRef.current = Boolean(
+            location.state?.fromPeriodicReview || 
+            searchParams.get('fromPeriodicReview') === 'true' || 
+            autoOpenObsolete
+          );
+          deepLinkTargetCodeRef.current = getDocCode(found) || found.edCode || found.doc_code || deepLinkDocCode || '';
+          initialRequestsCountRef.current = (useStore.getState().externalRequests || []).length;
+          initialTasksCountRef.current = (useStore.getState().tasks || []).length;
           handleObsolete(found);
         } else {
           handleOpenDetail(found);
@@ -896,6 +921,115 @@ const ExternalDocsList = () => {
       }
     }
   }, [deepLinkDocCode, deepLinkDocId, autoOpenUpdate, autoOpenObsolete, externalDocuments]);
+
+  const cleanupDeepLinkParams = () => {
+    handledDeepLinkKeyRef.current = '';
+    deepLinkActionActiveRef.current = null;
+    deepLinkFromReviewRef.current = false;
+
+    // Clean URL search params so refresh does not re-open the modal
+    if (typeof setSearchParams === 'function') {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('autoOpenUpdate');
+        next.delete('autoOpenObsolete');
+        next.delete('openDocCode');
+        next.delete('docCode');
+        return next;
+      }, { replace: true });
+    }
+
+    try {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('autoOpenUpdate');
+      nextParams.delete('autoOpenObsolete');
+      nextParams.delete('openDocCode');
+      nextParams.delete('docCode');
+      const q = nextParams.toString();
+      navigate({ search: q ? `?${q}` : '' }, { replace: true, state: {} });
+    } catch {
+      // safe fallback
+    }
+
+    try {
+      if (typeof window !== 'undefined' && window.location) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('autoOpenUpdate');
+        url.searchParams.delete('autoOpenObsolete');
+        url.searchParams.delete('openDocCode');
+        url.searchParams.delete('docCode');
+        window.history.replaceState({}, '', url.pathname + (url.search || ''));
+      }
+    } catch {
+      // safe fallback
+    }
+  };
+
+  const handleCloseFormModal = () => {
+    const isAutoActive = Boolean(autoOpenUpdate || deepLinkActionActiveRef.current === 'UPDATE');
+    const wasFromPeriodicReview = Boolean(
+      deepLinkFromReviewRef.current || 
+      location.state?.fromPeriodicReview || 
+      searchParams.get('fromPeriodicReview') === 'true' ||
+      autoOpenUpdate
+    );
+
+    const currentRequestsCount = (useStore.getState().externalRequests || []).length;
+    const currentTasksCount = (useStore.getState().tasks || []).length;
+    const isSubmitted = currentRequestsCount > initialRequestsCountRef.current || currentTasksCount > initialTasksCountRef.current;
+
+    if (isAutoActive && !isSubmitted) {
+      const targetCode = docToEdit?.edCode || docToEdit?.doc_code || deepLinkTargetCodeRef.current || deepLinkDocCode;
+      const resetFn = resetPendingReviewIntent || useStore.getState().resetPendingReviewIntent;
+      if (typeof resetFn === 'function') {
+        resetFn(targetCode);
+      }
+      if (wasFromPeriodicReview) {
+        toast('ยกเลิกการปรับปรุงเอกสารภายนอก สามารถกลับไปทบทวนใหม่ได้ที่หน้ารายการทบทวน');
+      }
+    }
+
+    if (isAutoActive) {
+      cleanupDeepLinkParams();
+    }
+
+    setIsModalOpen(false);
+    setDocToEdit(null);
+  };
+
+  const handleCloseObsoleteModal = () => {
+    const isAutoActive = Boolean(autoOpenObsolete || deepLinkActionActiveRef.current === 'OBSOLETE');
+    const wasFromPeriodicReview = Boolean(
+      deepLinkFromReviewRef.current || 
+      location.state?.fromPeriodicReview || 
+      searchParams.get('fromPeriodicReview') === 'true' ||
+      autoOpenObsolete
+    );
+
+    const currentRequestsCount = (useStore.getState().externalRequests || []).length;
+    const currentTasksCount = (useStore.getState().tasks || []).length;
+    const isSubmitted = currentRequestsCount > initialRequestsCountRef.current || currentTasksCount > initialTasksCountRef.current;
+
+    if (isAutoActive && !isSubmitted) {
+      const targetCode = docToObsolete?.edCode || docToObsolete?.doc_code || deepLinkTargetCodeRef.current || deepLinkDocCode;
+      const resetFn = resetPendingReviewIntent || useStore.getState().resetPendingReviewIntent;
+      if (typeof resetFn === 'function') {
+        resetFn(targetCode);
+      }
+      if (wasFromPeriodicReview) {
+        toast('ยกเลิกการปรับปรุงเอกสารภายนอก สามารถกลับไปทบทวนใหม่ได้ที่หน้ารายการทบทวน');
+      }
+    }
+
+    if (isAutoActive) {
+      cleanupDeepLinkParams();
+    }
+
+    setIsObsoleteModalOpen(false);
+    setDocToObsolete(null);
+  };
+
+  const handleCloseModal = handleCloseFormModal;
 
   const handleHistory = (doc) => {
     setOpenMenuDocId(null);
@@ -1991,10 +2125,7 @@ const ExternalDocsList = () => {
               <p className="text-xs text-slate-500 mb-4">ระบบป้องกันหน้าจอขาวอัตโนมัติ กรุณาลองใหม่อีกครั้ง</p>
               <button
                 type="button"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setDocToEdit(null);
-                }}
+                onClick={handleCloseFormModal}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl cursor-pointer"
               >
                 ปิดหน้าต่าง
@@ -2005,10 +2136,7 @@ const ExternalDocsList = () => {
       >
         <ExternalDocFormModal
           isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setDocToEdit(null);
-          }}
+          onClose={handleCloseFormModal}
           documentToEdit={docToEdit}
         />
       </ErrorBoundary>
@@ -2034,10 +2162,7 @@ const ExternalDocsList = () => {
 
       <ExternalDocObsoleteModal
         isOpen={isObsoleteModalOpen}
-        onClose={() => {
-          setIsObsoleteModalOpen(false);
-          setDocToObsolete(null);
-        }}
+        onClose={handleCloseObsoleteModal}
         documentToObsolete={docToObsolete}
       />
 

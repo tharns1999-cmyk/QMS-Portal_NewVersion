@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { 
   FileText, 
@@ -237,41 +237,26 @@ const PeriodicReviewDetail = () => {
   const [references, setReferences] = useState('');
   const [additionalComments, setAdditionalComments] = useState('');
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
-  const [isReEvaluating, setIsReEvaluating] = useState(false);
+  const hasIncomingReEvaluate = Boolean(
+    location.state?.isReEvaluating ||
+    location.state?.reEvaluate ||
+    searchParams.get('isReEvaluating') === 'true' ||
+    searchParams.get('reEvaluate') === 'true'
+  );
+  const [isReEvaluating, setIsReEvaluating] = useState(hasIncomingReEvaluate);
 
-  if (accessCheck.status === 'NOT_FOUND') {
-    return <div className="p-8 text-center text-[#666666]">ไม่พบเอกสารนี้ (Not Found)</div>;
-  }
+  const scheduleData = accessCheck?.data || {};
+  const schedule = synthesizedSchedule ? { ...synthesizedSchedule, ...scheduleData } : scheduleData;
   
-  if (accessCheck.status === 'ACCESS_DENIED') {
-    return (
-      <div className="p-8 max-w-2xl mx-auto mt-12">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-700 mb-2">ไม่มีสิทธิ์เข้าถึงข้อมูลการทบทวนเอกสารนี้</h2>
-          <p className="text-red-600">{accessCheck.message}</p>
-          <button 
-            onClick={() => navigate('/dcc/periodic-reviews')}
-            className="mt-6 px-4 py-2 bg-white text-red-700 font-medium rounded-lg border border-red-200 hover:bg-red-100 transition-colors"
-          >
-            กลับสู่หน้าหลัก
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const schedule = synthesizedSchedule ? { ...synthesizedSchedule, ...accessCheck.data } : accessCheck.data;
-  
-  const linkedDar = schedule.linkedActionId ? (dars || []).find(d => d.id === schedule.linkedActionId) : null;
+  const linkedDar = schedule?.linkedActionId ? (dars || []).find(d => d.id === schedule.linkedActionId) : null;
   const linkedDarStatus = linkedDar && useStore.getState()?.getLinkedActionStatus
     ? useStore.getState().getLinkedActionStatus(linkedDar.status)
     : null;
   
-  const targetDoc = accessCheck.document || resolvedDoc || allDocs.find(d => 
-    (schedule.documentId && d.id === schedule.documentId) || 
-    (schedule.externalDocumentId && d.id === schedule.externalDocumentId) ||
-    (schedule.documentNumber && (d.documentNumber === schedule.documentNumber || d.code === schedule.documentNumber || d.docCode === schedule.documentNumber))
+  const targetDoc = accessCheck?.document || resolvedDoc || allDocs.find(d => 
+    (schedule?.documentId && d.id === schedule.documentId) || 
+    (schedule?.externalDocumentId && d.id === schedule.externalDocumentId) ||
+    (schedule?.documentNumber && (d.documentNumber === schedule.documentNumber || d.code === schedule.documentNumber || d.docCode === schedule.documentNumber))
   );
 
   const doc = targetDoc;
@@ -301,21 +286,20 @@ const PeriodicReviewDetail = () => {
 
   const canPerform = canPerformPeriodicReview(normalizedUser, schedule, targetDoc) || isDeptManagerOrSupervisor;
 
-  const effectiveOutcome = schedule.outcome || schedule.pendingReview?.outcome || doc?.pending_periodic_review?.outcome || schedule.reviewDetails?.outcome || '';
+  const effectiveOutcome = schedule?.outcome || schedule?.pendingReview?.outcome || doc?.pending_periodic_review?.outcome || schedule?.reviewDetails?.outcome || '';
 
   const isPendingApproval = !isReEvaluating && Boolean(
-    schedule.status === 'PENDING_APPROVAL' || 
+    schedule?.status === 'PENDING_APPROVAL' || 
     targetDoc?.review_status === 'PENDING_APPROVAL' ||
-    schedule.pendingApprovalTaskId
+    schedule?.pendingApprovalTaskId
   );
 
   const isEvaluated = !isReEvaluating && !isPendingApproval && Boolean(
-    schedule.status === 'COMPLETED' || 
-    schedule.status === 'IN_PROGRESS' || 
-    schedule.status === 'ACTION_REQUIRED' || 
-    schedule.status === 'COMPLETED_WITH_REVISION' ||
-    schedule.status === 'COMPLETED_WITH_OBSOLETE' ||
-    effectiveOutcome
+    schedule?.status === 'COMPLETED' || 
+    schedule?.status === 'COMPLETED_WITH_REVISION' ||
+    schedule?.status === 'COMPLETED_WITH_OBSOLETE' ||
+    ((schedule?.status === 'AWAITING_ACTION' || targetDoc?.review_status === 'AWAITING_ACTION') && effectiveOutcome) ||
+    (schedule?.is_reviewed_this_cycle && (schedule?.status === 'COMPLETED' || targetDoc?.review_status === 'COMPLETED'))
   );
 
   const getComputedStatusLabel = () => {
@@ -328,10 +312,10 @@ const PeriodicReviewDetail = () => {
     if (effectiveOutcome === 'OBSOLETE_REQUIRED' || effectiveOutcome === 'OBSOLETE') {
       return { label: 'ต้องยกเลิกเอกสาร', color: 'bg-rose-100 text-rose-800 border-rose-200' };
     }
-    if (schedule.status === 'COMPLETED' || targetDoc?.review_status === 'COMPLETED' || targetDoc?.review_status === 'UP_TO_DATE') {
+    if (schedule?.status === 'COMPLETED' || targetDoc?.review_status === 'COMPLETED' || targetDoc?.review_status === 'UP_TO_DATE') {
       return { label: 'ทบทวนเสร็จแล้ว', color: 'bg-green-100 text-green-800' };
     }
-    return getReviewStatusLabel(schedule.status);
+    return getReviewStatusLabel(schedule?.status);
   };
 
   const statusLabel = getComputedStatusLabel();
@@ -352,15 +336,46 @@ const PeriodicReviewDetail = () => {
   };
 
   const handleStartReReview = () => {
+    if (typeof useStore.getState().resetPendingReviewIntent === 'function') {
+      useStore.getState().resetPendingReviewIntent(schedule?.externalDocumentId || doc?.id || effectiveDocCode);
+    }
     setIsReEvaluating(true);
     const existingOutcome = effectiveOutcome || 'NO_CHANGE';
     setOutcome(existingOutcome);
-    setComment(schedule.comment || schedule.reason || schedule.pendingReview?.details?.comment || schedule.pendingReview?.details?.reason || '');
-    setFindings(schedule.findings || schedule.pendingReview?.details?.findings || '');
-    setStandards(schedule.standards || schedule.standard_clause || schedule.pendingReview?.details?.standards || '');
-    setReferences(schedule.references || schedule.evidence_reference || schedule.pendingReview?.details?.references || '');
-    setAdditionalComments(schedule.additionalComments || schedule.additional_comment || schedule.pendingReview?.details?.additional_comment || '');
+    setComment(schedule?.comment || schedule?.reason || schedule?.pendingReview?.details?.comment || schedule?.pendingReview?.details?.reason || '');
+    setFindings(schedule?.findings || schedule?.pendingReview?.details?.findings || '');
+    setStandards(schedule?.standards || schedule?.standard_clause || schedule?.pendingReview?.details?.standards || '');
+    setReferences(schedule?.references || schedule?.evidence_reference || schedule?.pendingReview?.details?.references || '');
+    setAdditionalComments(schedule?.additionalComments || schedule?.additional_comment || schedule?.pendingReview?.details?.additional_comment || '');
   };
+
+  useEffect(() => {
+    if (hasIncomingReEvaluate && accessCheck.status === 'ALLOWED') {
+      handleStartReReview();
+    }
+  }, [hasIncomingReEvaluate, accessCheck.status]);
+
+  if (accessCheck.status === 'NOT_FOUND') {
+    return <div className="p-8 text-center text-[#666666]">ไม่พบเอกสารนี้ (Not Found)</div>;
+  }
+  
+  if (accessCheck.status === 'ACCESS_DENIED') {
+    return (
+      <div className="p-8 max-w-2xl mx-auto mt-12">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center">
+          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-700 mb-2">ไม่มีสิทธิ์เข้าถึงข้อมูลการทบทวนเอกสารนี้</h2>
+          <p className="text-red-600">{accessCheck.message}</p>
+          <button 
+            onClick={() => navigate('/dcc/periodic-reviews')}
+            className="mt-6 px-4 py-2 bg-white text-red-700 font-medium rounded-lg border border-red-200 hover:bg-red-100 transition-colors"
+          >
+            กลับสู่หน้าหลัก
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleApproveReview = () => {
     const storeState = useStore.getState();
@@ -834,7 +849,7 @@ const PeriodicReviewDetail = () => {
                 )}
 
                 {/* External Document Action Box: REVISION_REQUIRED / REVISE */}
-                {isExternal && (effectiveOutcome === 'REVISION_REQUIRED' || effectiveOutcome === 'REVISE') && (
+                {isExternal && (effectiveOutcome === 'REVISION_REQUIRED' || effectiveOutcome === 'REVISE' || effectiveOutcome === 'EXTERNAL_NEW_VERSION') && (
                   <div className="mt-5 p-5 bg-gradient-to-br from-amber-50 to-orange-50/60 border-2 border-amber-300/80 rounded-xl text-left shadow-xs">
                     <div className="flex items-start gap-3.5">
                       <div className="p-2.5 bg-amber-100 text-amber-700 rounded-xl shrink-0 mt-0.5">
@@ -863,6 +878,15 @@ const PeriodicReviewDetail = () => {
                           >
                             <span>📝 ดำเนินการอัปเดตฉบับใหม่ (Update Edition)</span>
                           </button>
+                          <button
+                            type="button"
+                            onClick={handleStartReReview}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-amber-50 text-amber-800 hover:text-amber-900 border border-amber-300 font-medium text-xs rounded-lg shadow-2xs transition-colors cursor-pointer"
+                            title="เปลี่ยนผลการทบทวนหรือประเมินใหม่"
+                          >
+                            <RotateCw size={13} className="text-amber-600" />
+                            <span>↩️ เปลี่ยนผลการทบทวน (Re-evaluate)</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -870,7 +894,7 @@ const PeriodicReviewDetail = () => {
                 )}
 
                 {/* External Document Action Box: OBSOLETE_REQUIRED / OBSOLETE */}
-                {isExternal && (effectiveOutcome === 'OBSOLETE_REQUIRED' || effectiveOutcome === 'OBSOLETE') && (
+                {isExternal && (effectiveOutcome === 'OBSOLETE_REQUIRED' || effectiveOutcome === 'OBSOLETE' || effectiveOutcome === 'EXTERNAL_NO_LONGER_APPLICABLE') && (
                   <div className="mt-5 p-5 bg-gradient-to-br from-rose-50 to-red-50/60 border-2 border-rose-300/80 rounded-xl text-left shadow-xs">
                     <div className="flex items-start gap-3.5">
                       <div className="p-2.5 bg-rose-100 text-rose-700 rounded-xl shrink-0 mt-0.5">
@@ -898,6 +922,15 @@ const PeriodicReviewDetail = () => {
                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
                           >
                             <span>🚫 ดำเนินการยกเลิกเอกสารภายนอก (Obsolete)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleStartReReview}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-rose-50 text-rose-800 hover:text-rose-900 border border-rose-300 font-medium text-xs rounded-lg shadow-2xs transition-colors cursor-pointer"
+                            title="เปลี่ยนผลการทบทวนหรือประเมินใหม่"
+                          >
+                            <RotateCw size={13} className="text-rose-600" />
+                            <span>↩️ เปลี่ยนผลการทบทวน (Re-evaluate)</span>
                           </button>
                         </div>
                       </div>
@@ -995,31 +1028,34 @@ const PeriodicReviewDetail = () => {
                     </label>
                     <span className="text-[11px] text-slate-400 font-normal">เลือก 1 ข้อ</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {[
                       { 
                         id: 'NO_CHANGE', 
-                        label: 'ไม่มีการเปลี่ยนแปลง',
+                        label: isExternal ? 'ยังคงใช้งานต่อไปได้ (Up-to-date / No Change Needed)' : 'ไม่มีการเปลี่ยนแปลง',
+                        sublabel: isExternal ? 'เนื้อหาเอกสารยังคงถูกต้อง สอดคล้อง และเป็นปัจจุบัน ไม่จำเป็นต้องแก้ไข' : 'เนื้อหาเอกสารยังคงถูกต้อง ไม่จำเป็นต้องแก้ไข',
                         icon: CheckCircle,
-                        activeStyle: 'border-2 border-emerald-500 bg-emerald-50/40 text-emerald-800 font-semibold shadow-xs',
+                        activeStyle: 'border-2 border-emerald-500 bg-emerald-50/50 text-emerald-900 font-semibold shadow-xs ring-1 ring-emerald-500/20',
                         inactiveStyle: 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 text-slate-700',
                         activeIcon: 'text-emerald-600',
                         inactiveIcon: 'text-emerald-500'
                       },
                       { 
                         id: 'REVISION_REQUIRED', 
-                        label: 'ต้องแก้ไขเอกสาร',
+                        label: isExternal ? 'ต้องปรับปรุง/แก้ไข (Revision Required / Update Edition)' : 'ต้องแก้ไขเอกสาร',
+                        sublabel: isExternal ? 'เอกสารมีเวอร์ชันใหม่จากผู้ผลิต หรือจำเป็นต้องออก Edition ใหม่' : 'ต้องแก้ไขเอกสาร (เปิด DAR ฉบับปรับปรุง)',
                         icon: FileEdit,
-                        activeStyle: 'border-2 border-amber-500 bg-amber-50/40 text-amber-800 font-semibold shadow-xs',
+                        activeStyle: 'border-2 border-amber-500 bg-amber-50/50 text-amber-900 font-semibold shadow-xs ring-1 ring-amber-500/20',
                         inactiveStyle: 'border-slate-200 hover:border-amber-300 hover:bg-amber-50/30 text-slate-700',
                         activeIcon: 'text-amber-600',
                         inactiveIcon: 'text-amber-500'
                       },
                       { 
                         id: 'OBSOLETE_REQUIRED', 
-                        label: 'ต้องยกเลิกเอกสาร',
+                        label: isExternal ? 'ขอยกเลิกการใช้งาน (Obsolete / Discontinue)' : 'ต้องยกเลิกเอกสาร',
+                        sublabel: isExternal ? 'เอกสารนี้ยกเลิกหรือไม่จำเป็นต้องใช้งานต่อไป ควรดำเนินการขอยกเลิก' : 'ต้องยกเลิกเอกสาร (เปิด DAR ฉบับยกเลิก)',
                         icon: Ban,
-                        activeStyle: 'border-2 border-rose-500 bg-rose-50/40 text-rose-800 font-semibold shadow-xs',
+                        activeStyle: 'border-2 border-rose-500 bg-rose-50/50 text-rose-900 font-semibold shadow-xs ring-1 ring-rose-500/20',
                         inactiveStyle: 'border-slate-200 hover:border-rose-300 hover:bg-rose-50/30 text-slate-700',
                         activeIcon: 'text-rose-600',
                         inactiveIcon: 'text-rose-500'
@@ -1030,7 +1066,7 @@ const PeriodicReviewDetail = () => {
                       return (
                         <label 
                           key={opt.id} 
-                          className={`flex flex-col items-center justify-center p-3 min-h-[72px] border rounded-xl cursor-pointer transition-all ${
+                          className={`flex flex-col items-center justify-start p-3.5 sm:p-4 border rounded-xl cursor-pointer transition-all text-center ${
                             isSelected ? opt.activeStyle : opt.inactiveStyle
                           } ${!canPerform ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
@@ -1043,8 +1079,13 @@ const PeriodicReviewDetail = () => {
                             onChange={(e) => setOutcome(e.target.value)}
                             disabled={!canPerform}
                           />
-                          <IconComponent className={`w-5 h-5 mb-1.5 ${isSelected ? opt.activeIcon : opt.inactiveIcon}`} />
-                          <span className="text-xs font-medium leading-tight text-center">{opt.label}</span>
+                          <div className={`p-2 rounded-lg mb-2 ${isSelected ? 'bg-white shadow-2xs' : 'bg-slate-100/80'}`}>
+                            <IconComponent className={`w-5 h-5 ${isSelected ? opt.activeIcon : opt.inactiveIcon}`} />
+                          </div>
+                          <span className="text-xs font-bold leading-snug">{opt.label}</span>
+                          <span className={`text-[11px] mt-1 leading-relaxed ${isSelected ? 'opacity-90 font-normal' : 'text-slate-500'}`}>
+                            {opt.sublabel}
+                          </span>
                         </label>
                       );
                     })}
