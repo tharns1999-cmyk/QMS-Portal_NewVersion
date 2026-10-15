@@ -86,9 +86,8 @@ describe('PeriodicReviewDetail - Two-Column Layout & Compact UI', () => {
     expect(screen.getByText('วันที่ครบกำหนดรอบนี้')).toBeInTheDocument();
     expect(screen.getByText(formatQmsDisplayDate('2027-01-15'))).toBeInTheDocument();
 
-    // Quick Action Bar
+    // Quick Action Bar — single "เปิดดูไฟล์เอกสาร" button (duplicate History button removed as UX bug)
     expect(screen.getByRole('button', { name: /เปิดดูไฟล์เอกสาร/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /ดูประวัติตรวจสอบ/i })).toBeInTheDocument();
   });
 
   it('renders 3 outcome cards with icons and active styles on selection', async () => {

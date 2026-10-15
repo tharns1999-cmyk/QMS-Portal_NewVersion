@@ -1,4 +1,4 @@
-import { CalendarClock, Eye, FileText, History } from 'lucide-react';
+import { CalendarClock, Eye, FileText } from 'lucide-react';
 import { formatQmsDisplayDate } from '../../utils/dateFormatter';
 import { getDocCode, getDocTitle, getCleanRev, getCleanDept } from '../../utils/domainNormalizer';
 
@@ -85,9 +85,8 @@ export default function DocumentDigest({ schedule, document, isExternal, statusL
         ))}
       </dl>
 
-      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+      <div className="mt-6">
         <button type="button" onClick={onOpenDocument} className={btn}><Eye className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />เปิดดูไฟล์เอกสาร</button>
-        <button type="button" onClick={onOpenDocument} className={btn}><History className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />ดูประวัติตรวจสอบ</button>
       </div>
     </aside>
   );

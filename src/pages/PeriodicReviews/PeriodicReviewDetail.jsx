@@ -256,13 +256,11 @@ const PeriodicReviewDetail = () => {
 
     const draftId = explicitDraftId || schedule.linkedActionId;
     if (draftId) {
-       toast.success(`กำลังเปิด DAR ที่เชื่อมโยง: ${draftId}`);
        const basePath = actionType === 'REVISION' ? '/dcc/dar/new/revision' : '/dcc/dar/new/obsolete';
        navigate(`${basePath}?draftId=${draftId}`);
        return;
     }
     
-    toast.success(`กำลังพาไปสร้าง DAR...`);
     const route = actionType === 'REVISION' ? '/dcc/dar/new/revision' : '/dcc/dar/new/obsolete';
     navigate(route, { state: { prefillDocId: schedule.documentId || schedule.externalDocumentId, prefillReviewId: schedule.id } });
   };
@@ -325,7 +323,6 @@ const PeriodicReviewDetail = () => {
         } else if (navOutcome === 'OBSOLETE_REQUIRED') {
           handleLinkedAction('OBSOLETE', newDraftId);
         } else if (taskId) {
-          toast.success('อัปเดตงานใน Task Inbox สำเร็จ');
           navigate('/tasks');
         } else {
           navigate('/dcc/periodic-reviews');
