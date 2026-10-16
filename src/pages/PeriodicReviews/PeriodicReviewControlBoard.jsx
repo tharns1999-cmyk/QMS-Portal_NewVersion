@@ -8,10 +8,17 @@ import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 
 const PeriodicReviewControlBoard = () => {
-  const { periodicReviewSchedules, documents, externalDocuments, currentUser } = useStore();
+  const { periodicReviewSchedules, documents, externalDocuments, currentUser, simulatedSystemDate, getEffectiveToday } = useStore();
   
   const allDocs = useMemo(() => [...(documents || []), ...(externalDocuments || [])], [documents, externalDocuments]);
-  const visibleRecords = useMemo(() => getVisiblePeriodicReviews(currentUser, periodicReviewSchedules, allDocs), [currentUser, periodicReviewSchedules, allDocs]);
+  const effectiveToday = useMemo(() => {
+    return getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+  }, [simulatedSystemDate, getEffectiveToday]);
+
+  const visibleRecords = useMemo(
+    () => getVisiblePeriodicReviews(currentUser, periodicReviewSchedules, allDocs, effectiveToday),
+    [currentUser, periodicReviewSchedules, allDocs, effectiveToday]
+  );
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');

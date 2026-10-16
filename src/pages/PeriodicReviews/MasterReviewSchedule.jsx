@@ -3,13 +3,13 @@ import { motion } from 'framer-motion';
 import { Search, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../../store/useStore';
-import { getDueStateLabel, getReviewStatusLabel } from '../../services/PeriodicReviewService';
+import { getDueStateLabel, getReviewStatusLabel, getDueState } from '../../services/PeriodicReviewService';
 import { TablePagination } from '../../components/common/TablePagination';
 import { useTablePagination } from '../../hooks/useTablePagination';
 
 const MasterReviewSchedule = () => {
   const navigate = useNavigate();
-  const { periodicReviewSchedules } = useStore();
+  const { periodicReviewSchedules, simulatedSystemDate, getEffectiveToday } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
 
@@ -73,7 +73,10 @@ const MasterReviewSchedule = () => {
             <tbody className="divide-y divide-slate-100">
               {pagination.paginatedData.length > 0 ? (
                 pagination.paginatedData.map((schedule, i) => {
-                  const dueLabel = getDueStateLabel(schedule.dueState);
+                  const dueDate = schedule.nextReviewDate || schedule.currentScheduledReviewDate;
+                  const effectiveToday = getEffectiveToday ? getEffectiveToday() : (simulatedSystemDate ? new Date(simulatedSystemDate) : new Date());
+                  const currentDueState = dueDate ? getDueState(dueDate, effectiveToday) : schedule.dueState;
+                  const dueLabel = getDueStateLabel(currentDueState);
                   const statusLabel = getReviewStatusLabel(schedule.status);
                   return (
                     <motion.tr 

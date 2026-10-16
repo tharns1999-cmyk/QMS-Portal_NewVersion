@@ -115,8 +115,7 @@ describe('Enterprise Security: Strict Access Scope Cascading & Form Distribution
 
   describe('2. DistributionSetup Integrated FM Cascading Guard Tests', () => {
     it('FM Document with DEPT_ONLY scope locks distribution to Owner Dept in DistributionSetup', () => {
-      let emittedDistributions = [];
-      const onChange = vi.fn((d) => { emittedDistributions = d; });
+      const onChange = vi.fn();
 
       render(
         <DistributionSetup

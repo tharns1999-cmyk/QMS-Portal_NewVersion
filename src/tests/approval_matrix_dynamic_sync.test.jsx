@@ -36,7 +36,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
     renderWithRouter(<MasterDataHub />);
 
     // Switch to Tab 6
-    const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+    const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
     fireEvent.click(slaTabBtn);
 
     // Verify MKT dynamically appears in Tab 6 Approval Matrix table
@@ -44,13 +44,13 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
     expect(screen.getByText('ระเบียบปฏิบัติการตลาด')).toBeInTheDocument();
 
     // Verify Single Source of Truth badge is present
-    expect(screen.getByText(/เชื่อมโยงจาก Tab 3 \(Single Source of Truth\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Single Source of Truth/i)).toBeInTheDocument();
   });
 
   it('2. Compact SLA stepper buttons [-] and [+] adjust day counts within valid range', () => {
     renderWithRouter(<MasterDataHub />);
 
-    const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+    const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
     fireEvent.click(slaTabBtn);
 
     const decreaseBtns = screen.getAllByTitle('ลดจำนวนวัน');
@@ -71,7 +71,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
     expect(inputs[0].value).toBe('4');
 
     // Click Save All
-    const saveBtn = screen.getByRole('button', { name: /บันทึกการตั้งค่าสายการอนุมัติและ SLAs/i });
+    const saveBtn = screen.getByRole('button', { name: /บันทึกการตั้งค่า/i });
     fireEvent.click(saveBtn);
 
     expect(useStore.getState().slaSettings.reviewSlaDays).toBe(4);
@@ -80,7 +80,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
   it('3. Approval Matrix Edit Modal validates Approver Level >= Reviewer Level', () => {
     renderWithRouter(<MasterDataHub />);
 
-    const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+    const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
     fireEvent.click(slaTabBtn);
 
     // Click Edit on SOP
@@ -119,7 +119,7 @@ describe('Approval Matrix Dynamic Sync & Stepper SLA Redesign Tests', () => {
 
     renderWithRouter(<MasterDataHub />);
 
-    const slaTabBtn = screen.getByText(/6\. สายการอนุมัติและ SLAs/i);
+    const slaTabBtn = screen.getByText(/สายการอนุมัติและ SLAs/i);
     fireEvent.click(slaTabBtn);
 
     // Click edit on POL

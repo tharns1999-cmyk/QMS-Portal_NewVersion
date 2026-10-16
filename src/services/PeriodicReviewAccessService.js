@@ -1,8 +1,15 @@
+import { isSameDepartment } from '../utils/taskFilter';
+import { extractDeptCode } from './darService';
+
 export const resolveReviewOwnerDepartmentId = (review, schedule, document) => {
   if (review && review.ownerDepartmentId) return review.ownerDepartmentId;
   if (schedule && schedule.ownerDepartmentId) return schedule.ownerDepartmentId;
   if (document && document.ownerDepartmentId) return document.ownerDepartmentId;
   if (document && document.department) return document.department; // Legacy fallback
+  const extracted = extractDeptCode(
+    document?.code || document?.doc_code || document?.docNo || review?.documentCode || review?.docCode
+  );
+  if (extracted) return extracted;
   return null;
 };
 
@@ -12,7 +19,7 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
 
   // 1. Check departmentMemberships array if it exists (Multi-department position authority)
   if (user.departmentMemberships && Array.isArray(user.departmentMemberships)) {
-    const membership = user.departmentMemberships.find(m => m.departmentId === ownerDepartmentId);
+    const membership = user.departmentMemberships.find(m => isSameDepartment(m.departmentId, ownerDepartmentId));
     if (membership && membership.isActive) {
       return membership;
     }
@@ -25,7 +32,31 @@ export const getUserDepartmentMembership = (user, ownerDepartmentId) => {
   }
 
   // 2. Compatibility fallback for current mock model
-  if (user.depts && user.depts.includes(ownerDepartmentId)) {
+  if (user.depts && user.depts.some(d => isSameDepartment(d, ownerDepartmentId))) {
+    return {
+      departmentId: ownerDepartmentId,
+      positionLevel: user.level || 0,
+      isActive: true
+    };
+  }
+
+  // 3. Managed departments (wildcard or specific department authority)
+  if (Array.isArray(user.managedDepartments)) {
+    if (user.managedDepartments.some(d => d === '*' || isSameDepartment(d, ownerDepartmentId))) {
+      return {
+        departmentId: ownerDepartmentId,
+        positionLevel: user.level || 4,
+        isActive: true
+      };
+    }
+  }
+
+  // 4. Primary or direct department
+  if (
+    isSameDepartment(user.department, ownerDepartmentId) ||
+    isSameDepartment(user.dept, ownerDepartmentId) ||
+    isSameDepartment(user.primary_department, ownerDepartmentId)
+  ) {
     return {
       departmentId: ownerDepartmentId,
       positionLevel: user.level || 0,
@@ -48,32 +79,64 @@ export const getPositionLevelForDepartment = (user, ownerDepartmentId) => {
 
 export const canViewAllPeriodicReviews = (user) => {
   if (!user) return false;
-  return user.isDcc === true || user.role === 'DCC_ADMIN';
+  return user.isDcc === true || 
+         user.role === 'DCC_ADMIN' || 
+         user.role === 'DCC' ||
+         user.is_dcc === true ||
+         Number(user.level) >= 5 || 
+         Number(user.approval_level) >= 5 ||
+         user.is_hod === true || 
+         user.is_manager === true ||
+         user.role === 'ADMIN' ||
+         user.role === 'SUPER_ADMIN' ||
+         user.role === 'QMR' ||
+         (Array.isArray(user.managedDepartments) && user.managedDepartments.includes('*'));
 };
 
 export const canViewPeriodicReview = (user, review, document) => {
   if (canViewAllPeriodicReviews(user)) return true;
   
   const ownerDept = resolveReviewOwnerDepartmentId(review, review, document);
+  if (!ownerDept) return true;
+
+  if (Array.isArray(user?.managedDepartments)) {
+    if (user.managedDepartments.some(d => d === '*' || isSameDepartment(d, ownerDept))) {
+      return true;
+    }
+  }
+
+  if (
+    isSameDepartment(user?.department, ownerDept) ||
+    isSameDepartment(user?.dept, ownerDept) ||
+    isSameDepartment(user?.primary_department, ownerDept)
+  ) {
+    return true;
+  }
+
   return isMemberOfOwnerDepartment(user, ownerDept);
 };
 
 export const canPerformPeriodicReview = (user, review, document) => {
   if (!user) return false;
 
-  // 1. Is Document Owner
-  const ownerUserId = review?.ownerUserId || document?.ownerId;
-  if (user.id === ownerUserId) return true;
+  // 1. Is Document Owner or designated assignee
+  const ownerUserId = review?.ownerUserId || document?.ownerId || review?.assignedToUserId;
+  if (user.id === ownerUserId || user.empId === ownerUserId) return true;
 
-  // 2. Is Permitted Backup in that specific Owner Department (Level >= 4 for Supervisor/Manager)
+  // 2. Is Member of Owner Department with sufficient authority (Manager / Level >= 4)
   const ownerDept = resolveReviewOwnerDepartmentId(review, review, document);
-  if (isMemberOfOwnerDepartment(user, ownerDept)) {
-    const posLevel = getPositionLevelForDepartment(user, ownerDept);
-    if (posLevel >= 4) return true;
+  const positionLevel = getPositionLevelForDepartment(user, ownerDept);
+  if (positionLevel >= 4) {
+    return true;
   }
 
-  // 3. Documented Override
-  // Currently no new overrides invented in this phase.
+  // 3. Privileged roles: DCC, QMR, Admin, or Wildcard Manager
+  if (user.isDcc || user.role === 'DCC' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'QMR') {
+    return true;
+  }
+  if (Array.isArray(user.managedDepartments) && user.managedDepartments.some(d => d === '*' || (ownerDept && isSameDepartment(d, ownerDept)))) {
+    return true;
+  }
   
   return false;
 };
@@ -117,6 +180,8 @@ export const normalizePeriodicReviewRecord = (record, currentDate = new Date()) 
     } else if (oldStatus === 'COMPLETED_WITH_OBSOLETE' || oldStatus === 'COMPLETED_NO_LONGER_APPLICABLE') {
       normalized.outcome = 'OBSOLETE_REQUIRED';
     }
+  } else if (oldStatus === 'PENDING_APPROVAL' || record.dueState === 'PENDING_APPROVAL') {
+    normalized.status = 'PENDING_APPROVAL';
   } else if (oldStatus === 'ACTION_IN_PROGRESS' || oldStatus === 'IN_PROGRESS') {
     normalized.status = 'IN_PROGRESS';
   } else {
@@ -147,16 +212,21 @@ export const normalizePeriodicReviewRecord = (record, currentDate = new Date()) 
   return normalized;
 };
 
-export const getVisiblePeriodicReviews = (user, schedules, documents) => {
+export const getVisiblePeriodicReviews = (user, schedules, documents, currentDate = new Date()) => {
   if (!schedules) return [];
   return schedules.filter(schedule => {
     const doc = documents?.find(d => d.id === schedule.documentId || d.id === schedule.externalDocumentId);
     return canViewPeriodicReview(user, schedule, doc);
-  }).map(schedule => normalizePeriodicReviewRecord(schedule));
+  }).map(schedule => normalizePeriodicReviewRecord(schedule, currentDate));
 };
 
-export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules, documents) => {
-  const schedule = periodicReviewSchedules?.find(s => s.id === reviewId);
+export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules, documents, currentDate = new Date()) => {
+  const schedule = periodicReviewSchedules?.find(s => 
+    s.id === reviewId || 
+    s.documentNumber === reviewId || 
+    s.documentId === reviewId || 
+    s.externalDocumentId === reviewId
+  );
   if (!schedule) return { status: 'NOT_FOUND' };
   
   const doc = documents?.find(d => d.id === schedule.documentId || d.id === schedule.externalDocumentId);
@@ -170,7 +240,7 @@ export const getPeriodicReviewForUser = (reviewId, user, periodicReviewSchedules
   
   return {
     status: 'SUCCESS',
-    data: normalizePeriodicReviewRecord(schedule),
+    data: normalizePeriodicReviewRecord(schedule, currentDate),
     document: doc
   };
 };

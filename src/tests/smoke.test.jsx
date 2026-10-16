@@ -10,7 +10,7 @@ describe('Smoke Tests for Main Pages', () => {
         <Dashboard />
       </MemoryRouter>
     );
-    expect(screen.getByText(/ตรวจสอบคิวงาน/i)).toBeInTheDocument();
+    expect(screen.getByText('คลังเอกสารแม่บท')).toBeInTheDocument();
   });
 
   it('should render TaskInbox without crashing and have clickable tabs', () => {

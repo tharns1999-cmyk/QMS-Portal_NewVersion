@@ -150,10 +150,10 @@ describe('Multi-Department Controlled Copy Dispatch & Receipt Routing Isolation 
     expect(allocations.masterCopy.target_department).toBe('PD');
     expect(allocations.distributedCopies).toHaveLength(2);
 
-    const qaAlloc = allocations.distributedCopies.find(c => c.department === 'QA/QC' || c.department === 'QA' || c.departmentId === 'QA/QC');
+    const qaAlloc = allocations.distributedCopies.find(c => c.department === 'QC' || c.department === 'QA/QC' || c.department === 'QA' || c.departmentId === 'QC');
     expect(qaAlloc).toBeDefined();
-    expect(qaAlloc.department).toBe('QA/QC');
-    expect(qaAlloc.target_department).toBe('QA/QC');
+    expect(qaAlloc.department).toBe('QC');
+    expect(qaAlloc.target_department).toBe('QC');
 
     const enAlloc = allocations.distributedCopies.find(c => c.department === 'EN' || c.departmentId === 'EN');
     expect(enAlloc).toBeDefined();

@@ -85,7 +85,7 @@ describe('High-Density Unified DAR Create Form Canvas Tests', () => {
   });
 
   it('4. Renders 50/50 balanced symmetrical layout in Section 3 and eliminates Section 5', () => {
-    const { container } = renderWithRouter(<DarNewForm />);
+    renderWithRouter(<DarNewForm />);
 
     // Textareas on the left (flex-1 and min-h-[125px])
     const descInput = screen.getByPlaceholderText(/ระบุขอบเขตและเนื้อหาสำคัญของเอกสารฉบับนี้/i);

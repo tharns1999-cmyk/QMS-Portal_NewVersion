@@ -43,7 +43,7 @@ describe('Periodic Review Components & Integration', () => {
 
     it('dashboard cards use permitted data only', () => {
       renderWithRouter(<PeriodicReviewDashboard />);
-      const dueSoonValue = screen.getByText('ใกล้ครบกำหนดภายใน 30 วัน').parentElement.querySelector('h3.text-3xl');
+      const dueSoonValue = screen.getByText('ใกล้ครบกำหนดใน 30 วัน').parentElement.querySelector('h3.text-3xl');
       expect(dueSoonValue).toHaveTextContent('1');
       const overdueValue = screen.getAllByText('เกินกำหนด')[0].parentElement.querySelector('h3.text-3xl');
       expect(overdueValue).toHaveTextContent('0');
@@ -78,6 +78,95 @@ describe('Periodic Review Components & Integration', () => {
     it('renders control board table with all departments', () => {
       renderWithRouter(<PeriodicReviewDashboard />);
       expect(screen.getAllByText('ภาพรวมทุกแผนก').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Management User (e.g. กัลยาณี L5 - PD)', () => {
+    beforeEach(() => {
+      useStore.setState({
+        currentUser: {
+          id: 'U003',
+          name: 'กัลยาณี พลไกร',
+          department: 'PD',
+          level: 5,
+          approval_level: 5,
+          role: 'DEPT_ADMIN',
+          is_hod: true
+        },
+        documents: [
+          {
+            id: 'DOC-PD-1',
+            doc_code: 'WI-PD-01',
+            title: 'WI-PD-01',
+            name: 'Production Work Instruction',
+            department: 'PD',
+            status: 'EFFECTIVE',
+            next_review_date: '2026-07-30',
+            review_status: 'DUE_SOON'
+          },
+          {
+            id: 'DOC-QC-1',
+            doc_code: 'WI-QC-01',
+            title: 'WI-QC-01',
+            name: 'QC Work Instruction',
+            department: 'QC',
+            status: 'EFFECTIVE',
+            next_review_date: '2026-07-30',
+            last_reviewed_at: '2026-07-10',
+            review_status: 'COMPLETED',
+            is_reviewed_this_cycle: true
+          }
+        ],
+        periodicReviewSchedules: [
+          {
+            id: 'SCH-PD-1',
+            documentId: 'DOC-PD-1',
+            documentNumber: 'WI-PD-01',
+            documentName: 'Production Work Instruction',
+            ownerDepartmentId: 'PD',
+            status: 'DUE_SOON',
+            nextReviewDate: '2026-07-30'
+          },
+          {
+            id: 'SCH-QC-1',
+            documentId: 'DOC-QC-1',
+            documentNumber: 'WI-QC-01',
+            documentName: 'QC Work Instruction',
+            ownerDepartmentId: 'QC',
+            status: 'COMPLETED',
+            nextReviewDate: '2026-07-30',
+            lastReviewedDate: '2026-07-10',
+            is_reviewed_this_cycle: true
+          }
+        ]
+      });
+    });
+
+    it('has scope toggle buttons and starts in "งานของแผนกฉัน (PD)"', () => {
+      renderWithRouter(<PeriodicReviewDashboard />);
+      expect(screen.getByRole('button', { name: /งานของแผนกฉัน \(PD\)/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /ภาพรวมทุกแผนก/i })).toBeInTheDocument();
+      expect(screen.getByText('WI-PD-01')).toBeInTheDocument();
+      expect(screen.queryByText('WI-QC-01')).not.toBeInTheDocument();
+    });
+
+    it('shows WI-QC-01 with status "ทบทวนแล้วเสร็จ" when clicking "ภาพรวมทุกแผนก"', async () => {
+      renderWithRouter(<PeriodicReviewDashboard />);
+      const allDeptBtn = screen.getByRole('button', { name: /ภาพรวมทุกแผนก/i });
+      await userEvent.click(allDeptBtn);
+
+      expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
+      expect(screen.getByText('WI-PD-01')).toBeInTheDocument();
+      expect(screen.getAllByText('ทบทวนแล้วเสร็จ').length).toBeGreaterThan(0);
+    });
+
+    it('displays all records without empty table when selecting "ทุกแผนก" in dropdown', async () => {
+      renderWithRouter(<PeriodicReviewDashboard />);
+      const select = screen.getByRole('combobox', { name: /กรองตามแผนก/i });
+      await userEvent.selectOptions(select, 'ALL');
+
+      expect(screen.getByText('WI-QC-01')).toBeInTheDocument();
+      expect(screen.getByText('WI-PD-01')).toBeInTheDocument();
     });
   });
 
@@ -129,7 +218,7 @@ describe('Periodic Review Components & Integration', () => {
         { route: '/dcc/periodic-reviews/SCH-1' }
       );
 
-      const revisionBtn = await screen.findByText('ต้องแก้ไขเอกสาร');
+      const revisionBtn = await screen.findByText('ต้องปรับปรุง/แก้ไข');
       await userEvent.click(revisionBtn);
 
       const schedule = useStore.getState().periodicReviewSchedules[0];

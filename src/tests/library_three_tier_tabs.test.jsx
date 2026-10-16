@@ -17,26 +17,6 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     isDcc: false
   };
 
-  const qaUser = {
-    id: 'U005',
-    name: 'บีม (QA)',
-    department: 'QA',
-    depts: ['QA'],
-    role: 'DEPT_ADMIN',
-    level: 4,
-    isDcc: false
-  };
-
-  const dccUser = {
-    id: 'U001',
-    name: 'Admin QA (DCC)',
-    department: 'QA',
-    depts: ['QA'],
-    role: 'DCC_ADMIN',
-    level: 1,
-    isDcc: true
-  };
-
   const sampleDocuments = [
     // 1. GENERAL Scope (PD owner)
     {
@@ -135,15 +115,19 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     expect(screen.getByRole('button', { name: /เอกสารที่ได้รับการแจกจ่าย/i })).toBeInTheDocument();
   });
 
-  it('2. Tab "เอกสารทั่วไป" displays ALL GENERAL documents and hides non-general tiers', () => {
+  it('2. Tab "เอกสารทั่วไป" displays other department GENERAL documents and hides own department and non-general tiers', () => {
     render(
       <MemoryRouter>
         <Library />
       </MemoryRouter>
     );
 
-    // Should show both PD and QA GENERAL docs
-    expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
+    const generalBtn = screen.getByRole('button', { name: /เอกสารทั่วไป/i });
+    fireEvent.click(generalBtn);
+
+    // Strict Separation: Should NOT show own PD GENERAL doc in General tab
+    expect(screen.queryByText('SOP-PD-001')).not.toBeInTheDocument();
+    // Should show QA GENERAL doc
     expect(screen.getByText('SOP-QA-001')).toBeInTheDocument();
 
     // Should NOT show DEPT_ONLY, TARGETED, or RESTRICTED in General tab
@@ -153,21 +137,18 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
     expect(screen.queryByText('SOP-QA-004')).not.toBeInTheDocument();
   });
 
-  it('3. Tab "เอกสารในแผนกฉัน" displays ALL PD tiers and hides other departments', () => {
+  it('3. Default Tab "เอกสารในแผนกฉัน" is selected automatically on initial load and displays ALL PD tiers while hiding other departments', () => {
     render(
       <MemoryRouter>
         <Library />
       </MemoryRouter>
     );
 
-    const myDeptBtn = screen.getByRole('button', { name: /เอกสารในแผนกฉัน/i });
-    fireEvent.click(myDeptBtn);
-
-    // Shows PD General and PD Dept Only docs
+    // Without clicking any tab, "ในแผนกฉัน" is active by default and filters by currentUser.department (PD)
     expect(screen.getByText('SOP-PD-001')).toBeInTheDocument();
     expect(screen.getByText('WI-PD-002')).toBeInTheDocument();
 
-    // Hides QA documents
+    // Hides QA documents on initial load
     expect(screen.queryByText('SOP-QA-001')).not.toBeInTheDocument();
     expect(screen.queryByText('WI-QA-002')).not.toBeInTheDocument();
     expect(screen.queryByText('SD-QA-003')).not.toBeInTheDocument();
@@ -200,6 +181,6 @@ describe('Library 3-Tier Tab Navigation & 4-Tier Access Scope Integration Tests'
 
     // In General tab, badges should display 'ทั่วไป'
     const badges = screen.getAllByText('ทั่วไป');
-    expect(badges.length).toBeGreaterThanOrEqual(2);
+    expect(badges.length).toBeGreaterThanOrEqual(1);
   });
 });

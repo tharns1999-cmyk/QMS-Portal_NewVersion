@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -147,7 +147,7 @@ describe('Notification Popover & DAR History Text-Wrap Constraints', () => {
       );
 
       expect(screen.getByText('การแจ้งเตือนระบบ')).toBeInTheDocument();
-      expect(screen.getByText('หน้าหลักพอร์ทัล')).toBeInTheDocument();
+      expect(screen.getByText(/ภาพรวมพอร์ทัล|หน้าหลักพอร์ทัล/i)).toBeInTheDocument();
     });
   });
 

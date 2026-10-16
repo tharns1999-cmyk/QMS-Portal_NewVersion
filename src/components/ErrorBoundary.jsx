@@ -17,6 +17,11 @@ export class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return typeof this.props.fallback === 'function'
+          ? this.props.fallback(this.state.error, () => this.setState({ hasError: false, error: null, errorInfo: null }))
+          : this.props.fallback;
+      }
       return (
         <div id="error-boundary-content" style={{ padding: '2rem', background: '#fee2e2', color: '#991b1b', fontFamily: 'monospace', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
           <h2>React Render Error</h2>

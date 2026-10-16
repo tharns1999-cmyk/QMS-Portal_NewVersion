@@ -1,10 +1,9 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import ControlledCopyRegister from '../pages/ControlledCopy/ControlledCopyRegister';
 import useStore from '../store/useStore';
-import { UniversalWatermarkService, WATERMARK_TYPES } from '../services/UniversalWatermarkService';
 
 vi.mock('../services/UniversalWatermarkService', async (importOriginal) => {
   const actual = await importOriginal();

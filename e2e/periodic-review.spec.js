@@ -11,12 +11,12 @@ test.describe('Periodic Review E2E Scenarios', () => {
     await page.locator('tr').filter({ hasText: 'DOC-PD-001' }).getByRole('button', { name: 'เปิดดู' }).click();
 
     // Complete review
-    await expect(page.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).toBeVisible();
     await page.evaluate(() => {
       document.querySelector('input[value="NO_CHANGE"]').click();
     });
-    await page.fill('textarea[placeholder="ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว..."]', 'All good');
-    await page.click('button:has-text("บันทึกผลการทบทวน")');
+    await page.fill('#review-comment', 'All good');
+    await page.getByRole('button', { name: /ส่งผลให้หัวหน้าแผนก|อนุมัติผลทบทวนทันที/ }).click();
 
     // Verify completed - navigated to dashboard
     await expect(page).toHaveURL(/\/dcc\/periodic-reviews/);
@@ -34,12 +34,12 @@ test.describe('Periodic Review E2E Scenarios', () => {
     await page.locator('tr').filter({ hasText: 'DOC-PD-001' }).getByRole('button', { name: 'เปิดดู' }).click();
 
     // Select ต้องแก้ไขเอกสาร
-    await expect(page.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).toBeVisible();
     await page.evaluate(() => {
       document.querySelector('input[value="REVISION_REQUIRED"]').click();
     });
-    await page.fill('textarea[placeholder="ระบุเหตุผลที่เลือกผลลัพธ์ดังกล่าว..."]', 'Needs update');
-    await page.click('button:has-text("บันทึกผลการทบทวน")');
+    await page.fill('#review-comment', 'Needs update');
+    await page.getByRole('button', { name: 'บันทึกและดำเนินการแก้ไข' }).click();
 
     // Expected to automatically navigate to DAR drafting
     await page.waitForURL(/\/dar\/new\/revision/);
@@ -52,7 +52,7 @@ test.describe('Periodic Review E2E Scenarios', () => {
     await expect(page.locator('button', { hasText: 'ดู DAR ที่เชื่อมโยง' })).toBeVisible();
     
     // Repeat action (Submit NO LONGER AVAILABLE since it's completed, but we can verify it's blocked/idempotent)
-    await expect(page.locator('button:has-text("บันทึกผลการทบทวน")')).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).not.toBeVisible();
   });
 
   test('Scenario 3: Unauthorized Department', async ({ page, setupSession }) => {
@@ -90,7 +90,7 @@ test.describe('Periodic Review E2E Scenarios', () => {
 
     // Verify edit actions are unavailable
     await expect(page.locator('input[type="radio"]').first()).toBeDisabled();
-    await expect(page.locator('button:has-text("บันทึกผลการทบทวน")')).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).not.toBeVisible();
 
     // Go back to control board
     await page.goto('/dcc/periodic-reviews');

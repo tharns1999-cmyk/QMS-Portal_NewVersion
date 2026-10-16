@@ -35,20 +35,36 @@ describe('PeriodicReviewService', () => {
       expect(schedules[0].ownerDepartmentId).toBe('PD');
     });
 
-    it('generates 2-year interval schedule for external documents', () => {
+    it('generates 2-year interval schedule for external documents with verification_frequency = 2', () => {
       const externalDocs = [{
         id: 'DOC-EXT-1',
         status: 'ACTIVE',
         title: 'ISO-9001',
         ownerId: 'U2',
         department: 'QA',
-        receivedDate: '2024-07-14'
+        receivedDate: '2024-07-14',
+        verification_frequency: 2
       }];
 
       const schedules = generateSchedules([], externalDocs, []);
       expect(schedules.length).toBe(1);
       expect(schedules[0].documentCategory).toBe('EXTERNAL');
       expect(schedules[0].frequencyMonths).toBe(24);
+      expect(schedules[0].nextReviewDate).toBe('2026-07-14');
+    });
+
+    it('generates 1-year interval schedule for external documents by default when verification_frequency is omitted', () => {
+      const externalDocs = [{
+        id: 'DOC-EXT-DEFAULT',
+        status: 'ACTIVE',
+        title: 'Industrial Standard',
+        receivedDate: '2025-07-14'
+      }];
+
+      const schedules = generateSchedules([], externalDocs, []);
+      expect(schedules.length).toBe(1);
+      expect(schedules[0].documentCategory).toBe('EXTERNAL');
+      expect(schedules[0].frequencyMonths).toBe(12);
       expect(schedules[0].nextReviewDate).toBe('2026-07-14');
     });
 

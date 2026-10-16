@@ -5,7 +5,6 @@ import { BrowserRouter } from 'react-router-dom';
 import DarRevisionForm from '../pages/DarWorkflow/DarRevisionForm';
 import DarObsoleteForm from '../pages/DarWorkflow/DarObsoleteForm';
 import useStore from '../store/useStore';
-import toast from 'react-hot-toast';
 
 vi.mock('react-hot-toast', () => ({
   default: {
@@ -109,7 +108,7 @@ describe('Enterprise Form Layout Harmonization Tests (DAR Revision & Obsolete)',
 
       // Verify Auto Revision calculation
       expect(screen.getByText('Rev.00')).toBeInTheDocument();
-      expect(screen.getByText('Rev.01')).toBeInTheDocument();
+      expect(screen.getAllByText('Rev.01').length).toBeGreaterThanOrEqual(1);
 
       // Fill Change Reason & Change Summary
       const comboboxes = screen.getAllByRole('combobox');

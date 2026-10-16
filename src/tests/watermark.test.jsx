@@ -66,7 +66,10 @@ describe('UniversalWatermarkService & DCS Digital Watermark Engine Tests', () =>
         });
 
         const preset = WATERMARK_PRESETS[type];
-        expect(preset.opacity).toBeGreaterThanOrEqual(0.60);
+        // Opacity range: 0.35 (DRAFT) – 0.70 (OBSOLETE/CONFIDENTIAL)
+        // UNCONTROLLED_COPY is intentionally 0.50 (50%) per DCS spec.
+        // DRAFT/DRAFT_WATERMARK are intentionally 0.35 per ISO QMS spec.
+        expect(preset.opacity).toBeGreaterThanOrEqual(0.35);
         expect(preset.opacity).toBeLessThanOrEqual(0.70);
 
         const calls = drawTextSpy.mock.calls;

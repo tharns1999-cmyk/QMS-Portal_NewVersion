@@ -12,12 +12,12 @@ test.describe('Periodic Review DAR Linkage Source Lock', () => {
     await page.locator('tr').filter({ hasText: 'DOC-PD-001' }).getByRole('button', { name: 'เปิดดู' }).click();
 
     // 3. Complete review as REVISION_REQUIRED
-    await expect(page.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).toBeVisible();
     await page.evaluate(() => {
       document.querySelector('input[value="REVISION_REQUIRED"]').click();
     });
-    await page.fill('textarea[placeholder*="ระบุเหตุผล"]', 'Automated E2E Test - Need revision');
-    await page.click('button:has-text("บันทึกผลการทบทวน")');
+    await page.fill('#review-comment', 'Automated E2E Test - Need revision');
+    await page.getByRole('button', { name: 'บันทึกและดำเนินการแก้ไข' }).click();
 
     // 4. Verify the DAR is created and we're redirected
     await expect(page).toHaveURL(/.*\/dcc\/dar\/new\/revision\?draftId=.*/);
@@ -56,12 +56,12 @@ test.describe('Periodic Review DAR Linkage Source Lock', () => {
     await page.locator('tr').filter({ hasText: 'DOC-PD-001' }).getByRole('button', { name: 'เปิดดู' }).click();
 
     // 3. Complete review as OBSOLETE_REQUIRED
-    await expect(page.getByText('แบบฟอร์มบันทึกผลการทบทวน')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'บันทึกผลการทบทวน' })).toBeVisible();
     await page.evaluate(() => {
       document.querySelector('input[value="OBSOLETE_REQUIRED"]').click();
     });
-    await page.fill('textarea[placeholder*="ระบุเหตุผล"]', 'Automated E2E Test - Need obsolete');
-    await page.click('button:has-text("บันทึกผลการทบทวน")');
+    await page.fill('#review-comment', 'Automated E2E Test - Need obsolete');
+    await page.getByRole('button', { name: 'บันทึกและขอยกเลิก' }).click();
 
     // 4. Verify the DAR is created and we're redirected
     await expect(page).toHaveURL(/.*\/dcc\/dar\/new\/obsolete\?draftId=.*/);
